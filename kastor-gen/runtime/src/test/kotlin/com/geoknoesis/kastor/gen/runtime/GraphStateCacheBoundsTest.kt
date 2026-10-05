@@ -372,15 +372,15 @@ class GraphStateCacheBoundsTest {
 
     @Test
     fun `the digest is salted per digester, order independent and separates near contents`() {
-        val a = GraphStateCache.GraphDigester()
-        val b = GraphStateCache.GraphDigester()
+        val a = GraphDigester()
+        val b = GraphDigester()
         val triples = (1..50).map(::triple)
         assertEquals(a.digest(triples), a.digest(triples.shuffled(Random(7))), "order independent")
         assertEquals(a.digest(triples), a.digest(triples.toList()))
         assertNotEquals(a.digest(triples), b.digest(triples), "another digester has another salt")
         assertEquals(
-            GraphStateCache.GraphDigester(ByteArray(32) { 1 }).digest(triples),
-            GraphStateCache.GraphDigester(ByteArray(32) { 1 }).digest(triples),
+            GraphDigester(ByteArray(32) { 1 }).digest(triples),
+            GraphDigester(ByteArray(32) { 1 }).digest(triples),
             "the digest is a function of the salt and the content",
         )
         assertEquals(50, a.digest(triples).count)

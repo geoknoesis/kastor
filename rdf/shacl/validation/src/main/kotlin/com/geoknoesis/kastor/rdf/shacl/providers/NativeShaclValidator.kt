@@ -2189,14 +2189,6 @@ internal class NativeShaclValidator(
         return out
     }
 
-    private fun displayTerm(term: RdfTerm): String =
-        when (term) {
-            is Literal -> term.lexical
-            is Iri -> term.value
-            is BlankNode -> term.toString()
-            else -> term.toString()
-        }
-
     private fun reportPath(ps: CompiledPropertyShape, ctx: ValidationContext): ReportPath =
         ctx.reportPaths.getOrPut(ps.shapeNode) {
             ReportPath(pathToTerms(ps.path), ps.pathNode.takeIf { it is BlankNode }, ps.pathTriples, (ps.path as? ShaclPath.Predicate)?.iri)
@@ -2316,19 +2308,6 @@ internal class NativeShaclValidator(
         }
     }
 
-    /** BCP47-style prefix match (`en` ⊇ `en-NZ`), case-insensitive. Supports trailing `-*` wildcard ranges. */
-    private fun languageTagMatchesLanguageRange(valueLang: String, range: String): Boolean {
-        if (range == "*") return true
-        val v = valueLang.lowercase()
-        val r = range.lowercase()
-        if (v == r) return true
-        if (r.endsWith("-*")) {
-            val prefix = r.dropLast(2)
-            return prefix.isEmpty() || v == prefix || v.startsWith("$prefix-")
-        }
-        return v.startsWith("$r-")
-    }
-
     private fun violation(
         focus: RdfTerm,
         tpl: ResultTemplate,
@@ -2390,36 +2369,4 @@ internal class NativeShaclValidator(
             averageValidationTimePerResource = if (validatedFocusNodes == 0) Duration.ZERO else elapsed.dividedBy(validatedFocusNodes.toLong()),
         )
     }
-
-    private fun RdfResource.displayId(): String = when (this) {
-        is Iri -> value
-        is BlankNode -> toString()
-        else -> toString()
-    }
-
-    private fun pathToTerms(path: ShaclPath): List<RdfTerm>? =
-        when (path) {
-            is ShaclPath.Predicate -> listOf(path.iri)
-            is ShaclPath.Sequence -> path.segments.map { seg -> (seg as? ShaclPath.Predicate)?.iri ?: return null }
-            else -> null
-        }
-
-    private fun literalMatchesShaclDatatypes(term: RdfTerm, allowed: List<Iri>): Boolean =
-        when (term) {
-            is LangString -> term.datatype in allowed
-            is Literal -> term.datatype in allowed && literalLexicallyValid(term)
-            else -> false
-        }
-
-    private fun matchesNodeKind(term: RdfTerm, kind: Iri): Boolean =
-        when (kind) {
-            SHACL.IRI -> term is Iri
-            SHACL.BlankNode -> term is BlankNode
-            SHACL.Literal -> term is Literal
-            SHACL.BlankNodeOrIRI -> term is Iri || term is BlankNode
-            SHACL.BlankNodeOrLiteral -> term is BlankNode || term is Literal
-            SHACL.IRIOrLiteral -> term is Iri || term is Literal
-            SHACL.TripleTerm -> term is TripleTerm
-            else -> false
-        }
 }

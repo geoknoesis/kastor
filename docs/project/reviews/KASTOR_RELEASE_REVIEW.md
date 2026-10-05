@@ -1,6 +1,28 @@
 # Release-candidate review
 
-## Current status ? 4 October 2026
+## Current score - 5 October 2026: 82/100
+
+An independent sampled review of `main` at `6d4fe22` (the last commit before this note) scored **82/100**
+on the strict audit scale (the round-8 audit scored 79.7). The 9.4/10 figure further down is a **superseded
+historical self-assessment** and must not be quoted as the current state.
+
+| Dimension | Weight | Score |
+|---|---:|---:|
+| Correctness and data integrity | 25% | 80 |
+| Architecture and API consistency | 15% | 80 |
+| Performance and scalability | 15% | 80 |
+| Reliability and resource management | 15% | 80 |
+| Tests and verification | 15% | 86 |
+| Build and release engineering | 10% | 76 |
+| Documentation and usability | 5% | 84 |
+
+Open items that cap the score: `main` CI has failed intermittently on flaky concurrency tests (three failures in
+the twelve runs to 5 October); concurrency-heavy code (`GraphStateCache`, Jena queued steps) is the main
+defect source; `NativeShaclValidator` (about 2,300 lines) and several other files remain very large; evidence is
+mostly incremental Windows working-tree builds, with no clean cross-platform build of the latest fixes; the
+publication identity, signing and first release are deliberately undecided. The sections below are history.
+
+## Status at 4 October 2026 (superseded by the score above)
 
 The 3 October whole-repository audit revised the assessment to **9.0/10**, identifying six reproduced correctness defects: RDF4J blank-node identity collisions, lost SHACL conformance decisions during report merging, inaccessible Jena graphs after caught partial updates, CLI default/named-graph comparison collisions, floating-point bound comparisons, and invalid date timezone acceptance.
 
