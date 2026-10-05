@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
 import java.util.stream.Stream
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.DynamicContainer
 import org.junit.jupiter.api.DynamicNode
@@ -26,34 +27,45 @@ import org.junit.jupiter.api.TestFactory
  * [com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException] of exactly the listed category (never pass
  * silently, never be skipped). `sht:Failure` cases must fail with the category in [W3cExpectedFailures].
  *
+ * A missing manifest, a manifest without `sht:Validate` entries, or one without a single approved case would make
+ * this suite pass having run nothing: each is a **failing** test, unless the explicit opt-out
+ * `-Dshacl.w3c.allowMissingData=true` (Gradle: `-PshaclW3cAllowMissingData=true`) turns it into a skip, as
+ * `conformance.allowMissingData` does for the RDF 1.2 suites.
+ *
  * Tagged `w3c`: `./gradlew :rdf:shacl-validation:w3cConformanceTest` runs only this suite and fails (instead of
  * falling back to the bundled fixture) when the upstream checkout is missing.
  */
 @Tag("w3c")
 class Shacl12NativeConformanceTest {
 
+    internal companion object {
+        /** System property that turns a missing or empty suite into a skip instead of a failure. */
+        const val ALLOW_MISSING_DATA_PROPERTY = "shacl.w3c.allowMissingData"
+    }
+
     @TestFactory
-    fun `SHACL 1 2 core W3C manifests native`(): Stream<DynamicNode> {
-        val manifest = manifestRoot()
+    fun `SHACL 1 2 core W3C manifests native`(): Stream<DynamicNode> = suite(manifestRoot())
+
+    /** The tests of the suite at [manifest]; failing placeholders (or skipped ones, when opted out) for missing data. */
+    internal fun suite(
+        manifest: Path,
+        allowMissing: Boolean = System.getProperty(ALLOW_MISSING_DATA_PROPERTY) == "true",
+    ): Stream<DynamicNode> {
+        fun absent(name: String, reason: String) = absentSuite(name, reason, allowMissing)
         if (!Files.isRegularFile(manifest)) {
-            return Stream.of(
-                DynamicTest.dynamicTest("manifest missing") {
-                    Assumptions.assumeTrue(false, "SHACL W3C manifest not found at $manifest")
-                },
-            )
+            return absent("manifest missing", "SHACL W3C manifest not found at $manifest")
         }
 
         val cases = Shacl12ManifestParser.collect(manifest)
         if (System.getProperty("shacl.w3c.requireSuite") == "true") assertCompleteSuite(manifest, cases)
         if (cases.isEmpty()) {
-            return Stream.of(
-                DynamicTest.dynamicTest("no sht Validate entries") {
-                    Assumptions.assumeTrue(false, "no sht:Validate tests under $manifest")
-                },
-            )
+            return absent("no sht Validate entries", "no sht:Validate tests under $manifest")
         }
 
         val includeNonApproved = System.getProperty("shacl.w3c.includeNonApproved") == "true"
+        if (!includeNonApproved && cases.none { it.approved }) {
+            return absent("no approved entries", "none of the ${cases.size} sht:Validate tests under $manifest is approved")
+        }
 
         val containers: List<DynamicNode> =
             cases
@@ -77,6 +89,18 @@ class Shacl12NativeConformanceTest {
                 }
         return containers.stream()
     }
+
+    /** One failing test that explains the missing data, or one skipped test when [allowMissing] opts out. */
+    private fun absentSuite(name: String, reason: String, allowMissing: Boolean): Stream<DynamicNode> =
+        Stream.of(
+            DynamicTest.dynamicTest(name) {
+                if (allowMissing) {
+                    Assumptions.assumeTrue(false, reason)
+                } else {
+                    fail<Unit>("$reason; the suite would pass without running a case. Set -D$ALLOW_MISSING_DATA_PROPERTY=true to skip instead.")
+                }
+            },
+        )
 
     /**
      * With `shacl.w3c.requireSuite=true` the run must cover the full suite, including when `shacl.w3c.manifest`

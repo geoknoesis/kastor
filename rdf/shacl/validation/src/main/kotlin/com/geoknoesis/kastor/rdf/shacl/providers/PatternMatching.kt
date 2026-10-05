@@ -8,11 +8,27 @@ import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 /** Thrown out of a regex match whose per-evaluation budget ([ValidationConfig.patternTimeout]) is used up. */
 internal class PatternBudgetExceeded : RuntimeException(null, null, false, false)
 
+/** Stack size of the pattern evaluation thread of a run (see `matchPattern`). */
+internal const val PATTERN_WORKER_STACK_BYTES = 16L * 1024 * 1024
+
+/** Values at least this long (UTF-16 code units) are matched on the pattern evaluation thread. */
+internal const val PATTERN_INLINE_MAX_LENGTH = 1024
+
+/** After this many evaluations of a run have used up their whole step budget, the budget of further values shrinks. */
+internal const val PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS = 16
+
+/** The reduced step budget of a value is the full one divided by this, ... */
+internal const val PATTERN_DEGRADED_STEP_DIVISOR = 1024L
+
+/** ... but at least this many steps. */
+internal const val PATTERN_MIN_DEGRADED_STEPS = 1024L
+
 /**
- * The budget of one pattern evaluation: [limit] steps of the regular expression engine, and the instant
- * [deadlineNanos] of the wall-clock backstop.
+ * The budget of one pattern evaluation: [limit] steps of the regular expression engine, and a wall-clock backstop
+ * of [backstopNanos] nanoseconds from [startNanos] (an instant of the pattern clock). The elapsed time is compared,
+ * never an instant: instants of `System.nanoTime` may be negative and are only meaningful as differences.
  */
-internal class PatternBudget(val limit: Long, val deadlineNanos: Long) {
+internal class PatternBudget(val limit: Long, val startNanos: Long, val backstopNanos: Long) {
     var steps = 0L
 }
 
@@ -35,7 +51,7 @@ internal class DeadlineCharSequence(
         if ((steps and 1023L) == 0L) {
             if (steps >= evaluation.limit) throw PatternBudgetExceeded()
             budget.check("pattern matching")
-            if (clock() - evaluation.deadlineNanos >= 0) throw PatternBudgetExceeded()
+            if (clock() - evaluation.startNanos >= evaluation.backstopNanos) throw PatternBudgetExceeded()
         }
         return value[index]
     }

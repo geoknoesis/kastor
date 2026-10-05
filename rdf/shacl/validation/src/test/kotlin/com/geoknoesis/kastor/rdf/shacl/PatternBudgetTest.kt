@@ -188,7 +188,9 @@ class PatternBudgetTest {
         var consultations = 0L
         validator.budgetClock = { consultations++ }
         val error = assertThrows(ShaclValidationException::class.java) { validator.validate(graph("""ex:a a ex:T ; ex:p "$hostile" ."""), shapes) }
-        assertTrue(error.message.orEmpty().contains("timed out"), error.message)
+        // The run budget ended the match itself (phase "pattern matching"), not admission, preparation or a later phase.
+        assertTrue(error.message.orEmpty().contains("pattern matching timed out"), error.message)
+        assertEquals(1L, validator.patternEvaluations, "the run was aborted during the one evaluation of the hostile value")
     }
 
     @Test

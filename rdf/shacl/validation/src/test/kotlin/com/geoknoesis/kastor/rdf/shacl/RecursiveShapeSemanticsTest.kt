@@ -43,6 +43,12 @@ class RecursiveShapeSemanticsTest {
         }
     }
 
+    /**
+     * Only a hang (or a regression to quadratic behaviour) can reach this; slow, 2-core CI runners must not. The
+     * property under test is that no stack proportional to the data depth is used, which does not depend on time.
+     */
+    private val hangGuard: Duration = Duration.ofMinutes(10)
+
     private val personShape = """
         ex:PersonShape a sh:NodeShape ; TARGET ;
           sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -50,14 +56,14 @@ class RecursiveShapeSemanticsTest {
     """
 
     @Test fun `recursive sh node validates a 10000 node acyclic chain`() {
-        val report = assertTimeoutPreemptively<ValidationReport>(Duration.ofSeconds(60)) {
+        val report = assertTimeoutPreemptively<ValidationReport>(hangGuard) {
             validate(chain(10_000), personShape.replace("TARGET", "sh:targetNode ex:p0"))
         }
         assertTrue(report.isValid, report.violations.take(3).toString())
     }
 
     @Test fun `violation at the tail of a 10000 node chain is detected at the head`() {
-        val report = assertTimeoutPreemptively<ValidationReport>(Duration.ofSeconds(60)) {
+        val report = assertTimeoutPreemptively<ValidationReport>(hangGuard) {
             validate(chain(10_000, nameless = 9_999), personShape.replace("TARGET", "sh:targetNode ex:p0"))
         }
         assertFalse(report.isValid)
@@ -68,7 +74,7 @@ class RecursiveShapeSemanticsTest {
     }
 
     @Test fun `class targeted recursive shape reports every node of a failing 10000 node chain`() {
-        val report = assertTimeoutPreemptively<ValidationReport>(Duration.ofSeconds(60)) {
+        val report = assertTimeoutPreemptively<ValidationReport>(hangGuard) {
             validate(
                 chain(10_000, nameless = 9_999),
                 personShape.replace("TARGET", "sh:targetClass ex:Person"),

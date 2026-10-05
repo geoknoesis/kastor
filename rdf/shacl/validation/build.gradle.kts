@@ -20,6 +20,10 @@ tasks.withType<Test>().configureEach {
     listOf("shacl.w3c.useNative", "shacl.w3c.manifest").forEach { name ->
         providers.systemProperty(name).orNull?.let { systemProperty(name, it) }
     }
+    // Explicit opt-out: a missing or empty W3C suite fails the conformance test unless this is set.
+    val allowMissingW3c = providers.gradleProperty("shaclW3cAllowMissingData").orNull == "true"
+    systemProperty("shacl.w3c.allowMissingData", allowMissingW3c.toString())
+    inputs.property("shaclW3cAllowMissingData", allowMissingW3c)
     inputs.files(fileTree("test-data/w3c-shacl12"))
     providers.systemProperty("shacl.w3c.manifest").orNull?.let {
         inputs.files(fileTree(file(it).parentFile))

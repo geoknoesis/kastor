@@ -137,12 +137,6 @@ internal class NativeShaclValidator(
 
         /** The wall clock stops a pattern evaluation only at this multiple of [ValidationConfig.patternTimeout]. */
         const val PATTERN_WALL_CLOCK_FACTOR = 10L
-
-        /** Stack size of the pattern evaluation thread of a run (see [matchPattern]). */
-        const val PATTERN_WORKER_STACK_BYTES = 16L * 1024 * 1024
-
-        /** Values at least this long (UTF-16 code units) are matched on the pattern evaluation thread. */
-        const val PATTERN_INLINE_MAX_LENGTH = 1024
     }
 
     private val compileCache = NativeCompileCache()
@@ -161,47 +155,59 @@ internal class NativeShaclValidator(
      * Structural digests of recently validated shapes snapshots (finding: avoid re-sorting and re-hashing an
      * unchanged shapes graph on every run). The RdfGraph API exposes no modification counter, so entries are keyed
      * by the **content** of the merged triple snapshot: a hit requires element-wise equality with a stored copy
-     * (O(n) `equals`, no canonicalization/sort/SHA-256). Any mutation of the shapes graph changes the snapshot and
+     * (O(n) `equals`, no canonicalization/sort/SHA-256, outside the memo lock). Any mutation of the shapes graph changes the snapshot and
      * therefore misses — a stale digest can never be reused. Snapshots whose triple order differs simply miss. There is
      * deliberately no identity fast path (same graph object): without a modification stamp in the RdfGraph API it
      * could return the digest of a graph mutated since.
      * Bounded to [DIGEST_MEMO_CAPACITY] entries (each retains a copy of the triple list, not the graph) and emptied
      * by [clearCache].
      */
-    private val digestMemo = object : LinkedHashMap<List<RdfTriple>, String>(8, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<List<RdfTriple>, String>?): Boolean = size > DIGEST_MEMO_CAPACITY
+    private class DigestMemoEntry(val triples: List<RdfTriple>, val digest: String)
+
+    private val digestMemo = object : LinkedHashMap<Int, DigestMemoEntry>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, DigestMemoEntry>?): Boolean = size > DIGEST_MEMO_CAPACITY
     }
-    @Volatile internal var digestMemoHits = 0L
-        private set
+
+    /** Counters and test seams (see [ShaclInstrumentation]); a run adds its counts when it ends. */
+    internal val instrumentation = ShaclInstrumentation()
+
+    internal val digestMemoHits: Long get() = instrumentation.digestMemoHits.sum()
 
     /** Test instrumentation: node and property shape evaluations performed by this validator. */
-    @Volatile internal var shapeEvaluations = 0L
+    internal val shapeEvaluations: Long get() = instrumentation.shapeEvaluations.sum()
 
     /** Test instrumentation: restarts of the recursion solver caused by a read its recording had not registered. */
-    @Volatile internal var solverRestarts = 0L
-
-    /**
-     * Test seam simulating an incomplete dependency recording: a recursive read of (node, shape) for which this
-     * returns true is answered by the recording pass but not registered. Never set in production code.
-     */
-    @Volatile internal var dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = null
-
-    /**
-     * Test seam: the clock of the wall-clock backstop of the per-pattern budget ([ValidationConfig.patternTimeout]),
-     * a `System.nanoTime`-like source. Tests inject a deterministic clock so that they do not depend on wall-clock
-     * time. Never set in production code.
-     */
-    @Volatile internal var patternClock: () -> Long = System::nanoTime
-
-    /**
-     * Test seam: the clock of the run budget ([ValidationConfig.timeout]). A test that injects a clock which advances
-     * by one each time it is consulted turns the timeout into a bound on the work of a run (the engine consults the
-     * budget in every loop), independent of the machine. Never set in production code.
-     */
-    @Volatile internal var budgetClock: () -> Long = System::nanoTime
+    internal val solverRestarts: Long get() = instrumentation.solverRestarts.sum()
 
     /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
-    @Volatile internal var patternEvaluations = 0L
+    internal val patternEvaluations: Long get() = instrumentation.patternEvaluations.sum()
+
+    /** Test instrumentation: regular expression engine steps used by `sh:pattern` evaluations. */
+    internal val patternSteps: Long get() = instrumentation.patternSteps.sum()
+
+    /** Test instrumentation: `sh:pattern` evaluations run on the pattern evaluation thread. */
+    internal val patternWorkerEvaluations: Long get() = instrumentation.patternWorkerEvaluations.sum()
+
+    /** Test instrumentation: failing or undefined recursive focus nodes whose results came from a recorded solver evaluation. */
+    internal val recordedReports: Long get() = instrumentation.recordedReports.sum()
+
+    /** Test instrumentation: failing or undefined recursive focus nodes that needed a separate report evaluation. */
+    internal val separateReportEvaluations: Long get() = instrumentation.separateReportEvaluations.sum()
+
+    /** Test seam: see [ShaclInstrumentation.dropRecordedRead]. Never set in production code. */
+    internal var dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)?
+        get() = instrumentation.dropRecordedRead
+        set(value) { instrumentation.dropRecordedRead = value }
+
+    /** Test seam: the clock of the wall-clock backstop of the per-pattern budget. Never set in production code. */
+    internal var patternClock: () -> Long
+        get() = instrumentation.patternClock
+        set(value) { instrumentation.patternClock = value }
+
+    /** Test seam: the clock of the run budget ([ValidationConfig.timeout]). Never set in production code. */
+    internal var budgetClock: () -> Long
+        get() = instrumentation.budgetClock
+        set(value) { instrumentation.budgetClock = value }
 
     /**
      * Bound on what the recorded evaluations of recursive focus nodes may retain at any time (results, solver reads
@@ -209,33 +215,39 @@ internal class NativeShaclValidator(
      * nodes are not recorded: their results come from a separate report evaluation, as they did before recordings
      * existed. Test seam: `0` disables recording altogether.
      */
-    @Volatile internal var reportRecordingCapacity: Long = 200_000L
-
-    /** Test instrumentation: failing or undefined recursive focus nodes whose results came from a recorded solver evaluation. */
-    @Volatile internal var recordedReports = 0L
-
-    /** Test instrumentation: failing or undefined recursive focus nodes that needed a separate report evaluation. */
-    @Volatile internal var separateReportEvaluations = 0L
-
-    /** Test instrumentation: `sh:pattern` evaluations run on the pattern evaluation thread. */
-    @Volatile internal var patternWorkerEvaluations = 0L
+    internal var reportRecordingCapacity: Long
+        get() = instrumentation.reportRecordingCapacity
+        set(value) { instrumentation.reportRecordingCapacity = value }
 
     /** Test seam: stack size of the pattern evaluation thread. Never set in production code. */
-    @Volatile internal var patternWorkerStackBytes: Long = PATTERN_WORKER_STACK_BYTES
+    internal var patternWorkerStackBytes: Long
+        get() = instrumentation.patternWorkerStackBytes
+        set(value) { instrumentation.patternWorkerStackBytes = value }
+
+    /** Test seam: values shorter than this are first matched on the validating thread. Never set in production code. */
+    internal var patternInlineMaxLength: Int
+        get() = instrumentation.patternInlineMaxLength
+        set(value) { instrumentation.patternInlineMaxLength = value }
 
     /**
-     * Test seam: values shorter than this are first matched on the validating thread. Never set in production code.
+     * The snapshot is hashed and compared **outside** the memo lock (both are O(n)), so concurrent runs are not
+     * serialised by them: the lock only guards the map operations. Entries are keyed by the snapshot's hash; the
+     * stored copy is immutable, so comparing it needs no lock either.
      */
-    @Volatile internal var patternInlineMaxLength: Int = PATTERN_INLINE_MAX_LENGTH
-
-    private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
-        synchronized(digestMemo) {
-            digestMemo[triples]?.let { digestMemoHits++; return it }
+    internal fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
+        val hash = triples.hashCode()
+        val candidate = synchronized(digestMemo) { digestMemo[hash] }
+        if (candidate != null && candidate.triples == triples) {
+            synchronized(digestMemo) { digestMemo[hash] } // refreshes the entry's recency
+            instrumentation.digestMemoHits.increment()
+            return candidate.digest
         }
         val digest = ShapesStructuralDigest.digest(triples, config, budget)
-        synchronized(digestMemo) { digestMemo[ArrayList(triples)] = digest }
+        val entry = DigestMemoEntry(ArrayList(triples), digest)
+        synchronized(digestMemo) { digestMemo[hash] = entry }
         return digest
     }
+
     override val cacheStatistics get() = compileCache.statistics()
 
     /** Clears the compiled shapes cache and the shapes digest memo (releasing the retained triple snapshots). */
@@ -268,10 +280,21 @@ internal class NativeShaclValidator(
         val budget: ValidationBudget,
         private val repositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository,
         private val sparqlInPlace: SparqlQueryable?,
-        /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
-        private val patternClock: () -> Long,
-        private val patternWorkerStackBytes: Long,
+        private val instrumentation: ShaclInstrumentation,
     ) : AutoCloseable {
+        /** The counts of this run, added to [instrumentation] when the run ends. */
+        val counters = RunCounters()
+        // The seams are read once per run: the hot path reads no shared field.
+        /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
+        private val patternClock: () -> Long = instrumentation.patternClock
+        private val patternWorkerStackBytes: Long = instrumentation.patternWorkerStackBytes
+        val patternInlineMaxLength: Int = instrumentation.patternInlineMaxLength
+        val dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = instrumentation.dropRecordedRead
+        /**
+         * Pattern evaluations of this run that used up their whole step budget. Past [PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS]
+         * of them, a value that has not been matched before gets a reduced budget (see [matchPattern]).
+         */
+        var patternBudgetExhaustions = 0
         val memo = HashMap<AtomKey, Conformance>()
         /**
          * Why a conformance question was last answered "undefined", when an undecided pattern is (one of) the
@@ -326,18 +349,19 @@ internal class NativeShaclValidator(
         }
         fun select(query: String, bindings: Map<String, RdfTerm>) =
             session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
-        /** [value] for one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
-        fun text(value: String, steps: Long, backstopNanos: Long): CharSequence {
-            val now = patternClock()
-            // Saturating: a huge budget must not overflow into the past.
-            val deadline = if (backstopNanos >= Long.MAX_VALUE - now) Long.MAX_VALUE else now + backstopNanos
-            return DeadlineCharSequence(value, budget, patternClock, PatternBudget(steps, deadline))
-        }
+        /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
+        fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
+        /** [value] for the pattern evaluation [evaluation]. */
+        fun text(value: String, evaluation: PatternBudget): CharSequence = DeadlineCharSequence(value, budget, patternClock, evaluation)
         override fun close() {
             try {
                 patternWorker?.close()
             } finally {
-                if (session.isInitialized()) session.value.close()
+                try {
+                    if (session.isInitialized()) session.value.close()
+                } finally {
+                    instrumentation.absorb(counters)
+                }
             }
         }
     }
@@ -355,8 +379,28 @@ internal class NativeShaclValidator(
         datasetForDiscovery: Dataset?,
         focusOnly: RdfResource? = null,
         sparqlInPlace: SparqlQueryable? = null,
+    ): ValidationReport =
+        try {
+            runValidationUnguarded(graph, shapes, datasetForDiscovery, focusOnly, sparqlInPlace)
+        } catch (e: StackOverflowError) {
+            // Shape nesting (up to ValidationConfig.maxRecursionDepth) recurses on the validating thread: a large
+            // limit can exceed its stack. The stack is unwound to here, so the failure is an ordinary one.
+            throw ShaclValidationException(
+                "SHACL validation exhausted the stack of the validating thread; shape nesting of up to " +
+                    "ValidationConfig.maxRecursionDepth=${config.maxRecursionDepth} needs more stack than is available " +
+                    "(lower maxRecursionDepth or validate on a thread with a larger stack)",
+                e,
+            )
+        }
+
+    private fun runValidationUnguarded(
+        graph: RdfGraph,
+        shapes: RdfGraph,
+        datasetForDiscovery: Dataset?,
+        focusOnly: RdfResource?,
+        sparqlInPlace: SparqlQueryable?,
     ): ValidationReport {
-        val budget = ValidationBudget(config.timeout, budgetClock)
+        val budget = ValidationBudget(config.timeout, instrumentation.budgetClock)
         budget.check("admission")
         val start = System.nanoTime()
         val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
@@ -388,7 +432,7 @@ internal class NativeShaclValidator(
             compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
         } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
         val dataIndex = DataGraphIndex(graph, budget, config.maxPathValueNodes)
-        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, patternClock, patternWorkerStackBytes).use { ctx ->
+        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, instrumentation).use { ctx ->
             ctx.checkDeadline()
             val targetWarnings = checkBlankNodeTargets(compiled, dataIndex)
 
@@ -418,9 +462,10 @@ internal class NativeShaclValidator(
                 compiled.referencedNodeShapes[shape.shapeNode] === shape && shape.shapeNode !in compiled.referencedPropertyShapes
             // The focus nodes of the recursive shapes are computed before anything is validated, so that the solver
             // knows which of its questions will be reported, whichever shape's validation asks them first.
-            ctx.recordingCapacity = reportRecordingCapacity
+            val recordingCapacity = instrumentation.reportRecordingCapacity
+            ctx.recordingCapacity = recordingCapacity
             val targetsOfRecursiveShapes = java.util.IdentityHashMap<CompiledNodeShape, Pair<List<RdfTerm>, List<ValidationViolation>>>()
-            if (reportRecordingCapacity > 0) {
+            if (recordingCapacity > 0) {
                 for (shape in compiled.orderedNodeShapes) {
                     if (shape.deactivated || !answeredBySolver(shape)) continue
                     ctx.checkDeadline()
@@ -472,12 +517,12 @@ internal class NativeShaclValidator(
                             ctx.keepRecording(key, null)
                             val results = recordedResults(recording, ctx)
                             if (results != null) {
-                                recordedReports++
+                                ctx.counters.recordedReports++
                                 record(results)
                                 continue
                             }
                         }
-                        separateReportEvaluations++
+                        ctx.counters.separateReportEvaluations++
                     }
                     val sink = Sink(Mode.REPORT)
                     validateNodeShape(focus, shape, ctx, DepthState(0, Mode.REPORT), sink)
@@ -702,7 +747,8 @@ internal class NativeShaclValidator(
      * operator (recorded as the polarity of a recursive dependency).
      */
     private fun conformance(value: RdfTerm, ref: RdfResource, ctx: ValidationContext, state: DepthState, negative: Boolean = false): Conformance {
-        ctx.checkDeadline()
+        // Amortised: the shape evaluations this question leads to consult the budget themselves.
+        ctx.budget.tick()
         val compiled = ctx.compiled
         val propertyShape = compiled.referencedPropertyShapes[ref]
         val nodeShape = if (propertyShape == null) compiled.referencedNodeShapes[ref] else null
@@ -714,7 +760,7 @@ internal class NativeShaclValidator(
         if (component != null) {
             val active = ctx.solver
             if (active != null && active.component == component) {
-                val answer = readInSolver(active, key, value, ref, negative)
+                val answer = readInSolver(active, ctx, key, value, ref, negative)
                 ctx.recordingSink?.reads?.add(SolverRead(value, ref, answer))
                 return answer
             }
@@ -878,9 +924,9 @@ internal class NativeShaclValidator(
         return !byRecursion(current.first, current.second) && byRecursion(node, shape)
     }
 
-    private fun readInSolver(solver: RecursionSolver, key: AtomKey, value: RdfTerm, ref: RdfResource, negative: Boolean): Conformance {
+    private fun readInSolver(solver: RecursionSolver, ctx: ValidationContext, key: AtomKey, value: RdfTerm, ref: RdfResource, negative: Boolean): Conformance {
         solver.recording?.let { reads ->
-            if (dropRecordedRead?.invoke(value, ref) != true) reads.add(Dependency(key, value, ref, negative))
+            if (ctx.dropRecordedRead?.invoke(value, ref) != true) reads.add(Dependency(key, value, ref, negative))
             return Conformance.CONFORMS
         }
         val atom = solver.atoms[key]
@@ -923,7 +969,7 @@ internal class NativeShaclValidator(
                     )
                 }
                 // The recorded dependency graph was incomplete: record every question again and re-evaluate.
-                solverRestarts++
+                ctx.counters.solverRestarts++
                 solver.restart = false
                 solver.discovered = 0
                 for (atom in solver.atoms.values) {
@@ -1261,7 +1307,7 @@ internal class NativeShaclValidator(
     ) {
         ctx.checkDeadline()
         if (shape.deactivated) return
-        shapeEvaluations++
+        ctx.counters.shapeEvaluations++
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
 
         for (nr in shape.nodeRefs) {
@@ -1301,7 +1347,7 @@ internal class NativeShaclValidator(
         }
 
         if (config.validateClosedShapes && shape.closed != ClosedMode.NONE && focus is RdfResource) {
-            sink.failAll(validateClosed(focus, shape, tpl, ctx))
+            sink.failAll(validateClosed(focus, shape, tpl, ctx, firstOnly = !sink.reports))
         }
     }
 
@@ -1391,7 +1437,14 @@ internal class NativeShaclValidator(
             Conformance.UNDEFINED -> Conformance.UNDEFINED
         }
 
-    private fun validateClosed(focus: RdfResource, shape: CompiledNodeShape, tpl: ResultTemplate, ctx: ValidationContext): List<ValidationViolation> {
+    /** The results of a closed shape; with [firstOnly] (the answer is all that is needed) only the first one. */
+    private fun validateClosed(
+        focus: RdfResource,
+        shape: CompiledNodeShape,
+        tpl: ResultTemplate,
+        ctx: ValidationContext,
+        firstOnly: Boolean,
+    ): List<ValidationViolation> {
         val allowed = mutableSetOf<Iri>()
         allowed.addAll(shape.ignoredProperties)
         if (shape.closed == ClosedMode.BY_TYPES || RDF.type in shape.ignoredProperties) {
@@ -1412,6 +1465,7 @@ internal class NativeShaclValidator(
                 violations.add(
                     violation(focus, tpl, constraintStub(ConstraintType.CLOSED, p), "Closed shape disallows predicate $p", value = o, path = path),
                 )
+                if (firstOnly) return violations
             }
         }
         return violations
@@ -1549,6 +1603,14 @@ internal class NativeShaclValidator(
             }
         }
 
+        /** Visits the value nodes, stopping at the first definite failure of a [Mode.CONFORMS] evaluation. */
+        fun eachValue(action: (RdfTerm) -> Unit) {
+            for (v in values) {
+                if (sink.stop) return
+                action(v)
+            }
+        }
+
         fun fingerprints(terms: List<RdfTerm>): Set<String> = terms.mapTo(HashSet()) { shaclRdfTermFingerprint(it) }
 
         when (c) {
@@ -1558,7 +1620,7 @@ internal class NativeShaclValidator(
             is PropertyConstraint.MaxCount ->
                 if (values.size > c.n) add(ConstraintType.MAX_COUNT, "Maximum cardinality ${c.n} allowed, found ${values.size}", params = mapOf("max" to c.n, "actual" to values.size))
             is PropertyConstraint.Datatype ->
-                values.forEach { v ->
+                eachValue { v ->
                     if (!literalMatchesShaclDatatypes(v, c.allowed)) {
                         add(
                             ConstraintType.DATATYPE,
@@ -1571,21 +1633,21 @@ internal class NativeShaclValidator(
                     }
                 }
             is PropertyConstraint.Class ->
-                values.forEach { v ->
+                eachValue { v ->
                     val ok = v is RdfResource && data.typesOf(v).any { t -> c.iri in data.superclassCone(t) }
                     if (!ok) add(ConstraintType.CLASS, "Expected rdf:type (subclass of) ${c.iri.value} for value $v", v)
                 }
             is PropertyConstraint.ClassAnyOf ->
-                values.forEach { v ->
+                eachValue { v ->
                     val ok = v is RdfResource && c.options.any { req -> data.typesOf(v).any { t -> req in data.superclassCone(t) } }
                     if (!ok) add(ConstraintType.CLASS, "Expected rdf:type matching one of ${c.options.joinToString { it.value }} for value $v", v)
                 }
             is PropertyConstraint.NodeKind ->
-                values.forEach { v ->
+                eachValue { v ->
                     if (!c.kinds.any { matchesNodeKind(v, it) }) add(ConstraintType.NODE_KIND, "Node kind ${c.kinds.joinToString { it.value }} required for $v", v)
                 }
             is PropertyConstraint.Pattern ->
-                values.forEach { v ->
+                eachValue { v ->
                     val lex = literalLexicalString(v)
                     val outcome = if (lex == null) PatternOutcome.NO_MATCH else matchPattern(c, lex, currentShape, ctx)
                     when {
@@ -1594,23 +1656,23 @@ internal class NativeShaclValidator(
                     }
                 }
             is PropertyConstraint.MinLength ->
-                values.forEach { v ->
+                eachValue { v ->
                     val lex = literalLexicalString(v)
                     if (lex == null || lex.codePointCount(0, lex.length) < c.n) add(ConstraintType.MIN_LENGTH, "minLength ${c.n} violated for $v", v)
                 }
             is PropertyConstraint.MaxLength ->
-                values.forEach { v ->
+                eachValue { v ->
                     val lex = literalLexicalString(v)
                     if (lex == null || lex.codePointCount(0, lex.length) > c.n) add(ConstraintType.MAX_LENGTH, "maxLength ${c.n} violated for $v", v)
                 }
             is PropertyConstraint.In ->
-                values.forEach { v ->
+                eachValue { v ->
                     if (!c.allowed.any { shaclRdfTermEquals(it, v) }) add(ConstraintType.IN, "Value $v not in sh:in", v)
                 }
             is PropertyConstraint.HasValue ->
                 if (values.none { shaclRdfTermEquals(it, c.value) }) add(ConstraintType.HAS_VALUE, "sh:hasValue missing ${c.value}")
             is PropertyConstraint.LanguageIn ->
-                values.forEach { v ->
+                eachValue { v ->
                     val lang = (v as? LangString)?.lang?.takeIf { it.isNotEmpty() }
                     val ok = lang != null && c.langs.any { allowed -> languageTagMatchesLanguageRange(lang, allowed) }
                     if (!ok) add(ConstraintType.LANGUAGE_IN, "languageIn violated for $v", v)
@@ -1645,13 +1707,13 @@ internal class NativeShaclValidator(
                     if (sink.stop) break
                 }
             is PropertyConstraint.MinInclusive ->
-                values.forEach { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
+                eachValue { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
             is PropertyConstraint.MaxInclusive ->
-                values.forEach { v -> if (!satisfiesMaxInclusive(v, c.bound)) add(ConstraintType.MAX_INCLUSIVE, "maxInclusive violated for $v vs bound ${c.bound}", v) }
+                eachValue { v -> if (!satisfiesMaxInclusive(v, c.bound)) add(ConstraintType.MAX_INCLUSIVE, "maxInclusive violated for $v vs bound ${c.bound}", v) }
             is PropertyConstraint.MinExclusive ->
-                values.forEach { v -> if (!satisfiesMinExclusive(v, c.bound)) add(ConstraintType.MIN_EXCLUSIVE, "minExclusive violated for $v vs bound ${c.bound}", v) }
+                eachValue { v -> if (!satisfiesMinExclusive(v, c.bound)) add(ConstraintType.MIN_EXCLUSIVE, "minExclusive violated for $v vs bound ${c.bound}", v) }
             is PropertyConstraint.MaxExclusive ->
-                values.forEach { v -> if (!satisfiesMaxExclusive(v, c.bound)) add(ConstraintType.MAX_EXCLUSIVE, "maxExclusive violated for $v vs bound ${c.bound}", v) }
+                eachValue { v -> if (!satisfiesMaxExclusive(v, c.bound)) add(ConstraintType.MAX_EXCLUSIVE, "maxExclusive violated for $v vs bound ${c.bound}", v) }
             is PropertyConstraint.Qualified -> {
                 // SHACL §4.7.3: with sh:qualifiedValueShapesDisjoint, values conforming to a sibling shape don't count.
                 // The count lies in [definite, possible]; only an outcome that depends on undefined answers is undefined.
@@ -1703,17 +1765,17 @@ internal class NativeShaclValidator(
                 }
             }
             is PropertyConstraint.MinListLength ->
-                values.forEach { v ->
+                eachValue { v ->
                     val members = data.expandDataList(v)
                     if (members == null || members.size < c.n) add(ConstraintType.MIN_LIST_LENGTH, "sh:minListLength requires at least ${c.n} list members", v)
                 }
             is PropertyConstraint.MaxListLength ->
-                values.forEach { v ->
+                eachValue { v ->
                     val members = data.expandDataList(v)
                     if (members == null || members.size > c.n) add(ConstraintType.MAX_LIST_LENGTH, "sh:maxListLength allows at most ${c.n} list members", v)
                 }
             is PropertyConstraint.MemberShape ->
-                values.forEach { v ->
+                eachValue { v ->
                     val members = data.expandDataList(v)
                     if (members == null) {
                         add(ConstraintType.MEMBER_SHAPE, "Value is not a valid SHACL RDF list", v)
@@ -1737,7 +1799,7 @@ internal class NativeShaclValidator(
                 }
             is PropertyConstraint.UniqueMembers ->
                 if (c.enabled) {
-                    values.forEach { v ->
+                    eachValue { v ->
                         val members = data.expandDataList(v)
                         if (members == null) {
                             add(ConstraintType.UNIQUE_MEMBERS, "Value is not a valid SHACL RDF list", v)
@@ -1748,13 +1810,13 @@ internal class NativeShaclValidator(
                 }
             is PropertyConstraint.SubsetOfPath -> {
                 val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
-                values.forEach { v ->
+                eachValue { v ->
                     if (shaclRdfTermFingerprint(v) !in otherKeys) add(ConstraintType.SUBSET_OF, "sh:subsetOf violated: value not reachable via referenced path", v)
                 }
             }
             is PropertyConstraint.SingleLine ->
                 if (c.enabled) {
-                    values.forEach { v ->
+                    eachValue { v ->
                         val lex = literalLexicalString(v)
                         if (lex != null && singleLineBreakRegex.containsMatchIn(lex)) add(ConstraintType.SINGLE_LINE, "sh:singleLine violated", v)
                     }
@@ -1779,7 +1841,7 @@ internal class NativeShaclValidator(
                 }
             }
             is PropertyConstraint.RootClass ->
-                values.forEach { v ->
+                eachValue { v ->
                     val cls = v as? Iri
                     if (cls == null) {
                         add(ConstraintType.ROOT_CLASS, "sh:rootClass expects an IRI class value", v)
@@ -1788,7 +1850,7 @@ internal class NativeShaclValidator(
                     }
                 }
             is PropertyConstraint.Shape ->
-                values.forEach { v ->
+                eachValue { v ->
                     when (conformance(v, c.nestedShape, ctx, state)) {
                         Conformance.FAILS -> add(ConstraintType.SHAPE, "sh:shape constraint failed for ${c.nestedShape.displayId()}", v)
                         Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SHAPE, v, v, c.nestedShape)
@@ -1796,7 +1858,7 @@ internal class NativeShaclValidator(
                     }
                 }
             is PropertyConstraint.Node ->
-                values.forEach { v ->
+                eachValue { v ->
                     when (conformance(v, c.nestedShape, ctx, state)) {
                         Conformance.FAILS -> add(ConstraintType.NODE, "sh:node constraint failed for ${c.nestedShape.displayId()}", v)
                         Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE, v, v, c.nestedShape)
@@ -1804,7 +1866,7 @@ internal class NativeShaclValidator(
                     }
                 }
             is PropertyConstraint.NodeByExpression ->
-                values.forEach { v ->
+                eachValue { v ->
                     when (conformance(v, c.nestedShape, ctx, state)) {
                         Conformance.FAILS ->
                             add(ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${c.nestedShape.displayId()}", v, sourceConstraint = c.nestedShape)
@@ -1812,7 +1874,7 @@ internal class NativeShaclValidator(
                         Conformance.CONFORMS -> Unit
                     }
                 }
-            is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path))
+            is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path, firstOnly = !sink.reports))
             is PropertyConstraint.ReifierShape,
             is PropertyConstraint.ReificationRequired,
             -> Unit
@@ -1847,16 +1909,29 @@ internal class NativeShaclValidator(
      * run-wide [ValidationConfig.timeout] is still enforced during the match and aborts the run.
      *
      * An undecided answer is remembered for the run, so the same value is matched (and the budget spent) once.
+     *
+     * **Run-wide cap.** The budget above is per value, so N distinct hostile values would cost N budgets. After
+     * [PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS] evaluations of a run have used up their whole budget, every value that has
+     * not been matched yet gets 1/[PATTERN_DEGRADED_STEP_DIVISOR] of it (at least [PATTERN_MIN_DEGRADED_STEPS] steps): an
+     * ordinary value is still decided, a hostile one is undecided at a small, bounded cost. Data without hostile
+     * values never reaches the cap, so it is evaluated as before. The outcome depends on the order of evaluation,
+     * which for a given shapes graph and data graph is fixed.
      */
     private fun matchPattern(c: PropertyConstraint.Pattern, lexical: String, shape: RdfResource, ctx: ValidationContext): PatternOutcome {
         if (ctx.patternOutcomes.isNotEmpty()) ctx.patternOutcomes[c to lexical]?.let { return it }
-        patternEvaluations++
-        var result = if (lexical.length < patternInlineMaxLength) runPattern(c, lexical, ctx) else null
+        ctx.counters.patternEvaluations++
+        // Run-wide cap: once PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS evaluations used up their whole budget, a value not
+        // matched before only gets a small fraction of it, so many distinct hostile values cost a bounded total.
+        val steps =
+            if (ctx.patternBudgetExhaustions < PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS) patternStepBudget
+            else (patternStepBudget / PATTERN_DEGRADED_STEP_DIVISOR).coerceAtLeast(PATTERN_MIN_DEGRADED_STEPS).coerceAtMost(patternStepBudget)
+        var result = if (lexical.length < ctx.patternInlineMaxLength) runPattern(c, lexical, ctx, steps) else null
         val onWorker = result == null || result == PatternRun.OUT_OF_STACK
         if (onWorker) {
-            patternWorkerEvaluations++
-            result = ctx.patternWorker().run { runPattern(c, lexical, ctx) }
+            ctx.counters.patternWorkerEvaluations++
+            result = ctx.patternWorker().run { runPattern(c, lexical, ctx, steps) }
         }
+        if (result == PatternRun.OUT_OF_BUDGET) ctx.patternBudgetExhaustions++
         val outcome =
             when (result) {
                 PatternRun.MATCH -> PatternOutcome.MATCH
@@ -1867,7 +1942,8 @@ internal class NativeShaclValidator(
                         ValidationViolation.PATTERN_TIMEOUT_CODE,
                         "${describe(c, shape)} used up its evaluation budget (ValidationConfig.patternTimeout = " +
                             "${config.patternTimeout}: $patternStepBudget regular expression engine steps, or " +
-                            "$PATTERN_WALL_CLOCK_FACTOR times that duration) on a value of ${lexical.length} characters, so " +
+                            "$PATTERN_WALL_CLOCK_FACTOR times that duration; $steps steps once ${PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS} " +
+                            "evaluations of the run have used up the whole budget) on a value of ${lexical.length} characters, so " +
                             "whether the value matches is unknown and it is not accepted; the pattern probably backtracks " +
                             "catastrophically (nested or overlapping quantifiers)",
                     ),
@@ -1893,14 +1969,18 @@ internal class NativeShaclValidator(
      * Matches [c] against [lexical] on the current thread. A stack overflow is caught here: the stack is unwound up
      * to this frame, so it is safe to go on; only the match is abandoned.
      */
-    private fun runPattern(c: PropertyConstraint.Pattern, lexical: String, ctx: ValidationContext): PatternRun =
+    private fun runPattern(c: PropertyConstraint.Pattern, lexical: String, ctx: ValidationContext, steps: Long): PatternRun {
+        val evaluation = ctx.patternBudget(steps, patternBackstopNanos)
         try {
-            if (c.regex.containsMatchIn(ctx.text(lexical, patternStepBudget, patternBackstopNanos))) PatternRun.MATCH else PatternRun.NO_MATCH
+            return if (c.regex.containsMatchIn(ctx.text(lexical, evaluation))) PatternRun.MATCH else PatternRun.NO_MATCH
         } catch (e: PatternBudgetExceeded) {
-            PatternRun.OUT_OF_BUDGET
+            return PatternRun.OUT_OF_BUDGET
         } catch (e: StackOverflowError) {
-            PatternRun.OUT_OF_STACK
+            return PatternRun.OUT_OF_STACK
+        } finally {
+            ctx.counters.patternSteps += evaluation.steps
         }
+    }
 
     private fun describe(c: PropertyConstraint.Pattern, shape: RdfResource): String {
         val flags = c.flags?.let { " (sh:flags \"$it\")" }.orEmpty()
@@ -1920,6 +2000,7 @@ internal class NativeShaclValidator(
         ctx: ValidationContext,
         currentShape: RdfResource,
         path: ShaclPath?,
+        firstOnly: Boolean,
     ): List<ValidationViolation> {
         val preBound = LinkedHashMap<String, RdfTerm>()
         preBound["this"] = focus
@@ -1932,6 +2013,8 @@ internal class NativeShaclValidator(
             if (failure != null && isLexicallyTrue(failure)) {
                 throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
             }
+            // When only the answer is needed, later solutions are still scanned for ?failure but not built into results.
+            if (firstOnly && out.isNotEmpty()) continue
             val value = row.get("value") ?: if (path == null) focus else null
             val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
             fun substitute(lit: Literal): Literal {
@@ -1975,7 +2058,7 @@ internal class NativeShaclValidator(
         sink: Sink,
     ) {
         if (ps.deactivated) return
-        shapeEvaluations++
+        ctx.counters.shapeEvaluations++
         // Value nodes are a set (SHACL §2.3.2); the path evaluator returns distinct nodes.
         val values = PathEvaluator.evaluate(focus, ps.path, ctx.data)
         val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
