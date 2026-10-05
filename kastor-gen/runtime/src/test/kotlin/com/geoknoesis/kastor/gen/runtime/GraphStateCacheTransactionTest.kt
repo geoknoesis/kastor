@@ -283,4 +283,33 @@ class GraphStateCacheTransactionTest {
             f.cache.close()
         }
     }
+
+    @Test
+    fun `a transaction-private predicate that throws keeps the cached state and is treated as private`() {
+        val failing = java.util.concurrent.atomic.AtomicBoolean()
+        val released = Collections.synchronizedList(ArrayList<State>())
+        val cache = GraphStateCache<State>(
+            maxEntries = 4,
+            exclusive = true,
+            load = { triples, _ -> State(triples.toSet()) },
+            release = { state -> state.released = true; released += state },
+            owner = "TestCache",
+            settings = GraphStateCache.Settings(
+                transactionPrivate = { if (failing.get()) throw IllegalStateException("predicate failed") else false },
+            ),
+        )
+        val repo = FakeRepository()
+        repo.set("g", listOf(triple(1)))
+        val cached = cache.use(repo.graph("g", false)) { it }
+        failing.set(true)
+        // The predicate, not the store, failed: the call is served (privately) and the cached state is not discarded.
+        val content = cache.use(repo.graph("g", false)) { it.triples }
+        assertEquals(setOf(triple(1)), content)
+        assertTrue(!cached.released, "a failing predicate says nothing about the store")
+        assertEquals(1, cache.size)
+        failing.set(false)
+        val again = cache.use(repo.graph("g", false)) { it }
+        assertTrue(again === cached, "the cached state is still the one served")
+        cache.close()
+    }
 }

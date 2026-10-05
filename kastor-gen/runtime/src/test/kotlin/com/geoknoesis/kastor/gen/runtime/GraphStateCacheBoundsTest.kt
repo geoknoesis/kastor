@@ -321,6 +321,118 @@ class GraphStateCacheBoundsTest {
         f.cache.close()
     }
 
+    /** Counts the states that exist (loaded and not yet released) and the most that existed at once. */
+    private class LiveStates(max: Int, settings: GraphStateCache.Settings, val onRelease: (State) -> Unit = {}) {
+        val live = AtomicInteger()
+        val peak = AtomicInteger()
+        val cache = GraphStateCache<State>(
+            maxEntries = max,
+            exclusive = true,
+            load = { triples, _ ->
+                val now = live.incrementAndGet()
+                peak.accumulateAndGet(now) { a, b -> maxOf(a, b) }
+                State(triples.toSet())
+            },
+            release = { state ->
+                onRelease(state)
+                state.released = true
+                live.decrementAndGet()
+            },
+            owner = "TestCache",
+            settings = settings,
+        )
+    }
+
+    @Test
+    fun `a strict limit holds while a temporary state is released and its slot is awaited`() {
+        // Every entry and every temporary state is in use; a third graph waits for a slot. The slot is freed only
+        // after the state of its previous user is released, so no more than maxEntries + maxTemporaryStates states
+        // ever exist, however the release (blocked here) and the waiter interleave.
+        val gate = CountDownLatch(1)
+        val releasing = CountDownLatch(1)
+        val waiting = CountDownLatch(1)
+        val f = LiveStates(
+            1,
+            GraphStateCache.Settings(
+                maxTemporaryStates = 1,
+                overflowWaitMillis = null,
+                temporaryWaitMillis = 60_000,
+                probe = { if (it == GraphStateCache.Event.SLOT_WAIT) waiting.countDown() },
+            ),
+            onRelease = { state ->
+                if (state.triples == setOf(triple(1))) {
+                    releasing.countDown()
+                    assertTrue(gate.await(30, TimeUnit.SECONDS))
+                }
+            },
+        )
+        val pool = daemonPool()
+        val finishTemporary = CountDownLatch(1)
+        val finishCached = CountDownLatch(1)
+        val entered = List(2) { CountDownLatch(1) }
+        try {
+            val cached = pool.submit { f.cache.use(graph(0)) { entered[0].countDown(); finishCached.await(30, TimeUnit.SECONDS) } }
+            assertTrue(entered[0].await(10, TimeUnit.SECONDS))
+            val temporary = pool.submit { f.cache.use(graph(1)) { entered[1].countDown(); finishTemporary.await(30, TimeUnit.SECONDS) } }
+            assertTrue(entered[1].await(10, TimeUnit.SECONDS))
+            assertEquals(2, f.live.get())
+
+            val waiter = pool.submit<Set<RdfTriple>> { f.cache.use(graph(2)) { it.triples } }
+            assertTrue(waiting.await(10, TimeUnit.SECONDS), "the third graph waits for a slot")
+            finishTemporary.countDown()
+            assertTrue(releasing.await(10, TimeUnit.SECONDS), "the temporary state is being released")
+            // Its release is blocked: the slot is not free, so the waiter has not built its state.
+            assertEquals(2, f.live.get())
+            gate.countDown()
+            assertEquals(setOf(triple(2)), waiter.get(10, TimeUnit.SECONDS))
+            finishCached.countDown()
+            cached.get(10, TimeUnit.SECONDS)
+            temporary.get(10, TimeUnit.SECONDS)
+            assertEquals(2, f.peak.get(), "never more than maxEntries + maxTemporaryStates states")
+        } finally {
+            gate.countDown()
+            finishTemporary.countDown()
+            finishCached.countDown()
+            pool.shutdownNow()
+        }
+        f.cache.close()
+        assertEquals(0, f.live.get())
+    }
+
+    @Test
+    fun `evicting an idle entry is best-effort - the replacement may be built while the victim is being released`() {
+        // Known, documented race: the victim of an eviction is released outside the lock (a release can be slow), so
+        // for that time a caller that finds the replacement entry builds its state while the victim still exists.
+        // The overshoot is bounded by the number of evictions in flight and ends when the release returns.
+        val gate = CountDownLatch(1)
+        val releasing = CountDownLatch(1)
+        val f = LiveStates(1, GraphStateCache.Settings(), onRelease = { state ->
+            if (state.triples == setOf(triple(0))) {
+                releasing.countDown()
+                assertTrue(gate.await(30, TimeUnit.SECONDS))
+            }
+        })
+        val first = graph(0)
+        val second = graph(1)
+        f.cache.use(first) { }
+        val pool = daemonPool()
+        try {
+            // Evicts the idle entry of `first`; this thread is held in the release of its state.
+            val evicting = pool.submit { f.cache.use(second) { } }
+            assertTrue(releasing.await(10, TimeUnit.SECONDS))
+            assertEquals(setOf(triple(1)), f.cache.use(second) { it.triples })
+            assertEquals(2, f.live.get(), "the victim and its replacement coexist while the release is in progress")
+            gate.countDown()
+            evicting.get(10, TimeUnit.SECONDS)
+            assertEquals(1, f.live.get(), "the overshoot ends with the release")
+            assertEquals(2, f.peak.get())
+        } finally {
+            gate.countDown()
+            pool.shutdownNow()
+        }
+        f.cache.close()
+    }
+
     @Test
     fun `an interrupted wait for a free state restores the interrupt and fails clearly`() {
         val f = Fixture(
