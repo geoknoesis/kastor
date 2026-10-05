@@ -1,18 +1,32 @@
 package com.geoknoesis.kastor.ontoquality.metrics.serialize
 
 import com.geoknoesis.kastor.ontoquality.metrics.MetricValue
+import com.geoknoesis.kastor.ontoquality.metrics.MetricsSection
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
 
 internal object MarkdownRenderer {
-    fun render(report: VocabularyMetricsReport): String {
+    fun render(report: VocabularyMetricsReport, sections: Set<MetricsSection> = MetricsSection.ALL): String {
+        val blocks = ArrayList<String>()
+        blocks += header(report)
+        if (MetricsSection.GRAPH in sections) blocks += graph(report)
+        if (MetricsSection.OWL in sections) blocks += owl(report)
+        if (MetricsSection.SKOS in sections) blocks += skos(report)
+        val gap = System.lineSeparator() + System.lineSeparator()
+        return blocks.joinToString(gap) { it.trimEnd() } + System.lineSeparator()
+    }
+
+    private fun header(report: VocabularyMetricsReport): String {
         val sb = StringBuilder()
         sb.appendLine("# Vocabulary metrics report")
         sb.appendLine()
         sb.appendLine("- Module: `${report.moduleVersion}`")
         sb.appendLine("- OQuaRE pin: ${report.oquareVersion}")
         sb.appendLine("- Computed at: `${report.computedAt}`")
-        sb.appendLine()
+        return sb.toString()
+    }
 
+    private fun graph(report: VocabularyMetricsReport): String {
+        val sb = StringBuilder()
         sb.appendLine("## VoID-style graph counts")
         sb.appendLine()
         sb.appendLine("| Field | Value |")
@@ -26,7 +40,11 @@ internal object MarkdownRenderer {
         sb.appendLine("| literalObjectCount | ${g.literalObjectCount} |")
         sb.appendLine("| iriObjectCount | ${g.iriObjectCount} |")
         sb.appendLine("| distinctClassesUsed | ${g.distinctClassesUsed} |")
-        sb.appendLine()
+        return sb.toString()
+    }
+
+    private fun owl(report: VocabularyMetricsReport): String {
+        val sb = StringBuilder()
 
         fun table(title: String, rows: List<MetricValue>) {
             sb.appendLine("### $title")
@@ -63,7 +81,11 @@ internal object MarkdownRenderer {
         )
         table("Other", listOf(om.tangledness))
         table("Kastor-adapted (not OQuaRE)", report.owl.kastorAdapted.toList())
+        return sb.toString()
+    }
 
+    private fun skos(report: VocabularyMetricsReport): String {
+        val sb = StringBuilder()
         sb.appendLine("## SKOS extensions")
         sb.appendLine()
         val s = report.skos

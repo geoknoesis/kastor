@@ -1,19 +1,34 @@
 package com.geoknoesis.kastor.ontoquality.metrics.serialize
 
 import com.geoknoesis.kastor.ontoquality.metrics.MetricValue
+import com.geoknoesis.kastor.ontoquality.metrics.MetricsSection
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
 
 internal object TextRenderer {
-    fun render(report: VocabularyMetricsReport): String {
+    fun render(report: VocabularyMetricsReport, sections: Set<MetricsSection> = MetricsSection.ALL): String {
+        val header = StringBuilder()
+        header.appendLine("Vocabulary metrics (${report.moduleVersion}, ${report.oquareVersion})")
+        header.appendLine("Computed at: ${report.computedAt}")
+        val blocks = ArrayList<StringBuilder>()
+        if (MetricsSection.GRAPH in sections) blocks += graph(report)
+        if (MetricsSection.OWL in sections) blocks += owl(report)
+        if (MetricsSection.SKOS in sections) blocks += skos(report)
+        // A slice keeps the header and the selected sections; the whole report is the same text with every section.
+        val gap = System.lineSeparator() + System.lineSeparator()
+        return (listOf(header) + blocks).joinToString(gap) { it.toString().trimEnd() }
+    }
+
+    private fun graph(report: VocabularyMetricsReport): StringBuilder {
         val sb = StringBuilder()
-        sb.appendLine("Vocabulary metrics (${report.moduleVersion}, ${report.oquareVersion})")
-        sb.appendLine("Computed at: ${report.computedAt}")
-        sb.appendLine()
         sb.appendLine("[Graph]")
         val g = report.graph
         sb.appendLine("  tripleCount=${g.tripleCount} distinctSubjects=${g.distinctSubjectCount} predicates=${g.distinctPredicateCount} objects=${g.distinctObjectCount}")
         sb.appendLine("  blankNodeSubjects=${g.blankNodeSubjectCount} literals=${g.literalObjectCount} iris=${g.iriObjectCount} classesUsed=${g.distinctClassesUsed}")
-        sb.appendLine()
+        return sb
+    }
+
+    private fun owl(report: VocabularyMetricsReport): StringBuilder {
+        val sb = StringBuilder()
         sb.appendLine("[OQuaRE]")
         for (m in report.owl.oquare.toList().sortedBy { it.metricIri }) {
             line(sb, m)
@@ -23,7 +38,11 @@ internal object TextRenderer {
         for (m in report.owl.kastorAdapted.toList().sortedBy { it.metricIri }) {
             line(sb, m)
         }
-        sb.appendLine()
+        return sb
+    }
+
+    private fun skos(report: VocabularyMetricsReport): StringBuilder {
+        val sb = StringBuilder()
         sb.appendLine("[SKOS]")
         for (m in
             listOf(
@@ -36,7 +55,7 @@ internal object TextRenderer {
             )) {
             line(sb, m)
         }
-        return sb.toString().trimEnd()
+        return sb
     }
 
     private fun line(sb: StringBuilder, m: MetricValue) {

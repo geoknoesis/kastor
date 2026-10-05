@@ -14,9 +14,13 @@ data class VocabularyMetricsReport(
     val oquareVersion: String,
     val computedAt: Instant,
 ) {
-    fun describeText(): String = TextRenderer.render(this)
+    /** The text report; [sections] limits it to some sections (the header is always kept). */
+    @JvmOverloads
+    fun describeText(sections: Set<MetricsSection> = MetricsSection.ALL): String = TextRenderer.render(this, sections)
 
-    fun describeMarkdown(): String = MarkdownRenderer.render(this)
+    /** The Markdown report; [sections] limits it to some sections (the header is always kept). */
+    @JvmOverloads
+    fun describeMarkdown(sections: Set<MetricsSection> = MetricsSection.ALL): String = MarkdownRenderer.render(this, sections)
 
     fun toJson(): String = JsonSerializer.toJson(this)
 
@@ -25,5 +29,18 @@ data class VocabularyMetricsReport(
     companion object {
         const val MODULE_VERSION = "0.1.0"
         const val OQUARE_VERSION = "Duque-Ramos 2014"
+    }
+}
+
+/** A section of the rendered report: graph counts, OWL (OQuaRE and Kastor-adapted) metrics, SKOS metrics. */
+enum class MetricsSection {
+    GRAPH,
+    OWL,
+    SKOS,
+    ;
+
+    companion object {
+        /** Every section: the whole report. */
+        val ALL: Set<MetricsSection> = java.util.Collections.unmodifiableSet(java.util.EnumSet.allOf(MetricsSection::class.java))
     }
 }
