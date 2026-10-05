@@ -21,6 +21,19 @@ internal class EagerBaseIriFallback(private val warn: (String) -> Unit) {
         )
     }
 
+    private val warnedIgnored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Reports, once per provider class, that [RdfProvider.parseDataset] dropped a base IRI it was given. */
+    fun recordIgnoredDatasetBase(provider: RdfProvider) {
+        val key = provider.javaClass.name
+        if (!warnedIgnored.add(key)) return
+        warn(
+            "RDF provider '${provider.id}' ($key) does not override parseDataset with a base IRI; the base IRI is " +
+                "ignored and relative IRIs in the dataset are resolved (or rejected) by the provider's own default. " +
+                "This warning is logged once per provider.",
+        )
+    }
+
     companion object {
         private val logger = org.slf4j.LoggerFactory.getLogger(RdfProvider::class.java)
 

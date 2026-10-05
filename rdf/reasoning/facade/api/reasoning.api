@@ -226,6 +226,7 @@ public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerRegistry {
 	public final fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
 	public final fun discoverProviders ()Ljava/util/List;
 	public final fun findProviderForType (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider;
+	public final fun getDiscoveryErrors ()Ljava/util/List;
 	public final fun getProviders ()Ljava/util/List;
 	public final fun getSupportedTypes ()Ljava/util/List;
 	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z

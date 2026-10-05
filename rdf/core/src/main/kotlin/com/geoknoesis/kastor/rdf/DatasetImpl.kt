@@ -291,6 +291,11 @@ internal class DatasetImpl(
  * Codepoint escapes (`\uXXXX`, `\UXXXXXXXX`) are read both ways engines read them: decoded before tokenizing, as
  * the SPARQL grammar says (the "early" reading), and decoded inside strings and IRIs after tokenizing, as Jena does
  * (the "late" reading). See [canonical] and the notes on [DatasetImpl].
+ *
+ * Known limits: this is a hand-written scanner over the query text, not a SPARQL parser. It recognises the
+ * constructs above and nothing else; a query it cannot analyse with confidence is rejected (or left unrewritten)
+ * rather than guessed at, and a grammar feature added to SPARQL later is invisible to it until the scanner learns
+ * it. [SparqlScannerDifferentialTest] compares it with a real parser; extend that test before extending the scanner.
  */
 internal object SparqlDatasetClauses {
     private enum class Kind { WORD, IRI, STRING, VAR, PUNCT }

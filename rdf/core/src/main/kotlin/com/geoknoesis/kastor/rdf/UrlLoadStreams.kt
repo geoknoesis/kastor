@@ -252,22 +252,36 @@ internal class CountingInputStream(input: InputStream) : FilterInputStream(input
     var count = 0L
         private set
 
+    /**
+     * The first [java.io.IOException] the underlying stream threw. A parser that hits it may report it as a syntax
+     * error of its own; the caller surfaces this failure instead, so a dropped connection is not mistaken for bad data.
+     */
+    var failure: java.io.IOException? = null
+        private set
+
+    private inline fun <T> tracked(block: () -> T): T = try {
+        block()
+    } catch (e: java.io.IOException) {
+        if (failure == null) failure = e
+        throw e
+    }
+
     override fun close() = Unit
 
     override fun read(): Int {
-        val b = super.read()
+        val b = tracked { super.read() }
         if (b >= 0) count++
         return b
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
-        val n = super.read(b, off, len)
+        val n = tracked { super.read(b, off, len) }
         if (n > 0) count += n
         return n
     }
 
     override fun skip(n: Long): Long {
-        val skipped = super.skip(n)
+        val skipped = tracked { super.skip(n) }
         if (skipped > 0) count += skipped
         return skipped
     }

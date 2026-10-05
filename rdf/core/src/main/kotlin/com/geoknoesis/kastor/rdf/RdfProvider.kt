@@ -293,8 +293,8 @@ interface RdfProvider {
      * using an explicit base IRI for relative-IRI resolution.
      *
      * The default implementation ignores [baseIri] and delegates to the
-     * single-arg [parseDataset]. Providers that can honour an external base
-     * should override.
+     * single-arg [parseDataset], logging a one-time warning per provider class when a base IRI is given.
+     * Providers that can honour an external base should override.
      */
     fun parseDataset(
         repository: RdfRepository,
@@ -302,6 +302,7 @@ interface RdfProvider {
         format: String,
         baseIri: String?,
     ) {
+        if (baseIri != null) EagerBaseIriFallback.DEFAULT.recordIgnoredDatasetBase(this)
         parseDataset(repository, inputStream, format)
     }
 }

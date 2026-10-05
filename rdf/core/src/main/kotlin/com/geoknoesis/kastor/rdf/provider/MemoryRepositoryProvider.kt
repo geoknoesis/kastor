@@ -302,7 +302,17 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
             checkAccess(true)
             return lock.write {
                 checkAccess(true)
-                block(if (create) graphs.getOrPut(name) { newGraph(name) } else graphs[name])
+                block(if (create) graphs[name] ?: newGraph(name).also { created(name, it) } else graphs[name])
+            }
+        }
+
+        /** Adds the backing graph [graph] of [name]; a rolled-back transaction removes it again if it is still empty. */
+        private fun created(name: Iri, graph: MemoryGraph) {
+            graphs[name] = graph
+            recordUndo {
+                lock.write {
+                    if (graphs[name] === graph && graph.size() == 0) { graphs.remove(name); markAbsent(name) }
+                }
             }
         }
 
@@ -315,7 +325,10 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         override fun getTriplesSequence(): Sequence<RdfTriple> = getTriples().asSequence()
         override fun size(): Int = reading { it?.size() ?: 0 }
         override fun addTriple(triple: RdfTriple) = writing(create = true) { it!!.addTriple(triple) }
-        override fun addTriples(triples: Collection<RdfTriple>) = writing(create = true) { it!!.addTriples(triples) }
+        override fun addTriples(triples: Collection<RdfTriple>) {
+            if (triples.isEmpty()) { checkAccess(true); return } // nothing to add: no backing graph, no new stamp
+            writing(create = true) { it!!.addTriples(triples) }
+        }
         override fun removeTriple(triple: RdfTriple): Boolean = writing(create = false) { it?.removeTriple(triple) ?: false }
         override fun removeTriples(triples: Collection<RdfTriple>): Boolean = writing(create = false) { it?.removeTriples(triples) ?: false }
         override fun clear(): Boolean = writing(create = false) { it?.clear() ?: false }

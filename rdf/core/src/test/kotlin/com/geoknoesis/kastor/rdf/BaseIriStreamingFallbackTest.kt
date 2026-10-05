@@ -81,4 +81,15 @@ class BaseIriStreamingFallbackTest {
         override fun variants(): List<RdfVariant> = listOf(RdfVariant("memory"))
         override fun createRepository(variantId: String, config: RdfConfig): RdfRepository = MemoryRepository(config)
     }
+
+    @Test
+    fun `a base IRI dropped by the default parseDataset is reported once per provider class`() {
+        val messages = mutableListOf<String>()
+        val fallback = EagerBaseIriFallback { messages.add(it) }
+        val provider = NoBaseStreamingProvider()
+        fallback.recordIgnoredDatasetBase(provider)
+        fallback.recordIgnoredDatasetBase(provider)
+        assertEquals(1, messages.size)
+        assertTrue(messages.single().contains("base IRI is ignored"), messages.single())
+    }
 }

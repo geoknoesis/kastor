@@ -124,7 +124,8 @@ fun interface UrlAddressPolicy {
          *   was checked while keeping the host name for the `Host` header and the TLS handshake. The JVM caches a
          *   successful lookup (`networkaddress.cache.ttl`, 30 seconds unless configured otherwise), so the second
          *   lookup normally returns the checked addresses; with caching disabled, or across the cache expiring,
-         *   a DNS server under an attacker's control can answer the two lookups differently (DNS rebinding).
+         *   a DNS server under an attacker's control can answer the two lookups differently (DNS rebinding). The check is therefore not
+         *   rebinding-proof: it is a filter, not a guarantee about the address that is connected to.
          * - **A proxy resolves the name itself.** When the request goes through an HTTP proxy (`http.proxyHost`,
          *   a [java.net.ProxySelector]), this process never connects to the addresses it checked: the proxy looks
          *   the name up from where it stands, and the policy says nothing about what the proxy can reach.

@@ -469,7 +469,12 @@ object Rdf {
         try { executor.execute {
             if (!result.isCancelled) {
                 try {
-                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options) { active.set(it) }
+                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options) {
+                        active.set(it)
+                        // Cancelled before this hop's connection existed: cancel() found nothing to disconnect, so
+                        // stop here instead of letting the connect run to its timeout.
+                        if (result.isCancelled) throw java.util.concurrent.CancellationException("Cancelled")
+                    }
                     body.read { stream ->
                         input.set(stream)
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
@@ -542,9 +547,9 @@ object Rdf {
                 if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                 continue
             } catch (e: RdfFormatException) {
-                throw e.inputLimitCause() ?: e
+                throw e.inputLimitCause() ?: input.failure ?: e
             } catch (e: Exception) {
-                e.inputLimitCause()?.let { throw it }
+                (e.inputLimitCause() ?: input.failure)?.let { throw it }
                 // Extract parsing error context with line/column information
                 val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
                 throw RdfFormatException.ParseError(parseError)
@@ -613,9 +618,9 @@ object Rdf {
                     continue
                 } catch (e: RdfFormatException) {
                     // Format error, rethrow (or the URL-loading limit it wraps)
-                    throw e.inputLimitCause() ?: e
+                    throw e.inputLimitCause() ?: input.failure ?: e
                 } catch (e: Exception) {
-                    e.inputLimitCause()?.let { throw it }
+                    (e.inputLimitCause() ?: input.failure)?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
                     throw RdfFormatException.ParseError(parseError)
                 }
@@ -830,9 +835,9 @@ object Rdf {
                     continue
                 } catch (e: RdfFormatException) {
                     // Format error, rethrow (or the URL-loading limit it wraps)
-                    throw e.inputLimitCause() ?: e
+                    throw e.inputLimitCause() ?: input.failure ?: e
                 } catch (e: Exception) {
-                    e.inputLimitCause()?.let { throw it }
+                    (e.inputLimitCause() ?: input.failure)?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
                     throw RdfFormatException.ParseError(parseError)
                 }

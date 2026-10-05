@@ -133,7 +133,9 @@ class HermitRdfReasoner internal constructor(
             watchdog = scheduleWatchdog(remainingMillis(), INTERRUPT_REPEAT_MILLIS, Runnable {
                 if (ended.get()) return@Runnable
                 timedOut.set(true)
-                engineRef.get()?.interrupt()
+                // The load may end and dispose the engine between the check above and this call; interrupting a
+                // disposed engine is pointless, so a failure of it must not escape into the scheduler.
+                try { engineRef.get()?.interrupt() } catch (_: RuntimeException) { }
             })
             val (ontology, engine) = try {
                 loadWithinDeadline(graph, manager, deadline, timedOut, engineRef, ::checkBudget)
@@ -167,6 +169,7 @@ class HermitRdfReasoner internal constructor(
                 watchdog?.cancel(false)
             } finally {
                 if (ownsResources) {
+                    engineRef.set(null) // the watchdog no longer sees an engine that is about to be disposed
                     try { reasoner?.dispose() } finally { manager.ontologies.toList().forEach { manager.removeOntology(it) } }
                 }
             }

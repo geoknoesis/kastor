@@ -55,7 +55,8 @@ interface RdfRepository : Dataset, SparqlMutable {
      * Map of graph names to graphs for named graph access.
      * For a repository, this includes all named graphs.
      * 
-     * Note: Implementations should cache this value to avoid expensive recomputation.
+     * The default implementation recomputes the map on every access (one [getGraph] per name); an implementation
+     * for which that is expensive should override it and cache.
      */
     override val namedGraphs: Map<Iri, RdfGraph>
         get() = listGraphs().associateWith { getGraph(it) }
@@ -162,7 +163,9 @@ interface RdfRepository : Dataset, SparqlMutable {
      * ```
      * 
      * @param operations The operations to execute in the transaction
-     * @throws RdfTransactionException if transaction fails
+     * @throws RdfTransactionException if the provider fails to begin, commit or roll back the transaction. A failure
+     *   thrown by [operations] itself propagates unchanged: the bundled in-memory provider rolls back and rethrows it
+     *   (an exception from the rollback is attached to it as suppressed), without wrapping it.
      */
     fun transaction(operations: RdfRepository.() -> Unit)
     
@@ -175,7 +178,8 @@ interface RdfRepository : Dataset, SparqlMutable {
      * - Resources are cleaned up on completion
      * 
      * @param operations The read-only operations to execute
-     * @throws RdfTransactionException if transaction fails
+     * @throws RdfTransactionException if the provider fails to begin or end the transaction; a failure thrown by
+     *   [operations] itself propagates unchanged
      */
     fun readTransaction(operations: RdfRepository.() -> Unit)
     
