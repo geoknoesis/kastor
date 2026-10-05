@@ -88,6 +88,18 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Require the tagged commit to be on main and to have passed CI
+        # A tag alone proves nothing: it can point at an unreviewed branch commit. Readiness in this run does not
+        # replace CI (it does not run the ci.yml gates), so also require a successful push-triggered ci.yml run.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" | python3 scripts/check-release-provenance.py ancestry
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 50 \
+            --json status,conclusion,event | python3 scripts/check-release-provenance.py ci
+
       - name: Refuse versions already on Maven Central
         # Released versions are immutable on Central; re-running a published tag must stop here.
         env:
