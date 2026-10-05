@@ -457,6 +457,7 @@ public final class com/geoknoesis/kastor/gen/runtime/XsdLiterals {
 	public final fun boolean (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Boolean;
 	public final fun booleanLexical (Ljava/lang/String;)Ljava/lang/Boolean;
 	public final fun compareNumeric (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Ljava/lang/Integer;
+	public final fun compareNumeric-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Integer;
 	public final fun double (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Double;
 	public final fun encode-AqFvXrU (Ljava/lang/Object;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
 	public final fun float (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Float;

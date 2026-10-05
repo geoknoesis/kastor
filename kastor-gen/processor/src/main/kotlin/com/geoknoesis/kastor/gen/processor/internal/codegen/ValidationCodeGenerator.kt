@@ -118,27 +118,19 @@ internal class ValidationCodeGenerator(
                     functionBuilder.endControlFlow()
                 }
 
-                val hasNumericConstraints = c.minInclusive != null || c.maxInclusive != null ||
-                    c.minExclusive != null || c.maxExclusive != null
-
-                if (hasNumericConstraints) {
+                if (c.numericBounds.isNotEmpty()) {
                     functionBuilder.addComment("Validate %L numeric constraints", name)
-                    // Exact comparison of XSD numeric literals with the bound's decimal lexical form; a value that is not
-                    // a well-formed numeric literal cannot be compared, which SHACL (and embedded validation) reports.
+                    // A bound's datatype participates in promotion, including inherited constraints.
                     functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
-                    fun bound(bound: java.math.BigDecimal?, violatedWhen: String, text: String) {
-                        if (bound == null) return
-                        val lexical = bound.toPlainString()
+                    c.numericBounds.forEach { bound ->
+                        val lexical = bound.value.toPlainString()
                         functionBuilder.beginControlFlow(
-                            "if (%T.compareNumeric(triple.obj, %S).let { it == null || %L })", xsdLiterals, lexical, violatedWhen,
+                            "if (%T.compareNumeric(triple.obj, %S, %T(%S)).let { it == null || it %L 0 })",
+                            xsdLiterals, lexical, iriClass, bound.datatype, bound.kind.violationOperator,
                         )
-                        functionBuilder.addStatement("violations.add(%S)", "$name must be $text $lexical")
+                        functionBuilder.addStatement("violations.add(%S)", "$name must be ${bound.kind.operator} $lexical")
                         functionBuilder.endControlFlow()
                     }
-                    bound(c.minInclusive, "it < 0", ">=")
-                    bound(c.maxInclusive, "it > 0", "<=")
-                    bound(c.minExclusive, "it <= 0", ">")
-                    bound(c.maxExclusive, "it >= 0", "<")
                     functionBuilder.endControlFlow()
                 }
             }

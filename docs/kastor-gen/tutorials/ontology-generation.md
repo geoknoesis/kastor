@@ -284,13 +284,13 @@ With `validationMode = EMBEDDED` the wrapper's `validate()` checks, for every pa
 (inherited paths included): `sh:minCount`/`sh:maxCount`; `sh:datatype` (a literal of exactly that datatype
 with a well-formed lexical form); `sh:nodeKind`; `sh:class` (an `rdf:type` equal to the class or a
 transitive `rdfs:subClassOf` of it); `sh:pattern`; string lengths; `sh:in`; and the numeric bounds
-`sh:minInclusive`/`sh:maxInclusive`/`sh:minExclusive`/`sh:maxExclusive`, compared **exactly** (as
-`BigDecimal`), with a value that is not a well-formed numeric literal reported as a violation. Each
+`sh:minInclusive`/`sh:maxInclusive`/`sh:minExclusive`/`sh:maxExclusive`, compared using both operands'
+numeric datatypes, with a value that is not a well-formed numeric literal reported as a violation. Each
 `sh:pattern` regex is compiled lazily on first use, so an unusual pattern can never break class
 initialisation.
 
 - **Constraints are a conjunction.** When a shape restates a path that it also inherits (or declares two
-  property shapes for one path), every constraint of every declaration applies: bounds keep the tighter one,
+  property shapes for one path), every constraint of every declaration applies: every typed bound is checked,
   **every `sh:pattern` must match** (each with its own `sh:flags`), **every `sh:hasValue` must be among the
   values**, and the `sh:nodeKind`s are intersected (`sh:BlankNodeOrIRI` and `sh:IRI` leave `sh:IRI`). Node
   kinds with nothing in common (`sh:IRI` and `sh:Literal`) reject every value, and generation logs a warning
@@ -324,10 +324,13 @@ initialisation.
   `"x"@EN` are one member). When the lists have **no member in common**, every value of the path is rejected
   (the same holds for an explicit `sh:in ()`, which the parser keeps as an empty list), and generation logs a
   warning naming the shape and the path; no check is silently dropped.
-- **Numeric bounds preserve datatype semantics.** Bounds are held as `BigDecimal` values in the model.
+- **Numeric bounds preserve datatype semantics.** Bounds retain their numeric values and RDF datatypes in the model.
   Wrapper `validate()`, instance-DSL setters and the DSL's `validate()` compare integer and decimal values
-  exactly. For `xsd:float` and `xsd:double`, both the value and bound use that floating-point type's precision:
-  for example, `16777217` rounds to `16777216` as a float. `NaN` is never within bounds.
+  exactly when both operands are integer/decimal. Otherwise both operands are promoted to `xsd:double` if
+  either is a double, or to `xsd:float` if either is a float. A float's value is rounded before promotion:
+  for example, `16777217` rounds to `16777216` as a float, but a double bound of `16777217` retains its value.
+  `NaN` is never within bounds. Manually constructed decimal-only model bounds retain decimal semantics.
+  Regenerate existing sources to include each bound's datatype in the generated comparisons.
 - **Shape parameters are honoured.** A property shape's `sh:severity` sets the generated
   `ShaclViolation.severity` (`sh:Warning` → `Warning`, `sh:Info` → `Info`, anything else → `Violation`), and
   its `sh:message` replaces the generated message. A node shape with `sh:deactivated true` validates nothing

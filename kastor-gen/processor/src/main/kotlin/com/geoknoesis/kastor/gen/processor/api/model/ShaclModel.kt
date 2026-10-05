@@ -98,7 +98,13 @@ public data class ShaclProperty(
      * no value satisfies them, so validation rejects every value. [nodeKind] then keeps the first declaration's kind.
      */
     val nodeKindUnsatisfiable: Boolean = false,
+    /** Typed bounds, including inherited constraints. Override the decimal-only fields for each supplied kind. */
+    val numericBoundsTyped: List<ShaclNumericBound> = emptyList(),
 ) {
+    /** All applicable bounds, preserving each bound's numeric promotion semantics. */
+    val numericBounds: List<ShaclNumericBound>
+        get() = numericBounds(numericBoundsTyped, minInclusive, maxInclusive, minExclusive, maxExclusive)
+
     /** Every `sh:pattern` that applies to the path: [pattern] (with [patternFlags]) and [additionalPatterns]. */
     val patterns: List<ShaclPattern>
         get() = listOfNotNull(pattern?.let { ShaclPattern(it, patternFlags) }) + additionalPatterns

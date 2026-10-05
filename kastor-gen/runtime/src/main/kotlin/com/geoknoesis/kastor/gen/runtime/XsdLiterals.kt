@@ -141,19 +141,35 @@ object XsdLiterals {
    * Returns the sign of `value - bound`, or `null` when the comparison is undefined: [term] is not a well-formed
    * XSD numeric literal, or is `NaN`. Decimal bounds are promoted to the literal's floating-point type when needed.
    */
-  fun compareNumeric(term: RdfTerm, bound: String): Int? {
+  fun compareNumeric(term: RdfTerm, bound: String): Int? =
+    compareNumeric(term, BigDecimal(bound).toPlainString(), Iri("${XSD}decimal"))
+
+  /** Compare using both operands' datatypes: double > float > decimal/integer numeric promotion. */
+  fun compareNumeric(term: RdfTerm, bound: String, boundDatatype: Iri): Int? {
     val literal = term as? Literal ?: return null
     if (literal.datatype.value !in NUMERIC_DATATYPES || !isWellFormed(literal)) return null
-    val decimalBound = BigDecimal(bound)
-    return when (literal.datatype.value) {
-      "${XSD}float" -> compareFloating(float(literal)!!.toDouble(), decimalBound.toFloat().toDouble())
-      "${XSD}double" -> compareFloating(double(literal)!!, decimalBound.toDouble())
-      else -> BigDecimal(literal.lexical.trim()).compareTo(decimalBound).coerceIn(-1, 1)
+    val limit = Literal(bound, boundDatatype)
+    if (boundDatatype.value !in NUMERIC_DATATYPES || !isWellFormed(limit)) return null
+    fun asDouble(value: Literal): Double = when (value.datatype.value) {
+      "${XSD}double" -> double(value)!!
+      "${XSD}float" -> float(value)!!.toDouble() // Round in its declared type before promotion.
+      else -> BigDecimal(value.lexical.trim()).toDouble()
+    }
+    fun asFloat(value: Literal): Double = when (value.datatype.value) {
+      "${XSD}float" -> float(value)!!.toDouble()
+      else -> BigDecimal(value.lexical.trim()).toFloat().toDouble()
+    }
+    return when {
+      literal.datatype.value == "${XSD}double" || boundDatatype.value == "${XSD}double" ->
+        compareFloating(asDouble(literal), asDouble(limit))
+      literal.datatype.value == "${XSD}float" || boundDatatype.value == "${XSD}float" ->
+        compareFloating(asFloat(literal), asFloat(limit))
+      else -> BigDecimal(literal.lexical.trim()).compareTo(BigDecimal(bound.trim())).coerceIn(-1, 1)
     }
   }
 
   private fun compareFloating(value: Double, bound: Double): Int? = when {
-    value.isNaN() -> null
+    value.isNaN() || bound.isNaN() -> null
     value == bound -> 0 // Numeric equality includes positive and negative zero.
     value < bound -> -1
     else -> 1

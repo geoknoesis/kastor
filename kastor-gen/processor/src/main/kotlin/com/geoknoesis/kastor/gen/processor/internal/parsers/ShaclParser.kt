@@ -4,6 +4,8 @@ import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationEx
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclNumericBound
+import com.geoknoesis.kastor.gen.processor.api.model.NumericBoundKind
 import com.google.devtools.ksp.processing.KSPLogger
 import org.apache.jena.rdf.model.Literal
 import org.apache.jena.rdf.model.Model
@@ -309,6 +311,13 @@ public class ShaclParser(private val logger: KSPLogger) {
                 // An empty list stays an empty list: `sh:in ()` allows no value, which is not "no sh:in".
             }
 
+            val bounds = NumericBoundKind.entries.mapNotNull { kind ->
+                val node = single(propertyShape, p(kind.shaclName), "sh:${kind.shaclName}", context)
+                number(node, "sh:${kind.shaclName}", context)?.let { value ->
+                    ShaclNumericBound(kind, value, node!!.asLiteral().datatypeURI)
+                }
+            }
+            fun bound(kind: NumericBoundKind): BigDecimal? = bounds.firstOrNull { it.kind == kind }?.value
             return ShaclProperty(
                 path = path,
                 name = name,
@@ -321,10 +330,11 @@ public class ShaclParser(private val logger: KSPLogger) {
                 maxLength = int(single(propertyShape, p("maxLength"), "sh:maxLength", context), "sh:maxLength", context),
                 pattern = single(propertyShape, p("pattern"), "sh:pattern", context)?.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm,
                 patternFlags = single(propertyShape, p("flags"), "sh:flags", context)?.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm,
-                minInclusive = number(single(propertyShape, p("minInclusive"), "sh:minInclusive", context), "sh:minInclusive", context),
-                maxInclusive = number(single(propertyShape, p("maxInclusive"), "sh:maxInclusive", context), "sh:maxInclusive", context),
-                minExclusive = number(single(propertyShape, p("minExclusive"), "sh:minExclusive", context), "sh:minExclusive", context),
-                maxExclusive = number(single(propertyShape, p("maxExclusive"), "sh:maxExclusive", context), "sh:maxExclusive", context),
+                minInclusive = bound(NumericBoundKind.MIN_INCLUSIVE),
+                maxInclusive = bound(NumericBoundKind.MAX_INCLUSIVE),
+                minExclusive = bound(NumericBoundKind.MIN_EXCLUSIVE),
+                maxExclusive = bound(NumericBoundKind.MAX_EXCLUSIVE),
+                numericBoundsTyped = bounds,
                 inValues = inValuesTyped?.map { it.value },
                 inValuesTyped = inValuesTyped,
                 hasValue = hasValue,

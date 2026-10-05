@@ -95,7 +95,13 @@ public data class PropertyConstraints(
     val additionalHasValues: List<String> = emptyList(),
     /** The `sh:nodeKind`s that apply to the path have no kind in common: every value is rejected. */
     val nodeKindUnsatisfiable: Boolean = false,
+    /** Typed bounds override the decimal-only fields for each supplied kind. */
+    val numericBoundsTyped: List<ShaclNumericBound> = emptyList(),
 ) {
+    /** All applicable bounds, including inherited constraints. */
+    val numericBounds: List<ShaclNumericBound>
+        get() = numericBounds(numericBoundsTyped, minInclusive, maxInclusive, minExclusive, maxExclusive)
+
     /** Every `sh:pattern` that applies: [pattern] (with [patternFlags]) and [additionalPatterns]. */
     val patterns: List<ShaclPattern>
         get() = listOfNotNull(pattern?.let { ShaclPattern(it, patternFlags) }) + additionalPatterns
@@ -128,6 +134,7 @@ public data class PropertyConstraints(
                 additionalPatterns = property.additionalPatterns,
                 additionalHasValues = property.additionalHasValues,
                 nodeKindUnsatisfiable = property.nodeKindUnsatisfiable,
+                numericBoundsTyped = property.numericBoundsTyped,
             )
         }
     }

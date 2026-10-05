@@ -307,7 +307,8 @@ public object GenerationNames {
     }
 
     /**
-     * Conjunction of two declarations of one path: every constraint of both applies. Bounds keep the tighter one,
+     * Conjunction of two declarations of one path: every constraint of both applies. Typed bounds are all retained
+     * (the decimal-only summary fields keep the tighter lexical value),
      * `sh:in` lists are intersected, **every** `sh:pattern` and **every** `sh:hasValue` is kept (a value must match
      * each pattern; each required value must be present), and `sh:nodeKind`s are intersected (no common kind:
      * [ShaclProperty.nodeKindUnsatisfiable]). For parameters that only describe the member (name, datatype, class)
@@ -358,6 +359,8 @@ public object GenerationNames {
             maxInclusive = lo(a.maxInclusive, b.maxInclusive),
             minExclusive = hi(a.minExclusive, b.minExclusive),
             maxExclusive = lo(a.maxExclusive, b.maxExclusive),
+            // Different bound datatypes can promote the same value differently; keep their conjunction.
+            numericBoundsTyped = (a.numericBounds + b.numericBounds).distinct(),
             inValues = inValues,
             inValuesTyped = inTyped
                 ?: (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },

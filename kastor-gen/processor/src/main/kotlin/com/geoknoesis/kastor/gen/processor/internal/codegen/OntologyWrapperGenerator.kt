@@ -327,24 +327,17 @@ public class OntologyWrapperGenerator(
                 functionBuilder.endControlFlow()
             }
 
-            if (literalKind && (property.minInclusive != null || property.maxInclusive != null ||
-                    property.minExclusive != null || property.maxExclusive != null)
-            ) {
-                // Exact comparison (BigDecimal); a value that is not a well-formed numeric literal cannot be compared,
-                // which SHACL reports as a violation.
+            if (literalKind && property.numericBounds.isNotEmpty()) {
                 functionBuilder.beginControlFlow("%L.forEach { value ->", values)
-                fun bound(limit: java.math.BigDecimal?, term: String, violatedWhen: String) {
-                    if (limit == null) return
-                    val lexical = limit.toPlainString()
+                property.numericBounds.forEach { bound ->
+                    val lexical = bound.value.toPlainString()
+                    val term = bound.kind.shaclName
                     check(
-                        CodeBlock.of("%T.compareNumeric(value, %S).let { it == null || %L }", xsdLiterals, lexical, violatedWhen),
+                        CodeBlock.of("%T.compareNumeric(value, %S, %T(%S)).let { it == null || it %L 0 }",
+                            xsdLiterals, lexical, ClassName(CodegenConstants.RDF_PACKAGE, "Iri"), bound.datatype, bound.kind.violationOperator),
                         term, pred, "$term $lexical violated for $pred", CodeBlock.of("value"),
                     )
                 }
-                bound(property.minInclusive, "minInclusive", "it < 0")
-                bound(property.maxInclusive, "maxInclusive", "it > 0")
-                bound(property.minExclusive, "minExclusive", "it <= 0")
-                bound(property.maxExclusive, "maxExclusive", "it >= 0")
                 functionBuilder.endControlFlow()
             }
 

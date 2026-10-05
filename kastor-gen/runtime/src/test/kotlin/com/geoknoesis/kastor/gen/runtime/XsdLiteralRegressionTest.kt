@@ -6,6 +6,28 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
 class XsdLiteralRegressionTest {
+    @Test fun `numeric promotion uses both operand types and preserves float rounding`() {
+        val low = TypedLiteral("16777216", XSD.float)
+        assertEquals(-1, XsdLiterals.compareNumeric(low, "16777217", XSD.double))
+        assertEquals(0, XsdLiterals.compareNumeric(low, "16777217", XSD.float))
+        assertEquals(0, XsdLiterals.compareNumeric(low, "16777217", XSD.decimal))
+        assertEquals(1, XsdLiterals.compareNumeric(TypedLiteral("16777217", XSD.double), "16777217", XSD.float))
+        assertEquals(-1, XsdLiterals.compareNumeric(TypedLiteral("16777217", XSD.float), "16777217", XSD.double))
+        assertEquals(0, XsdLiterals.compareNumeric(TypedLiteral("16777217", XSD.integer), "16777216", XSD.float))
+        assertEquals(1, XsdLiterals.compareNumeric(TypedLiteral("9007199254740993", XSD.integer), "9007199254740992", XSD.integer))
+    }
+
+    @Test fun `typed bounds reject undefined comparisons and retain infinity and zero semantics`() {
+        val zero = TypedLiteral("0", XSD.integer)
+        assertNull(XsdLiterals.compareNumeric(zero, "NaN", XSD.double))
+        assertNull(XsdLiterals.compareNumeric(zero, "bogus", XSD.float))
+        assertNull(XsdLiterals.compareNumeric(zero, "1", XSD.string))
+        assertEquals(0, XsdLiterals.compareNumeric(zero, "-0", XSD.float))
+        assertEquals(0, XsdLiterals.compareNumeric(TypedLiteral("INF", XSD.double), "1e400", XSD.double))
+        assertEquals(1, XsdLiterals.compareNumeric(zero, "-INF", XSD.float))
+        assertEquals(-1, XsdLiterals.compareNumeric(zero, "INF", XSD.double))
+    }
+
     @Test fun `invalid date timezone is not a well formed literal`() {
         val value = TypedLiteral("2026-10-03+99:99", XSD.date)
         assertFalse(XsdLiterals.isWellFormed(value), "Timezone must be validated before it is dropped")

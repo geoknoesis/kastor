@@ -342,8 +342,7 @@ private fun addImmediateValidation(
         }
     }
 
-    // Numeric bounds compare exactly: the value is encoded as an XSD numeric literal and compared with the bound's
-    // decimal lexical form (NaN is never within bounds; infinities lie beyond every bound).
+    // Encode the value and retain the bound's datatype so both operands determine numeric promotion.
     val numericDatatype: String? = when (valueType) {
         Int::class.asTypeName(), Long::class.asTypeName(), ClassName("java.math", "BigInteger") -> "integer"
         ClassName("java.math", "BigDecimal") -> "decimal"
@@ -352,18 +351,14 @@ private fun addImmediateValidation(
         else -> null
     }
     if (numericDatatype != null) {
-        fun bound(value: java.math.BigDecimal?, op: String, text: String) {
-            if (value == null) return
-            val lexical = value.toPlainString()
+        c.numericBounds.forEach { bound ->
+            val lexical = bound.value.toPlainString()
             functionBuilder.addStatement(
-                "require(%T.compareNumeric(%T.encode(%L, %T(%S)), %S).let { it != null && it %L 0 }) { %S }",
-                XSD_LITERALS, XSD_LITERALS, valueVar, IRI, "http://www.w3.org/2001/XMLSchema#$numericDatatype", lexical, op,
-                "$name must be $text $lexical",
+                "require(%T.compareNumeric(%T.encode(%L, %T(%S)), %S, %T(%S)).let { it != null && it %L 0 }) { %S }",
+                XSD_LITERALS, XSD_LITERALS, valueVar, IRI, "http://www.w3.org/2001/XMLSchema#$numericDatatype",
+                lexical, IRI, bound.datatype, bound.kind.operator,
+                "$name must be ${bound.kind.operator} $lexical",
             )
         }
-        bound(c.minInclusive, ">=", ">=")
-        bound(c.maxInclusive, "<=", "<=")
-        bound(c.minExclusive, ">", ">")
-        bound(c.maxExclusive, "<", "<")
     }
 }

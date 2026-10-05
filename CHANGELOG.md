@@ -16,6 +16,10 @@ and is kept as is; it was never published to Maven Central.
 
 ### Fixed (audit regressions)
 
+- Preserve numeric SHACL bound datatypes through parsing, inheritance, and generated setters/validation. Mixed
+  float/double comparisons now promote both operands correctly; decimal-only model bounds retain their existing
+  semantics. Processor models expose typed bounds and require recompilation; the runtime's existing comparison
+  overload remains available to previously generated code.
 - Preserve distinct RDF4J blank-node labels even when a long label's digest matches another source label.
 - Preserve SHACL conformance decisions when merging reasoner diagnostics, including truncated reports.
 - Normalize Jena blank-node graph names after partially failed updates caught by an outer transaction.
