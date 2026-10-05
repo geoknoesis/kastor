@@ -308,4 +308,29 @@ class CliOutputTest {
         val cli = LlmExplainCli(false, com.geoknoesis.kastor.ontoquality.llm.LlmProvider.OPENAI, null, com.geoknoesis.kastor.ontoquality.llm.ExplanationModelPreset.AUTO, null, 1, 1, com.geoknoesis.kastor.rdf.shacl.ViolationSeverity.WARNING, java.time.Duration.ofSeconds(1), 0, java.time.Duration.ofSeconds(1), apiKey = apiKey)
         assertFalse(cli.toString().contains(apiKey))
     }
+
+    @Test
+    fun `a failed write to standard output is a runtime error whatever the command returned`() {
+        val broken =
+            java.io.PrintStream(
+                object : java.io.OutputStream() {
+                    override fun write(b: Int) {
+                        throw java.io.IOException("broken pipe")
+                    }
+                },
+                true,
+                "UTF-8",
+            )
+        broken.println("report")
+        val err = java.io.ByteArrayOutputStream()
+        val errStream = java.io.PrintStream(err, true, "UTF-8")
+        for (status in listOf(EXIT_OK, EXIT_FINDINGS)) {
+            assertEquals(EXIT_RUNTIME_ERROR, exitStatusAfterFlush(status, broken, errStream))
+        }
+        assertTrue(err.toString("UTF-8").contains("could not write to standard output"), err.toString("UTF-8"))
+
+        val healthy = java.io.PrintStream(java.io.ByteArrayOutputStream(), true, "UTF-8")
+        healthy.println("report")
+        assertEquals(EXIT_FINDINGS, exitStatusAfterFlush(EXIT_FINDINGS, healthy, errStream))
+    }
 }

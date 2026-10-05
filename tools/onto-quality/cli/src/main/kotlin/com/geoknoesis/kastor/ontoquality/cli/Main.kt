@@ -91,10 +91,25 @@ import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     installStandardStreams()
-    val status = runOntoQa(args.toList())
-    System.out.flush()
-    System.err.flush()
+    val status = exitStatusAfterFlush(runOntoQa(args.toList()), System.out, System.err)
     exitProcess(status)
+}
+
+/**
+ * [status], unless standard output could not be written: a [PrintStream] swallows [java.io.IOException]s (a closed
+ * pipe, a full disk) and only [PrintStream.checkError] tells, so a report that never arrived must not exit 0 (or 1).
+ */
+internal fun exitStatusAfterFlush(status: Int, out: PrintStream, err: PrintStream): Int {
+    val outputLost = out.checkError() // flushes first
+    err.flush()
+    if (!outputLost) return status
+    try {
+        err.println("onto-qa: error: could not write to standard output")
+        err.flush()
+    } catch (_: Throwable) {
+        // Nothing more can be reported; the status still tells.
+    }
+    return EXIT_RUNTIME_ERROR
 }
 
 /**
