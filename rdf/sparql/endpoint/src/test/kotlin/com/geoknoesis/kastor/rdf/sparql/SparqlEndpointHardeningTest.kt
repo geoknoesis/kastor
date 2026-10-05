@@ -219,7 +219,7 @@ class SparqlEndpointHardeningTest {
             assertEquals(0, repo.select(selectAll).count())
         }
         val request = sent.single()
-        assertEquals(listOf("application/sparql-results+json"), request.headers().allValues("Accept"))
+        assertEquals(listOf("application/sparql-results+json, application/json;q=0.8"), request.headers().allValues("Accept"))
         assertEquals(listOf("application/sparql-query"), request.headers().allValues("Content-Type"))
         for ((name, value) in headers) assertEquals(listOf(value), request.headers().allValues(name), name)
     }
