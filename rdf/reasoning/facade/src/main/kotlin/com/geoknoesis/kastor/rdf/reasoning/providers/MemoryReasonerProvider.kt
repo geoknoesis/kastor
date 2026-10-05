@@ -140,11 +140,11 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
      * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted)
      * and [ReasonerConfig.materializationThreshold] bounds the number of entailed triples ([IllegalArgumentException]).
      */
-    internal fun closure(asserted: Collection<RdfTriple>): Set<RdfTriple> {
-        val deadline = System.nanoTime() + config.timeout.toNanos()
+    internal fun closure(asserted: Collection<RdfTriple>, nanoTime: () -> Long = System::nanoTime): Set<RdfTriple> {
+        val deadline = nanoTime() + config.timeout.toNanos()
         var steps = 0L
         fun checkBudget() {
-            check(System.nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
+            check(nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
         }
         val rules = config.enabledRules
         val subClass = ReasoningRule.RDFS_SUBCLASS in rules
@@ -160,7 +160,14 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val domains = index(all, DOMAIN)
             val ranges = index(all, RANGE)
             val added = LinkedHashSet<RdfTriple>()
-            fun emit(triple: RdfTriple) { if (triple !in all) added.add(triple) }
+            // The cap and the time budget are checked as triples are produced, so one round cannot overshoot either.
+            fun emit(triple: RdfTriple) {
+                if (triple in all || !added.add(triple)) return
+                require(all.size + added.size - assertedCount <= config.materializationThreshold) {
+                    "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
+                }
+                if ((++steps and 1023L) == 0L) checkBudget()
+            }
             for (t in all) {
                 if ((++steps and 1023L) == 0L) checkBudget()
                 val obj = t.obj
@@ -198,17 +205,17 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         triples.asSequence().filter { it.predicate == predicate }.groupBy({ it.subject }, { it.obj })
 
     private fun performClassification(triples: Collection<RdfTriple>): ClassificationResult {
-        val classHierarchy = mutableMapOf<Iri, List<Iri>>()
-        val instanceClassifications = mutableMapOf<Iri, List<Iri>>()
-        val propertyHierarchy = mutableMapOf<Iri, List<Iri>>()
+        val classHierarchy = mutableMapOf<Iri, MutableList<Iri>>()
+        val instanceClassifications = mutableMapOf<Iri, MutableList<Iri>>()
+        val propertyHierarchy = mutableMapOf<Iri, MutableList<Iri>>()
 
         triples.forEach { triple ->
             val subject = triple.subject as? Iri ?: return@forEach
             val obj = triple.obj as? Iri ?: return@forEach
             when (triple.predicate) {
-                SUB_CLASS_OF -> classHierarchy[subject] = classHierarchy.getOrDefault(subject, emptyList()) + obj
-                TYPE -> instanceClassifications[subject] = instanceClassifications.getOrDefault(subject, emptyList()) + obj
-                SUB_PROPERTY_OF -> propertyHierarchy[subject] = propertyHierarchy.getOrDefault(subject, emptyList()) + obj
+                SUB_CLASS_OF -> classHierarchy.getOrPut(subject) { ArrayList() }.add(obj)
+                TYPE -> instanceClassifications.getOrPut(subject) { ArrayList() }.add(obj)
+                SUB_PROPERTY_OF -> propertyHierarchy.getOrPut(subject) { ArrayList() }.add(obj)
             }
         }
 
