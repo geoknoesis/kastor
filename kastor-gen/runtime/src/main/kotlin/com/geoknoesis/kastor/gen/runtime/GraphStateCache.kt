@@ -116,7 +116,8 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  * - when the provider does not tell, the state of the graph is rebuilt in place for the writer and again for the
  *   next reader (one entry at all times, never one per stamp); a state left behind by a finished transaction is
  *   replaced by the next call;
- * - a failing stamp read (a closed repository) releases the state cached for that handle at once and is rethrown.
+ * - a failing stamp read (a closed repository) releases the state cached for that handle at once and is rethrown;
+ *   a failing [Settings.transactionPrivate] predicate does not: the stamp is treated as private to the transaction.
  *
  * ## Locking and single-flight loads
  * The data graph is read (stamp, triples) only while this cache holds **no** lock, so [use] may be called while the
@@ -130,7 +131,8 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  * graph. A caller with another stamp (it reads other content, e.g. inside its own transaction) does not wait: the
  * load in flight is of no use to it, and its owner may be waiting for a repository lock that this very caller holds.
  * For that same reason the wait is bounded by [Settings.loadWaitMillis], after which the caller reads the graph
- * itself: a caller that holds a repository lock is delayed, never deadlocked and never failed.
+ * itself: waiting for a load never deadlocks and never fails a caller that holds a repository lock (waiting for a
+ * state slot under a strict limit is different, see Bound).
  *
  * ## Bound
  * At most [maxEntries] states are cached, plus at most [Settings.maxTemporaryStates] temporary ones:
@@ -143,6 +145,9 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  *   in the caller's thread, which is released when its use ends. With `overflowWaitMillis = null` the limit is
  *   strict: the call waits up to [Settings.temporaryWaitMillis] and then fails with
  *   [GraphStateCacheSaturatedException], and at most `maxEntries + maxTemporaryStates` states exist at any time.
+ *   That wait is the same for a caller inside a transaction, which may hold its repository lock for all of it: it is
+ *   long (10 s by default) and ends in a failure, so choose a small [Settings.temporaryWaitMillis] when callers
+ *   hold repository locks and the limit is strict.
  *   Temporary states keep their slot until they are released. Evicting an idle entry is best-effort: the victim is
  *   released outside the lock (a release can be slow), so for that short time its replacement may coexist with it.
  * - Entries that can no longer be found by their handle are released without waiting for a cache miss, on the next
@@ -443,6 +448,20 @@ class GraphStateCache<S : Any>(
     }
 
     /**
+     * The answer of the provider's predicate. A predicate that throws says nothing about the store (it is not a stamp
+     * read), so the cached state is kept; the stamp is then treated as private, which never serves or stores a state
+     * for content that may be uncommitted.
+     */
+    private fun transactionPrivate(graph: VersionedRdfGraph): Boolean =
+        try {
+            isTransactionPrivate(graph)
+        } catch (e: Exception) {
+            System.getLogger(GraphStateCache::class.java.name)
+                .log(System.Logger.Level.WARNING, "The transaction-private predicate failed; treating the stamp as private", e)
+            true
+        }
+
+    /**
      * Runs [block] with the state of [data], building it first when [data] is new or changed. The state must not be
      * used after [block] returns. A graph without a modification stamp is read once per call (see the class
      * documentation): do all the work that needs one content version of the graph inside one block.
@@ -463,7 +482,6 @@ class GraphStateCache<S : Any>(
         if (data is VersionedRdfGraph) {
             try {
                 stamp = data.modificationStamp
-                ownTransaction = isTransactionPrivate(data)
             } catch (failure: Exception) {
                 // The store is gone for good (a closed repository): its copy must not stay until it is evicted.
                 try {
@@ -473,6 +491,7 @@ class GraphStateCache<S : Any>(
                 }
                 throw failure
             }
+            ownTransaction = transactionPrivate(data)
         }
         var snapshot: Snapshot? = null
         var digest: GraphDigest? = null

@@ -82,14 +82,18 @@ public class OntologyFileReader(
         val dirs = LinkedHashSet<File>()
         near?.absoluteFile?.let { source ->
             var dir: File? = source.parentFile
+            var below: File? = null
             while (dir != null) {
                 val parent = dir.parentFile
-                if (parent != null && parent.name == "src") {
+                // The nearest src/<sourceSet>/<language> layout: a package directory that happens to be called `src`
+                // is not followed by a language directory, so it is not mistaken for the source root.
+                if (parent != null && parent.name == "src" && below?.name in SOURCE_LANGUAGE_DIRS) {
                     dirs += File(dir, "resources")
                     dirs += File(parent, "main/resources")
                     parent.parentFile?.let { dirs += it }
                     break
                 }
+                below = dir
                 dir = parent
             }
         }
@@ -130,5 +134,10 @@ public class OntologyFileReader(
                 className = VocabularyMapper.extractLocalName(shape.targetClass)
             )
         }
+    }
+
+    private companion object {
+        /** Directories that follow `src/<sourceSet>` in a source tree. */
+        val SOURCE_LANGUAGE_DIRS = setOf("kotlin", "java", "scala", "groovy")
     }
 }

@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContainer
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdType
 import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.symbol.KSNode
@@ -265,5 +266,45 @@ class JsonLdContextSpecTest {
             "JSON-LD context: term \"a\": cyclic definition (a -> b -> a)",
             rejected("""{ "a": { "@id": "b" }, "b": { "@id": "a" } }"""),
         )
+    }
+
+    @Test
+    fun `a class in expanded form with a type-scoped context is recorded as a type and names the generated type`() {
+        // JSON-LD 1.1, 4.1.8 "Scoped contexts": the term for a class carries a @context that applies to its instances.
+        val context = parse(
+            """
+            {
+              "foaf": "http://xmlns.com/foaf/0.1/",
+              "Person": { "@id": "foaf:Person", "@context": { "name": "foaf:name" } },
+              "Agent": { "@id": "foaf:Agent" },
+              "knows": { "@id": "foaf:knows", "@type": "@id" }
+            }
+            """,
+        )
+        assertEquals(Iri("http://xmlns.com/foaf/0.1/Person"), context.typeMappings["Person"])
+        assertEquals(Iri("http://xmlns.com/foaf/0.1/Agent"), context.typeMappings["Agent"])
+        assertNull(context.typeMappings["knows"], "a coerced property is not a class")
+        assertTrue("Person" in context.propertyMappings, "the scoped context stays reachable")
+        assertEquals("Person", NamingUtils.domainName("http://xmlns.com/foaf/0.1/Person", context))
+    }
+
+    @Test
+    fun `an IRI that ends with any gen-delim defines a prefix`() {
+        val context = parse(
+            """
+            {
+              "a": "http://example.com/ns#",
+              "b": "http://example.com/ns/",
+              "c": "http://example.com/ns?",
+              "d": "http://example.com/ns[",
+              "e": "http://example.com/ns]",
+              "f": "http://example.com/ns@",
+              "g": "http://example.com/ns:",
+              "Thing": "http://example.com/ns/Thing"
+            }
+            """,
+        )
+        assertEquals(setOf("a", "b", "c", "d", "e", "f", "g"), context.prefixes.keys)
+        assertEquals(setOf("Thing"), context.typeMappings.keys)
     }
 }

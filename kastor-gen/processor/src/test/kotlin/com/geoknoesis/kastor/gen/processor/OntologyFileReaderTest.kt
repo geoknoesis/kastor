@@ -40,4 +40,15 @@ class OntologyFileReaderTest {
         assertFailsWith<FileNotFoundException> { OntologyFileReader(logger, listOf(roots)).loadOntologyModel("missing.ttl") }
         assertEquals(1, logger.errors.size)
     }
+
+    @Test
+    fun `a package directory named src is not mistaken for the source root`() {
+        val source = File(dir, "proj/src/main/kotlin/src/app/Model.kt").apply { parentFile.mkdirs(); writeText("package src.app") }
+        File(dir, "proj/src/main/resources/shapes.ttl").apply { parentFile.mkdirs(); writeText(shapes) }
+
+        val reader = OntologyFileReader(RecordingLogger())
+        val first = reader.candidates("shapes.ttl", source).first()
+        assertEquals(File(dir, "proj/src/main/resources/shapes.ttl").canonicalFile, first.canonicalFile)
+        assertEquals(1, reader.loadOntologyModel("shapes.ttl", near = source).shapes.size)
+    }
 }
