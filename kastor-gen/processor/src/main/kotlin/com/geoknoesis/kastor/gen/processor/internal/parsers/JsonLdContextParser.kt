@@ -271,9 +271,17 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
                 reverse = reverse,
             )
             val prefixFlag = definition["@prefix"]
-            if (prefixFlag is JsonPrimitive && !prefixFlag.isString && prefixFlag.content == "true" && !term.contains(":")) {
+            val isPrefix = prefixFlag is JsonPrimitive && !prefixFlag.isString && prefixFlag.content == "true" && !term.contains(":")
+            if (isPrefix) {
                 active.prefixes[term] = iri
                 logger.info("Extracted prefix: $term -> $iri")
+            } else if (!term.contains(":") && !reverse && type == null && containers.isEmpty() &&
+                definition.keys.all { it in TYPE_TERM_KEYWORDS }
+            ) {
+                // Like a simple term, a definition that only names an IRI (and perhaps a type-scoped @context) is the
+                // name of a class: it must reach the type mappings, which decide how the generated type is called.
+                active.types[term] = RdfIri(iri)
+                logger.info("Extracted type mapping: $term -> $iri")
             }
             definition["@context"]?.let { scoped += term to it }
             logger.info("Extracted property: $term -> $iri (type: $type, container: $primary${if (reverse) ", reverse" else ""})")
@@ -319,7 +327,8 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
 
     private fun fail(message: String): Nothing = throw IllegalArgumentException("JSON-LD context: $message")
 
-    private fun isPrefixDefinition(uri: String): Boolean = uri.endsWith("#") || uri.endsWith("/")
+    /** JSON-LD 1.1: a simple term defines a prefix when its IRI ends with a gen-delim character. */
+    private fun isPrefixDefinition(uri: String): Boolean = uri.isNotEmpty() && uri.last() in GEN_DELIMS
 
     private fun resolveContainer(value: String): JsonLdContainer = when (value) {
         "@list" -> JsonLdContainer.List
@@ -351,6 +360,12 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
             "@id", "@reverse", "@type", "@container", "@context", "@language", "@direction", "@index", "@nest",
             "@prefix", "@protected", "@propagate",
         )
+
+        /** Term definition keywords that leave a term a plain name for its IRI (see [expanded]). */
+        val TYPE_TERM_KEYWORDS: Set<String> = setOf("@id", "@context", "@protected", "@propagate", "@prefix")
+
+        /** The gen-delims of RFC 3986 that end an IRI used as a prefix. */
+        const val GEN_DELIMS: String = ":/?#[]@"
 
         /** Schemes without `//` that are IRIs in their own right, not compact IRIs with an undeclared prefix. */
         val ABSOLUTE_SCHEMES: Set<String> = setOf("urn", "mailto", "tel", "did", "doi", "tag", "info", "geo")
