@@ -12,6 +12,8 @@ object ReasonerRegistry {
 
     private val providers = ConcurrentHashMap<String, RdfReasonerProvider>()
 
+    private val discoveryErrors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+
     private val selectionOrder =
         compareByDescending<RdfReasonerProvider> { it.priority() }.thenBy { it.getType() }
 
@@ -50,14 +52,42 @@ object ReasonerRegistry {
     }
 
     /**
-     * Discover available reasoner providers.
+     * Discover available reasoner providers. A provider that fails to load is recorded in [getDiscoveryErrors] and
+     * skipped, and a provider already registered for a type (for example by [register]) is not replaced.
      */
     fun discoverProviders(): List<RdfReasonerProvider> {
-        val serviceLoader = java.util.ServiceLoader.load(RdfReasonerProvider::class.java)
-        serviceLoader.forEach { provider ->
-            register(provider)
+        val iterator = try {
+            java.util.ServiceLoader.load(RdfReasonerProvider::class.java).iterator()
+        } catch (e: Throwable) {
+            recordDiscoveryFailure(e)
+            return getProviders()
         }
+        discoverFrom(iterator)
         return getProviders()
+    }
+
+    /** Failures hit while discovering providers; the providers that did load are registered regardless. */
+    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors.toList()
+
+    internal fun discoverFrom(iterator: Iterator<RdfReasonerProvider>) {
+        var consecutiveFailures = 0
+        while (true) {
+            try {
+                if (!iterator.hasNext()) return
+                val provider = iterator.next()
+                providers.putIfAbsent(provider.getType(), provider)
+            } catch (e: Throwable) {
+                recordDiscoveryFailure(e)
+                if (++consecutiveFailures > 100) return
+                continue
+            }
+            consecutiveFailures = 0
+        }
+    }
+
+    private fun recordDiscoveryFailure(e: Throwable) {
+        if (e is VirtualMachineError) throw e
+        discoveryErrors.add(e)
     }
 
     /**

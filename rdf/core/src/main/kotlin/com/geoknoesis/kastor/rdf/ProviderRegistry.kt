@@ -331,14 +331,48 @@ class DefaultProviderRegistry(
     }
 
     private fun discoverWithServiceLoader() {
-        try {
-            ServiceLoader.load(RdfProvider::class.java).forEach { provider ->
-                register(provider)
-            }
-        } catch (e: Exception) {
-            discoveryErrors.add(e)
-            discoveryErrorHandler(e)
+        val iterator = try {
+            ServiceLoader.load(RdfProvider::class.java).iterator()
+        } catch (e: Throwable) {
+            recordDiscoveryFailure(e)
+            return
         }
+        discoverFrom(iterator)
+    }
+
+    /**
+     * Registers every provider [iterator] yields. A provider that fails to load (a broken service file, a missing
+     * class, a throwing constructor) is recorded in [getDiscoveryErrors] and skipped; the rest still register.
+     */
+    internal fun discoverFrom(iterator: Iterator<RdfProvider>) {
+        var consecutiveFailures = 0
+        while (true) {
+            try {
+                if (!iterator.hasNext()) return
+                register(iterator.next())
+            } catch (e: Throwable) {
+                recordDiscoveryFailure(e)
+                // A broken iterator that keeps failing on hasNext() would loop forever; ServiceLoader advances past the
+                // bad entry on failure, but bound the retries so a misbehaving source cannot hang start-up.
+                if (++consecutiveFailures > MAX_DISCOVERY_FAILURES) return
+                continue
+            }
+            consecutiveFailures = 0
+        }
+    }
+
+    private fun recordDiscoveryFailure(e: Throwable) {
+        if (e is VirtualMachineError) throw e
+        discoveryErrors.add(e)
+        try {
+            discoveryErrorHandler(e)
+        } catch (_: Exception) {
+            // a faulty handler must not abort discovery
+        }
+    }
+
+    private companion object {
+        const val MAX_DISCOVERY_FAILURES = 100
     }
 }
 
