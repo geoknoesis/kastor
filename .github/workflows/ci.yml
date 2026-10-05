@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # A hung test must not hold a runner for the 6-hour default; a normal run takes 45-60 minutes.
+    # A hung test must not hold a runner for the 6-hour default; a normal run takes about 20 minutes on Windows.
     timeout-minutes: 120
     env:
       # Skip embedding/semantic tests that download the all-MiniLM-L6-v2 ONNX model
@@ -50,6 +50,9 @@ jobs:
           python scripts/test_check_staged_publications.py
           python scripts/test_check_build_pins.py
           python scripts/test_check_readme_imports.py
+          python scripts/test_check_performance.py
+          python scripts/test_check_doc_versions.py
+          python scripts/test_check_release_provenance.py
 
       - name: Documentation version references
         run: python scripts/check-doc-versions.py
@@ -102,9 +105,9 @@ jobs:
 
       - name: Verify executed test counts and skips
         # Floor is ~90% of the executed count without the RDF corpus and with the bundled SHACL fixture
-        # (2,797 on 2026-10-02 after round seven, about 3,370 after round eight); raise it as tests are added.
+        # (2,797 on 2026-10-02 after round seven, about 3,370 after round eight; 3,100 is about 92% of that); raise it as tests are added.
         # New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python scripts/check-test-results.py build/modules --minimum 3100 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -189,7 +192,7 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 3100 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload verification reports
         if: always()

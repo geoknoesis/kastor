@@ -1,6 +1,6 @@
 # Release-readiness acceptance ledger
 
-> Historical ledger for the September candidate. For the October audit, six subsequent fixes, current verification evidence and outstanding release decisions, see [the current release review](KASTOR_RELEASE_REVIEW.md#current-status--4-october-2026). The 9.4 score below is historical.
+> Historical ledger for the September candidate. For the October audit, six subsequent fixes, current verification evidence and outstanding release decisions, see [the current release review](KASTOR_RELEASE_REVIEW.md#current-score---5-october-2026-800100). The 9.4 score below is historical.
 
 This records the 14 tasks requested after the 82/100 reassessment. Fresh Linux and Windows clean-build/consumer verification now covers the latest library candidate. Linux broad verification preceded one test-setup fix, which passed in the subsequent Linux native run and the clean Windows build. Earlier test-key signing results remain separate historical evidence. The latest weighted score is 94.15/100 (9.4/10 rounded); public release and a 95+ endorsement still require the outstanding release gates.
 
@@ -19,7 +19,7 @@ This records the 14 tasks requested after the 82/100 reassessment. Fresh Linux a
 | 11 | Model initialization contention | Replaced global serialization with canonical-directory in-flight work and process file locks; added deadlines, stalled-body cancellation and temporary-file cleanup. Concurrency, download and real native inference tests passed. |
 | 12 | Dependency/security verification | Removed unnecessary RDF4J runtime aggregate; upgraded and aligned vulnerable dependencies. Final OSV audit: 570 pinned Maven coordinates, zero advisory IDs; separate ONNX Runtime 1.18.0 PyPI lookup also returned none. Pattern-based working-tree/history secret scan found none. The full build and final native tests passed with dependency verification; clean verification also enforces existing locks/checksums. |
 | 13 | Maintainability/documentation cleanup | Made 179 processor API declarations explicit and enabled strict explicit API; extracted logger adapter; documented limits, toolchain, compatibility and release gates. Corrected API documentation links (no unresolved links in the strict rebuild), eliminated stale/colliding artifact collection, and moved test scratch to the build volume with post-worker cleanup. Clean Windows full verification passed; individual skipped cases are retained in `build/review/clean-windows-skips.json`. |
-| 14 | Fresh release audit | Fresh self-review and consolidated evidence are in [KASTOR_RELEASE_REVIEW.md](KASTOR_RELEASE_REVIEW.md). All seven clean phases passed on both Windows and Linux; Linux native checks passed after fixing the stalled-download test setup race. Independent reviewer approval must be obtained separately against the exact release candidate. |
+| 14 | Fresh release audit | The September self-review is summarised as history in [KASTOR_RELEASE_REVIEW.md](KASTOR_RELEASE_REVIEW.md); the current score is there too. All seven clean phases passed on both Windows and Linux; Linux native checks passed after fixing the stalled-download test setup race. Independent reviewer approval must be obtained separately against the exact release candidate. |
 
 ## Evidence and operating instructions
 

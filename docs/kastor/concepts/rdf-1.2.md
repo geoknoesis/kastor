@@ -1,6 +1,6 @@
 # RDF 1.2 in Kastor
 
-Kastor 0.2.0 implements the [W3C RDF 1.2](https://www.w3.org/TR/rdf12-concepts/)
+Kastor (since 0.2.0) implements the [W3C RDF 1.2](https://www.w3.org/TR/rdf12-concepts/)
 data model end-to-end. This page summarises what RDF 1.2 changes versus the
 previous RDF-star based model and shows the corresponding Kastor APIs. If you
 are upgrading from 0.1.x, also read the
