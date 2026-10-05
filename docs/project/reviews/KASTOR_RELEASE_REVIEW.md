@@ -20,7 +20,14 @@ Open items that cap the score: `main` CI has failed intermittently on flaky conc
 the twelve runs to 5 October); concurrency-heavy code (`GraphStateCache`, Jena queued steps) is the main
 defect source; `NativeShaclValidator` (about 2,300 lines) and several other files remain very large; evidence is
 mostly incremental Windows working-tree builds, with no clean cross-platform build of the latest fixes; the
-publication identity, signing and first release are deliberately undecided. The sections below are history.
+publication identity, signing and first release are deliberately undecided. 
+Update, 5 October 2026: `main` CI was green on all jobs for three consecutive commits (`6d4fe22`, `739bf98`,
+`368a5c6`). A concurrency audit of `GraphStateCache` found and fixed one defect (`sweep` retired in-use entries
+after an equal handle replaced the caller's handle; regression test added). One lower-severity item is left as
+documented best-effort: a released state's slot is freed just before its release runs, so the entry bound can be
+exceeded briefly. Digest, handle-equality, term-helper and regex-budget code was moved out of `GraphStateCache`
+and `NativeShaclValidator` without behaviour change; the evaluator core of `NativeShaclValidator` is still
+one large class. The score above has not been re-measured. The sections below are history.
 
 ## Status at 4 October 2026 (superseded by the score above)
 
