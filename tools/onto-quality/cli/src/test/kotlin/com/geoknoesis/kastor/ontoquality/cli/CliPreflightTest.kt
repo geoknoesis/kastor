@@ -107,6 +107,29 @@ class CliPreflightTest {
     }
 
     @Test
+    fun `--ollama-base and --llm-model are validated, also in a dry run, and --ollama-base is flagged with other providers`() {
+        val enricher = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList()) }
+        val environment = CliEnvironment(explanationEnricherFactory = { enricher }, env = env(null))
+
+        for (bad in listOf("localhost:11434", "ftp://host/x", "http://", "not a url", "   ")) {
+            for (extra in listOf(emptyList(), listOf("--explain-dry-run"))) {
+                val result = cli(checkArgs("--llm-provider", "ollama", "--ollama-base", bad) + extra, environment)
+                assertEquals(EXIT_USAGE, result.status, "'$bad' $extra: ${result.err}")
+                assertTrue(result.err.contains("--ollama-base must be an http or https URL"), result.err)
+            }
+        }
+        for (extra in listOf(emptyList(), listOf("--explain-dry-run"))) {
+            val blank = cli(checkArgs("--llm-model", "  ") + extra, environment)
+            assertEquals(EXIT_USAGE, blank.status, blank.err)
+            assertTrue(blank.err.contains("--llm-model must not be blank"), blank.err)
+        }
+        val ignored = cli(checkArgs("--explain-dry-run", "--ollama-base", "http://localhost:11434"), environment)
+        assertTrue(ignored.err.contains("--ollama-base is ignored"), ignored.err)
+        val used = cli(checkArgs("--explain-dry-run", "--llm-provider", "ollama", "--ollama-base", "http://localhost:11434"), environment)
+        assertFalse(used.err.contains("--ollama-base is ignored"), used.err)
+    }
+
+    @Test
     fun `an output that is a dangling symbolic link is refused before any LLM call`() {
         val link = dir.resolve("report-link.json")
         val created =

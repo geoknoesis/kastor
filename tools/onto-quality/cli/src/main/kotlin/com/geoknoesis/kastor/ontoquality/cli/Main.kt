@@ -1006,12 +1006,15 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
             if (explainDryRun) throw usageError("--explain-dry-run requires --explain")
             null
         } else {
+            // Checked for a dry run too: it exists to catch a bad configuration before a paid run.
+            val provider = parseLlmProvider(llmProvider)
+            if (llmModel != null && llmModel!!.isBlank()) throw usageError("--llm-model must not be blank")
             LlmExplainCli(
                 dryRun = explainDryRun,
-                provider = parseLlmProvider(llmProvider),
+                provider = provider,
                 modelId = llmModel?.trim()?.takeIf { it.isNotEmpty() },
                 modelPreset = parseExplanationModelPreset(llmModelPreset),
-                ollamaBase = ollamaBase?.trim()?.takeIf { it.isNotEmpty() },
+                ollamaBase = validatedOllamaBase(ollamaBase),
                 maxFindings = explainMax,
                 batchSize = explainBatch,
                 minSeverity = explainMinViolationSeverity(explainMinSeverity),
@@ -1022,6 +1025,17 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
                 maxOutputTokens = llmMaxOutputTokens,
             )
         }
+}
+
+/** `--ollama-base` as an `http(s)` URL with a host; the value is not echoed (it may carry credentials). */
+internal fun validatedOllamaBase(value: String?): String? {
+    if (value == null) return null
+    val base = value.trim()
+    val uri = try { java.net.URI(base) } catch (_: java.net.URISyntaxException) { null }
+    if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrEmpty()) {
+        throw usageError("--ollama-base must be an http or https URL with a host, for example http://localhost:11434")
+    }
+    return base
 }
 
 private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline", environment.outputFileSystem) {
@@ -1219,9 +1233,13 @@ private fun apiKeyEnv(provider: LlmProvider): String? = provider.apiKeyVariable
  * warning is printed and the returned options are marked [LlmExplainCli.skipped].
  */
 private fun preflightLlm(llm: LlmExplainCli?, environment: CliEnvironment, err: (String) -> Unit): LlmExplainCli? {
-    if (llm == null || llm.dryRun) return llm
+    if (llm == null) return null
+    if (llm.ollamaBase != null && llm.provider != LlmProvider.OLLAMA) {
+        err("onto-qa: warning: --ollama-base is ignored: it only applies to --llm-provider ollama (the provider is ${llm.provider.name.lowercase()}).")
+    }
+    if (llm.dryRun) return llm
     val keyEnv = apiKeyEnv(llm.provider)
-    val key = keyEnv?.let { environment.env(it) }?.takeIf { it.isNotBlank() }
+    val key = keyEnv?.let { environment.env(it) }?.trim()?.takeIf { it.isNotEmpty() }
     val problem =
         when {
             !environment.env(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true) ->
