@@ -1,12 +1,12 @@
 # Release checklist
 
-This is the exact procedure for the first release from the hardened build. `release-readiness.yml` has run green on `main`; `publish.yml` has never run (nothing is published yet). Every step below must run for real before a tag is pushed. Local runs do not replace them.
+This is the exact procedure for the first release from the hardened build. `release-readiness.yml` is `workflow_dispatch`-only: it ran green on `main` when last dispatched manually, but it does not run on every push and a green run on an older commit says nothing about the release commit. `main` CI itself has had intermittent failures from flaky concurrency tests. `publish.yml` has never run (nothing is published yet). Every step below must run for real before a tag is pushed. Local runs do not replace them.
 
-Expected runtimes: CI about 45–60 minutes per OS; release readiness about 60–90 minutes per OS plus 25–40 minutes for the signing job; publish about 20 minutes plus Central Portal validation (up to 30 minutes).
+Expected runtimes: CI about 20 minutes on Windows (Linux is shorter); release readiness about 60–90 minutes per OS plus 25–40 minutes for the signing job; publish about 20 minutes plus Central Portal validation (up to 30 minutes).
 
 ## Status of repository settings (pending user action)
 
-The workflows and scripts are committed, but the GitHub settings they depend on are **not applied yet**. A maintainer with admin rights must do these steps; nothing in CI applies them. State checked read-only on 2026-09-14:
+The workflows and scripts are committed, but the GitHub settings they depend on are **not applied yet**. A maintainer with admin rights must do these steps; nothing in CI applies them. The table below was last checked read-only on 2026-09-14 (private vulnerability reporting: 2026-09-30); re-check each row with the `gh api` commands in step 3.5 before relying on it:
 
 | Setting | Current state | Required by | Step |
 |---|---|---|---|
@@ -15,7 +15,8 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 | `release-tags` tag ruleset | **missing** | only admins may push `v*` tags | 3.3 |
 | `main-protection` branch ruleset | **missing** (only the disabled "My ruleset" exists) | PRs and required checks on `main` | 3.3 |
 | Pages source | **legacy** (`build_type: legacy`, branch `main` `/docs`) so every push deploys twice | `pages.yml` as the only deployment | 3.3 |
-| Code security: Dependabot security updates, secret scanning + push protection, private vulnerability reporting | **disabled** (Dependabot vulnerability alerts already enabled; read-only check 2026-09-30) | `SECURITY.md` reporting channel, leaked-secret blocking, dependency fixes | 3.3 |
+| Code security: Dependabot security updates, secret scanning + push protection | **disabled** as of the 2026-09-30 read-only check (Dependabot vulnerability alerts already enabled) | leaked-secret blocking, dependency fixes | 3.3 |
+| Private vulnerability reporting | **enabled as of 2026-09-30** (configured then; verify with `gh api repos/geoknoesis/kastor/private-vulnerability-reporting`, expect `{"enabled":true}`) | `SECURITY.md` reporting channel | 3.3 (verify) |
 | Environment secrets (4) | **not set** | `publish.yml` signing and upload | 3.4 |
 
 ## 1. Land the changes through a pull request
@@ -139,3 +140,7 @@ One gap remains. If the runner dies between the upload's HTTP response and the r
 | `Required suite missing, too small or skipped` | The W3C corpus was not fetched or the harness fell back to the bundled fixture. Check `scripts/fetch-conformance-data.py` output. |
 | Dependabot Gradle PR fails on locks or verification metadata | Run `scripts/refresh-dependency-locks.sh --commit` on the PR branch (see CONTRIBUTING). |
 | `Dependency review skipped: the Dependency graph is not enabled` notice | Expected until step 3.1; not a failure. |
+
+## Known limitations
+
+- **Dependency verification is checksum-only.** `gradle/verification-metadata.xml` sets `verify-signatures` to `false` on purpose: SHA-256 checksums of every resolved artifact are pinned and reviewed, but PGP signatures of upstream artifacts are not checked, so a first-seen artifact is trusted on the checksum recorded when the metadata is regenerated (`scripts/regenerate-verification-metadata.sh`). Enabling signature verification is a possible future hardening, not a current guarantee.

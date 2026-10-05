@@ -2,12 +2,12 @@
 
 ## Supported versions
 
-Security updates are applied to the **latest minor release on `main`** and, when practical, backported to the most recent **published** release line. Kastor is currently **0.x**; APIs and behavior may change between minors—see [CHANGELOG.md](CHANGELOG.md).
+Security updates are applied to the **latest minor release on `main`** and, when practical, backported to the most recent **published** release line once one exists. Nothing has been published to Maven Central yet. Kastor is currently **0.x**; APIs and behavior may change between minors—see [CHANGELOG.md](CHANGELOG.md).
 
 | Version line | Supported |
 |--------------|-----------|
 | `main` (upcoming) | Yes |
-| Latest published 0.x | Best effort |
+| Latest published 0.x | Best effort (none published yet) |
 | Older 0.x tags | Not guaranteed |
 
 ## Reporting a vulnerability
@@ -16,7 +16,7 @@ Security updates are applied to the **latest minor release on `main`** and, when
 
 Preferred channels (pick one):
 
-1. **GitHub private reporting** (if enabled on the repository): **Security** tab → **Report a vulnerability**. This keeps details private to maintainers.
+1. **GitHub private reporting** (enabled as of 2026-09-30; verify with `gh api repos/geoknoesis/kastor/private-vulnerability-reporting`): **Security** tab → **Report a vulnerability**. This keeps details private to maintainers.
 2. **Email:** [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com) with subject line starting with `[Kastor Security]`.
 
 Include a **short description** of the issue, affected components (e.g. `rdf:core`, `kastor-gen:runtime`), and steps to reproduce if you can share them safely.
