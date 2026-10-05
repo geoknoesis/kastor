@@ -817,10 +817,14 @@ class GraphStateCache<S : Any>(
         while (iterator.hasNext()) {
             val entry = iterator.next()
             if (entry.handles.isEmpty() || entry.hasLiveHandle()) continue
+            // In use: the handle its caller holds may no longer be the one tracked (a newer equal handle replaced it),
+            // so "no live handle" proves nothing. Retiring it would stop it counting against the bounds and have the
+            // next equal handle rebuild the state; a later sweep drops it once it is idle.
+            if (entry.users > 0) continue
             // Found by handle only: no later call can hit it (an equal handle reloads; that reference is soft, so
             // it is cleared under memory pressure, which is when a copy of a store should go).
             var drop = entry.stamped || entry.handles.any { it.equal } || entry.loaded == null
-            if (!drop && entry.users == 0) {
+            if (!drop) {
                 // Identified by content: a fresh handle with the same content still hits it, so it is kept for a
                 // while; an obsolete version of a changing graph is never hit again and expires.
                 if (!timed) {
@@ -832,7 +836,7 @@ class GraphStateCache<S : Any>(
             if (drop) {
                 iterator.remove()
                 entry.retired = true
-                if (entry.users == 0) released += entry
+                released += entry
             }
         }
     }
