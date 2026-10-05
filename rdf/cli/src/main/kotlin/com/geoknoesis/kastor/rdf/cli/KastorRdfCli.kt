@@ -50,10 +50,25 @@ fun main(args: Array<String>) {
     val err = printStream(FileOutputStream(FileDescriptor.err), charsets.err)
     System.setOut(out)
     System.setErr(err)
-    val code = runCli(args.toList(), out, err)
-    out.flush()
-    err.flush()
+    val code = exitCodeAfterFlush(runCli(args.toList(), out, err), out, err)
     if (code != 0) exitProcess(code)
+}
+
+/**
+ * [code], unless standard output could not be written: a [PrintStream] swallows [IOException]s (a closed pipe, a full
+ * disk) and only [PrintStream.checkError] tells, so a result that never arrived must not exit 0.
+ */
+internal fun exitCodeAfterFlush(code: Int, out: PrintStream, err: PrintStream): Int {
+    val outputLost = out.checkError() // flushes first
+    err.flush()
+    if (!outputLost) return code
+    try {
+        err.println("kastor-rdf: error: could not write to standard output")
+        err.flush()
+    } catch (_: Throwable) {
+        // Nothing more can be reported; the status still tells.
+    }
+    return EXIT_RUNTIME_ERROR
 }
 
 /** A line-flushed [PrintStream] over [stream], writing [charset]. */
@@ -235,6 +250,10 @@ internal fun runCli(args: List<String>, out: PrintStream, err: PrintStream, runt
         return EXIT_USAGE
     }
     return try {
+        if (args[0] in COMMAND_USAGE && helpRequested(args.drop(1))) {
+            out.println(COMMAND_USAGE.getValue(args[0]))
+            return EXIT_OK
+        }
         when (args[0]) {
             "help", "--help", "-h" -> {
                 expectAtMost(args.drop(1), 0)
@@ -266,6 +285,39 @@ internal fun runCli(args: List<String>, out: PrintStream, err: PrintStream, runt
     }
 }
 
+/** True when `--help` or `-h` appears before a `--` terminator. */
+private fun helpRequested(rest: List<String>): Boolean = rest.takeWhile { it != "--" }.any { it == "--help" || it == "-h" }
+
+private val COMMAND_USAGE =
+    mapOf(
+        "parse" to
+            """
+            Usage: kastor-rdf parse [--] <file> [FORMAT]
+
+            Parses <file> and prints the number of triples (and named graphs). FORMAT defaults from the file extension.
+            The whole input is loaded in memory; very large dumps are not streamed.
+            Use -- before a file name that starts with a dash.
+            """.trimIndent(),
+        "to-turtle" to
+            """
+            Usage: kastor-rdf to-turtle [--] <file> [INPUT_FORMAT]
+
+            Prints <file> as Turtle. Inputs with named graphs are refused (Turtle cannot represent them).
+            The whole input is loaded in memory; very large dumps are not streamed.
+            Use -- before a file name that starts with a dash.
+            """.trimIndent(),
+        "diff" to
+            """
+            Usage: kastor-rdf diff [--timeout <seconds>] [--max-search-states <n>] [--] <file1> <file2> [FORMAT]
+
+            Compares two files up to blank node relabelling: exit 0 isomorphic, 2 not isomorphic, 3 stopped at a limit.
+            --timeout <seconds>: wall-clock limit (default $DEFAULT_DIFF_TIMEOUT_SECONDS; 0 = no limit).
+            --max-search-states <n>: backtracking limit (default $DEFAULT_DIFF_SEARCH_STATES; 0 = no limit).
+            Both inputs are loaded in memory; very large dumps are not streamed.
+            Use -- before a file name that starts with a dash.
+            """.trimIndent(),
+    )
+
 /** Unexpected failures (I/O, provider or internal errors, JVM errors): one line on [err], [EXIT_RUNTIME_ERROR]. */
 internal fun exitCodeForFailure(e: Throwable, err: PrintStream): Int {
     try {
@@ -291,7 +343,9 @@ private fun printUsage(out: PrintStream) {
           kastor-rdf help
           kastor-rdf parse <file> [FORMAT]
           kastor-rdf to-turtle <file> [INPUT_FORMAT]
-          kastor-rdf diff [--timeout <seconds>] [--max-search-states <n>] <file1> <file2> [FORMAT]
+          kastor-rdf diff [--timeout <seconds>] [--max-search-states <n>] [--] <file1> <file2> [FORMAT]
+          kastor-rdf <command> --help       per-command help; -- ends the options (files starting with a dash)
+        Inputs are loaded in memory (no streaming): very large dumps need a correspondingly large heap.
 
         Exit status: 0 success; 1 usage or input error (bad or extra arguments, unknown format, missing file,
         parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal, out of memory).
@@ -365,6 +419,10 @@ private class DiffArguments(rest: List<String>) {
         while (i < rest.size) {
             val arg = rest[i]
             when {
+                arg == "--" -> {
+                    positional += rest.drop(i + 1)
+                    break
+                }
                 arg == "--timeout" -> {
                     timeout = seconds(rest.getOrNull(i + 1) ?: throw CliError("--timeout requires a number of seconds (0 = no limit)"))
                     i++
@@ -687,9 +745,10 @@ internal fun ioFailureIn(e: Throwable): Throwable? {
 private const val JENA_RUNTIME_IO_EXCEPTION = "org.apache.jena.atlas.RuntimeIOException"
 
 private fun parseFileArgs(rest: List<String>): Pair<Path, String?> {
-    if (rest.isEmpty()) throw CliError("Missing file path")
-    expectAtMost(rest, 2)
-    return requireRegular(Path.of(rest[0])) to rest.getOrNull(1)
+    val args = if (rest.firstOrNull() == "--") rest.drop(1) else rest
+    if (args.isEmpty()) throw CliError("Missing file path")
+    expectAtMost(args, 2)
+    return requireRegular(Path.of(args[0])) to args.getOrNull(1)
 }
 
 private fun requireRegular(path: Path): Path {
