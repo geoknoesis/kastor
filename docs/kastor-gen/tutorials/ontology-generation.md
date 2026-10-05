@@ -324,9 +324,10 @@ initialisation.
   `"x"@EN` are one member). When the lists have **no member in common**, every value of the path is rejected
   (the same holds for an explicit `sh:in ()`, which the parser keeps as an empty list), and generation logs a
   warning naming the shape and the path; no check is silently dropped.
-- **Numeric bounds are exact.** Bounds are held as `BigDecimal` values in the model, so a bound such as
-  `9223372036854775807` is not rounded. Wrapper `validate()`, instance-DSL setters and the DSL's `validate()`
-  all compare values exactly against the bound's decimal form; `NaN` is never within bounds.
+- **Numeric bounds preserve datatype semantics.** Bounds are held as `BigDecimal` values in the model.
+  Wrapper `validate()`, instance-DSL setters and the DSL's `validate()` compare integer and decimal values
+  exactly. For `xsd:float` and `xsd:double`, both the value and bound use that floating-point type's precision:
+  for example, `16777217` rounds to `16777216` as a float. `NaN` is never within bounds.
 - **Shape parameters are honoured.** A property shape's `sh:severity` sets the generated
   `ShaclViolation.severity` (`sh:Warning` → `Warning`, `sh:Info` → `Info`, anything else → `Violation`), and
   its `sh:message` replaces the generated message. A node shape with `sh:deactivated true` validates nothing

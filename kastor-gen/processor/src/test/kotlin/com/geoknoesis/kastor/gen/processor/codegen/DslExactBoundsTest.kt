@@ -21,8 +21,8 @@ import java.math.BigDecimal
 import kotlin.test.assertEquals
 
 /**
- * Instance DSL setters and `validate()` compare numeric bounds exactly (bounds and values beyond the `Double` range
- * keep every digit), and enum setter types keep packages with upper-case segments.
+ * Instance DSL setters and `validate()` preserve exact integer bounds and promote bounds for floating-point
+ * comparisons. Enum setter types keep packages with upper-case segments.
  */
 class DslExactBoundsTest {
 
@@ -42,19 +42,21 @@ class DslExactBoundsTest {
             val builder = AccountBuilder(Iri("urn:a"), MemoryGraph())
             val atMax = outcome { builder.balance(BigInteger("9223372036854775807")) }
             val overMax = outcome { builder.balance(BigInteger("9223372036854775808")) }
-            val doubleOverMax = outcome { builder.score(9.223372036854775807E18) }
+            // The decimal bound and this value become the same double after numeric promotion.
+            val doubleAtMax = outcome { builder.score(9.223372036854775807E18) }
+            val doubleOverMax = outcome { builder.score(Math.nextUp(9.223372036854775807E18)) }
             val nan = outcome { builder.score(Double.NaN) }
 
             val g = MemoryGraph()
             val node = Iri("urn:b")
             g.addTriple(RdfTriple(node, Iri("https://example.test/balance"), TypedLiteral("9223372036854775808", Iri("http://www.w3.org/2001/XMLSchema#integer"))))
             val validated = try { AccountBuilder(node, g).validate(); "valid" } catch (e: ValidationException) { "violation" }
-            return listOf(atMax, overMax, doubleOverMax, nan, validated).joinToString("|")
+            return listOf(atMax, overMax, doubleAtMax, doubleOverMax, nan, validated).joinToString("|")
         }
     """.trimIndent()
 
     @Test
-    fun `setters and validate compare numeric bounds exactly`() {
+    fun `setters and validate preserve integer precision and promote floating bounds`() {
         val bound = BigDecimal("9223372036854775807")
         val model = OntologyModel(
             listOf(
@@ -71,7 +73,7 @@ class DslExactBoundsTest {
         val dsl = InstanceDslGenerator(RecordingLogger()).generate(InstanceDslRequest("accounts", model, "gen.dslbounds.dsl", DslGenerationOptions()))
         val result = KotlinSourceCompiler.compile(listOf(dsl), mapOf("gen/dslbounds/dsl/Probe.kt" to probe))
         result.assertOk()
-        assertEquals("ok|rejected|rejected|rejected|violation", result.classLoader().loadClass("gen.dslbounds.dsl.ProbeKt").getMethod("probe").invoke(null))
+        assertEquals("ok|rejected|ok|rejected|rejected|violation", result.classLoader().loadClass("gen.dslbounds.dsl.ProbeKt").getMethod("probe").invoke(null))
     }
 
     @Test

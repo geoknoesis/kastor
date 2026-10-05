@@ -187,7 +187,7 @@ internal fun mergeValidationReport(
     val extraWarnings = consistencyWarningMessages.map { ValidationWarning(message = it) }
     val violationsByType = merged.groupingBy { it.constraint.constraintType }.eachCount()
     return base.copy(
-        isValid = merged.none(::blocking),
+        isValid = base.isValid && extraViolations.none(::blocking),
         violations = merged,
         warnings = base.warnings + extraWarnings,
         shapeViolations = merged.groupBy { it.shapeUri ?: "unknown" },

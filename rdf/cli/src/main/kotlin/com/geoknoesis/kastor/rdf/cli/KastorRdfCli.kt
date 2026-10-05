@@ -150,22 +150,28 @@ private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<Strin
     /**
      * The dataset as one graph: every quad becomes `<graph> <urn:kastor:rdf-cli:contains> <<( s p o )>>`, so one graph
      * isomorphism check maps blank nodes consistently across the default graph and all named graphs.
+     * Default-graph quads use a distinct predicate so no input graph IRI can alias their encoding.
      *
      * It is a view: the quads are wrapped as they are read and the graphs are not copied into a second indexed graph.
      */
-    fun asQuadGraph(): RdfGraph = QuadView(listOf(DEFAULT_GRAPH to defaultGraph) + namedGraphs.map { Iri(it.key) to it.value })
+    fun asQuadGraph(): RdfGraph = QuadView(listOf(null to defaultGraph) + namedGraphs.map { Iri(it.key) to it.value })
 
-    private class QuadView(private val graphs: List<Pair<Iri, RdfGraph>>) : RdfGraph {
+    private class QuadView(private val graphs: List<Pair<Iri?, RdfGraph>>) : RdfGraph {
         private val byName = graphs.toMap()
 
         override fun getTriplesSequence(): Sequence<RdfTriple> =
-            graphs.asSequence().flatMap { (name, graph) -> graph.getTriplesSequence().map { RdfTriple(name, CONTAINS, TripleTerm(it)) } }
+            graphs.asSequence().flatMap { (name, graph) -> graph.getTriplesSequence().map { RdfTriple(name ?: DEFAULT_GRAPH, if (name == null) DEFAULT_CONTAINS else CONTAINS, TripleTerm(it)) } }
 
         override fun getTriples(): List<RdfTriple> = getTriplesSequence().toList()
 
         override fun hasTriple(triple: RdfTriple): Boolean {
             val quad = triple.obj as? TripleTerm ?: return false
-            return triple.predicate == CONTAINS && byName[triple.subject]?.hasTriple(quad.triple) == true
+            val name = triple.subject as? Iri ?: return false
+            return when (triple.predicate) {
+                DEFAULT_CONTAINS -> name == DEFAULT_GRAPH && byName[null]?.hasTriple(quad.triple) == true
+                CONTAINS -> byName[name]?.hasTriple(quad.triple) == true
+                else -> false
+            }
         }
 
         override fun size(): Int = graphs.sumOf { it.second.size() }
@@ -174,6 +180,7 @@ private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<Strin
     private companion object {
         val DEFAULT_GRAPH = Iri("urn:kastor:rdf-cli:default-graph")
         val CONTAINS = Iri("urn:kastor:rdf-cli:contains")
+        val DEFAULT_CONTAINS = Iri("urn:kastor:rdf-cli:default-contains")
     }
 }
 

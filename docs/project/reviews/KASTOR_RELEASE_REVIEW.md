@@ -1,4 +1,20 @@
-# Release-candidate self-review — 13 September 2026
+# Release-candidate review
+
+## Current status ? 4 October 2026
+
+The 3 October whole-repository audit revised the assessment to **9.0/10**, identifying six reproduced correctness defects: RDF4J blank-node identity collisions, lost SHACL conformance decisions during report merging, inaccessible Jena graphs after caught partial updates, CLI default/named-graph comparison collisions, floating-point bound comparisons, and invalid date timezone acceptance.
+
+All six have now been fixed in the working tree based on `8e4d9386c15ee0a7ad0480113ad32dc89f004168`. Five permanent regression classes cover the six defects and additional boundaries; the generated DSL test now checks numeric promotion and rejection of the next representable value. Checks for Jena, RDF4J, CLI, ontology quality, runtime and processor passed: 1,530 executed tests, three allowlisted skips, and zero failures, including API compatibility and coverage gates. Evidence: `build/six-fixes-verified.log` and `build/six-fixes-results.json`.
+
+Repository-wide `check` subsequently passed on Windows: 3,644 executed cases, ten allowlisted skips and zero failures across the invoked test tasks. This includes all 166 W3C SHACL cases. The 55 Python tooling tests and documentation-version, build-pin and README-import checks also passed. Evidence: `build/remaining-issues-check.log` and `build/remaining-issues-broad-results.json`. This was an incremental working-tree build, not a clean cross-platform release build.
+
+The subsequent full RDF corpus passed 1,913 executed cases with 204 allowlisted exclusions. Opt-in embedding and semantic checks passed all 166 cases with zero skips, including real-model inference, bundled semantic benchmarks and 200 native model/default-enricher lifecycle cycles after three warmups. The native soak passed its thread/RSS growth gates; it is bounded Windows evidence, not a production endurance guarantee. Required-suite gates confirmed that native and semantic cases actually ran. Evidence: `build/remaining-issues-native.log` and `build/remaining-issues-native-results.json`. A clean Linux build, fresh performance comparisons and remote release verification were not run for these fixes.
+
+Live OpenAI verification subsequently passed with the existing GPT-4o mini configuration and a synthetic ontology finding. `OpenAiExplanationIntegrationTest` executed (zero skips) in 6.53 seconds and verified parsed explanations, finding-reference association, substantive summary, provider metadata and Markdown output. The complete LLM module reported 47 cases, 0 skips and zero failures; the required-suite gate passed. Evidence: `build/live-openai-test.log` and `build/live-openai-results.json`. This verifies one live integration scenario, not sustained API availability or model quality across arbitrary inputs.
+
+The fixes have not received a new numerical score or independent signoff. The September results below describe earlier candidates, not verification of this working tree. Production version, repository and signing identity remain undecided; publication and remote release verification remain outstanding.
+
+## Historical assessment ? 13 September 2026
 
 **Updated public-release readiness: 9.4/10 (94.15/100 weighted), up from 93.15/100.** The increase reflects completed Linux verification, a fresh Windows build of the current candidate, native lifecycle evidence on both platforms, and confirmation that this is the first public release. The score is an engineering judgment, not a defect-free percentage. Production release configuration and independent signoff still prevent a 9.5+ endorsement.
 

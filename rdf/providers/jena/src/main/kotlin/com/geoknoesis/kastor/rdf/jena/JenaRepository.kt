@@ -1147,8 +1147,22 @@ class JenaRepository private constructor(
             } else {
                 val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
                 val foreign = if (mayCreateBlankGraph(request)) blankGraphNames() else null
-                org.apache.jena.update.UpdateAction.execute(request, dataset)
-                if (foreign != null) skolemizeBlankGraphs(foreign)
+                var failure: Throwable? = null
+                try {
+                    org.apache.jena.update.UpdateAction.execute(request, dataset)
+                } catch (e: Throwable) {
+                    failure = e
+                    throw e
+                } finally {
+                    // An outer transaction may catch the error and retain earlier successful operations.
+                    if (foreign != null) {
+                        try {
+                            skolemizeBlankGraphs(foreign)
+                        } catch (e: Exception) {
+                            failure?.addSuppressed(e) ?: throw e
+                        }
+                    }
+                }
             }
         }
     }

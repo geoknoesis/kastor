@@ -96,8 +96,8 @@ internal object Rdf4jFormatSupport {
 
     /**
      * The blank nodes of one parsed document: every label of the document gets an id of the form
-     * `genid-<document, 32 hex digits>-<label>` (Rio's own scheme; a label longer than 32 characters is replaced by
-     * its MD5 digest), the same id wherever the label occurs.
+     * `genid-<document, 32 hex digits>-<ordinal>`, the same id wherever the label occurs.
+     * Full source labels are mapped to unique ordinals, so distinct labels cannot collide.
      *
      * Rio alone does not do that: it renames the labels it reads as terms of a statement, but a triple term that is
      * written as an `urn:rdf4j:triple:` IRI (the form Rio's writers use in every RDF 1.1 syntax, so the form
@@ -112,11 +112,8 @@ internal object Rdf4jFormatSupport {
         private val renamed = HashMap<String, org.eclipse.rdf4j.model.BNode>()
 
         private fun node(label: org.eclipse.rdf4j.model.BNode): org.eclipse.rdf4j.model.BNode = renamed.getOrPut(label.id) {
-            val id = label.id
-            val suffix = if (id.length <= MAX_LABEL_LENGTH) id else {
-                java.security.MessageDigest.getInstance("MD5").digest(id.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-            }
-            values.createBNode(prefix + suffix)
+            // The full source label is the map key; generated IDs never overlap with source labels.
+            values.createBNode(prefix + renamed.size)
         }
 
         @Suppress("UNCHECKED_CAST")
@@ -140,9 +137,6 @@ internal object Rdf4jFormatSupport {
             else values.createStatement(subject, statement.predicate, obj, context)
         }
 
-        private companion object {
-            const val MAX_LABEL_LENGTH = 32
-        }
     }
 
     /**

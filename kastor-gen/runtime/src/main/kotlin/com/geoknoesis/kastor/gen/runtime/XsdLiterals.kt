@@ -67,7 +67,12 @@ object XsdLiterals {
    */
   fun localDate(literal: Literal): LocalDate? {
     val match = DATE.matchEntire(literal.lexical.trim()) ?: return null
-    val (sign, year, month, day) = match.destructured
+    val (sign, year, month, day, timezone) = match.destructured
+    if (timezone.isNotEmpty() && timezone != "Z") {
+      val hours = timezone.substring(1, 3).toInt()
+      val minutes = timezone.substring(4, 6).toInt()
+      if (hours > 14 || minutes > 59 || (hours == 14 && minutes != 0)) return null
+    }
     return try {
       LocalDate.of((sign + year).toInt(), month.toInt(), day.toInt())
     } catch (_: DateTimeException) {
@@ -132,26 +137,26 @@ object XsdLiterals {
   ).map { XSD + it }.toSet()
 
   /**
-   * Exact comparison of a numeric literal with [bound] (a decimal lexical form), for `sh:minInclusive` and friends.
+   * Comparison of a numeric literal with [bound] (a decimal lexical form), for `sh:minInclusive` and friends.
    * Returns the sign of `value - bound`, or `null` when the comparison is undefined: [term] is not a well-formed
-   * XSD numeric literal, or is `NaN`. Infinite values compare beyond every bound.
+   * XSD numeric literal, or is `NaN`. Decimal bounds are promoted to the literal's floating-point type when needed.
    */
   fun compareNumeric(term: RdfTerm, bound: String): Int? {
     val literal = term as? Literal ?: return null
     if (literal.datatype.value !in NUMERIC_DATATYPES || !isWellFormed(literal)) return null
-    val lexical = literal.lexical.trim()
-    val value = when (literal.datatype.value) {
-      "${XSD}float", "${XSD}double" -> {
-        val d = double(literal) ?: return null
-        when {
-          d.isNaN() -> return null
-          d.isInfinite() -> return if (d > 0) 1 else -1
-          else -> BigDecimal(lexical)
-        }
-      }
-      else -> BigDecimal(lexical)
+    val decimalBound = BigDecimal(bound)
+    return when (literal.datatype.value) {
+      "${XSD}float" -> compareFloating(float(literal)!!.toDouble(), decimalBound.toFloat().toDouble())
+      "${XSD}double" -> compareFloating(double(literal)!!, decimalBound.toDouble())
+      else -> BigDecimal(literal.lexical.trim()).compareTo(decimalBound).coerceIn(-1, 1)
     }
-    return value.compareTo(BigDecimal(bound)).coerceIn(-1, 1)
+  }
+
+  private fun compareFloating(value: Double, bound: Double): Int? = when {
+    value.isNaN() -> null
+    value == bound -> 0 // Numeric equality includes positive and negative zero.
+    value < bound -> -1
+    else -> 1
   }
 
   /**

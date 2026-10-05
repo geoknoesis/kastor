@@ -14,6 +14,15 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (audit regressions)
+
+- Preserve distinct RDF4J blank-node labels even when a long label's digest matches another source label.
+- Preserve SHACL conformance decisions when merging reasoner diagnostics, including truncated reports.
+- Normalize Jena blank-node graph names after partially failed updates caught by an outer transaction.
+- Distinguish default and named graphs in CLI dataset comparisons even when an input uses the internal marker IRI.
+- Compare generated numeric constraints using floating-point values and numeric promotion while retaining exact decimal/integer comparisons.
+- Reject out-of-range `xsd:date` timezone offsets before converting to a local date.
+
 ### Changed (core source organization)
 
 - Split the RDF facade, repository and query-result contracts, provider configuration, and registry into focused source files.

@@ -1,5 +1,7 @@
 # Release-readiness acceptance ledger
 
+> Historical ledger for the September candidate. For the October audit, six subsequent fixes, current verification evidence and outstanding release decisions, see [the current release review](KASTOR_RELEASE_REVIEW.md#current-status--4-october-2026). The 9.4 score below is historical.
+
 This records the 14 tasks requested after the 82/100 reassessment. Fresh Linux and Windows clean-build/consumer verification now covers the latest library candidate. Linux broad verification preceded one test-setup fix, which passed in the subsequent Linux native run and the clean Windows build. Earlier test-key signing results remain separate historical evidence. The latest weighted score is 94.15/100 (9.4/10 rounded); public release and a 95+ endorsement still require the outstanding release gates.
 
 | # | Task | Implementation and verification |
