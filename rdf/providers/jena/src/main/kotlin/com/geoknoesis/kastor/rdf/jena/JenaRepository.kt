@@ -894,6 +894,15 @@ class JenaRepository private constructor(
     /**
      * Opens a view of [snapshot]: starts a worker and begins its read transaction. Null when the worker's
      * transaction does not see exactly [snapshot] (a commit happened in between).
+     *
+     * **Bound.** Each view owns one daemon worker thread and one open read transaction (a snapshot of the store). Only
+     * the view of the newest snapshot is shared and reachable by new readers ([currentView]); a commit retires it, and
+     * it stops as soon as its last holder's transaction ends (or, when unused, after `viewIdleTimeout`). A reader of an
+     * older snapshot gets a view private to it, which is released when its transaction ends. At any moment the number
+     * of views (and worker threads) is therefore at most one plus the number of read transactions still running on an
+     * older snapshot; it is not capped otherwise, because refusing a view would make an inference read fail for a
+     * reader that is entitled to its snapshot. Bound the concurrent readers of an inferencing repository (and keep
+     * its read transactions short) to bound the threads and the retained snapshots.
      */
     private fun openView(snapshot: Snapshot): SnapshotView? {
         val worker = InferenceWorker("kastor-jena-inference", workerThreads)

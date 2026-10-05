@@ -47,10 +47,16 @@ internal object JenaTerms {
         }
     }
 
+    /**
+     * The label a blank node is stored under: its id without the `_:` of a Turtle label. An id that is nothing but the
+     * prefix is kept as it is (not an empty label), like on the RDF4J provider.
+     */
+    private fun blankLabel(node: BlankNode): String = if (node.id.length > 2 && node.id.startsWith("_:")) node.id.substring(2) else node.id
+
     /** Converts a Kastor term to a raw Jena [Node]. */
     fun toJenaNode(term: RdfTerm): Node = when (term) {
         is Iri -> NodeFactory.createURI(term.value)
-        is BlankNode -> NodeFactory.createBlankNode(term.id.removePrefix("_:"))
+        is BlankNode -> NodeFactory.createBlankNode(blankLabel(term))
         is TripleTerm -> NodeFactory.createTripleTerm(
             toJenaNode(term.triple.subject),
             NodeFactory.createURI(term.triple.predicate.value),
@@ -120,7 +126,7 @@ internal object JenaTerms {
         return when (term) {
             is Iri -> model.createResource(term.value)
             is BlankNode -> {
-                val anonId = org.apache.jena.rdf.model.AnonId.create(term.id.removePrefix("_:"))
+                val anonId = org.apache.jena.rdf.model.AnonId.create(blankLabel(term))
                 model.createResource(anonId)
             }
         }
