@@ -130,6 +130,58 @@ class JenaReasonerBoundsTest {
         assertFalse(JenaReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.prepare() }, permits).getInferredTriples(graph).isEmpty(), "permits are released")
     }
 
+    /**
+     * What happens after a successful preparation (validate(), the first hasNext() of a lazy closure) cannot be
+     * interrupted either: it runs on the same bounded worker, and the caller is released at the deadline. The clock is
+     * injected and the worker is held by a latch, so nothing here depends on elapsed time.
+     */
+    @Test
+    @org.junit.jupiter.api.Timeout(300)
+    fun `an uninterruptible use of the prepared model is abandoned at the deadline too`() {
+        val calls = listOf<(JenaReasoner, RdfGraph) -> Any?>(
+            { r, g -> r.isConsistent(g) },
+            { r, g -> r.validateOntology(g) },
+            { r, g -> r.reason(g) },
+            { r, g -> r.getInferredTriples(g) },
+            { r, g -> r.classify(g) },
+        )
+        for (call in calls) {
+            val release = CountDownLatch(1)
+            val started = CountDownLatch(1)
+            val now = AtomicLong()
+            val timeout = Duration.ofHours(1)
+            val stuckUse: (org.apache.jena.rdf.model.InfModel) -> Unit = {
+                started.countDown()
+                now.addAndGet(timeout.toNanos())
+                // The bound only turns a regression (the caller itself running here) into a failure instead of a hang.
+                val giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+                while (System.nanoTime() < giveUp) {
+                    try {
+                        if (release.await(1, TimeUnit.SECONDS)) break
+                    } catch (_: InterruptedException) {
+                        // keep going, like Jena's uninterruptible evaluation
+                    }
+                }
+            }
+            val permits = Semaphore(1)
+            val workers = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+            val threads = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-jena-prepare").also { workers.add(it) } }
+            val reasoner = JenaReasoner(ReasonerConfig.rdfs().copy(timeout = timeout), now::get, { it.prepare() }, permits, threads, stuckUse)
+            try {
+                val error = assertThrows(IllegalStateException::class.java) { call(reasoner, chain(3, 3)) }
+                assertTrue(error.message!!.contains("timed out"), error.message)
+                assertTrue(started.await(60, TimeUnit.SECONDS))
+                assertEquals(1, workers.size)
+                assertTrue(workers.single().isAlive, "the abandoned work goes on in the background")
+                assertEquals(0, permits.availablePermits(), "and keeps its permit while it runs")
+            } finally {
+                release.countDown()
+            }
+            workers.forEach { it.join() }
+            assertEquals(1, permits.availablePermits(), "the permit is returned when the abandoned work finishes")
+        }
+    }
+
     @Test
     fun `a worker thread that cannot be started returns its permit and leaves the reasoner usable`() {
         val permits = Semaphore(2)

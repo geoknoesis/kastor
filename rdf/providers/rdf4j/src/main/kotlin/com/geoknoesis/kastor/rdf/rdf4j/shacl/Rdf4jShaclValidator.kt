@@ -56,7 +56,11 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  *
  * **Configuration:**
  * - [ValidationConfig.timeout] bounds one validation call: `ShaclSail` runs on a worker thread, and the call fails
- *   with a [ShaclValidationException] when the time is up (the worker is interrupted and cleans up on its own).
+ *   with a [ShaclValidationException] when the time is up. `ShaclSail`'s commit cannot be interrupted, so the worker is
+ *   only asked to stop and may keep running (and holding its copy of the data) until the commit returns, when it shuts
+ *   its repository down itself. Such abandoned workers count against the same limit as running ones (at most
+ *   [MAX_IN_FLIGHT_VALIDATIONS] at once, shared by every validator of this class loader): a call that finds all
+ *   slots taken waits for one until its own deadline and then fails with a [ShaclValidationException].
  * - [ValidationConfig.maxViolations] is also given to `ShaclSail` as its result limit, so it stops producing results
  *   once the report is full; [ValidationReport.violationsTruncated] says that results were left out. (RDF4J's own
  *   default caps results at 1000 per constraint without saying so in the report Kastor returns.)
@@ -73,10 +77,12 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * ([ValidationViolation.path] for a predicate path, [ValidationViolation.resultPathNode] with
  * [ValidationViolation.resultPathTriples] for every path) and `sh:sourceConstraint`.
  *
+ * @param workers limits concurrently running (including abandoned) `ShaclSail` workers; replaceable in tests.
  * @param sailPhaseStarted test seam: runs on the worker thread before `ShaclSail` is given anything.
  */
 internal class Rdf4jShaclValidator(
     private val config: ValidationConfig,
+    private val workers: java.util.concurrent.Semaphore = WORKERS,
     private val sailPhaseStarted: (() -> Unit)? = null,
 ) : ShaclValidator {
 
@@ -185,6 +191,20 @@ internal class Rdf4jShaclValidator(
    * @param limit the most validation results `ShaclSail` produces, in total and per constraint; [UNLIMITED] for all.
    */
   private fun runSail(shapeStmts: List<Statement>, dataStmts: List<Statement>, limit: Long, deadline: Long): SailOutcome {
+    // A worker that timed out keeps running until its (uninterruptible) commit returns, so it keeps its permit; this
+    // also holds the re-run for an unlimited result set back until the first worker is completely done.
+    val acquired = try {
+      workers.tryAcquire((deadline - System.nanoTime()).coerceAtLeast(0), java.util.concurrent.TimeUnit.NANOSECONDS)
+    } catch (e: InterruptedException) {
+      Thread.currentThread().interrupt()
+      throw ShaclValidationException("SHACL validation timed out or was cancelled", e)
+    }
+    if (!acquired) {
+      throw ShaclValidationException(
+          "SHACL validation timed out: too many validations in progress (at most $MAX_IN_FLIGHT_VALIDATIONS, including " +
+              "abandoned ones that are still finishing); retry later or raise ValidationConfig.timeout (= ${config.timeout})",
+      )
+    }
     val task = java.util.concurrent.FutureTask<SailOutcome> {
       sailPhaseStarted?.invoke()
       val sail = ShaclSail(MemoryStore())
@@ -210,7 +230,13 @@ internal class Rdf4jShaclValidator(
         repo.shutDown()
       }
     }
-    Thread(task, WORKER_THREAD).apply { isDaemon = true }.start()
+    try {
+      // The permit is returned when the task has returned (also a cancelled one that never ran), after its cleanup.
+      Thread({ try { task.run() } finally { workers.release() } }, WORKER_THREAD).apply { isDaemon = true }.start()
+    } catch (t: Throwable) {
+      workers.release()
+      throw t
+    }
     try {
       return task.get((deadline - System.nanoTime()).coerceAtLeast(0), java.util.concurrent.TimeUnit.NANOSECONDS)
     } catch (e: java.util.concurrent.TimeoutException) {
@@ -483,6 +509,12 @@ internal class Rdf4jShaclValidator(
 
   private companion object {
     const val WORKER_THREAD = "kastor-rdf4j-shacl"
+
+    /** Upper bound on `ShaclSail` workers at once, abandoned ones included. */
+    val MAX_IN_FLIGHT_VALIDATIONS: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
+
+    /** Shared by every [Rdf4jShaclValidator] of this class loader. */
+    val WORKERS = java.util.concurrent.Semaphore(MAX_IN_FLIGHT_VALIDATIONS)
 
     /** `ShaclSail`'s value for "no limit" on validation results. */
     const val UNLIMITED = -1L

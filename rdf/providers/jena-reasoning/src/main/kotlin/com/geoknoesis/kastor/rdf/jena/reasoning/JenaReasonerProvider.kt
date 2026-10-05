@@ -79,12 +79,13 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   [ReasoningRule.RDFS_RANGE]), the same rules as the memory reasoner. Jena's OWL reasoners cannot select
  *   rules, so OWL_MICRO / OWL_RL reject any rule set other than the type's default.
  * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. Jena's rule preparation (`prepare()`, which
- *   runs the forward/RETE rules over the data) cannot be interrupted, so it runs on a daemon worker thread that the
- *   caller waits for only until the deadline; a preparation that misses it is abandoned, finishes in the background,
- *   releases its models itself and only then returns its concurrency permit. At most [MAX_ABANDONED_PREPARATIONS] preparations may run at once: a call that
+ *   runs the forward/RETE rules over the data) and the first use of the prepared model (`validate()`, the first
+ *   `hasNext()` of a lazily evaluated closure) cannot be interrupted, so both run on one daemon worker thread that
+ *   the caller waits for only until the deadline; work that misses it is abandoned, finishes in the background,
+ *   releases its models itself and only then returns its concurrency permit. At most [MAX_ABANDONED_PREPARATIONS] workers may run at once: a call that
  *   cannot start one before its deadline fails with a clear "too many rule preparations in progress" error instead
  *   of piling up background work. If the worker thread cannot be started, the permit is returned at once and the
- *   failure propagates. After preparation the budget is checked for every inferred statement read. A
+ *   failure propagates. The budget is also checked for every inferred statement read. A
  *   timed-out call fails with [IllegalStateException].
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
  *   It is checked right after preparation against the forward deductions (so an oversized forward closure fails
@@ -121,6 +122,8 @@ class JenaReasoner internal constructor(
     private val preparations: java.util.concurrent.Semaphore,
     /** Creates the preparation worker threads; replaceable in tests. */
     private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, PREPARE_THREAD) },
+    /** Runs on the worker after the preparation, before the prepared model is used (validated, read); for tests. */
+    private val afterPrepare: (InfModel) -> Unit = {},
 ) : RdfReasoner {
 
     constructor(config: ReasonerConfig) : this(config, System::nanoTime, { it.prepare() }, PREPARATIONS)
@@ -188,10 +191,15 @@ class JenaReasoner internal constructor(
         try {
             budget.check()
             inf = ModelFactory.createInfModel(reasoner, base)
-            prepareWithinDeadline(inf, base, budget)
-            budget.check()
-            checkForwardDeductions(inf, base)
-            return block(base, inf, budget)
+            // Preparation and everything after it run on the worker: validate(), the first hasNext() of a lazily
+            // evaluated closure and the like cannot be interrupted either, and only the wait can be bounded.
+            return runWithinDeadline(inf, base, budget) {
+                prepare(inf)
+                afterPrepare(inf)
+                budget.check()
+                checkForwardDeductions(inf, base)
+                block(base, inf, budget)
+            }
         } catch (abandoned: PreparationAbandoned) {
             ownsModels = false // the preparation worker closes both models when it finishes
             throw IllegalStateException(TIMEOUT_MESSAGE, abandoned)
@@ -203,10 +211,11 @@ class JenaReasoner internal constructor(
     }
 
     /**
-     * Runs [prepare] on a daemon worker and waits at most until the budget's deadline. On timeout the preparation is
-     * abandoned: it keeps its [preparations] permit until it finishes, and then closes [inf] and [base] itself.
+     * Runs [work] (the rule preparation and the use of the prepared model) on a daemon worker and waits at most until
+     * the budget's deadline. On timeout the work is abandoned: it keeps its [preparations] permit until it finishes,
+     * and then closes [inf] and [base] itself. [work] never returns the models, only plain results.
      */
-    private fun prepareWithinDeadline(inf: InfModel, base: Model, budget: Budget) {
+    private fun <T> runWithinDeadline(inf: InfModel, base: Model, budget: Budget, work: () -> T): T {
         val acquired = try {
             preparations.tryAcquire(budget.remainingNanos().coerceAtLeast(0), java.util.concurrent.TimeUnit.NANOSECONDS)
         } catch (e: InterruptedException) {
@@ -218,11 +227,10 @@ class JenaReasoner internal constructor(
                 "including abandoned ones that are still finishing); retry later or raise ReasonerConfig.timeout"
         }
         val state = java.util.concurrent.atomic.AtomicInteger(RUNNING)
-        val outcome = java.util.concurrent.CompletableFuture<Unit>()
+        val outcome = java.util.concurrent.CompletableFuture<T>()
         val body = Runnable {
             try {
-                prepare(inf)
-                outcome.complete(Unit)
+                outcome.complete(work())
             } catch (t: Throwable) {
                 outcome.completeExceptionally(t)
             } finally {
@@ -252,8 +260,7 @@ class JenaReasoner internal constructor(
                 val remaining = budget.remainingNanos()
                 if (remaining <= 0) throw java.util.concurrent.TimeoutException()
                 try {
-                    outcome.get(minOf(remaining, WAIT_SLICE_NANOS), java.util.concurrent.TimeUnit.NANOSECONDS)
-                    break
+                    return outcome.get(minOf(remaining, WAIT_SLICE_NANOS), java.util.concurrent.TimeUnit.NANOSECONDS)
                 } catch (_: java.util.concurrent.TimeoutException) {
                     // re-check the budget
                 }

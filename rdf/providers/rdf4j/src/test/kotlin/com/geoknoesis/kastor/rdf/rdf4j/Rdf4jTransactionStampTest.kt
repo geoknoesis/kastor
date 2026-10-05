@@ -216,4 +216,28 @@ class Rdf4jTransactionStampTest {
             assertEquals(1, cache.loads.get(), "an uncommitted write of another thread must not invalidate the cached state")
         }
     }
+
+    @Test
+    fun `a read transaction overlapping another thread's commit never caches stale content under the new stamp`() {
+        // The stamp contract needs every transaction to read what has been committed so far (RDF4J's default
+        // READ_COMMITTED isolation of these stores): a transaction reading a lagging snapshot while reporting the
+        // new committed stamp would let a stamp-keyed cache keep stale content. Pin the property for every store.
+        val stores = listOf<() -> Rdf4jRepository>(
+            { Rdf4jRepository.MemoryRepository() },
+            { Rdf4jRepository.MemoryShaclRepository() },
+            { Rdf4jRepository.NativeRepository(java.nio.file.Files.createTempDirectory("stamp-native").toString()) },
+        )
+        for (open in stores) open().use { repo ->
+            repo.editGraph(g).addTriple(t("1"))
+            val cache = StampedCache()
+            repo.readTransaction {
+                assertEquals(setOf(t("1")), cache.content(getGraph(g)))
+                onOtherThread { repo.editGraph(g).addTriple(t("2")) }
+                val seen = cache.content(getGraph(g))
+                assertEquals(getGraph(g).getTriples().toSet(), seen, "the cached state is what the transaction reads now")
+                // Another thread is then served the committed content, not what the transaction cached.
+                assertEquals(setOf(t("1"), t("2")), onOtherThread { cache.content(repo.getGraph(g)) })
+            }
+        }
+    }
 }

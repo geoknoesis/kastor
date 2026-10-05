@@ -1224,6 +1224,9 @@ class Rdf4jRepository(
             } catch (e: Throwable) {
                 try {
                     if (conn.isActive) conn.rollback()
+                } catch (rollbackFailure: Throwable) {
+                    // The failure of the operations is the one to report; the failed rollback is attached to it.
+                    if (rollbackFailure !== e) e.addSuppressed(rollbackFailure)
                 } finally {
                     // The writes this thread saw inside the transaction are gone, and so are its private stamps.
                     if (privateStamp.get() != null) committedStamp = stamps.incrementAndGet()

@@ -90,4 +90,19 @@ class Rdf4jBlankNodeIdParityTest {
         assertTrue(graph.removeTriple(RdfTriple(s, q, term(labelled))))
         assertEquals(0, graph.size())
     }
+
+    @TestFactory
+    fun `an id that is only the prefix is kept as it is`(): List<DynamicTest> = each { repo ->
+        val prefixOnly = BlankNode("_:")
+        val graph = repo.editDefaultGraph()
+        graph.addTriple(RdfTriple(prefixOnly, p, string("x")))
+        graph.addTriple(RdfTriple(s, q, prefixOnly))
+        assertEquals(
+            setOf(RdfTriple(prefixOnly, p, string("x")), RdfTriple(s, q, prefixOnly)),
+            graph.getTriples().toSet(),
+            "not turned into a node with an empty label",
+        )
+        assertTrue(graph.hasTriple(RdfTriple(prefixOnly, p, string("x"))))
+        assertEquals(listOf(RdfTriple(s, q, prefixOnly)), graph.find(null, null, prefixOnly))
+    }
 }
