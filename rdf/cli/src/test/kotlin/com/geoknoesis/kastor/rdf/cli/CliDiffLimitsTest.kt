@@ -138,9 +138,13 @@ class CliDiffLimitsTest {
             )
         val result = run(runtime, "diff", "--timeout", "60", a, b)
         assertEquals(listOf(Duration.ofSeconds(60), Duration.ofSeconds(35), Duration.ofSeconds(10)), seen, "each check gets what is left")
-        assertEquals(EXIT_RUNTIME_ERROR, result.code, result.err)
+        // The dataset check already answered: a limit reached while explaining only leaves graphs unexplained.
+        assertEquals(EXIT_NOT_ISOMORPHIC, result.code, result.err)
+        assertTrue(result.err.contains("NOT ISOMORPHIC"), result.err)
+        assertTrue(result.err.contains("not compared on their own, a limit was reached: <http://e/g2>, <http://e/g3>"), result.err)
         assertTrue(result.err.contains("time limit exceeded") && result.err.contains("60 s for the whole comparison"), result.err)
-        assertFalse(result.err.contains("NOT ISOMORPHIC"), "no answer is known at a limit: ${result.err}")
+        assertFalse(result.err.contains("stopped without an answer"), result.err)
+        assertFalse(result.err.contains("every graph is isomorphic on its own"), "not every graph was compared: ${result.err}")
 
         // Without a limit every check is unlimited, and the answer is given.
         seen.clear()
@@ -148,6 +152,28 @@ class CliDiffLimitsTest {
         assertEquals(listOf<Duration?>(null, null, null, null, null), seen)
         assertEquals(EXIT_NOT_ISOMORPHIC, unlimited.code, unlimited.err)
         assertTrue(unlimited.err.contains("blank nodes shared across graphs do not correspond"), unlimited.err)
+    }
+
+    @Test
+    fun `a search limit reached while explaining a dataset difference keeps the answer`() {
+        fun dataset(label: String): String =
+            "_:${label}0 <http://e/p> _:${label}0 .\n<http://e/g1> { _:${label}1 <http://e/p> _:${label}1 }\n"
+        val a = file("a.trig", dataset("a"))
+        val b = file("b.trig", dataset("b"))
+        var calls = 0
+        val runtime =
+            CliRuntime(
+                isomorphic = { _, _, _ ->
+                    if (++calls == 1) false // the dataset as a whole: answered
+                    else throw GraphIsomorphismLimitException(GraphIsomorphismLimitException.Reason.SEARCH_STATES, "Graph isomorphism search limit exceeded (1000000 states)")
+                },
+            )
+        val result = run(runtime, "diff", a, b)
+        assertEquals(EXIT_NOT_ISOMORPHIC, result.code, result.err)
+        assertTrue(result.err.contains("NOT ISOMORPHIC"), result.err)
+        assertTrue(result.err.contains("not compared on their own, a limit was reached: (default graph), <http://e/g1>"), result.err)
+        assertTrue(result.err.contains("--max-search-states"), result.err)
+        assertEquals(3, calls)
     }
 
     @Test
