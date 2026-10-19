@@ -12,7 +12,9 @@ object ReasonerRegistry {
 
     private val providers = ConcurrentHashMap<String, RdfReasonerProvider>()
 
-    private val discoveryErrors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+    /** Failures of the most recent discovery run; each run replaces them, so repeated discovery does not pile up. */
+    @Volatile
+    private var discoveryErrors: List<Throwable> = emptyList()
 
     private val selectionOrder =
         compareByDescending<RdfReasonerProvider> { it.priority() }.thenBy { it.getType() }
@@ -59,35 +61,40 @@ object ReasonerRegistry {
         val iterator = try {
             java.util.ServiceLoader.load(RdfReasonerProvider::class.java).iterator()
         } catch (e: Throwable) {
-            recordDiscoveryFailure(e)
+            if (e is VirtualMachineError) throw e
+            discoveryErrors = listOf(e)
             return getProviders()
         }
         discoverFrom(iterator)
         return getProviders()
     }
 
-    /** Failures hit while discovering providers; the providers that did load are registered regardless. */
-    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors.toList()
+    /**
+     * Failures hit by the most recent discovery run ([discoverProviders]); the providers that did load are registered
+     * regardless. Each run replaces the list.
+     */
+    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors
 
     internal fun discoverFrom(iterator: Iterator<RdfReasonerProvider>) {
+        val errors = ArrayList<Throwable>()
         var consecutiveFailures = 0
-        while (true) {
-            try {
-                if (!iterator.hasNext()) return
-                val provider = iterator.next()
-                providers.putIfAbsent(provider.getType(), provider)
-            } catch (e: Throwable) {
-                recordDiscoveryFailure(e)
-                if (++consecutiveFailures > 100) return
-                continue
+        try {
+            while (true) {
+                try {
+                    if (!iterator.hasNext()) return
+                    val provider = iterator.next()
+                    providers.putIfAbsent(provider.getType(), provider)
+                } catch (e: Throwable) {
+                    if (e is VirtualMachineError) throw e
+                    errors.add(e)
+                    if (++consecutiveFailures > 100) return
+                    continue
+                }
+                consecutiveFailures = 0
             }
-            consecutiveFailures = 0
+        } finally {
+            discoveryErrors = errors.toList()
         }
-    }
-
-    private fun recordDiscoveryFailure(e: Throwable) {
-        if (e is VirtualMachineError) throw e
-        discoveryErrors.add(e)
     }
 
     /**
