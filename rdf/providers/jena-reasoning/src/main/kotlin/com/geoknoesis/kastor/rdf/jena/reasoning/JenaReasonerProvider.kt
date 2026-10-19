@@ -86,11 +86,13 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   cannot start one before its deadline fails with a clear "too many rule preparations in progress" error instead
  *   of piling up background work. If the worker thread cannot be started, the permit is returned at once and the
  *   failure propagates. The budget is also checked for every inferred statement read. A
- *   timed-out call fails with [IllegalStateException].
+ *   timed-out or interrupted call fails with [IllegalStateException]; its abandoned worker stops at its next budget
+ *   check (it cannot stop inside the preparation or `validate()`).
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
  *   It is checked right after preparation against the forward deductions (so an oversized forward closure fails
- *   before being read) and then incrementally for every inferred triple. The forward closure built by preparation
- *   itself cannot be bounded by count; only the timeout limits it.
+ *   before being read) and then incrementally for every inferred triple read (also by [classify]). The forward closure built by preparation
+ *   itself cannot be bounded by count; only the timeout limits it. [isConsistent] and [validateOntology] report no
+ *   inferred triples, so the threshold does not apply to them (like the RDF4J reasoner); the timeout still does.
  *
  * **Axiomatic triples:** the full RDFS and OWL rule sets also entail triples that hold without any data (e.g.
  * `rdf:type rdfs:range rdfs:Class`). For parity with the memory and RDF4J reasoners these are not reported as
@@ -171,19 +173,32 @@ class JenaReasoner internal constructor(
         return GenericRuleReasoner(rules)
     }
 
-    /** Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted. */
+    /**
+     * Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted, the checking
+     * thread is interrupted, or the call was [abandon]ed. The last matters on the worker: the interrupt (or timeout)
+     * that makes the caller give up is the caller's, so without it the worker would read on until the deadline.
+     */
     private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
         private val deadline = clock() + timeout.toNanos()
+        @Volatile private var abandoned = false
         fun remainingNanos(): Long = deadline - clock()
+        fun abandon() {
+            abandoned = true
+        }
         fun check() {
-            check(remainingNanos() > 0 && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
+            check(!abandoned && remainingNanos() > 0 && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
         }
     }
 
     /** Thrown when a preparation is abandoned at the deadline; the worker then owns (and closes) the models. */
     private class PreparationAbandoned : IllegalStateException(TIMEOUT_MESSAGE)
 
-    private fun <T> withInference(graph: RdfGraph, block: (Model, InfModel, Budget) -> T): T {
+    /**
+     * Prepares the inference model of [graph] and runs [block] on it within the budget. With [boundMaterialization]
+     * the forward deductions are checked against [ReasonerConfig.materializationThreshold] right after preparation;
+     * consistency checks pass false, since they materialise nothing (they stay bounded by the timeout).
+     */
+    private fun <T> withInference(graph: RdfGraph, boundMaterialization: Boolean = true, block: (Model, InfModel, Budget) -> T): T {
         val budget = Budget(config.timeout, clock)
         val base = JenaBridge.copyToJenaModel(graph)
         var inf: InfModel? = null
@@ -197,7 +212,7 @@ class JenaReasoner internal constructor(
                 prepare(inf)
                 afterPrepare(inf)
                 budget.check()
-                checkForwardDeductions(inf, base)
+                if (boundMaterialization) checkForwardDeductions(inf, base)
                 block(base, inf, budget)
             }
         } catch (abandoned: PreparationAbandoned) {
@@ -266,9 +281,12 @@ class JenaReasoner internal constructor(
                 }
             }
         } catch (e: java.util.concurrent.TimeoutException) {
+            budget.abandon()
             abandonOrFail(state, cause = e)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
+            // Stops the worker at its next budget check, so it returns its permit without reading on to the deadline.
+            budget.abandon()
             abandonOrFail(state, cause = e)
         } catch (e: java.util.concurrent.ExecutionException) {
             throw e.cause ?: e
@@ -336,7 +354,7 @@ class JenaReasoner internal constructor(
             val consistencyResult = consistencyOf(infModel.validate())
             budget.check()
             val inferredTriples = extractInferredTriples(base, infModel, budget)
-            val classificationResult = if (config.includeAxioms) performClassification(infModel, budget) else null
+            val classificationResult = if (config.includeAxioms) performClassification(base, infModel, budget) else null
             val reasoningTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
             ReasoningResult(
                 originalGraph = graph,
@@ -357,17 +375,18 @@ class JenaReasoner internal constructor(
         }
     }
 
-    override fun isConsistent(graph: RdfGraph): Boolean = withInference(graph) { _, inf, _ -> inf.validate().isValid }
+    override fun isConsistent(graph: RdfGraph): Boolean =
+        withInference(graph, boundMaterialization = false) { _, inf, _ -> inf.validate().isValid }
 
     override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> =
         withInference(graph) { base, inf, budget -> extractInferredTriples(base, inf, budget) }
 
     override fun classify(graph: RdfGraph): ClassificationResult =
-        withInference(graph) { _, inf, budget -> performClassification(inf, budget) }
+        withInference(graph) { base, inf, budget -> performClassification(base, inf, budget) }
 
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()
-        val consistency = withInference(graph) { _, inf, _ -> consistencyOf(inf.validate()) }
+        val consistency = withInference(graph, boundMaterialization = false) { _, inf, _ -> consistencyOf(inf.validate()) }
         val violations = consistency.inconsistencies.map { inconsistency ->
             ValidationViolation(
                 constraint = inconsistency.type.name,
@@ -456,7 +475,13 @@ class JenaReasoner internal constructor(
         return result
     }
 
-    private fun performClassification(model: Model, budget: Budget): ClassificationResult {
+    /**
+     * The class, instance and property hierarchies of the closure. Every inferred triple read counts against
+     * [ReasonerConfig.materializationThreshold], as in [extractInferredTriples].
+     */
+    private fun performClassification(base: Model, model: Model, budget: Budget): ClassificationResult {
+        val asserted = base.graph
+        var inferred = 0L
         fun hierarchy(predicate: String): Map<Iri, List<Iri>> {
             val result = linkedMapOf<Iri, MutableList<Iri>>()
             val iterator = model.graph.find(Node.ANY, org.apache.jena.graph.NodeFactory.createURI(predicate), Node.ANY)
@@ -464,6 +489,11 @@ class JenaReasoner internal constructor(
                 while (iterator.hasNext()) {
                     budget.check()
                     val t = iterator.next()
+                    if (!asserted.contains(t) && (includeAxiomatic || (t !in axiomatic && !isLazyAxiom(t)))) {
+                        require(++inferred <= config.materializationThreshold) {
+                            "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
+                        }
+                    }
                     if (t.subject.isURI && t.`object`.isURI) result.getOrPut(Iri(t.subject.uri)) { mutableListOf() }.add(Iri(t.`object`.uri))
                 }
             } finally {

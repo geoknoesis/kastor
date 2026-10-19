@@ -123,10 +123,27 @@ class CliPreflightTest {
             assertEquals(EXIT_USAGE, blank.status, blank.err)
             assertTrue(blank.err.contains("--llm-model must not be blank"), blank.err)
         }
+        // A Docker Compose service name has an underscore: java.net.URI finds no host in it, the Ollama client does.
+        for (good in listOf("http://ollama_server:11434", "https://user:pw@my_ollama.lan:8443/", "http://ollama_box")) {
+            assertEquals(good, validatedOllamaBase(" $good "))
+            val result = cli(checkArgs("--explain-dry-run", "--llm-provider", "ollama", "--ollama-base", good), environment)
+            assertFalse(result.err.contains("--ollama-base must be"), "'$good': ${result.err}")
+            assertTrue(result.status != EXIT_USAGE, "'$good': ${result.err}")
+        }
+        for (bad in listOf("http://bad host:1", "http://:11434", "http://under_score:port", "http://a..b:1")) {
+            assertTrue(runCatching { validatedOllamaBase(bad) }.isFailure, bad)
+        }
         val ignored = cli(checkArgs("--explain-dry-run", "--ollama-base", "http://localhost:11434"), environment)
         assertTrue(ignored.err.contains("--ollama-base is ignored"), ignored.err)
         val used = cli(checkArgs("--explain-dry-run", "--llm-provider", "ollama", "--ollama-base", "http://localhost:11434"), environment)
         assertFalse(used.err.contains("--ollama-base is ignored"), used.err)
+    }
+
+    @Test
+    fun `the API key is redacted as sent, without the line end a CRLF env file leaves`() {
+        val key = "sk-test-0123456789abcdef"
+        val secrets = secretsOf(CliEnvironment(env = env("$key\r\n")), com.geoknoesis.kastor.ontoquality.llm.LlmProvider.OPENAI)
+        assertEquals("HTTP 401: key *** rejected", com.geoknoesis.kastor.ontoquality.SecretRedaction.redact("HTTP 401: key $key rejected", secrets))
     }
 
     @Test

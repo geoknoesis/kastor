@@ -128,7 +128,7 @@ Alice Johnson is 30 years old
 The following formats are supported:
 
 - **Turtle**: `RdfFormat.TURTLE`
-- **JSON-LD**: `RdfFormat.JSON_LD`
+- **JSON-LD**: `RdfFormat.JSON_LD` (contexts must be inline: a `@context` or `@import` given by URL is never fetched, and the parse fails with `RdfFormatException`)
 - **RDF/XML**: `RdfFormat.RDF_XML`
 - **N-Triples**: `RdfFormat.N_TRIPLES`
 

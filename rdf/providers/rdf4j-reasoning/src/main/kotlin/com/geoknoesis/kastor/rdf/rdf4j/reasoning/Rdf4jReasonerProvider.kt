@@ -78,8 +78,9 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   every statement read from the closure. A timed-out call fails with [IllegalStateException]. If the worker
  *   thread cannot be started, the permit is returned at once and the failure propagates.
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
- *   It is checked incrementally while the closure is read back from the inferencer, so an oversized closure fails
- *   before it is copied.
+ *   It is checked incrementally while the closure is read back from the inferencer (by [reason],
+ *   [getInferredTriples] and [classify]), so an oversized closure fails before it is copied. The consistency checks
+ *   ([isConsistent], [validateOntology]) do not run the inferencer and are not bounded by it.
  *
  * **Memory limit (not enforced):** the inferencer materialises the **complete** closure in its in-memory store
  * inside `commit()`, before this class sees a single statement, and RDF4J offers no hook to count or stop it. Neither
@@ -187,8 +188,10 @@ class Rdf4jReasoner internal constructor(
         return inferredTriples(model, runRdfsInference(model, budget, thresholdAgainst = model), budget)
     }
 
-    override fun classify(graph: RdfGraph): ClassificationResult =
-        performClassification(runRdfsInference(convertToRdf4jModel(graph), Budget(config.timeout, clock), thresholdAgainst = null))
+    override fun classify(graph: RdfGraph): ClassificationResult {
+        val model = convertToRdf4jModel(graph)
+        return performClassification(runRdfsInference(model, Budget(config.timeout, clock), thresholdAgainst = model))
+    }
 
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()

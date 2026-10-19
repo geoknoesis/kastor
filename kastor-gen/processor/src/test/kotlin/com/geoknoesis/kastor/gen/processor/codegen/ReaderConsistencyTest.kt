@@ -117,7 +117,8 @@ class ReaderConsistencyTest {
         fun probe(): String {
             val g = MemoryGraph()
             val n = Iri("urn:m")
-            g.addTriple(RdfTriple(n, Iri("https://example.test/counts"), Literal("1")))
+            // Typed: a plain "1" (xsd:string) is not an integer literal and would be ill-typed too.
+            g.addTriple(RdfTriple(n, Iri("https://example.test/counts"), TypedLiteral("1", Iri("http://www.w3.org/2001/XMLSchema#integer"))))
             g.addTriple(RdfTriple(n, Iri("https://example.test/counts"), Literal("x")))
             g.addTriple(RdfTriple(n, Iri("https://example.test/maybe"), Literal("y")))
             g.addTriple(RdfTriple(n, Iri("https://example.test/must"), Literal("z")))

@@ -603,18 +603,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] TriG 1.2 - bad - empty annotation",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-1: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] TriG 1.2 - bad - triple as annotation",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-2: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - blank node",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')"
@@ -726,54 +714,6 @@
    "test": "[RDF4J/TRIG] trig-syntax-bad-num-02",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02: RDF4J 5.3.2 Rio accepts a malformed double literal (123e)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-01",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-02",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-03",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-04",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-05",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-06",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-07",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-08",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -930,36 +870,6 @@
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogate pair via numeric escape sequence",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogate-pair-bad-02: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - high-high",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-02: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone high surrogate",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-04: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone low surrogate",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-05: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - low-low",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-03: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - wrong order",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-01: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -1209,54 +1119,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-01",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-02",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-03",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-04",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-05",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-06",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-07",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-08",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-09",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
@@ -1272,6 +1134,12 @@
    "test": "an output that is a dangling symbolic link is refused before any LLM call()",
    "count": 1,
    "reason": "Creating a symbolic link needs a privilege that Windows accounts (and the Windows CI runner) do not have by default; the test runs on Linux and macOS, and a file-system seam covers the same path everywhere"
+  },
+  {
+   "class": "com.geoknoesis.kastor.benchmarks.shacl.era.ShaclEraCliTest",
+   "test": "the report gets the permissions of an ordinary new file()",
+   "count": 1,
+   "reason": "Checks POSIX file permissions (umask versus the 0600 of a temporary file); skipped where the file system has no POSIX attribute view, such as Windows, and runs on Linux and macOS"
   }
  ]
 }

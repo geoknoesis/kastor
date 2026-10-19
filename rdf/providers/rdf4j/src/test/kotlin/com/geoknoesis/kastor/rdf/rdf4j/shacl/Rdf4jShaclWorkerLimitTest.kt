@@ -80,6 +80,8 @@ class Rdf4jShaclWorkerLimitTest {
     assertTrue(workers.tryAcquire(60, TimeUnit.SECONDS), "the abandoned worker returns its slot when it finishes")
     workers.release()
     assertTrue(Rdf4jShaclValidator(ValidationConfig(), workers).validate(graph, graph).isValid)
-    assertEquals(1, workers.availablePermits())
+    // The worker hands the result back before it returns its permit (in a finally), so wait for the permit.
+    assertTrue(workers.tryAcquire(60, TimeUnit.SECONDS), "the worker of a completed validation returns its slot")
+    workers.release()
   }
 }

@@ -371,55 +371,73 @@ inline fun <reified T: Any> T.asRdf(): RdfHandle =
 
 /**
  * Writes the CBD (Concise Bounded Description) closure of this RDF-backed instance to the target graph.
- * 
+ *
  * CBD includes:
  * 1. All triples where this resource is the subject (direct properties)
  * 2. Recursively, for any blank node object, all triples where that blank node is the subject
- * 
+ *
  * This method extracts the complete resource description from the backing graph and writes it
  * to the target graph, following blank nodes recursively but not following IRIs.
- * 
+ *
+ * **Blank nodes are copied, not shared.** Every blank node of the closure (including a blank-node `rdf.node`
+ * written without [subject]) is written as a fresh blank node, the same fresh node for every occurrence within
+ * this call. Writing into a graph that already uses the same blank-node labels therefore never merges unrelated
+ * nodes, and copying a resource to a new IRI in its own graph gives the copy its own nested nodes instead of
+ * sharing them with the original. Each call allocates new nodes, so writing twice yields two copies of the nested
+ * structure.
+ *
  * **Example:**
  * ```kotlin
  * val person: Person = // ... instance from graph
  * val newGraph = Rdf.graph()
- * 
+ *
  * // Write CBD closure to new graph (uses rdf.node as subject)
  * person.writeToGraph(newGraph)
- * 
+ *
  * // Write to different IRI
  * person.writeToGraph(newGraph, subject = Iri("http://example.org/copy"))
  * ```
- * 
+ *
  * @param targetGraph The mutable graph to write triples to
- * @param subject Optional subject IRI. If not provided, uses rdf.node as Iri
+ * @param subject Optional subject IRI. If not provided, uses rdf.node (a fresh blank node when it is one)
+ * @return the subject the description was written for: [subject], the IRI `rdf.node`, or the fresh blank node
+ *   that stands for a blank-node `rdf.node`
  * @throws IllegalArgumentException if subject is required but not available
  */
 fun <T : RdfBacked> T.writeToGraph(
     targetGraph: com.geoknoesis.kastor.rdf.MutableRdfGraph,
     subject: com.geoknoesis.kastor.rdf.Iri? = null
-) {
-    val originalSubject = (rdf.node as? com.geoknoesis.kastor.rdf.Iri)
-        ?: (rdf.node as? com.geoknoesis.kastor.rdf.RdfResource)
+): com.geoknoesis.kastor.rdf.RdfResource {
+    val originalSubject = rdf.node as? com.geoknoesis.kastor.rdf.RdfResource
         ?: throw IllegalArgumentException("Subject resource required for ${this::class.simpleName}")
-    
+
     // Extract CBD closure from backing graph using original subject
     val cbdTriples = rdf.graph.getCbdClosure(originalSubject)
-    
-    // If a different subject is provided, remap triples
-    val triplesToWrite = if (subject != null && subject != originalSubject) {
-        cbdTriples.map { triple ->
-            if (triple.subject == originalSubject) {
-                com.geoknoesis.kastor.rdf.RdfTriple(subject, triple.predicate, triple.obj)
-            } else {
-                triple
-            }
+
+    // One fresh blank node per source blank node, for this write only.
+    val run = java.lang.Long.toString(java.util.UUID.randomUUID().mostSignificantBits and Long.MAX_VALUE, 36)
+    val fresh = HashMap<com.geoknoesis.kastor.rdf.BlankNode, com.geoknoesis.kastor.rdf.BlankNode>()
+    fun copy(term: com.geoknoesis.kastor.rdf.BlankNode) =
+        fresh.getOrPut(term) { com.geoknoesis.kastor.rdf.BlankNode("w${run}n${fresh.size}") }
+    val newSubject: com.geoknoesis.kastor.rdf.RdfResource = subject
+        ?: (originalSubject as? com.geoknoesis.kastor.rdf.BlankNode)?.let(::copy)
+        ?: originalSubject
+
+    val triplesToWrite = cbdTriples.map { triple ->
+        val s = when (val ts = triple.subject) {
+            originalSubject -> newSubject
+            is com.geoknoesis.kastor.rdf.BlankNode -> copy(ts)
+            else -> ts
         }
-    } else {
-        cbdTriples
+        val o = when (val to = triple.obj) {
+            is com.geoknoesis.kastor.rdf.BlankNode -> if (to == originalSubject) newSubject else copy(to)
+            else -> to
+        }
+        if (s == triple.subject && o == triple.obj) triple else triple.copy(subject = s, obj = o)
     }
-    
+
     // Write to target graph
     targetGraph.addTriples(triplesToWrite)
+    return newSubject
 }
 

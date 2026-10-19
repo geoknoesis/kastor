@@ -60,7 +60,7 @@ results.forEach { binding ->
 | `readTimeoutMillis` | `readTimeout` (longest wait for a single read of the response body) | 60 s |
 | `requestTimeoutMillis` | `requestTimeout`: whole exchange for buffered calls; only the wait for response headers for streamed rows (`none` disables) | 5 min |
 | `streamingRequestTimeoutMillis` | `streamingRequestTimeout`: overall deadline for a streamed `withSelectRows` call, including time spent consuming rows (`none` = no deadline) | 60 min |
-| `maxResponseBytes` | `maxResponseBytes`: cap for buffered calls (`select`, ASK, update responses) | 32 MiB |
+| `maxResponseBytes` | `maxResponseBytes`: cap for buffered calls (`select`, ASK); at most this much of a successful update's response is read and discarded (a larger, slower or broken body only logs a warning: the update was applied) | 32 MiB |
 | `maxStreamedResponseBytes` | `maxStreamedResponseBytes`: cap for `withSelectRows` streaming (`none` = unbounded) | unbounded |
 | `insertBatchSize` | `insertBatchSize`: triples per `INSERT DATA` / `DELETE DATA` request | 5000 |
 | `maxBlankNodeComponentTriples` | `maxBlankNodeComponentTriples`: largest group of triples connected through blank nodes that `addTriples` accepts | 100000 |
@@ -130,7 +130,7 @@ Which option bounds what:
 - **Each read of the response body**: `readTimeout`, cut short by a whole-call deadline that ends earlier.
 - **The whole call**: `requestTimeout` for buffered calls; `streamingRequestTimeout` and the per-call `timeout` for streams. `streamingRequestTimeout` defaults to 60 minutes, so a server that sends one byte just inside every `readTimeout` cannot hold a thread forever; set it to `none` (or `null`) for a stream that may run unbounded.
 
-The adapter enforces all of these itself and sets no timeout on the HTTP request, so the behaviour is the same on every JDK. A deadline that is "unbounded" (see above) is simply not applied; the other limits still are. A call that hits a limit fails with `RdfQueryException` naming the limit, and the response is closed.
+The adapter enforces all of these itself and sets no timeout on the HTTP request, so the behaviour is the same on every JDK. A deadline that is "unbounded" (see above) is simply not applied; the other limits still are. A call that hits a limit fails with `RdfQueryException` naming the limit, and the response is closed. The one exception is the body of a successful (2xx) update response: the server has applied the update by then, so a limit hit while reading it closes the response and logs a warning, and `update` returns normally (a caller that retried on the exception would apply the update twice).
 
 Because `requestTimeout` stops at the response headers for untimed streams, a slow row consumer is never cut off by it. Lower `streamingRequestTimeout` if a stream must finish sooner (raise it, or disable it, for one that may run longer than an hour), or use the timed `withSelectRows` overload. Time between reads counts towards the whole-call deadline and is checked on the next read and before each buffered row is handed to the consumer. With `requestTimeout = null`, a server that accepts the connection but never answers is still bounded by `readTimeout`.
 

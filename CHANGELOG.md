@@ -14,11 +14,85 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (repository review)
+
+- Resource, predicate-value, and generated property replacements now use atomic graph edits. Memory graphs and
+  repository-backed Jena/RDF4J graphs roll back failed edits; unsupported graphs reject replacements before mutation.
+  Replacement collections are copied and checked for matching subjects and predicates before existing data is removed.
+- Multi-source datasets isolate blank nodes from independent sources, including inside nested triple terms, while
+  retaining shared identity across graphs from one repository. Provider graph handles now expose source tracking.
+- Generic repository configuration diagnostics redact option values, including passwords, custom headers, and URLs.
+- Native embedding lifecycle and soak checks now run weekly as well as on manual request.
+- Offline coverage floors increased from 20% to 55% for embedding and from 5% to 75% for LLM explanations,
+  based on fresh measurements of 66.8% and 85.3% respectively.
+
+### Fixed (round-ten audit)
+
+- Security: JSON-LD remote and `file:` contexts and `@import` are never fetched by the Jena or RDF4J provider. Before,
+  Jena fetched them with no checks (bypassing `UrlLoadOptions` address, scheme, size and deadline policy) and RDF4J
+  fetched its built-in whitelist without limits. Contexts must now be inline.
+- CI: `Rdf4jShaclWorkerLimitTest` raced the worker's permit release and kept `main` red on every OS.
+- Jena reasoning: an interrupted or timed-out call now stops its abandoned worker at the next budget check instead of
+  reading until the deadline while holding one of the JVM-wide preparation permits. `isConsistent`/`validateOntology`
+  are bounded by the timeout only and no longer fail with "exceed materializationThreshold" on large consistent graphs.
+- `ReasonerRegistry.getDiscoveryErrors()` and `DefaultProviderRegistry.getDiscoveryErrors()` hold the failures of the
+  latest discovery run instead of growing on every call.
+- RDF4J provider: unexpected Rio exceptions (e.g. the NPE on RDF 1.2 TriG annotations) become `RdfFormatException`;
+  literals with unpaired surrogates are rejected like on the other providers. 23 conformance allowlist rows removed.
+- `Rdf.parseFromUrlAsync`: cancel no longer blocks the cancelling thread, and a cancel just before connecting no longer
+  sends the request.
+- SPARQL endpoint: an unparsable endpoint URL or redirect `Location` no longer leaks the password or signed query through
+  the exception cause; redaction removes user information up to the last `@` before the first `/`, so passwords
+  containing `@`, `?` or `#` never show. `withSelectRows(query, bindings, timeout)` waits for headers until the earlier
+  of `requestTimeout` and the per-call timeout, as documented. Conformance allowlist keys are computed relative to
+  `-PconformanceDataDir`.
+- Native SHACL: after the run-wide pattern cap, every (pattern, value) keeps one answer per run, so nested
+  `sh:node`/`sh:not` checks and the report agree; the reduced budget grows with value length (64 steps per character,
+  never above the full budget), so long legitimate values (base64, WKT) stay decidable after hostile ones.
+  `paritySortKey()` no longer uses engine-specific labels of anonymous source shapes. `shacl-era-cli` reports get default
+  permissions instead of 0600 on POSIX. `-PshaclW3cIncludeNonApproved=true` reaches the W3C test JVM.
+- kastor-gen: `@Rdf(iri)` on a class, object, generic interface or private/protected interface is a KSP error instead of
+  an uncompilable wrapper; generated-file collisions between two requests are a KSP error naming both;
+  `writeToGraph` writes fresh blank nodes per call (no merging with same-labelled target nodes or sharing with a copy);
+  the Gradle plugin generates `sh:in` enums like KSP; `Resource.setValues` is atomic.
+- onto-qa: P34 no longer reports declared datatypes (`rdfs:Datatype`/`owl:DataRange`) used as ranges, so valid OWL 2
+  datatype definitions no longer exit 1; P27 compares domain/range sets; P04 counts class-expression and restriction
+  filler uses; P35 exempts DC elements 1.1 and accepts property-characteristic typings; P40 ignores bare typing-only
+  declarations of external terms. Metrics text/Markdown use LF throughout. API keys with a trailing CR are redacted in
+  the form sent. `--ollama-base` accepts host names with `_` (the Ktor client resolves them). `OnnxEmbeddingModel` frees
+  native resources if construction fails late.
+- `kastor-rdf diff` exits 2 (NOT ISOMORPHIC) when a limit is hit only while explaining a known dataset difference.
+- Docs/build: round-nine CHANGELOG entries corrected (`-PshaclW3cAllowMissingData`, `getDiscoveryErrors()`, full API
+  list); SHACL JMH workflow has a 30-minute timeout; unused `scripts/snapshot-source.py` removed.
+
+### Changed (round-ten behaviour)
+
+- RDF4J users relying on whitelisted remote JSON-LD contexts (e.g. schema.org) now get a parse error; inline the context.
+- Jena and RDF4J `classify` enforce `ReasonerConfig.materializationThreshold`, like `reason` and the memory reasoner.
+- The memory RDFS reasoner computes its fixpoint semi-naively; closure content is unchanged, triple order may differ.
+- A 2xx SPARQL UPDATE response body is read up to `maxResponseBytes` and discarded; a larger, stalled or broken body logs a
+  warning instead of failing an update the server already applied.
+- SHACL-SPARQL conformance checks stream solutions: a query that cannot bind `?failure` stops at its first solution; one
+  that can is still read in full, so `?failure` fails nested checks too.
+- `DatasetBuilder.namedGraph` throws `IllegalArgumentException` on a duplicate name. The default
+  `RdfProvider.parseGraph(…, baseIri)` logs a one-time warning when it ignores the base IRI.
+- kastor-gen `XsdLiterals` decoders treat a literal outside the target's XSD family (`"42"^^xsd:string` read as `Int`) as
+  ill-typed, following `MaterializationPolicy`. The docs recommend the generated `replaceInGraph` over
+  `replaceResource(subject, toTriples(...))`, which drops object links and unmodelled predicates in `DATA_CLASS` mode.
+
+### API (round ten)
+
+- Added: `MutableRdfGraph.replacePredicates(subject, predicates, triples)` (kastor-gen runtime); generated
+  `<Record>Factory.replaceInGraph(graph, record, subject)`; `AtomicMutableRdfGraph` (core, repository review).
+- Changed: kastor-gen `writeToGraph` returns the written `RdfResource` instead of `Unit`.
+- Removed (unused): `GraphNode`, `GraphIsomorphismStructure`, `vocab.VocabularyExample`.
+
 ### Fixed (round-nine audit)
 
-- Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError` from one
-  provider is recorded (`discoveryErrors`, new `ReasonerRegistry.discoveryErrors`) and discovery continues, instead of killing
-  the registry singleton. Reasoner discovery no longer overwrites a user-registered provider of the same type.
+- Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError`
+  from one provider is recorded (`ProviderRegistry.getDiscoveryErrors()`, new `ReasonerRegistry.getDiscoveryErrors()`)
+  and discovery continues, instead of killing the registry singleton. Reasoner discovery no longer overwrites a
+  user-registered provider of the same type.
 - URL loading surfaces network I/O failures (resets, timeouts, interrupts) as `IOException` types instead of `ParseError`;
   an async cancel before the connection opens now aborts the request.
 - Memory reasoner enforces its materialization cap and time budget inside a round and no longer copies lists per triple.
@@ -47,8 +121,9 @@ and is kept as is; it was never published to Maven Central.
 ### Changed (round-nine behaviour)
 
 - `SparqlEndpointConfig.streamingRequestTimeout` now defaults to 60 minutes (`null` opts out).
-- A missing W3C SHACL 1.2 suite now fails `Shacl12NativeConformanceTest` (opt out with `-Dshacl.w3c.allowMissingData=true`).
-- Public API added: `MetricsSection` and `describeText`/`describeMarkdown(sections)` in onto-quality metrics.
+- A missing W3C SHACL 1.2 suite now fails `Shacl12NativeConformanceTest` (opt out with `-PshaclW3cAllowMissingData=true`).
+- Public API added: `ReasonerRegistry.getDiscoveryErrors()`, `SparqlEndpointConfig.DEFAULT_STREAMING_REQUEST_TIMEOUT_MINUTES`,
+  and `MetricsSection` and `describeText`/`describeMarkdown(sections)` in onto-quality metrics.
 
 ### Fixed (audit regressions)
 

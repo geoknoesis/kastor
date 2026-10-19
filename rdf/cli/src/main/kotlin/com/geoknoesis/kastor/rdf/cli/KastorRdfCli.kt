@@ -350,7 +350,8 @@ private fun printUsage(out: PrintStream) {
         Exit status: 0 success; 1 usage or input error (bad or extra arguments, unknown format, missing file,
         parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal, out of memory).
         An input that cannot be read to its end (I/O error) is 3, not a parse error. diff also exits 3 when the
-        comparison is stopped by its limit (no answer is known).
+        comparison is stopped by its limit (no answer is known). A limit reached after the answer is known, while
+        comparing the graphs of a dataset one by one to say where they differ, leaves them unexplained: still 2.
         onto-qa uses a different convention: 0 success; 1 findings at or above --severity; 2 the ontology could not
         be parsed; 3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error;
         5 runtime error.
@@ -517,7 +518,11 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream, runt
         return EXIT_OK
     }
 
+    // The answer is known from here on: a limit reached while explaining where the inputs differ only leaves that
+    // graph unexplained, it does not take the answer back.
     val differences = mutableListOf<String>()
+    val unexplained = mutableListOf<String>()
+    var unexplainedBecause: String? = null
     if (!sameNames) {
         differences += "named graphs differ: ${first.namedGraphs.keys.sorted()} vs ${second.namedGraphs.keys.sorted()}"
     }
@@ -531,14 +536,24 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream, runt
         // formats the check above already answered) the graph is compared on its own.
         val differs =
             left.onlyHere > 0 || right.onlyHere > 0 || graphs.first.size() != graphs.second.size() ||
-                !dataset || !isomorphic(graphs.first, graphs.second)
+                !dataset ||
+                try {
+                    !isomorphic(graphs.first, graphs.second)
+                } catch (e: CliError) {
+                    // isomorphic() only throws the error of a reached limit.
+                    unexplained += label
+                    unexplainedBecause = unexplainedBecause ?: e.message?.substringAfter("diff stopped without an answer: ")
+                    false
+                }
         if (differs) {
             differences += "$label is not isomorphic"
             left.print(err, label, p1.name)
             right.print(err, label, p2.name)
         }
     }
-    if (differences.isEmpty()) {
+    if (unexplained.isNotEmpty()) {
+        differences += "not compared on their own, a limit was reached: ${unexplained.joinToString(", ")}: $unexplainedBecause"
+    } else if (differences.isEmpty()) {
         differences += "every graph is isomorphic on its own, but blank nodes shared across graphs do not correspond"
     }
     err.println("NOT ISOMORPHIC")

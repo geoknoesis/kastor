@@ -228,7 +228,9 @@ See [Incremental Builds](../guides/incremental-builds.md).
 Interfaces and wrappers are the same as those produced by the KSP processor (see
 [Ontology Generation](../tutorials/ontology-generation.md) for type mapping, naming and inheritance).
 Interfaces carry no Jakarta/javax validation annotations. Wrappers are `internal`, register themselves with
-`OntoMapper.register`, and include the embedded constraint `validate()`.
+`OntoMapper.register`, and include the embedded constraint `validate()`. As with KSP, `sh:in` value sets become
+generated enums (sealed interfaces with a `Known` enum and an `Unknown` fallback) in `interfacePackage`, used as the
+member types of interfaces and wrappers; the instance DSL keeps `String` setters validated against the allowed values.
 
 When `wrapperPackage` differs from `interfacePackage`, the task also emits a small internal
 `<Interface>Factory` object in the interface package that loads the wrapper, so `OntoMapper`'s

@@ -366,6 +366,12 @@ fun MutableRdfGraph.replaceValues(
     newTriples: Collection<RdfTriple>,
 )
 
+fun MutableRdfGraph.replacePredicates(
+    subject: RdfResource,
+    predicates: Collection<Iri>,
+    triples: Collection<RdfTriple>,
+)
+
 fun MutableRdfGraph.replaceResource(
     subject: RdfResource,
     triples: Collection<RdfTriple>,
@@ -374,7 +380,9 @@ fun MutableRdfGraph.replaceResource(
 
 **`replaceValues`** — targeted predicate-level update. Removes all existing triples for the `(subject, predicate)` pair, then adds `newTriples`. Use this when you have updated a single property and want to replace only those triples without touching others.
 
-**`replaceResource`** — full-resource swap. Removes **all** triples for `subject`, then adds `triples`. Use this after `toTriples()` returns the complete new description for a resource.
+**`replacePredicates`** — scoped update. Removes the existing values of every predicate in `predicates`, then adds `triples` (which must all have `subject`; triples of other predicates, such as `rdf:type`, are added next to the existing values). Every other triple of `subject` is kept. The generated `<Record>Factory.replaceInGraph(graph, record, subject)` calls it with the predicates `toTriples` writes: use that to write a modified record back.
+
+**`replaceResource`** — full-resource swap. Removes **all** triples for `subject` (every predicate, including ones the replacement does not model), then adds `triples`. It is only right when `triples` is the complete description of the resource; a data-class record usually is not (unmodelled predicates, complex-path triples and, in `NestedMode.DATA_CLASS`, object links are not in `toTriples`).
 
 **Usage:**
 
@@ -383,12 +391,11 @@ fun MutableRdfGraph.replaceResource(
 val nameTriples = listOf(RdfTriple(subject, NAME_IRI, Literal("New Name")))
 graph.replaceValues(subject, NAME_IRI, nameTriples)
 
-// Full swap: replace everything about a resource
-val allTriples = PersonRecordFactory.toTriples(updatedRecord, subject)
-graph.replaceResource(subject, allTriples)
+// Write a modified record back: replaces only the predicates the record writes
+PersonRecordFactory.replaceInGraph(graph, updatedRecord, subject)
 ```
 
-Both helpers are no-ops for the removal step when there are no matching existing triples, and no-ops for the add step when `newTriples` / `triples` is empty.
+All three are atomic: they require an `AtomicMutableRdfGraph` (standalone `MemoryGraph`, graphs of Memory, Jena and RDF4J repositories), reject other graphs and out-of-scope triples before changing anything, roll back on failure, and concurrent readers see either the old or the new values, never the gap between removal and insertion. The removal step is a no-op when there are no matching existing triples, and the add step when `newTriples` / `triples` is empty.
 
 ---
 
@@ -506,7 +513,8 @@ generated for hand-written `@Rdf` interfaces.
    A member is required when it is a single-valued member with `sh:minCount >= 1`, a list member with
    `sh:minCount >= 1` that is empty, or a non-null member of a hand-written `@Rdf` interface. There is no
    lenient option. A nullable member without a value reads `null`; an optional list reads empty.
-2. **Values that fail to decode** (e.g. `"abc"^^xsd:integer` read as a number) follow `illTypedValues`:
+2. **Values that fail to decode** (e.g. `"abc"^^xsd:integer` read as a number, or `"42"^^xsd:string`, whose
+   datatype is not numeric, read as an `Int`; see [XsdLiterals](#xsdliterals)) follow `illTypedValues`:
    - `THROW` (default): reading fails with a `MaterializationException` naming the value, its datatype, the
      member and the expected type.
    - `SKIP`: the value is left out of the result and a warning is logged; the remaining values are read.
@@ -633,8 +641,13 @@ object XsdLiterals {
 }
 ```
 
-- Decoders return `null` for ill-typed lexical forms and follow XML Schema lexical rules rather than
-  Kotlin's:
+- Decoders return `null` for ill-typed literals: a datatype outside the target's XSD family, or a lexical
+  form that is not valid for it. `int`, `long` and `bigInteger` accept the XSD integer types (`xsd:integer`
+  and its derived types such as `xsd:int`, `xsd:long`, `xsd:nonNegativeInteger`); `bigDecimal` also
+  `xsd:decimal`; `float` and `double` every XSD numeric type; `boolean` only `xsd:boolean`; `localDate` only
+  `xsd:date`. So `"42"^^xsd:string` (or a plain `"42"`) is ill-typed for an `Int` member and follows
+  `MaterializationPolicy.illTypedValues`; `string` reads the lexical form of any literal. Lexical forms follow
+  XML Schema rules rather than Kotlin's:
   - integers (`int`, `long`, `bigInteger`) accept `[+-]?digits`, so a leading `+` is valid; `int`/`long`
     are range-checked;
   - `bigDecimal` accepts `[+-]?(digits[.digits] | .digits)`; exponents (`1e3`) are not decimal syntax and

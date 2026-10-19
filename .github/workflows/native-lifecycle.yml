@@ -2,6 +2,8 @@ name: Native embedding lifecycle
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 3" # Weekly native inference and resource-lifecycle regression check.
 
 permissions:
   contents: read

@@ -245,7 +245,7 @@ The **REMAINING** set is every pitfall that appears in `data/input/` but was **n
 - **Fixture:** `P40.owl`
 - **Decision:** **STRUCTURAL** (heuristic)
 - **Shape:** `oqsh:NamespaceMismatchShape`
-- **Rationale:** Detects HTTP(S) classes/properties whose **host** differs from the host of a named `owl:Ontology`, unless `owl:imports` licenses the foreign namespace. Tuned to the FOAF-style hijack in the OOPS file and conservatively limited to `http(s)` IRIs to avoid `file:` / `jar:` test noise.
+- **Rationale:** Detects HTTP(S) classes/properties whose **host** differs from the host of a named `owl:Ontology`, unless `owl:imports` licenses the foreign namespace. Only redefinitions count: a bare declaration of an external term (only `rdf:type` triples, as Protégé writes for referenced classes and as P34/P35 require) is not reported. Tuned to the FOAF-style hijack in the OOPS file and conservatively limited to `http(s)` IRIs to avoid `file:` / `jar:` test noise.
 - **Calibration:** **PASS** (`P40.ttl`).
 
 ### P41 — No license declared

@@ -46,4 +46,13 @@ class ProviderDiscoveryFailureTest {
         })
         assertTrue(registry.getDiscoveryErrors().isNotEmpty())
     }
+
+    @Test
+    fun `each discovery run replaces the errors of the previous one`() {
+        val registry = DefaultProviderRegistry(autoDiscover = false, registerDefaultMemoryProvider = false)
+        repeat(3) { registry.discoverFrom(source({ throw ServiceConfigurationError("bad service entry") })) }
+        assertEquals(1, registry.getDiscoveryErrors().size)
+        registry.discoverFrom(source({ Fake("clean") }))
+        assertEquals(emptyList<Throwable>(), registry.getDiscoveryErrors())
+    }
 }

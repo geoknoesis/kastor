@@ -20,6 +20,11 @@ import java.time.Duration
  * graphs of such triples are compared by Kastor's bounded isomorphism check ([isIsomorphicTo]). Blank-node
  * identity across graphs is taken from the blank node ids the graphs expose.
  *
+ * **Empty named graphs are invisible**: a dataset is compared as its set of quads, and an empty graph contributes
+ * none. A dataset with an empty named graph `<g>` is therefore isomorphic to the same dataset without `<g>`, and
+ * the key `<g>` mapped to an empty graph is the same as no key `<g>`. (RDF 1.1 datasets may contain empty named
+ * graphs; stores differ in whether they keep them.) Compare the sets of graph names yourself where that matters.
+ *
  * **The check is bounded**, like [RdfGraphIsomorphism]: when its work budget or its wall-clock limit is used up
  * (or the thread is interrupted) it throws [GraphIsomorphismLimitException] - no answer is known then.
  */

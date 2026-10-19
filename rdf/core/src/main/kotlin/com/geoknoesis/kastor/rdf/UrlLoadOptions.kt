@@ -52,6 +52,11 @@ package com.geoknoesis.kastor.rdf
  * it: the URL the load starts with and the target of every redirect. Read the limits of that policy on
  * [UrlAddressPolicy.PUBLIC_ADDRESSES] before relying on it: it narrows what a URL can reach, it is not a guarantee.
  *
+ * The URLs of a load are the URL it starts with and its redirect targets; nothing else is fetched. In particular a
+ * JSON-LD body that names a context by URL (`"@context": "https://..."`, `@import`, also `file:` URLs) is not
+ * followed: the bundled Jena and RDF4J providers never load remote or local JSON-LD documents, for a URL load and for
+ * [Rdf.parse] alike, and fail the parse with [RdfFormatException]. Such contexts must be inline in the document.
+ *
  * @property redirectPolicy Decides, for each redirect that passed the scheme rules, whether it is followed.
  *   Default: [UrlRedirectPolicy.ALLOW_ALL]. It is not consulted for the URL the load starts with; a rule about where
  *   requests may go belongs in [addressPolicy].

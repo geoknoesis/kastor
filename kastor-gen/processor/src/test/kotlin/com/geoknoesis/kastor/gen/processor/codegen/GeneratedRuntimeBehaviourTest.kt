@@ -133,6 +133,51 @@ class GeneratedRuntimeBehaviourTest {
     }
 
     @Test
+    fun `replaceInGraph keeps object links, unmodelled predicates and other types of the subject`() {
+        val logger = RecordingLogger()
+        val model = OntologyModel(
+            listOf(
+                ShaclShape(
+                    shapeIri = EX + "PersonShape",
+                    targetClass = EX + "Person",
+                    properties = listOf(prop("name", minCount = 1), prop("knows", targetClass = EX + "Person", maxCount = null)),
+                ),
+            ),
+            emptyContext,
+        )
+        val pkg = "gen.scoped"
+        val files = DataClassGenerator(logger, "Record", NestedMode.DATA_CLASS, false, ValidationAnnotations.NONE).generateDataClasses(model, pkg).values +
+            DataClassFactoryGenerator(logger, "Record", NestedMode.DATA_CLASS, DataClassWriterGenerator(logger, "Record", NestedMode.DATA_CLASS))
+                .generateFactories(model, pkg).values
+        val probe = """
+            package gen.scoped
+
+            import com.geoknoesis.kastor.rdf.*
+            import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+            import com.geoknoesis.kastor.rdf.vocab.RDF
+
+            fun probe(): String {
+                fun p(local: String) = Iri("https://example.test/" + local)
+                val a = Iri("urn:a")
+                val g = MemoryGraph()
+                g.addTriple(RdfTriple(a, RDF.type, p("Agent")))
+                g.addTriple(RdfTriple(a, p("name"), Literal("Old")))
+                g.addTriple(RdfTriple(a, p("knows"), Iri("urn:b")))
+                g.addTriple(RdfTriple(a, p("extra"), Literal("keep")))
+                // DATA_CLASS records carry no subject for nested values: `knows` is not written, so it must not be dropped.
+                PersonRecordFactory.replaceInGraph(g, PersonRecord(name = "New", knows = emptyList()), a)
+                return g.find(a).map { it.predicate.value.substringAfterLast('/').substringAfterLast('#') + "=" +
+                    when (val o = it.obj) { is Literal -> o.lexical; is Iri -> o.value.substringAfterLast('/').substringAfterLast(':'); else -> "?" } }
+                    .sorted().joinToString(",")
+            }
+        """.trimIndent()
+        val result = KotlinSourceCompiler.compile(files, mapOf("gen/scoped/Probe.kt" to probe))
+        result.assertOk()
+        val output = result.classLoader().loadClass("gen.scoped.ProbeKt").getMethod("probe").invoke(null) as String
+        kotlin.test.assertEquals("extra=keep,knows=b,name=New,type=Agent,type=Person", output)
+    }
+
+    @Test
     fun `shape inheritance produces superinterfaces whose properties wrappers and data classes implement`() {
         val logger = RecordingLogger()
         val model = OntologyModel(

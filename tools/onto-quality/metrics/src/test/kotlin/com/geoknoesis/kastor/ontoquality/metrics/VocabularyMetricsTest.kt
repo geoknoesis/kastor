@@ -154,6 +154,16 @@ class VocabularyMetricsTest {
     }
 
     @Test
+    fun `text and Markdown reports use LF line ends throughout, on every platform`() {
+        val r = VocabularyMetrics.compute(parse(loadFixture("diamond.ttl")))
+        for (rendered in listOf(r.describeText(), r.describeMarkdown())) {
+            assertFalse(rendered.contains('\r'), "mixed line ends: ${rendered.replace("\r", "<CR>")}")
+            assertTrue(rendered.contains("\n\n"), rendered)
+        }
+        assertTrue(r.describeMarkdown().endsWith("\n"))
+    }
+
+    @Test
     fun `distinct object count keys literals by lexical form, datatype and language`() {
         val ttl =
             """

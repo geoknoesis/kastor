@@ -127,6 +127,16 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
+    fun `materializationThreshold bounds classification like the other calls`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            Rdf4jReasoner(ReasonerConfig.rdfs().copy(materializationThreshold = 10)).classify(chain(10, 10))
+        }
+        assertTrue(error.message!!.contains("materializationThreshold"), error.message)
+        val classes = Rdf4jReasoner(ReasonerConfig.rdfs().copy(materializationThreshold = 10_000)).classify(chain(10, 10)).classHierarchy
+        assertTrue(classes.isNotEmpty())
+    }
+
+    @Test
     fun `timeout uses the injected clock`() {
         val now = java.util.concurrent.atomic.AtomicLong()
         val clock = { now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1)) }

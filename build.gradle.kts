@@ -51,10 +51,12 @@ val coverageFloors = mapOf(
   ":kastor-gen:validation-rdf4j" to "0.55",
   ":tools:onto-quality" to "0.75",
   ":tools:onto-quality-metrics" to "0.80",
-  // Most of embed needs the ONNX model, whose tests are opt-in (KASTOR_RUN_EMBEDDING_TESTS); measured 26.5%.
-  ":tools:onto-quality-embed" to "0.20",
-  // Remote LLM calls are opt-in (KASTOR_SKIP_OPENAI_LLM_TESTS in CI); measured 9.4%. Floor guards against regression only.
-  ":tools:onto-quality-llm-koog" to "0.05",
+  // Offline download, resource-budget, and similarity tests measured 66.8% (2026-10-18).
+  // Native ONNX inference remains opt-in and is also exercised by the weekly lifecycle workflow.
+  ":tools:onto-quality-embed" to "0.55",
+  // Offline transport-contract, retry, parsing, and redaction tests measured 85.3% (2026-10-18).
+  // Live provider calls stay opt-in; the normal CI floor now protects the offline behavior.
+  ":tools:onto-quality-llm-koog" to "0.75",
   ":tools:onto-quality-cli" to "0.65", // measured 76.0%
 )
 
