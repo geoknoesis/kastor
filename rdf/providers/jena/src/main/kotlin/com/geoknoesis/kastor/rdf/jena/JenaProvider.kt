@@ -18,6 +18,8 @@ import org.apache.jena.riot.RiotException
  * - [parseGraph] rejects quad formats (TriG, N-Quads) with [RdfFormatException]: parsing them as a
  *   single graph would silently drop or merge named graphs. Use [parseDataset] instead.
  * - Syntax errors surface as [RdfFormatException].
+ * - JSON-LD contexts must be inline: a context (or `@import`) named by URL is never loaded, whatever its scheme,
+ *   and fails the parse with [RdfFormatException] (see [JenaParsing.noRemoteDocuments]).
  * - [parseDataset] **skolemizes blank-node graph names** (TriG `_:g { }`, an N-Quads graph label `_:g`) on
  *   every load path: Kastor repositories name graphs by IRI only, so a blank graph name becomes the IRI
  *   `urn:kastor:skolem:<load>:<blank node id>` ([JenaParsing.SKOLEM_GRAPH_PREFIX]), where `<load>` is a random
@@ -411,11 +413,34 @@ internal object JenaParsing {
         /**
          * Builds a spec-strict parser with the shared base-IRI policy: without a base, relative IRIs are errors.
          * (Jena's default non-strict mode accepts e.g. a missing final DOT or bare collections.)
+         * JSON-LD never loads a remote or local document ([noRemoteDocuments]).
          */
         fun parser(inputStream: java.io.InputStream, lang: Lang, baseIri: String?): RDFParserBuilder {
-            val builder = RDFParser.source(inputStream).lang(lang).strict(true)
+            val builder = noRemoteDocuments(RDFParser.source(inputStream).lang(lang).strict(true))
             return if (baseIri != null) builder.base(baseIri)
             else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
+        }
+
+        /**
+         * Makes the JSON-LD reader of [builder] refuse every document it would load: a context named by URL
+         * (`"@context": "https://..."`), an `@import`, whatever the scheme (`http`, `https`, `file`, ...). Jena's
+         * default (Titanium's default loader) fetches them with no Kastor limit applied - no scheme allowlist, no
+         * address policy, no size cap, no deadline - also when the document itself came from a URL load with
+         * [UrlLoadOptions]. A document that names a context by URL fails with [RdfFormatException]; contexts must be
+         * inline. The RDF4J provider applies the same rule.
+         */
+        fun noRemoteDocuments(builder: RDFParserBuilder): RDFParserBuilder = builder.set(
+            org.apache.jena.riot.system.jsonld.TitaniumJsonLdOptions.JSONLD_OPTIONS,
+            // A new options object per parse: Jena sets the base IRI on it.
+            com.apicatalog.jsonld.JsonLdOptions(REFUSING_DOCUMENT_LOADER),
+        )
+
+        private val REFUSING_DOCUMENT_LOADER = com.apicatalog.jsonld.loader.DocumentLoader { url, _ ->
+            throw com.apicatalog.jsonld.JsonLdError(
+                com.apicatalog.jsonld.JsonLdErrorCode.LOADING_REMOTE_CONTEXT_FAILED,
+                "JSON-LD context <$url> was not loaded: Kastor never loads remote or local JSON-LD documents; " +
+                    "put the context inline",
+            )
         }
 
         /**
