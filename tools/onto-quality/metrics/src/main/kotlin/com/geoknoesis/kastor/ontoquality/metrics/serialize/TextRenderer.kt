@@ -14,7 +14,8 @@ internal object TextRenderer {
         if (MetricsSection.OWL in sections) blocks += owl(report)
         if (MetricsSection.SKOS in sections) blocks += skos(report)
         // A slice keeps the header and the selected sections; the whole report is the same text with every section.
-        val gap = System.lineSeparator() + System.lineSeparator()
+        // LF throughout, like the appendLine bodies: the report is the same text on every platform.
+        val gap = "\n\n"
         return (listOf(header) + blocks).joinToString(gap) { it.toString().trimEnd() }
     }
 

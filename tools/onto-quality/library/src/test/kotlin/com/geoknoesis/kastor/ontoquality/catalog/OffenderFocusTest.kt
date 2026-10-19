@@ -114,8 +114,9 @@ class OffenderFocusTest {
             findings(
                 "NamespaceMismatchShape",
                 """
-                <http://other.example.com/vocab#Person> a owl:Class .
-                <http://other.example.com/vocab#knows> a owl:ObjectProperty .
+                <http://other.example.com/vocab#Person> a owl:Class ; rdfs:label "Person" .
+                <http://other.example.com/vocab#knows> a owl:ObjectProperty ; rdfs:domain <http://other.example.com/vocab#Person> .
+                <http://other.example.com/vocab#Referenced> a owl:Class .
                 ex:Local a owl:Class .
                 """,
             )

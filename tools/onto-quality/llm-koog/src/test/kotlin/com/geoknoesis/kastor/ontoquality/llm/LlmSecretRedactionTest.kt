@@ -46,6 +46,18 @@ class LlmSecretRedactionTest {
     }
 
     @Test
+    fun `a key read with its line end is redacted as the trimmed key that is sent`() {
+        // A CRLF .env leaves "sk-...\r" in the variable; resolveApiKey sends the trimmed key, which the server echoes.
+        val key = "sk-test-0123456789abcdef"
+        val fromEnv = DefaultQualityExplanationEnricher.secretsToRedact(LlmExplanationConfig(provider = LlmProvider.OPENAI)) { "$key\r\n" }
+        assertEquals(key, resolveApiKey(LlmExplanationConfig(provider = LlmProvider.OPENAI)) { "$key\r\n" })
+        val out = DefaultQualityExplanationEnricher.failureReason("HTTP 401: Incorrect API key provided: $key.", fromEnv)
+        assertEquals("HTTP 401: Incorrect API key provided: ***.", out)
+        val configured = DefaultQualityExplanationEnricher.secretsToRedact(LlmExplanationConfig(provider = LlmProvider.OPENAI, apiKey = " $key\r"))
+        assertEquals("request *** failed", DefaultQualityExplanationEnricher.failureReason("request $key failed", configured))
+    }
+
+    @Test
     fun `only the configured key is a secret of an Ollama run`() {
         // Whatever OPENAI_API_KEY / ANTHROPIC_API_KEY hold in this environment, they are not secrets of this run.
         val secrets = DefaultQualityExplanationEnricher.secretsToRedact(LlmExplanationConfig(provider = LlmProvider.OLLAMA))
