@@ -149,4 +149,14 @@ class ShaclEraCliTest {
         assertEquals(EXIT_RUNTIME_ERROR, status)
         assertEquals("shacl-era-cli: internal error: OutOfMemoryError: heap", err.toString(Charsets.UTF_8).trim())
     }
+
+    @Test
+    fun `the report gets the permissions of an ordinary new file`() {
+        // Files.createTempFile creates its file with 0600 on POSIX; the report must get the default (umask) ones.
+        org.junit.jupiter.api.Assumptions.assumeTrue(dir.fileSystem.supportedFileAttributeViews().contains("posix"))
+        val reference = Files.createFile(dir.resolve("reference"))
+        val report = dir.resolve("report.ttl")
+        writeReport(report, "text")
+        assertEquals(Files.getPosixFilePermissions(reference), Files.getPosixFilePermissions(report))
+    }
 }
