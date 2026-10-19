@@ -28,9 +28,10 @@ and is kept as is; it was never published to Maven Central.
 
 ### Fixed (round-nine audit)
 
-- Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError` from one
-  provider is recorded (`discoveryErrors`, new `ReasonerRegistry.discoveryErrors`) and discovery continues, instead of killing
-  the registry singleton. Reasoner discovery no longer overwrites a user-registered provider of the same type.
+- Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError`
+  from one provider is recorded (`ProviderRegistry.getDiscoveryErrors()`, new `ReasonerRegistry.getDiscoveryErrors()`)
+  and discovery continues, instead of killing the registry singleton. Reasoner discovery no longer overwrites a
+  user-registered provider of the same type.
 - URL loading surfaces network I/O failures (resets, timeouts, interrupts) as `IOException` types instead of `ParseError`;
   an async cancel before the connection opens now aborts the request.
 - Memory reasoner enforces its materialization cap and time budget inside a round and no longer copies lists per triple.
@@ -59,8 +60,9 @@ and is kept as is; it was never published to Maven Central.
 ### Changed (round-nine behaviour)
 
 - `SparqlEndpointConfig.streamingRequestTimeout` now defaults to 60 minutes (`null` opts out).
-- A missing W3C SHACL 1.2 suite now fails `Shacl12NativeConformanceTest` (opt out with `-Dshacl.w3c.allowMissingData=true`).
-- Public API added: `MetricsSection` and `describeText`/`describeMarkdown(sections)` in onto-quality metrics.
+- A missing W3C SHACL 1.2 suite now fails `Shacl12NativeConformanceTest` (opt out with `-PshaclW3cAllowMissingData=true`).
+- Public API added: `ReasonerRegistry.getDiscoveryErrors()`, `SparqlEndpointConfig.DEFAULT_STREAMING_REQUEST_TIMEOUT_MINUTES`,
+  and `MetricsSection` and `describeText`/`describeMarkdown(sections)` in onto-quality metrics.
 
 ### Fixed (audit regressions)
 
