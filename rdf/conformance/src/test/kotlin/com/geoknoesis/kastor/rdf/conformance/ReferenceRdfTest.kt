@@ -127,4 +127,21 @@ class ReferenceRdfTest {
         val missingOne = ReferenceRdf.dataset(listOf(KastorQuad(g1, RdfTriple(BlankNode("z"), p, o))))
         assertFalse(ReferenceRdf.mismatchFingerprint(expected, missingOne) == ReferenceRdf.mismatchFingerprint(expected, quads("x", "x")))
     }
+
+    @Test
+    fun `allowlist keys are relative to the configured corpus directory, whatever it is called`() {
+        val manifest = "rdf/rdf11/rdf-turtle/manifest.ttl"
+        val expected = "test-data/$manifest#lantag_with_subtag"
+        // -PconformanceDataDir=/x/rdf-tests: no `test-data` in the path at all.
+        val corpus = java.nio.file.Path.of("build", "x", "rdf-tests").toAbsolutePath().normalize()
+        val iri = corpus.resolve(manifest).toUri().toString() + "#lantag_with_subtag"
+        assertFalse(iri.contains("/test-data/"), iri)
+        assertEquals(expected, ConformanceAllowlist.testKey(iri, corpus))
+        // The default checkout keys as before.
+        val default = java.nio.file.Path.of("test-data").toAbsolutePath().normalize()
+        assertEquals(expected, ConformanceAllowlist.testKey(default.resolve(manifest).toUri().toString() + "#lantag_with_subtag", default))
+        // IRIs that do not name a file are their own key.
+        val http = "https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01"
+        assertEquals(http, ConformanceAllowlist.testKey(http, corpus))
+    }
 }
