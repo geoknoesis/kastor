@@ -64,8 +64,9 @@ enum class MalformedTermPolicy {
  *   (`https://user:pass@host/sparql`) are removed from the request URL and sent as HTTP Basic
  *   authentication unless [username] is set.
  * @property updateEndpoint update endpoint; defaults to [endpoint].
- * @property maxResponseBytes cap for responses that are read into memory: [SparqlRepository.select],
- *   ASK, UPDATE responses.
+ * @property maxResponseBytes cap for responses that are read into memory: [SparqlRepository.select]
+ *   and ASK. Of a successful UPDATE response at most this much is read and discarded; the rest of a
+ *   larger body is abandoned without failing the update, which the server has already applied.
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout. Like every timeout here it must be positive; a
@@ -363,7 +364,9 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
             val uri = try {
                 URI(endpoint)
             } catch (e: URISyntaxException) {
-                throw IllegalArgumentException("Invalid SPARQL endpoint URL: ${redact(endpoint)}", e)
+                // Not chained: the cause's message and input hold the whole URL, credentials included.
+                // Its reason is fixed text from the parser and the index is a position, so both are kept.
+                throw IllegalArgumentException("Invalid SPARQL endpoint URL (${e.reason} at index ${e.index}): ${redact(endpoint)}")
             }
             val scheme = uri.scheme?.lowercase()
             require(scheme == "http" || scheme == "https") {
