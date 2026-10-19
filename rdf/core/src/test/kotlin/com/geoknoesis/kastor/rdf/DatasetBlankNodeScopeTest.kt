@@ -103,4 +103,22 @@ class DatasetBlankNodeScopeTest {
         }
         assertEquals(ids.size, dataset.select(SparqlSelectQuery("SELECT DISTINCT ?s WHERE { ?s ?p ?o }")).count())
     }
+
+    @Test
+    fun `identical blank node triples of two repositories stay two triples in the union and in queries`() {
+        MemoryRepository(RdfConfig()).use { left ->
+            MemoryRepository(RdfConfig()).use { right ->
+                left.editDefaultGraph().addTriple(RdfTriple(node, p, a))
+                right.editDefaultGraph().addTriple(RdfTriple(node, p, a))
+                left.editGraph(name).addTriple(RdfTriple(node, p, b))
+                right.editGraph(name).addTriple(RdfTriple(node, p, b))
+                val dataset = Dataset { defaultGraph(left); defaultGraph(right); namedGraph(name, left, name); namedGraph(Iri("urn:right"), right, name) }
+                assertEquals(2, dataset.defaultGraph.size())
+                assertEquals(2, dataset.defaultGraph.getTriplesSequence().count())
+                assertEquals(2, dataset.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }")).count())
+                // The default-graph node of each repository joins its own named graph only.
+                assertEquals(2, dataset.select(SparqlSelectQuery("SELECT ?s ?g WHERE { ?s <urn:p> <urn:a> . GRAPH ?g { ?s <urn:p> <urn:b> } }")).count())
+            }
+        }
+    }
 }

@@ -182,8 +182,10 @@ class DatasetBuilder {
      * @param name The IRI name for this graph in the dataset
      * @param graph The graph to add
      * @return This builder for method chaining
+     * @throws IllegalArgumentException if a named graph called [name] was already added
      */
     fun namedGraph(name: Iri, graph: RdfGraph): DatasetBuilder {
+        require(name !in namedGraphs) { "Duplicate named graph name in dataset: $name" }
         namedGraphs[name] = graph
         return this
     }
@@ -195,6 +197,7 @@ class DatasetBuilder {
      * @param repository The repository containing the graph
      * @param sourceGraphName The name of the graph in the source repository (null for default graph)
      * @return This builder for method chaining
+     * @throws IllegalArgumentException if a named graph called [name] was already added
      */
     fun namedGraph(name: Iri, repository: RdfRepository, sourceGraphName: Iri? = null): DatasetBuilder {
         val graph = sourceGraphName?.let { repository.getGraph(it) } ?: repository.defaultGraph
@@ -217,6 +220,7 @@ class DatasetBuilder {
      * 
      * @param pairs Pairs of (graph name, graph) to add
      * @return This builder for method chaining
+     * @throws IllegalArgumentException if a name occurs twice, or was already added
      */
     fun namedGraphs(vararg pairs: Pair<Iri, RdfGraph>): DatasetBuilder {
         pairs.forEach { (name, graph) -> namedGraph(name, graph) }
@@ -227,15 +231,11 @@ class DatasetBuilder {
      * Build the dataset.
      * 
      * @return A new Dataset instance
-     * @throws IllegalStateException if no default graphs are specified or validation fails
+     * @throws IllegalArgumentException if no default graph was added
      */
     fun build(): Dataset {
         require(defaultGraphs.isNotEmpty()) { 
             "At least one default graph is required for a dataset" 
-        }
-        // Check for duplicate named graph names
-        require(namedGraphs.size == namedGraphs.keys.distinct().size) {
-            "Duplicate named graph names are not allowed"
         }
         return DatasetImpl(
             defaultGraphs.map { it.asGraphRef() },

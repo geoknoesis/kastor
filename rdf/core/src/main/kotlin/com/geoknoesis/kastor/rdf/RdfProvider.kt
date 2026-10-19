@@ -193,8 +193,9 @@ interface RdfProvider {
      * Parse RDF data from an input stream into a graph using an explicit base
      * IRI for resolving relative IRIs in the input.
      *
-     * The default implementation ignores [baseIri] and calls [parseGraph];
-     * providers that can honour an external base should override this method.
+     * The default implementation ignores [baseIri] and calls [parseGraph], logging a one-time warning per provider
+     * class when a base IRI is given (as the default [parseDataset] does); providers that can honour an external
+     * base should override this method.
      *
      * @param inputStream The input stream containing RDF data
      * @param format The RDF format
@@ -205,7 +206,10 @@ interface RdfProvider {
         inputStream: java.io.InputStream,
         format: String,
         baseIri: String?,
-    ): MutableRdfGraph = parseGraph(inputStream, format)
+    ): MutableRdfGraph {
+        if (baseIri != null) EagerBaseIriFallback.DEFAULT.recordIgnoredGraphBase(this)
+        return parseGraph(inputStream, format)
+    }
     
     /**
      * Parse RDF data from an input stream as a sequence of triples (streaming).

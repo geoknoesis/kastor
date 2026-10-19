@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.provider.MemoryRepository
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -91,5 +92,30 @@ class BaseIriStreamingFallbackTest {
         fallback.recordIgnoredDatasetBase(provider)
         assertEquals(1, messages.size)
         assertTrue(messages.single().contains("base IRI is ignored"), messages.single())
+    }
+
+    /** Parses, but does not override parseGraph with a base IRI. */
+    private class NoBaseParseProvider : RdfProvider {
+        override val id = "no-base-parse"
+        override fun createRepository(variantId: String, config: RdfConfig): RdfRepository = MemoryRepository(config)
+        override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph = MemoryGraph()
+    }
+
+    @Test
+    fun `a base IRI dropped by the default parseGraph is reported once per provider class, like parseDataset`() {
+        val messages = mutableListOf<String>()
+        val fallback = EagerBaseIriFallback { messages.add(it) }
+        val provider = NoBaseParseProvider()
+        fallback.recordIgnoredGraphBase(provider)
+        fallback.recordIgnoredGraphBase(provider)
+        fallback.recordIgnoredDatasetBase(provider)
+        assertEquals(2, messages.size)
+        assertTrue(messages[0].contains("parseGraph") && messages[0].contains("base IRI is ignored"), messages[0])
+        assertTrue(messages[1].contains("parseDataset"), messages[1])
+
+        provider.parseGraph("".byteInputStream(), "TURTLE", null)
+        assertFalse(EagerBaseIriFallback.DEFAULT.reportedIgnoredBase(provider, "parseGraph"))
+        provider.parseGraph("".byteInputStream(), "TURTLE", "http://example.org/")
+        assertTrue(EagerBaseIriFallback.DEFAULT.reportedIgnoredBase(provider, "parseGraph"))
     }
 }

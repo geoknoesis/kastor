@@ -217,34 +217,6 @@ public final class com/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reas
 	public static fun values ()[Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
 }
 
-public final class com/geoknoesis/kastor/rdf/GraphIsomorphismStructure {
-	public fun <init> ()V
-	public final fun addEdge (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
-	public final fun addNode (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/GraphNode;
-	public final fun getAllNodes ()Ljava/util/Collection;
-	public final fun getEdgeCounts ()Ljava/util/Map;
-	public final fun getNode (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/GraphNode;
-	public final fun setEdgeCounts (Ljava/util/Map;)V
-	public final fun size ()I
-}
-
-public final class com/geoknoesis/kastor/rdf/GraphNode {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun addNeighbor (Ljava/lang/String;Ljava/lang/String;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()Ljava/util/Map;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/GraphNode;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/GraphNode;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/GraphNode;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getId ()Ljava/lang/String;
-	public final fun getLabel ()Ljava/lang/String;
-	public final fun getNeighbors ()Ljava/util/Map;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class com/geoknoesis/kastor/rdf/GraphRef : com/geoknoesis/kastor/rdf/RdfGraph, com/geoknoesis/kastor/rdf/SourceTrackedGraph {
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -2973,17 +2945,6 @@ public final class com/geoknoesis/kastor/rdf/vocab/Vocabulary$DefaultImpls {
 	public static fun contains-J_zqV-w (Lcom/geoknoesis/kastor/rdf/vocab/Vocabulary;Ljava/lang/String;)Z
 	public static fun localname-J_zqV-w (Lcom/geoknoesis/kastor/rdf/vocab/Vocabulary;Ljava/lang/String;)Ljava/lang/String;
 	public static fun term-XER-m2Y (Lcom/geoknoesis/kastor/rdf/vocab/Vocabulary;Ljava/lang/String;)Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/rdf/vocab/VocabularyExample {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/vocab/VocabularyExample;
-	public final fun createDataValidationConstraints ()V
-	public final fun createKnowledgeOrganization ()V
-	public final fun createOntologyDefinition ()V
-	public final fun createPersonDescription ()V
-	public final fun demonstrateCrossVocabularyFeatures ()V
-	public final fun demonstrateVocabularyFeatures ()V
-	public final fun runAllExamples ()V
 }
 
 public final class com/geoknoesis/kastor/rdf/vocab/XSD : com/geoknoesis/kastor/rdf/vocab/Vocabulary {

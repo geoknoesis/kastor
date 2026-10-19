@@ -78,8 +78,9 @@ internal class UrlLoadRuntime(
  *   every scheme: connecting (and, for a scheme other than HTTP, opening the body, which is where FTP sends its
  *   commands) runs on a helper thread, and so does every body read that could block past the deadline.
  *
- * [onConnection] receives each connection (one per redirect hop) before it connects, so a caller can disconnect it
- * to cancel. On failure the connection is released before the exception propagates (or, if a request was abandoned
+ * [beforeConnect] receives each connection (one per redirect hop) on the thread that connects it, immediately before
+ * `connect()`: a caller that cancels can throw there to stop the request from being sent, and keep the connection to
+ * disconnect it. On failure the connection is released before the exception propagates (or, if a request was abandoned
  * at the deadline, once that request returns).
  */
 internal fun openRdfUrlStream(
@@ -87,7 +88,7 @@ internal fun openRdfUrlStream(
     format: RdfFormat?,
     options: UrlLoadOptions,
     runtime: UrlLoadRuntime = UrlLoadRuntime.DEFAULT,
-    onConnection: (java.net.URLConnection) -> Unit = {},
+    beforeConnect: (java.net.URLConnection) -> Unit = {},
 ): RdfUrlBody {
     var uri = checkedUri(url, options)
     val started = runtime.nanoTime()
@@ -125,7 +126,6 @@ internal fun openRdfUrlStream(
             // Every load disconnects when it ends, so the connection is never kept alive for reuse.
             setRequestProperty("Connection", "close")
         }
-        onConnection(connection)
         // The body of a connection that is not HTTP, once it is open: what releasing such a connection closes.
         val openedBody = java.util.concurrent.atomic.AtomicReference<InputStream?>()
         val released = java.util.concurrent.atomic.AtomicBoolean()
@@ -141,6 +141,7 @@ internal fun openRdfUrlStream(
             // Whatever the scheme, connecting may block for longer than the deadline allows (a host name lookup, the
             // response headers of HTTP, the commands of FTP): it runs on a helper the caller waits for until then.
             val status = withinDeadline(runtime, started, total, onAbandon = releaseConnection) {
+                beforeConnect(connection)
                 connection.connect()
                 if (http != null) http.responseCode else {
                     openedBody.set(connection.getInputStream())
