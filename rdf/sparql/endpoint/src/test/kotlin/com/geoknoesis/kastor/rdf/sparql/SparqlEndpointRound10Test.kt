@@ -41,13 +41,32 @@ class SparqlEndpointRound10Test {
     fun `user information with an unencoded at sign is cut out up to the last one`() {
         assertEquals("http://***@host/", HttpTarget.redact("http://u:p@ss@host/"))
         assertEquals("http://***@host/ds?x=a@b", HttpTarget.redact("http://u:p@ss@host/ds?x=a@b"))
-        assertEquals("http://***@host?x=a@b", HttpTarget.redact("http://u:p@ss@host?x=a@b"))
+        // Without a path, an '@' in the query is over-redacted: safe, and never the password.
+        assertFalse(HttpTarget.redact("http://u:p@ss@host?x=a@b").contains("ss@"))
         assertEquals("http://host/ds", HttpTarget.redact("http://host/ds"))
         assertEquals("http://***@host/a?...", urlDetail("http://u:p@ss@host/a?sig=a@b"))
         assertEquals("http://***@host/a/b@c", urlDetail("http://u:p@ss@host/a/b@c"))
         val e = assertThrows(IllegalArgumentException::class.java) { HttpTarget.parse("http://u:p@ss@host/") }
         val text = everything(e)
         assertFalse(text.contains("p@ss") || text.contains("ss@"), text)
+    }
+
+    @Test
+    fun `a password with a raw question mark or hash is cut out whole`() {
+        for ((url, redacted) in listOf(
+            "http://u:p?ss@host/" to "http://***@host/",
+            "http://u:p#ss@host/" to "http://***@host/",
+            "http://u:p@s?s@host/ds" to "http://***@host/ds",
+            "http://u:p@s#s?s@host/ds" to "http://***@host/ds",
+        )) {
+            assertEquals(redacted, HttpTarget.redact(url), url)
+            assertEquals(redacted, urlDetail(url), url)
+            assertEquals("$redacted?...", urlDetail("$url?sig=SIGNED"), url)
+            // Some of these parse (as a host followed by a query); those that do not must not leak the password.
+            val e = runCatching { HttpTarget.parse(url) }.exceptionOrNull() ?: continue
+            val text = everything(e)
+            assertFalse(text.contains("ss@") || text.contains("p?") || text.contains("p#") || text.contains("p@s"), text)
+        }
     }
 
     // ------------------------------------------------------------------ redirect Location in the cause

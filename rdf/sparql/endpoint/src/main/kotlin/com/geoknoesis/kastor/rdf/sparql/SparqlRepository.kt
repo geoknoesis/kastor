@@ -108,17 +108,18 @@ internal fun errorDetail(body: String): String {
  * sanitised and truncated like an error body by [errorDetail].
  */
 internal fun urlDetail(url: String): String {
-    val cut = url.indexOfFirst { it == '?' || it == '#' }
-    val withoutUserInfo = (if (cut < 0) url else url.substring(0, cut)).replace(USER_INFO, "***@")
-    return errorDetail(withoutUserInfo + if (cut < 0) "" else "?...")
+    // User information first: a password may hold a raw '?' or '#', which must not end it early.
+    val withoutUserInfo = url.replace(USER_INFO, "***@")
+    val cut = withoutUserInfo.indexOfFirst { it == '?' || it == '#' }
+    return errorDetail((if (cut < 0) withoutUserInfo else withoutUserInfo.substring(0, cut)) + if (cut < 0) "" else "?...")
 }
 
 /**
  * User information in a URL that could not be parsed: everything after `//` up to the last `@`
- * before the authority ends (at the first `/`, `?` or `#`), so that a password holding an `@` is
- * cut out whole.
+ * before the first `/`, so that a password holding a raw `@`, `?` or `#` is cut out whole. A URL
+ * without a path whose query holds an `@` (`http://host?x=a@b`) is over-redacted, which is safe.
  */
-internal val USER_INFO = Regex("(?<=//)[^/?#]*@")
+internal val USER_INFO = Regex("(?<=//)[^/]*@")
 
 private val BACKSLASH = 92.toChar()
 
