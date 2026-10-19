@@ -125,7 +125,11 @@ private fun llmProviderOf(argv: List<String>): LlmProvider? {
  * "HTTP 40***". Longest first, so a secret that contains another is replaced as a whole.
  */
 internal fun secretsOf(environment: CliEnvironment, provider: LlmProvider?, extra: String? = null, baseUrl: String? = null): List<String> =
-    (listOfNotNull(extra, provider?.apiKeyVariable?.let { environment.env(it) }) + SecretRedaction.urlCredentials(baseUrl))
+    (
+        listOfNotNull(extra, provider?.apiKeyVariable?.let { environment.env(it) })
+            // Also trimmed: that is the key sent (a CRLF .env leaves a carriage return the echoed key no longer has).
+            .flatMap { listOf(it, it.trim()) } + SecretRedaction.urlCredentials(baseUrl)
+    )
         .filter { it.isNotBlank() }
         .distinct()
         .sortedByDescending { it.length }
@@ -341,11 +345,22 @@ internal fun validatedOllamaBase(value: String?): String? {
     if (value == null) return null
     val base = value.trim()
     val uri = try { java.net.URI(base) } catch (_: java.net.URISyntaxException) { null }
-    if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrEmpty()) {
+    val host = uri?.host?.takeIf { it.isNotEmpty() } ?: uri?.rawAuthority?.let(::registryBasedHost)
+    if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || host.isNullOrEmpty()) {
         throw usageError("--ollama-base must be an http or https URL with a host, for example http://localhost:11434")
     }
     return base
 }
+
+/** The host name of an authority that [java.net.URI] does not parse as a server (`user@ollama_box:11434`), or null. */
+private fun registryBasedHost(authority: String): String? {
+    val hostAndPort = authority.substringAfterLast('@')
+    val port = hostAndPort.substringAfterLast(':', "")
+    val host = if (port.isNotEmpty() && port.all { it in '0'..'9' }) hostAndPort.substringBeforeLast(':') else hostAndPort
+    return host.takeIf { REGISTRY_HOST.matches(it) }
+}
+
+private val REGISTRY_HOST = Regex("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*\\.?")
 
 private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline", environment.outputFileSystem) {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)

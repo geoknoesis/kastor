@@ -64,8 +64,9 @@ enum class MalformedTermPolicy {
  *   (`https://user:pass@host/sparql`) are removed from the request URL and sent as HTTP Basic
  *   authentication unless [username] is set.
  * @property updateEndpoint update endpoint; defaults to [endpoint].
- * @property maxResponseBytes cap for responses that are read into memory: [SparqlRepository.select],
- *   ASK, UPDATE responses.
+ * @property maxResponseBytes cap for responses that are read into memory: [SparqlRepository.select]
+ *   and ASK. Of a successful UPDATE response at most this much is read and discarded; the rest of a
+ *   larger body is abandoned without failing the update, which the server has already applied.
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout. Like every timeout here it must be positive; a
@@ -363,7 +364,9 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
             val uri = try {
                 URI(endpoint)
             } catch (e: URISyntaxException) {
-                throw IllegalArgumentException("Invalid SPARQL endpoint URL: ${redact(endpoint)}", e)
+                // Not chained: the cause's message and input hold the whole URL, credentials included.
+                // Its reason is fixed text from the parser and the index is a position, so both are kept.
+                throw IllegalArgumentException("Invalid SPARQL endpoint URL (${e.reason} at index ${e.index}): ${redact(endpoint)}")
             }
             val scheme = uri.scheme?.lowercase()
             require(scheme == "http" || scheme == "https") {
@@ -380,11 +383,12 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
             return HttpTarget(URI(clean).toURL(), authorization)
         }
 
-        fun redact(endpoint: String): String {
-            val userInfo = try { URI(endpoint).rawUserInfo } catch (_: URISyntaxException) { null }
-            // Without parsed user information (an unparsable URL, a host name `java.net.URI` cannot read) it is cut out textually.
-            return if (userInfo == null) endpoint.replace(USER_INFO, "***@") else endpoint.replaceFirst("$userInfo@", "***@")
-        }
+        /**
+         * [endpoint] with its user information replaced by `***`. It is cut out textually, up to the last
+         * `@` before the first `/`, even when the URL parses: `java.net.URI` ends user information at
+         * the first `@`, so for `http://u:p@s?s@host/` it would leave part of the password in place.
+         */
+        fun redact(endpoint: String): String = endpoint.replaceFirst(USER_INFO, "***@")
 
         /** Percent-decodes [text] as UTF-8; unlike a form decoder, `+` stays `+`. */
         private fun decode(text: String): String = java.net.URLDecoder.decode(text.replace("+", "%2B"), Charsets.UTF_8)

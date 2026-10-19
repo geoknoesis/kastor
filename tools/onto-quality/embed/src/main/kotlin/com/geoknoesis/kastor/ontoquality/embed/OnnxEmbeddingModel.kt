@@ -67,15 +67,10 @@ class OnnxEmbeddingModel private constructor(
 
     private val inferenceLock = ReentrantLock()
 
-    private val inputNames: List<String> = session.inputNames.toList().sorted()
+    // Both read the native session, which can throw (OrtException): the tokenizer and the session are closed then.
+    private val inputNames: List<String> = closingOnFailure(tokenizer, session) { session.inputNames.toList().sorted() }
 
-    private val outputName: String =
-        try {
-            EmbeddingBatching.selectOutput(session.outputNames)
-        } catch (e: Throwable) {
-            try { tokenizer.close() } finally { session.close() }
-            throw e
-        }
+    private val outputName: String = closingOnFailure(tokenizer, session) { EmbeddingBatching.selectOutput(session.outputNames) }
 
     init {
         log.info(
@@ -331,3 +326,21 @@ class OnnxEmbeddingModel private constructor(
         }
     }
 }
+
+/**
+ * [block], or, when it throws, [resources] closed in order (a failure to close is added to the thrown exception as
+ * suppressed) and the exception rethrown. Used while a native resource is half initialised.
+ */
+internal inline fun <T> closingOnFailure(vararg resources: AutoCloseable, block: () -> T): T =
+    try {
+        block()
+    } catch (e: Throwable) {
+        for (resource in resources) {
+            try {
+                resource.close()
+            } catch (closeFailure: Throwable) {
+                e.addSuppressed(closeFailure)
+            }
+        }
+        throw e
+    }

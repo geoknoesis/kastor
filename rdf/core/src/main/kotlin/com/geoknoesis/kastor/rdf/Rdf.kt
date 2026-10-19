@@ -453,34 +453,33 @@ object Rdf {
         format: String = "TURTLE",
         executor: Executor = urlIoExecutor,
         options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
+    ): CompletableFuture<MutableRdfGraph> = parseFromUrlAsync(url, format, executor, options, UrlLoadRuntime.DEFAULT)
+
+    /** [parseFromUrlAsync] with the [UrlLoadRuntime] of the load (tests replace its connections and helper pool). */
+    internal fun parseFromUrlAsync(
+        url: String,
+        format: String,
+        executor: Executor,
+        options: UrlLoadOptions,
+        runtime: UrlLoadRuntime,
     ): CompletableFuture<MutableRdfGraph> {
-        val active = java.util.concurrent.atomic.AtomicReference<java.net.URLConnection?>()
-        val input = java.util.concurrent.atomic.AtomicReference<java.io.InputStream?>()
+        val cancellation = UrlLoadCancellation(runtime.helpers)
         val result = object : CompletableFuture<MutableRdfGraph>() {
-            override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
-                val cancelled = super.cancel(mayInterruptIfRunning)
-                if (cancelled) {
-                    (active.get() as? java.net.HttpURLConnection)?.disconnect()
-                    runCatching { input.get()?.close() }
-                }
-                return cancelled
-            }
+            // Never blocks: releasing the connection and the body happens on a helper thread (see UrlLoadCancellation).
+            override fun cancel(mayInterruptIfRunning: Boolean): Boolean =
+                super.cancel(mayInterruptIfRunning).also { if (it) cancellation.cancel() }
         }
         try { executor.execute {
             if (!result.isCancelled) {
                 try {
-                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options) {
-                        active.set(it)
-                        // Cancelled before this hop's connection existed: cancel() found nothing to disconnect, so
-                        // stop here instead of letting the connect run to its timeout.
-                        if (result.isCancelled) throw java.util.concurrent.CancellationException("Cancelled")
-                    }
+                    // Checked on the thread that connects, right before connect(), under the lock cancel() takes:
+                    // a cancel that came first stops the request; one that comes later finds the connection.
+                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options, runtime, cancellation::connecting)
                     body.read { stream ->
-                        input.set(stream)
+                        cancellation.reading(stream)
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
                     }
-                } catch (e: Throwable) { result.completeExceptionally(e)
-                } finally { input.set(null) }
+                } catch (e: Throwable) { result.completeExceptionally(e) }
             }
         } } catch (e: java.util.concurrent.RejectedExecutionException) { result.completeExceptionally(e) }
         return result
@@ -925,4 +924,48 @@ object Rdf {
         }
     }
     
+}
+
+/**
+ * Cancellation of one [Rdf.parseFromUrlAsync] load. [cancel] never blocks the cancelling thread: disconnecting a JDK
+ * HTTP connection or closing its stream waits for a connect or read in progress on another thread (up to the
+ * connect or read timeout), so the release is handed to a thread of [helpers] (or, when all of them are busy, to a
+ * thread of its own).
+ */
+internal class UrlLoadCancellation(private val helpers: UrlLoadHelperPool) {
+    private val lock = Any()
+    private var cancelled = false
+    private var connection: java.net.URLConnection? = null
+    private var input: java.io.InputStream? = null
+
+    /**
+     * Called on the connecting thread right before [connection] connects: fails with
+     * [java.util.concurrent.CancellationException] if the load was cancelled, so the request is never sent.
+     */
+    fun connecting(connection: java.net.URLConnection) = synchronized(lock) {
+        if (cancelled) throw java.util.concurrent.CancellationException("Cancelled")
+        this.connection = connection
+    }
+
+    /** Called with the body before it is parsed; fails like [connecting] if the load was cancelled. */
+    fun reading(input: java.io.InputStream) = synchronized(lock) {
+        if (cancelled) throw java.util.concurrent.CancellationException("Cancelled")
+        this.input = input
+    }
+
+    fun cancel() {
+        val (connection, input) = synchronized(lock) {
+            if (cancelled) return
+            cancelled = true
+            connection to input
+        }
+        if (connection == null && input == null) return
+        val release = Runnable {
+            (connection as? java.net.HttpURLConnection)?.let { runCatching { it.disconnect() } }
+            runCatching { input?.close() }
+        }
+        if (helpers.tryExecute(release) == null) {
+            Thread(release, "kastor-url-cancel").apply { isDaemon = true }.start()
+        }
+    }
 }

@@ -22,7 +22,8 @@ import org.junit.jupiter.api.TestFactory
  * 3. Otherwise a small bundled fixture under `src/test/resources/w3c-shacl12-fixture/` so `./gradlew test`
  *    stays meaningful without cloning the suite.
  *
- * Non-approved manifest rows are skipped unless `-Dshacl.w3c.includeNonApproved=true`. Cases listed in
+ * Non-approved manifest rows are skipped unless `-Dshacl.w3c.includeNonApproved=true` (Gradle:
+ * `-PshaclW3cIncludeNonApproved=true`, or the same `-D` on the Gradle command line). Cases listed in
  * [W3cKnownDeviations] use features the native engine does not implement: they are **executed** and must fail with an
  * [com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException] of exactly the listed category (never pass
  * silently, never be skipped). `sht:Failure` cases must fail with the category in [W3cExpectedFailures].

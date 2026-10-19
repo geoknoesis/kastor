@@ -41,9 +41,9 @@ internal class NativeValidationContext(
     val undefined = HashMap<AtomKey, UndefinedCause>()
     /**
      * Pattern evaluations of this run that are remembered, per (pattern constraint, lexical form): every
-     * undecided one, and every one that ran on the pattern evaluation thread. The answer for such a value is the
-     * same every time it is asked, and its budget is spent once per value rather than once per focus node or
-     * solver pass.
+     * undecided one, every one that ran on the pattern evaluation thread, and every one that took at least the
+     * reduced budget of its value (see [NativeShaclValidator.matchPattern]). The answer for a value is the same every
+     * time it is asked, and an expensive budget is spent once per value rather than once per focus node or solver pass.
      */
     val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()
     private var patternWorker: PatternWorker? = null
@@ -83,8 +83,8 @@ internal class NativeValidationContext(
     fun checkDeadline() {
         budget.check()
     }
-    fun select(query: String, bindings: Map<String, RdfTerm>) =
-        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
+    fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
+        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume)
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
     fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */

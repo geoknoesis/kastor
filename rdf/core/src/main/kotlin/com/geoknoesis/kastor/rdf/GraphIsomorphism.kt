@@ -1,53 +1,6 @@
 package com.geoknoesis.kastor.rdf
 
 /**
- * Graph isomorphism utilities for RDF graphs with blank nodes.
- *
- * This implementation uses the Weisfeiler-Lehman algorithm for graph isomorphism
- * testing, which is particularly effective for graphs with labeled nodes and edges.
- *
- * The algorithm works by iteratively refining node labels based on their neighborhood
- * structure until either a stable labeling is reached or differences are detected.
- */
-
-/**
- * Represents a node in the graph for isomorphism testing
- */
-data class GraphNode(
-    val id: String,
-    val label: String,
-    val neighbors: MutableMap<String, MutableSet<String>> = mutableMapOf()
-) {
-    fun addNeighbor(edgeLabel: String, neighborId: String) {
-        neighbors.getOrPut(edgeLabel) { mutableSetOf() }.add(neighborId)
-    }
-}
-
-/**
- * Represents an RDF graph structure for isomorphism testing.
- * This is an internal representation used by the isomorphism checker.
- */
-class GraphIsomorphismStructure {
-    private val nodes = mutableMapOf<String, GraphNode>()
-    var edgeCounts: Map<String, Int> = emptyMap()
-
-    fun addNode(id: String, label: String): GraphNode {
-        return nodes.getOrPut(id) { GraphNode(id, label) }
-    }
-
-    fun getNode(id: String): GraphNode? = nodes[id]
-
-    fun getAllNodes(): Collection<GraphNode> = nodes.values
-
-    fun addEdge(fromId: String, edgeLabel: String, toId: String) {
-        val fromNode = nodes[fromId] ?: throw IllegalArgumentException("Node $fromId not found")
-        fromNode.addNeighbor(edgeLabel, toId)
-    }
-
-    fun size(): Int = nodes.size
-}
-
-/**
  * Compact structural refinement followed by exact, bijective blank-node matching.
  * A bounded search fails explicitly on excessively symmetric inputs rather than exhausting resources.
  *

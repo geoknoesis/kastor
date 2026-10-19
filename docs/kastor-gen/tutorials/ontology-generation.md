@@ -258,7 +258,8 @@ wrappers generated for hand-written `@Rdf` interfaces.
   There is no lenient option for this. Missing values are never replaced by invented defaults (`""`, `0`,
   `false`): an optional (nullable) member reads `null`, and an optional list reads empty.
 - **Values that fail to decode follow `MaterializationPolicy.illTypedValues`.** A value whose lexical form
-  is not valid for the member's type (e.g. `"abc"^^xsd:integer` read as a number):
+  is not valid for the member's type (e.g. `"abc"^^xsd:integer` read as a number), or whose datatype is not
+  of the member's XSD family (`"42"^^xsd:string` read as a number):
   - `THROW` (default): reading throws a `MaterializationException` naming the value, its datatype, the
     member and the expected type;
   - `SKIP`: the value is left out and a warning is logged.
@@ -351,7 +352,10 @@ Embedded validation covers the constraints above only; use a `ValidationContext`
 ## Type Mapping
 
 Literal properties are typed from `sh:datatype`; values are decoded with `XsdLiterals` (see the
-[runtime reference](../reference/runtime.md#xsdliterals)):
+[runtime reference](../reference/runtime.md#xsdliterals)). A value is decoded only when its datatype belongs to
+the member's XSD family (any XSD integer type for `Int`/`Long`/`BigInteger`, any XSD numeric type for
+`Float`/`Double`, ...); `"42"^^xsd:string` read as a number is ill-typed and follows
+`MaterializationPolicy.illTypedValues`:
 
 | SHACL datatype | Kotlin type | Notes |
 |----------------|-------------|-------|

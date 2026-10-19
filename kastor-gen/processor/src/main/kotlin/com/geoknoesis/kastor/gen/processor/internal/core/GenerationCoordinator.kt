@@ -21,6 +21,7 @@ import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.symbol.KSFile
+import com.google.devtools.ksp.symbol.KSNode
 import com.squareup.kotlinpoet.FileSpec
 import java.nio.charset.StandardCharsets
 
@@ -28,7 +29,9 @@ import java.nio.charset.StandardCharsets
  * Coordinates code generation from ontology models.
  *
  * All files for one request are generated first, checked for (case-insensitive) file-name collisions, and
- * only then written. Outputs are registered as *aggregating* over the annotated source files passed in
+ * only then written. A request whose files collide with those of an earlier request of the same compilation (two
+ * SHACL files with a shape of the same name generated into one package, or a DSL named like a generated type) is
+ * reported as a KSP error naming both requests, and none of its files is written. Outputs are registered as *aggregating* over the annotated source files passed in
  * `sources`, so KSP regenerates them whenever those sources change. KSP cannot observe SHACL / JSON-LD files
  * under `src/main/resources`: [OntologyProcessor] warns about every such file unless the build declares them as
  * inputs of the KSP task and sets [OntologyProcessor.RESOURCES_TRACKED_OPTION]. The `com.geoknoesis.kastor.gen`
@@ -43,6 +46,8 @@ public class GenerationCoordinator(
     private val codeGenerator: CodeGenerator
 ) {
     private val instanceDslGenerator = InstanceDslGenerator(logger)
+    /** Files written so far (lower-case qualified name) to their qualified name and the request that wrote them. */
+    private val fileOwners = HashMap<String, Pair<String, String>>()
 
     /**
      * Generates interfaces and wrappers from ontology model.
@@ -64,6 +69,8 @@ public class GenerationCoordinator(
         nestedMode: NestedMode = NestedMode.INTERFACE,
         generateWriteSupport: Boolean = false,
         sources: List<KSFile> = emptyList(),
+        owner: String = "@Rdf ontology request for package '$packageName'",
+        at: KSNode? = null,
     ) {
         GenerationNames.renamedTypeWarnings(model).forEach { logger.warn(it) }
         if (generateDataClass && dataClassSuffix.isBlank() && (generateInterfaces || generateWrappers || dataClassImplementsInterface)) {
@@ -119,6 +126,7 @@ public class GenerationCoordinator(
         }
 
         GenerationNames.checkUniqueFiles(files)
+        if (!claim(files, owner, at)) return
         files.sortedBy { it.name }.forEach { writeFile(it, sources) }
     }
 
@@ -130,6 +138,8 @@ public class GenerationCoordinator(
         dslName: String,
         packageName: String,
         sources: List<KSFile> = emptyList(),
+        owner: String = "@Rdf instance DSL request '$dslName' for package '$packageName'",
+        at: KSNode? = null,
     ) {
         logger.info("Processing instance DSL generation: $dslName")
         GenerationNames.renamedTypeWarnings(model).forEach { logger.warn(it) }
@@ -142,9 +152,37 @@ public class GenerationCoordinator(
         )
 
         val fileSpec = instanceDslGenerator.generate(request)
+        if (!claim(listOf(fileSpec), owner, at)) return
         writeFile(fileSpec, sources)
 
         logger.info("Generated instance DSL: ${fileSpec.name}.kt")
+    }
+
+    /**
+     * Records [owner] as the writer of [files], unless another request of this compilation already wrote one of them
+     * (compared case-insensitively, as `checkUniqueFiles` does within one request): that is reported as a KSP error
+     * naming both requests, nothing of this request is written, and `false` is returned. Without this check the
+     * second request would fail with a `FileAlreadyExistsException` wrapped in a generic processing error.
+     */
+    private fun claim(files: List<FileSpec>, owner: String, at: KSNode?): Boolean {
+        val clashes = files.mapNotNull { file ->
+            val qualified = "${file.packageName}.${file.name}".removePrefix(".")
+            fileOwners[qualified.lowercase()]?.let { (first, firstOwner) -> "$qualified.kt (also $first.kt from $firstOwner)" }
+        }
+        if (clashes.isNotEmpty()) {
+            logger.error(
+                "kastor-gen: $owner generates files that another request already generated, so none of its files are " +
+                    "written: ${clashes.sorted().joinToString("; ")}. Generate the two requests into different " +
+                    "packages (packageName), or rename the colliding shapes or DSL.",
+                at,
+            )
+            return false
+        }
+        files.forEach { file ->
+            val qualified = "${file.packageName}.${file.name}".removePrefix(".")
+            fileOwners[qualified.lowercase()] = qualified to owner
+        }
+        return true
     }
 
     private fun writeFile(fileSpec: FileSpec, sources: List<KSFile>) {

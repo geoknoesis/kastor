@@ -144,6 +144,36 @@ class KspOntologyProcessorTest {
     }
 
     @Test
+    fun `two requests generating a file of the same name into one package are reported naming both`() {
+        val opts = options()
+        File(resources, "staff.shacl.ttl").writeText(
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix ex: <https://example.test/> .
+            @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+            ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
+                sh:property [ sh:path ex:badge ; sh:name "badge" ; sh:datatype xsd:string ; sh:maxCount 1 ] .
+            """.trimIndent(),
+        )
+        val staff = marker.replace("people.shacl.ttl", "staff.shacl.ttl")
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/people/Marker.kt" to marker, "gen/people/Staff.kt" to staff),
+            options = opts,
+        )
+        val error = result.errors.singleOrNull { "already generated" in it }
+        assertTrue(error != null, result.errors.toString())
+        assertTrue("people.shacl.ttl" in error && "staff.shacl.ttl" in error && "gen.people.Person.kt" in error, error)
+        assertFalse(result.errors.any { "FileAlreadyExists" in it || "Failed to write" in it }, result.errors.toString())
+        // The first request's files are intact; nothing of the second one was written.
+        val person = result.generated.filterKeys { it.endsWith("/Person.kt") }.values.single()
+        assertTrue(("badge" in person) != ("knows" in person), person)
+        val firstIsStaff = "badge" in person
+        assertEquals(firstIsStaff, result.generated.values.any { "badge" in it })
+        assertEquals(!firstIsStaff, result.generated.values.any { "knows" in it })
+    }
+
+    @Test
     fun `an ontology file that is not declared as tracked produces the staleness warning and a missing one an error`() {
         File(resources, "people.shacl.ttl").writeText(shapes)
         val untracked = KspRunner.run(

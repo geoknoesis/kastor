@@ -30,7 +30,37 @@ fun MutableRdfGraph.replaceValues(
     }
 }
 
-/** Atomically replaces a resource. Graphs without atomic mutation support fail before changing data. */
+/**
+ * Atomically replaces the values of [predicates] for [subject] and adds [triples]: every existing
+ * `(subject, p, *)` with `p` in [predicates] is removed, then [triples] are added. Triples of other predicates
+ * (such as `rdf:type`) are added next to the existing values, and every other triple of [subject] is left alone.
+ *
+ * This is the scoped write of a record that models only some predicates of a resource (the generated
+ * `<Record>Factory.replaceInGraph`): unmodelled predicates, links the record does not serialize and
+ * complex-path triples survive, unlike [replaceResource]. Out-of-scope subjects are rejected before editing;
+ * graphs without atomic mutation support fail before changing data.
+ */
+fun MutableRdfGraph.replacePredicates(
+    subject: RdfResource,
+    predicates: Collection<Iri>,
+    triples: Collection<RdfTriple>,
+) {
+    val replaced = predicates.toSet()
+    val replacement = triples.toList()
+    require(replacement.all { it.subject == subject }) { "Replacement triples must match the requested subject" }
+    atomicEdit {
+        val stale = replaced.flatMap { find(subject, it) }
+        if (stale.isNotEmpty()) removeTriples(stale)
+        if (replacement.isNotEmpty()) addTriples(replacement)
+    }
+}
+
+/**
+ * Atomically replaces **every** triple of [subject] (all predicates, including ones the replacement does not
+ * model) with [triples]. To write a generated data-class record without dropping predicates it does not model,
+ * use [replacePredicates] (or the generated `replaceInGraph`). Graphs without atomic mutation support fail before
+ * changing data.
+ */
 fun MutableRdfGraph.replaceResource(
     subject: RdfResource,
     triples: Collection<RdfTriple>,

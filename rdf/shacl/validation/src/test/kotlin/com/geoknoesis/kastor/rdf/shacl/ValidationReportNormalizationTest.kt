@@ -111,4 +111,30 @@ class ValidationReportNormalizationTest {
             violation(path = listOf(com.geoknoesis.kastor.rdf.BlankNode("x"), com.geoknoesis.kastor.rdf.BlankNode("y"))).paritySortKey(),
         )
     }
+
+    @Test
+    fun `parity keys do not depend on the engine's label of a blank source shape`() {
+        // The native engine and RDF4J label the same anonymous property shape differently.
+        assertEquals(violation(shapeUri = "_:b0").paritySortKey(), violation(shapeUri = "_:node1h2k3").paritySortKey())
+        assertNotEquals(violation(shapeUri = "_:b0").paritySortKey(), violation(shapeUri = "http://example.org/S1").paritySortKey())
+    }
+
+    @Test
+    fun `native and RDF4J reports of a blank property shape have the same parity keys`() {
+        val document =
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.org/> .
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .
+            ex:a a ex:T .
+            """.trimIndent()
+        // Each engine validates its own parse of the same document, as a parity job does: blank labels differ.
+        fun keys(providerId: String): List<String> {
+            val graph = com.geoknoesis.kastor.rdf.Rdf.parse(document, com.geoknoesis.kastor.rdf.RdfFormat.TURTLE)
+            return ShaclValidation.validator(
+                ValidationConfig(profile = ValidationProfile.SHACL_CORE, providerId = providerId, parallelValidation = false),
+            ).validate(graph, graph).also { assertEquals(1, it.violations.size, "$providerId: ${it.violations}") }
+                .sortedParityViolationKeys()
+        }
+        assertEquals(keys("kastor"), keys("rdf4j"))
+    }
 }

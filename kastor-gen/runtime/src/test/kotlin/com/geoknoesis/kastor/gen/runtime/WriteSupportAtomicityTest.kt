@@ -98,4 +98,79 @@ class WriteSupportAtomicityTest {
         assertThrows(IllegalStateException::class.java) { view.replacePredicateObjectTerm(p, Iri("urn:new")) }
         assertEquals(initial, backing.getTriples().toSet())
     }
+
+    @Test
+    fun `replacePredicates replaces only the listed predicates and keeps every other triple`() {
+        val q = Iri("urn:q")
+        val type = RdfTriple(s, Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), Iri("urn:Agent"))
+        val link = RdfTriple(s, q, Iri("urn:o"))
+        val graph = MemoryGraph(listOf(old, link, type))
+        val newType = type.copy(obj = Iri("urn:Person"))
+        graph.replacePredicates(s, listOf(p), listOf(replacement, newType))
+        assertEquals(setOf(replacement, link, type, newType), graph.getTriples().toSet())
+        assertThrows(IllegalArgumentException::class.java) {
+            graph.replacePredicates(s, listOf(p), listOf(old.copy(subject = Iri("urn:other"))))
+        }
+        assertEquals(setOf(replacement, link, type, newType), graph.getTriples().toSet())
+        val plain = object : MutableRdfGraph by graph {}
+        assertThrows(UnsupportedOperationException::class.java) { plain.replacePredicates(s, listOf(p), emptyList()) }
+        assertTrue(graph.hasTriple(replacement))
+    }
+
+    @Test
+    fun `Resource setValues is atomic and rejects non-atomic editors before any change`() {
+        Rdf.repository { providerId = "jena"; variantId = "memory" }.use { jena ->
+            jena.editDefaultGraph().addTriple(old)
+            val failing = object : AtomicMutableRdfGraph by (jena.editDefaultGraph() as AtomicMutableRdfGraph) {
+                override fun addTriples(triples: Collection<RdfTriple>) {
+                    jena.editDefaultGraph().addTriples(triples)
+                    error("insert failed after writing")
+                }
+            }
+            val resource = resource(s, DefaultGraphAccess(jena, jena.defaultGraph, failing))
+            assertThrows(IllegalStateException::class.java) { resource.setLiteral(p, "new") }
+            assertEquals(setOf(old), jena.defaultGraph.getTriples().toSet())
+
+            val backing = MemoryGraph(listOf(old))
+            val plain = resource(s, DefaultGraphAccess(jena, backing, object : MutableRdfGraph by backing {}))
+            assertThrows(UnsupportedOperationException::class.java) { plain.setLiteral(p, "new") }
+            assertEquals(listOf(old), backing.getTriples())
+
+            resource(s, DefaultGraphAccess(jena)).setValues(p, listOf(string("a"), string("b")))
+            assertEquals(setOf(string("a"), string("b")), jena.defaultGraph.find(s, p).map { it.obj }.toSet())
+        }
+    }
+
+    @Test
+    fun `concurrent readers never observe a replaced predicate without values`() {
+        MemoryRepository(RdfConfig()).use { repo ->
+            Rdf.repository { providerId = "jena"; variantId = "memory" }.use { jena ->
+                listOf(MemoryGraph(), repo.editDefaultGraph(), jena.editDefaultGraph()).forEach { backing ->
+                    backing.addTriple(old)
+                    val removed = java.util.concurrent.CountDownLatch(1)
+                    val graph = object : AtomicMutableRdfGraph by (backing as AtomicMutableRdfGraph) {
+                        override fun addTriples(triples: Collection<RdfTriple>) {
+                            removed.countDown()
+                            // Leave the gap open long enough for the reader to try to look into it.
+                            Thread.sleep(300)
+                            backing.addTriples(triples)
+                        }
+                    }
+                    val seen = java.util.concurrent.atomic.AtomicReference<List<RdfTriple>>()
+                    val reader = Thread {
+                        assertTrue(removed.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                        seen.set(backing.find(s, p).toList())
+                    }
+                    reader.start()
+                    graph.replaceValues(s, p, listOf(replacement))
+                    reader.join(60_000)
+                    assertFalse(reader.isAlive)
+                    val observed = seen.get()
+                    assertNotNull(observed)
+                    assertTrue(observed == listOf(old) || observed == listOf(replacement), "reader saw $observed")
+                    backing.removeTriple(replacement)
+                }
+            }
+        }
+    }
 }

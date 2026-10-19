@@ -40,9 +40,24 @@ class ReasonerRegistryDiscoveryTest {
                 else -> later
             }
         }
-        val before = ReasonerRegistry.getDiscoveryErrors().size
         ReasonerRegistry.discoverFrom(source)
-        assertEquals(2, ReasonerRegistry.getDiscoveryErrors().size - before)
+        assertEquals(2, ReasonerRegistry.getDiscoveryErrors().size)
         assertTrue(ReasonerRegistry.getProviders().any { it === later })
+    }
+
+    @Test
+    fun `repeated discovery replaces the recorded failures instead of accumulating them`() {
+        fun broken() = object : Iterator<RdfReasonerProvider> {
+            var calls = 0
+            override fun hasNext() = calls < 1
+            override fun next(): RdfReasonerProvider {
+                calls++
+                throw java.util.ServiceConfigurationError("broken service file")
+            }
+        }
+        repeat(5) { ReasonerRegistry.discoverFrom(broken()) }
+        assertEquals(1, ReasonerRegistry.getDiscoveryErrors().size)
+        ReasonerRegistry.discoverFrom(emptyList<RdfReasonerProvider>().iterator())
+        assertTrue(ReasonerRegistry.getDiscoveryErrors().isEmpty(), "a clean run clears the failures of the last one")
     }
 }

@@ -292,5 +292,118 @@ class KspOntoMapperDiagnosticsTest {
         val result = run("com/acme/generic/Generic.kt" to source)
         assertTrue(result.errors.any { "'box'" in it && "generic types are not supported" in it }, result.errors.toString())
         assertTrue(result.errors.any { "'boxes'" in it && "generic types are not supported" in it }, result.errors.toString())
+        // Box itself: a wrapper `BoxWrapper : Box` would not compile (missing type argument).
+        assertTrue(
+            result.errors.any { "com.acme.generic.Box" in it && "type parameters <T>" in it },
+            result.errors.toString(),
+        )
+        assertFalse(result.generated.keys.any { it.endsWith("BoxWrapper.kt") }, result.generated.keys.toString())
     }
+
+    private fun assertRejected(decl: String, qualified: String, vararg fragments: String) {
+        val fine = """
+            @Rdf(iri = "https://example.test/Fine")
+            interface Fine {
+                @Rdf(iri = "https://example.test/n")
+                val n: String
+            }
+        """.trimIndent()
+        val source = "package com.acme.kinds\n\nimport com.geoknoesis.kastor.gen.annotations.Rdf\n\n" + decl.trimIndent() + "\n\n" + fine + "\n"
+        val result = run("com/acme/kinds/Kinds.kt" to source)
+        val error = result.errors.singleOrNull { qualified in it && "no wrapper is generated" in it }
+        assertTrue(error != null, result.errors.toString())
+        fragments.forEach { assertTrue(it in error, "'$it' missing from: $error") }
+        assertEquals(listOf("FineWrapper.kt"), result.generated.keys.map { it.substringAfterLast('/') }, result.generated.keys.toString())
+        assertEquals(1, result.errors.size, result.errors.toString())
+    }
+
+    @Test
+    fun `an @Rdf class is reported instead of generating a wrapper that cannot compile`() =
+        assertRejected(
+            """
+            @Rdf(iri = "https://example.test/C")
+            class C {
+                @Rdf(iri = "https://example.test/a")
+                val a: String = ""
+            }
+            """,
+            "com.acme.kinds.C", "a class", "interfaces only",
+        )
+
+    @Test
+    fun `an @Rdf abstract class is reported`() =
+        assertRejected(
+            """
+            @Rdf(iri = "https://example.test/A")
+            abstract class A {
+                @Rdf(iri = "https://example.test/a")
+                abstract val a: String
+            }
+            """,
+            "com.acme.kinds.A", "an abstract class",
+        )
+
+    @Test
+    fun `an @Rdf object is reported`() =
+        assertRejected(
+            """
+            @Rdf(iri = "https://example.test/O")
+            object O
+            """,
+            "com.acme.kinds.O", "an object",
+        )
+
+    @Test
+    fun `a file-private @Rdf interface is reported`() =
+        assertRejected(
+            """
+            @Rdf(iri = "https://example.test/P")
+            private interface P {
+                @Rdf(iri = "https://example.test/a")
+                val a: String
+            }
+            """,
+            "com.acme.kinds.P", "it is private",
+        )
+
+    @Test
+    fun `a private nested @Rdf interface and an interface nested in a private class are reported`() {
+        assertRejected(
+            """
+            class Outer {
+                @Rdf(iri = "https://example.test/N")
+                private interface N {
+                    @Rdf(iri = "https://example.test/a")
+                    val a: String
+                }
+            }
+            """,
+            "com.acme.kinds.Outer.N", "it is private",
+        )
+        assertRejected(
+            """
+            private class Hidden {
+                @Rdf(iri = "https://example.test/N")
+                interface N {
+                    @Rdf(iri = "https://example.test/a")
+                    val a: String
+                }
+            }
+            """,
+            "com.acme.kinds.Hidden.N", "enclosing com.acme.kinds.Hidden is private",
+        )
+    }
+
+    @Test
+    fun `a generic @Rdf interface is reported`() =
+        assertRejected(
+            """
+            @Rdf(iri = "https://example.test/G")
+            interface G<A, B> {
+                @Rdf(iri = "https://example.test/a")
+                val a: String
+            }
+            """,
+            "com.acme.kinds.G", "type parameters <A, B>",
+        )
 }

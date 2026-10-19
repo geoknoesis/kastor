@@ -63,4 +63,43 @@ class XsdLiteralRegressionTest {
         assertEquals(1, XsdLiterals.compareNumeric(TypedLiteral("9007199254740993", XSD.integer), "9007199254740992"))
         assertEquals(-1, XsdLiterals.compareNumeric(TypedLiteral("0.10000000000000000001", XSD.decimal), "0.10000000000000000002"))
     }
+
+    @Test fun `decoders reject literals whose datatype is outside the target family`() {
+        val asString = TypedLiteral("42", XSD.string)
+        assertNull(XsdLiterals.int(asString))
+        assertNull(XsdLiterals.long(asString))
+        assertNull(XsdLiterals.bigInteger(asString))
+        assertNull(XsdLiterals.bigDecimal(asString))
+        assertNull(XsdLiterals.double(asString))
+        assertNull(XsdLiterals.float(asString))
+        assertNull(XsdLiterals.int(LangString("42", "en")))
+        assertNull(XsdLiterals.boolean(TypedLiteral("true", XSD.string)))
+        assertNull(XsdLiterals.localDate(TypedLiteral("2026-10-03", XSD.string)))
+        assertNull(XsdLiterals.int(TypedLiteral("4.0", XSD.decimal)), "decimal is not an integer type")
+        assertNull(XsdLiterals.bigDecimal(TypedLiteral("1.5", XSD.double)), "double is not a decimal type")
+        assertEquals("42", XsdLiterals.string(asString))
+
+        // Every type of the family decodes.
+        assertEquals(42, XsdLiterals.int(TypedLiteral("42", XSD.integer)))
+        assertEquals(42, XsdLiterals.int(TypedLiteral("42", XSD.short)))
+        assertEquals(42L, XsdLiterals.long(TypedLiteral("42", XSD.unsignedInt)))
+        assertEquals(java.math.BigDecimal("42"), XsdLiterals.bigDecimal(TypedLiteral("42", XSD.int)))
+        assertEquals(1.5, XsdLiterals.double(TypedLiteral("1.5", XSD.decimal)))
+        assertEquals(42.0, XsdLiterals.double(TypedLiteral("42", XSD.integer)))
+        assertEquals(1.5f, XsdLiterals.float(TypedLiteral("1.5", XSD.double)))
+        assertEquals(true, XsdLiterals.boolean(TypedLiteral("1", XSD.boolean)))
+    }
+
+    @Test fun `a string-typed number read as Int follows the ill-typed value policy`() {
+        val graph = com.geoknoesis.kastor.rdf.provider.MemoryGraph()
+        val s = Iri("urn:s")
+        val p = Iri("urn:age")
+        graph.addTriple(RdfTriple(s, p, TypedLiteral("42", XSD.string)))
+        class View : RdfBacked {
+            override val rdf = DefaultRdfHandle(s, graph, emptySet())
+            val age: Int? by com.geoknoesis.kastor.gen.runtime.delegates.rdfLiteralOrNull(p, XsdLiterals::int)
+        }
+        assertThrows(MaterializationException::class.java) { View().age }
+        assertNull(MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) { View().age })
+    }
 }

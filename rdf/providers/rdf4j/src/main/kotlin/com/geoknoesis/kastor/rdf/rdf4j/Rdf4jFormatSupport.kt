@@ -25,8 +25,16 @@ import java.util.concurrent.TimeUnit
  * - Streams are handed to Rio directly; statements are converted as they are parsed.
  * - Without a base IRI, relative IRI references are a parse error.
  * - [parseGraph] rejects quad formats (TriG, N-Quads) instead of merging their named graphs.
- * - Only genuine syntax/format failures (Rio parse errors, unsupported formats, I/O errors) become
- *   [RdfFormatException]; programming errors (NPE, ClassCastException, ...) propagate unchanged.
+ * - Every failure of Rio itself becomes [RdfFormatException] (with the original as cause): parse errors, unsupported
+ *   formats, I/O errors, and also unchecked exceptions Rio throws on input it does not handle (Rio 5.3 throws a
+ *   NullPointerException on valid RDF 1.2 Turtle / TriG annotation syntax). Failures of Kastor's own code that
+ *   receives the statements (a repository write, for example) propagate unchanged.
+ * - Literals whose lexical form holds an unpaired UTF-16 surrogate (which Rio produces from numeric escapes of
+ *   surrogate code points) are rejected with [RdfFormatException], as the Jena provider and the SPARQL JSON reader
+ *   reject them.
+ * - JSON-LD contexts must be inline: a context (or `@import`) named by URL is never loaded, whatever its scheme -
+ *   also not one on RDF4J's own whitelist of well-known contexts - and fails the parse with [RdfFormatException]
+ *   (the same rule as the Jena provider's).
  * - **Blank node labels are scoped to the document, everywhere in it**: a label names one node of the parsed data
  *   whether it is written as a subject, an object or a graph name, or inside a triple term, and never a node of
  *   another parse (see [DocumentBlankNodes]).
@@ -199,20 +207,68 @@ internal object Rdf4jFormatSupport {
     private fun parser(format: RDFFormat, handle: (Statement) -> Unit): org.eclipse.rdf4j.rio.RDFParser {
         val parser = Rio.createParser(format)
         parser.parserConfig.set(org.eclipse.rdf4j.rio.helpers.BasicParserSettings.PRESERVE_BNODE_IDS, true)
+        // JSON-LD: never load a context named by URL (RDF4J's default loads the ones on its whitelist, unbounded).
+        parser.parserConfig.set(org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.DOCUMENT_LOADER, REFUSING_DOCUMENT_LOADER)
         val nodes = DocumentBlankNodes()
         parser.setRDFHandler(object : AbstractRDFHandler() {
-            override fun handleStatement(statement: Statement) = handle(nodes.statement(statement))
+            override fun handleStatement(statement: Statement) {
+                try {
+                    handle(nodes.statement(statement))
+                } catch (e: RDFParseException) {
+                    throw e // a term Kastor rejects (checkedTriples): an error of the input
+                } catch (e: RuntimeException) {
+                    throw HandlerFailure(e)
+                }
+            }
         })
         return parser
     }
 
-    /** Maps only format-level failures to [RdfFormatException]; everything else propagates unchanged. */
+    /** Refuses every document the JSON-LD parser would load (see the class documentation). */
+    private val REFUSING_DOCUMENT_LOADER = no.hasmac.jsonld.loader.DocumentLoader { url, _ ->
+        throw no.hasmac.jsonld.JsonLdError(
+            no.hasmac.jsonld.JsonLdErrorCode.LOADING_REMOTE_CONTEXT_FAILED,
+            "JSON-LD context <$url> was not loaded: Kastor never loads remote or local JSON-LD documents; " +
+                "put the context inline",
+        )
+    }
+
+    /**
+     * A failure of Kastor's own statement handler (not of Rio), carried through the parser so that [formatErrors]
+     * can tell it from Rio's own failures and rethrow it unchanged.
+     */
+    private class HandlerFailure(cause: RuntimeException) : RuntimeException(cause)
+
+    /** The failure of the statement handler that [error] carries, or null when [error] is a failure of Rio. */
+    private fun handlerFailure(error: Throwable): RuntimeException? =
+        generateSequence(error) { it.cause }.take(16).filterIsInstance<HandlerFailure>().firstOrNull()?.cause as RuntimeException?
+
+    /**
+     * The message of [error], followed by the message of its root cause when that says more (Rio's JSON-LD parser
+     * reports every failure as "Could not parse JSONLD" and keeps the reason in the cause).
+     */
+    private fun withRootCause(error: Throwable): String {
+        val message = error.message.orEmpty()
+        val root = generateSequence(error) { it.cause }.take(16).last().message
+        return if (root.isNullOrBlank() || root in message) message else "$message ($root)"
+    }
+
+    /**
+     * Maps the failures of Rio to [RdfFormatException], including unchecked exceptions Rio throws on input it does
+     * not handle; a failure of the statement handler ([HandlerFailure]) propagates unchanged.
+     */
     private inline fun <T> formatErrors(what: String, block: () -> T): T = try {
         block()
-    } catch (e: RDFParseException) {
-        throw RdfFormatException.Generic("Failed to parse $what: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
-    } catch (e: UnsupportedRDFormatException) {
-        throw RdfFormatException.Generic("Unsupported $what: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+    } catch (e: RuntimeException) {
+        handlerFailure(e)?.let { throw it }
+        throw when (e) {
+            is RDFParseException -> RdfFormatException.Generic("Failed to parse $what: ${withRootCause(e)}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+            is UnsupportedRDFormatException -> RdfFormatException.Generic("Unsupported $what: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+            else -> RdfFormatException.Generic(
+                "Failed to parse $what: the RDF4J parser failed unexpectedly (${e.javaClass.name}: ${e.message})",
+                RdfErrorCode.FORMAT_PARSE_ERROR, e,
+            )
+        }
     } catch (e: java.io.IOException) {
         throw RdfFormatException.Generic("Failed to read $what: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
     }
@@ -282,9 +338,38 @@ internal object Rdf4jFormatSupport {
      * triple emitted once per [seen] set.
      */
     private fun checkedTriples(statement: Statement, seen: MutableSet<org.eclipse.rdf4j.model.Triple>?): List<RdfTriple> = try {
-        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj) }
+        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj); requirePairedSurrogates(it) }
     } catch (e: IllegalArgumentException) {
         throw RDFParseException("Invalid RDF term: ${e.message}").also { it.initCause(e) }
+    }
+
+    /**
+     * Rejects a literal (also inside a triple term) whose lexical form holds an unpaired UTF-16 surrogate: Rio decodes
+     * a numeric escape of a surrogate code point into one, which is not a Unicode string (RDF 1.2 Turtle forbids such
+     * escapes; the Jena provider and the SPARQL JSON reader reject them). IRIs are checked by [Iri] itself.
+     * @throws IllegalArgumentException for such a literal
+     */
+    private fun requirePairedSurrogates(triple: RdfTriple) {
+        when (val obj = triple.obj) {
+            is Literal -> require(hasPairedSurrogates(obj.lexical)) { "literal lexical form contains an unpaired surrogate" }
+            is TripleTerm -> requirePairedSurrogates(obj.triple)
+            else -> Unit
+        }
+    }
+
+    private fun hasPairedSurrogates(value: String): Boolean {
+        var i = 0
+        while (i < value.length) {
+            val c = value[i]
+            if (c.isHighSurrogate()) {
+                if (i + 1 >= value.length || !value[i + 1].isLowSurrogate()) return false
+                i += 2
+            } else {
+                if (c.isLowSurrogate()) return false
+                i++
+            }
+        }
+        return true
     }
 
     /**
@@ -434,7 +519,10 @@ internal object Rdf4jFormatSupport {
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
                 } catch (e: Throwable) {
-                    terminal = try { Failure(e) } catch (_: Throwable) { PRODUCER_DIED }
+                    // Cancelled is thrown by the statement handler, so it comes back wrapped (HandlerFailure).
+                    if (generateSequence(e) { it.cause }.take(16).none { it is Cancelled }) {
+                        terminal = try { Failure(e) } catch (_: Throwable) { PRODUCER_DIED }
+                    }
                 } finally {
                     while (!state.closed) {
                         if (try { state.queue.offer(terminal, POLL_MILLIS, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { false }) break

@@ -11,8 +11,8 @@ internal object MarkdownRenderer {
         if (MetricsSection.GRAPH in sections) blocks += graph(report)
         if (MetricsSection.OWL in sections) blocks += owl(report)
         if (MetricsSection.SKOS in sections) blocks += skos(report)
-        val gap = System.lineSeparator() + System.lineSeparator()
-        return blocks.joinToString(gap) { it.trimEnd() } + System.lineSeparator()
+        // LF throughout, like the appendLine bodies: the report is the same text on every platform.
+        return blocks.joinToString("\n\n") { it.trimEnd() } + "\n"
     }
 
     private fun header(report: VocabularyMetricsReport): String {

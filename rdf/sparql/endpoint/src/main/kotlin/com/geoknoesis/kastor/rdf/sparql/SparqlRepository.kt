@@ -108,12 +108,18 @@ internal fun errorDetail(body: String): String {
  * sanitised and truncated like an error body by [errorDetail].
  */
 internal fun urlDetail(url: String): String {
-    val cut = url.indexOfFirst { it == '?' || it == '#' }
-    val withoutUserInfo = (if (cut < 0) url else url.substring(0, cut)).replace(USER_INFO, "***@")
-    return errorDetail(withoutUserInfo + if (cut < 0) "" else "?...")
+    // User information first: a password may hold a raw '?' or '#', which must not end it early.
+    val withoutUserInfo = url.replace(USER_INFO, "***@")
+    val cut = withoutUserInfo.indexOfFirst { it == '?' || it == '#' }
+    return errorDetail((if (cut < 0) withoutUserInfo else withoutUserInfo.substring(0, cut)) + if (cut < 0) "" else "?...")
 }
 
-internal val USER_INFO = Regex("(?<=//)[^/@]*@")
+/**
+ * User information in a URL that could not be parsed: everything after `//` up to the last `@`
+ * before the first `/`, so that a password holding a raw `@`, `?` or `#` is cut out whole. A URL
+ * without a path whose query holds an `@` (`http://host?x=a@b`) is over-redacted, which is safe.
+ */
+internal val USER_INFO = Regex("(?<=//)[^/]*@")
 
 private val BACKSLASH = 92.toChar()
 
@@ -281,7 +287,8 @@ class SparqlRepository internal constructor(
      * Streams rows with [bindings] as initial bindings. [timeout] bounds the whole call, like the
      * Jena and RDF4J providers: the wait for the response and every row, including time the consumer
      * spends between rows; exceeding it fails with [RdfQueryException]. A shorter
-     * [SparqlEndpointConfig.streamingRequestTimeout] still applies.
+     * [SparqlEndpointConfig.streamingRequestTimeout] still applies, and a shorter
+     * [SparqlEndpointConfig.requestTimeout] still bounds the wait for the response headers.
      *
      * SPARQL 1.1 Protocol has no initial-bindings parameter, so the bindings are substituted into the
      * query text with the same rules as the Jena provider (see [com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]): the constants
@@ -304,7 +311,9 @@ class SparqlRepository internal constructor(
         }
         val sparql = SparqlInitialBindings.apply(query.sparql, rendered)
         val overall = config.streamingRequestTimeout?.let { minOf(it, timeout) } ?: timeout
-        return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(timeout, overall), consume)
+        // The response headers are awaited until the earliest of requestTimeout and the whole-call deadline.
+        val headers = config.requestTimeout?.let { minOf(it, timeout) } ?: timeout
+        return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(headers, overall), consume)
     }
 
     private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: Timeouts, consume: (Sequence<BindingSet>) -> T): T {
@@ -386,8 +395,10 @@ class SparqlRepository internal constructor(
         ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input, _ ->
-                readResponse(query.sparql) { input.readAllBytes() }
+            // The body of a 2xx answer is not read under the size cap: the update is applied by then, and a
+            // failure here would make a retrying caller apply it twice.
+            exchange(query.sparql, update = true, byteLimit = null, timeouts = Timeouts.buffered(config.requestTimeout)) { input, _ ->
+                discardUpdateResponse(input)
             }
             val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
@@ -400,6 +411,33 @@ class SparqlRepository internal constructor(
                 cause = e
             )
         }
+    }
+
+    /**
+     * Reads and discards the body of a successful (2xx) UPDATE response, at most
+     * [SparqlEndpointConfig.maxResponseBytes] of it. The server has applied the update by then, so a
+     * body that is larger, slower than the read timeout or the request deadline, or cut off does not
+     * fail the call: the rest is abandoned (the connection is closed) and a warning is logged.
+     */
+    private fun discardUpdateResponse(input: InputStream) {
+        val buffer = ByteArray(8192)
+        var remaining = config.maxResponseBytes
+        val problem = try {
+            while (remaining > 0) {
+                val n = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (n < 0) return
+                remaining -= n
+            }
+            if (input.read() < 0) return
+            "it exceeds ${config.maxResponseBytes} bytes"
+        } catch (e: IOException) {
+            "reading it failed: ${errorDetail(e.message ?: e.javaClass.simpleName)}"
+        }
+        LOGGER.log(
+            System.Logger.Level.WARNING,
+            "SPARQL UPDATE succeeded, but its response body was not read to the end ($problem); " +
+                "the rest is discarded",
+        )
     }
 
     override fun transaction(operations: RdfRepository.() -> Unit) {
@@ -666,7 +704,11 @@ class SparqlRepository internal constructor(
         val next = try {
             current.uri.resolve(URI(location))
         } catch (e: Exception) {
-            throw RdfQueryException("SPARQL endpoint returned an invalid redirect Location: ${urlDetail(location)}", query = sparql, cause = e)
+            // The parser's exception quotes the whole Location (signed query tokens included); only a
+            // copy that names the sanitised URL and the parser's reason is chained.
+            val detail = urlDetail(location)
+            val cause = if (e is java.net.URISyntaxException) java.net.URISyntaxException(detail, e.reason) else null
+            throw RdfQueryException("SPARQL endpoint returned an invalid redirect Location: $detail", query = sparql, cause = cause)
         }
         val scheme = next.scheme?.lowercase()
         if (scheme != "http" && scheme != "https") {

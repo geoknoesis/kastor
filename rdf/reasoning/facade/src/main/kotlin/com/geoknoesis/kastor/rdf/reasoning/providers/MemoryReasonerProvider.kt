@@ -135,7 +135,12 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
     }
 
     /**
-     * Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order.
+     * Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), asserted triples first.
+     *
+     * Semi-naive evaluation: every triple (asserted or entailed) is joined exactly once, when it is taken from the
+     * work queue, against the triples taken before it, through indexes that grow as triples are taken. Each rule is
+     * joined from both of its premises, so every pair of premises meets when the later of the two is taken; the
+     * result is the same fixpoint as re-applying all rules to all triples until nothing changes, without rescanning.
      *
      * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted)
      * and [ReasonerConfig.materializationThreshold] bounds the number of entailed triples ([IllegalArgumentException]).
@@ -153,56 +158,78 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         val range = ReasoningRule.RDFS_RANGE in rules
         val all = LinkedHashSet(asserted)
         val assertedCount = all.size
-        checkBudget()
-        while (true) {
-            val superClasses = index(all, SUB_CLASS_OF)
-            val superProperties = index(all, SUB_PROPERTY_OF)
-            val domains = index(all, DOMAIN)
-            val ranges = index(all, RANGE)
-            val added = LinkedHashSet<RdfTriple>()
-            // The cap and the time budget are checked as triples are produced, so one round cannot overshoot either.
-            fun emit(triple: RdfTriple) {
-                if (triple in all || !added.add(triple)) return
-                require(all.size + added.size - assertedCount <= config.materializationThreshold) {
-                    "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
-                }
-                if ((++steps and 1023L) == 0L) checkBudget()
-            }
-            for (t in all) {
-                if ((++steps and 1023L) == 0L) checkBudget()
-                val obj = t.obj
-                when (t.predicate) {
-                    SUB_CLASS_OF -> if (subClass && obj is RdfResource) {
-                        superClasses[obj]?.forEach { emit(RdfTriple(t.subject, SUB_CLASS_OF, it)) } // rdfs11
-                    }
-                    SUB_PROPERTY_OF -> if (subProperty && obj is RdfResource) {
-                        superProperties[obj]?.forEach { emit(RdfTriple(t.subject, SUB_PROPERTY_OF, it)) } // rdfs5
-                    }
-                    TYPE -> if (subClass && obj is RdfResource) {
-                        superClasses[obj]?.forEach { emit(RdfTriple(t.subject, TYPE, it)) } // rdfs9
-                    }
-                }
-                if (subProperty) {
-                    superProperties[t.predicate]?.forEach { q -> if (q is Iri) emit(RdfTriple(t.subject, q, obj)) } // rdfs7
-                }
-                if (domain) {
-                    domains[t.predicate]?.forEach { c -> emit(RdfTriple(t.subject, TYPE, c)) } // rdfs2
-                }
-                if (range && obj is RdfResource) {
-                    ranges[t.predicate]?.forEach { c -> emit(RdfTriple(obj, TYPE, c)) } // rdfs3
-                }
-            }
-            if (added.isEmpty()) return all
-            all.addAll(added)
+        val queue = ArrayDeque<RdfTriple>(all)
+        // Indexes over the triples taken from the queue so far.
+        val superClasses = HashMap<RdfTerm, MutableList<RdfTerm>>() // a -> b for (a subClassOf b)
+        val subClasses = HashMap<RdfTerm, MutableList<RdfTerm>>() // b -> a for (a subClassOf b)
+        val instances = HashMap<RdfTerm, MutableList<RdfResource>>() // c -> x for (x rdf:type c)
+        val superProperties = HashMap<RdfTerm, MutableList<RdfTerm>>() // p -> q for (p subPropertyOf q)
+        val subProperties = HashMap<RdfTerm, MutableList<RdfTerm>>() // q -> p for (p subPropertyOf q)
+        val domains = HashMap<RdfTerm, MutableList<RdfTerm>>() // p -> c for (p domain c)
+        val ranges = HashMap<RdfTerm, MutableList<RdfTerm>>() // p -> c for (p range c)
+        val byPredicate = HashMap<RdfTerm, MutableList<RdfTriple>>()
+        fun <V> MutableMap<RdfTerm, MutableList<V>>.add(key: RdfTerm, value: V) {
+            getOrPut(key) { ArrayList() }.add(value)
+        }
+        // The cap and the time budget are checked as triples are produced, so no join can overshoot either.
+        fun emit(triple: RdfTriple) {
+            if (!all.add(triple)) return
             require(all.size - assertedCount <= config.materializationThreshold) {
                 "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
             }
-            checkBudget()
+            queue.addLast(triple)
+            if ((++steps and 1023L) == 0L) checkBudget()
+        }
+        checkBudget()
+        while (true) {
+            val t = queue.removeFirstOrNull() ?: return all
+            if ((++steps and 1023L) == 0L) checkBudget()
+            val s = t.subject
+            val p = t.predicate
+            val obj = t.obj
+            // Index first, so that a triple also meets itself (e.g. `p subPropertyOf p` with rdfs7).
+            byPredicate.add(p, t)
+            when (p) {
+                SUB_CLASS_OF -> { superClasses.add(s, obj); subClasses.add(obj, s) }
+                SUB_PROPERTY_OF -> { superProperties.add(s, obj); subProperties.add(obj, s) }
+                DOMAIN -> domains.add(s, obj)
+                RANGE -> ranges.add(s, obj)
+                TYPE -> if (obj is RdfResource) instances.add(obj, s)
+            }
+            // Emitting only queues triples; the indexes iterated here change only when a triple is taken.
+            when (p) {
+                SUB_CLASS_OF -> if (subClass) {
+                    if (obj is RdfResource) superClasses[obj]?.forEach { emit(RdfTriple(s, SUB_CLASS_OF, it)) } // rdfs11, as left premise
+                    subClasses[s]?.forEach { a -> if (a is RdfResource) emit(RdfTriple(a, SUB_CLASS_OF, obj)) } // rdfs11, as right premise
+                    instances[s]?.forEach { x -> emit(RdfTriple(x, TYPE, obj)) } // rdfs9, as class premise
+                }
+                SUB_PROPERTY_OF -> if (subProperty) {
+                    if (obj is RdfResource) superProperties[obj]?.forEach { emit(RdfTriple(s, SUB_PROPERTY_OF, it)) } // rdfs5, as left premise
+                    subProperties[s]?.forEach { a -> if (a is RdfResource) emit(RdfTriple(a, SUB_PROPERTY_OF, obj)) } // rdfs5, as right premise
+                    if (obj is Iri) byPredicate[s]?.forEach { u -> emit(RdfTriple(u.subject, obj, u.obj)) } // rdfs7, as schema premise
+                }
+                DOMAIN -> if (domain) {
+                    byPredicate[s]?.forEach { u -> emit(RdfTriple(u.subject, TYPE, obj)) } // rdfs2, as schema premise
+                }
+                RANGE -> if (range) {
+                    byPredicate[s]?.forEach { u -> (u.obj as? RdfResource)?.let { y -> emit(RdfTriple(y, TYPE, obj)) } } // rdfs3, as schema premise
+                }
+                TYPE -> if (subClass && obj is RdfResource) {
+                    superClasses[obj]?.forEach { emit(RdfTriple(s, TYPE, it)) } // rdfs9, as instance premise
+                }
+            }
+            // Every triple is also a data premise of rdfs7, rdfs2 and rdfs3.
+            if (subProperty) {
+                superProperties[p]?.forEach { q -> if (q is Iri) emit(RdfTriple(s, q, obj)) } // rdfs7
+            }
+            if (domain) {
+                domains[p]?.forEach { c -> emit(RdfTriple(s, TYPE, c)) } // rdfs2
+            }
+            if (range && obj is RdfResource) {
+                ranges[p]?.forEach { c -> emit(RdfTriple(obj, TYPE, c)) } // rdfs3
+            }
         }
     }
-
-    private fun index(triples: Collection<RdfTriple>, predicate: Iri): Map<RdfTerm, List<RdfTerm>> =
-        triples.asSequence().filter { it.predicate == predicate }.groupBy({ it.subject }, { it.obj })
 
     private fun performClassification(triples: Collection<RdfTriple>): ClassificationResult {
         val classHierarchy = mutableMapOf<Iri, MutableList<Iri>>()

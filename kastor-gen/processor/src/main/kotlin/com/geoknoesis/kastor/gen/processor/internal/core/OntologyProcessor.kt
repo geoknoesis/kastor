@@ -100,6 +100,8 @@ public class OntologyProcessor internal constructor(
               dslName = request.dslName,
               packageName = request.targetPackage,
               sources = listOfNotNull((symbol as? KSDeclaration)?.containingFile ?: (symbol as? KSFile)),
+              owner = "@Rdf(generateDsl = true, dslName = \"${request.dslName}\", shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
+              at = symbol,
             )
           } catch (e: InvalidConfigurationException) {
             throw e
@@ -140,6 +142,8 @@ public class OntologyProcessor internal constructor(
               dataClassImplementsInterface = request.dataClassImplementsInterface,
               nestedMode = request.nestedMode,
               generateWriteSupport = request.generateWriteSupport,
+              owner = "@Rdf(shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
+              at = symbol,
             )
           } catch (e: InvalidConfigurationException) {
             throw e
@@ -191,6 +195,13 @@ public class OntologyProcessor internal constructor(
           "$RESOURCES_TRACKED_OPTION=true."
       )
     }
+  }
+
+  /** The annotated declaration or file, for messages. */
+  private fun describe(symbol: KSAnnotated): String = when (symbol) {
+    is KSDeclaration -> symbol.qualifiedName?.asString() ?: symbol.simpleName.asString()
+    is KSFile -> "file ${symbol.fileName}"
+    else -> symbol.toString()
   }
 
   private fun sourceFileOf(symbol: KSAnnotated): File? =

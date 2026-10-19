@@ -388,14 +388,15 @@ class DefaultQualityExplanationEnricher internal constructor(
         /**
          * Secrets that must never appear in a failure reason: the API key of the **active** provider (the configured
          * one, else the environment variable of the provider; a key of another provider is not a secret of this run)
-         * and the credentials of [LlmExplanationConfig.baseUrl]. Longest first, so a secret that contains another is
-         * replaced as a whole.
+         * and the credentials of [LlmExplanationConfig.baseUrl]. A key is redacted both as read and trimmed, the form
+         * [resolveApiKey] sends (a CRLF `.env` leaves a `\r` that the echoed key no longer has). Longest first, so a
+         * secret that contains another is replaced as a whole.
          */
-        fun secretsToRedact(config: LlmExplanationConfig, env: (String) -> String? = System::getenv): List<String> =
-            (
-                listOfNotNull(config.apiKey?.takeIf { it.isNotBlank() } ?: config.provider.apiKeyVariable?.let(env)) +
-                    urlCredentials(config.baseUrl)
-            ).filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
+        fun secretsToRedact(config: LlmExplanationConfig, env: (String) -> String? = System::getenv): List<String> {
+            val key = config.apiKey?.takeIf { it.isNotBlank() } ?: config.provider.apiKeyVariable?.let(env)
+            return (listOfNotNull(key, key?.trim()) + urlCredentials(config.baseUrl))
+                .filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
+        }
 
         private val WHITESPACE_RUN = Regex("\\s+")
 

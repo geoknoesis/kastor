@@ -126,11 +126,13 @@ internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: S
 
 /**
  * Writes [text] as UTF-8 to a temporary file next to [target] and moves it over [target], so a failed run leaves an
- * existing report untouched instead of truncated, and the platform charset never changes the bytes.
+ * existing report untouched instead of truncated, and the platform charset never changes the bytes. The temporary
+ * file is created like any new file (`Files.createTempFile` would make it owner-only, 0600 on POSIX), so the report
+ * gets the default permissions of the directory and the umask.
  */
 internal fun writeReport(target: Path, text: String) {
   val absolute = target.toAbsolutePath()
-  val temp = Files.createTempFile(absolute.parent, absolute.fileName.toString().take(32), ".tmp")
+  val temp = createSibling(absolute)
   try {
     Files.writeString(temp, text, Charsets.UTF_8)
     try {
@@ -140,6 +142,19 @@ internal fun writeReport(target: Path, text: String) {
     }
   } finally {
     Files.deleteIfExists(temp)
+  }
+}
+
+/** A new, empty file with a unique name next to [target], with default permissions. */
+private fun createSibling(target: Path): Path {
+  val prefix = "." + target.fileName.toString().take(32) + "."
+  while (true) {
+    val candidate = target.resolveSibling(prefix + java.util.UUID.randomUUID() + ".tmp")
+    try {
+      return Files.createFile(candidate)
+    } catch (_: java.nio.file.FileAlreadyExistsException) {
+      // Taken by someone else: try another name.
+    }
   }
 }
 

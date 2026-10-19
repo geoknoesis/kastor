@@ -14,9 +14,9 @@ import com.squareup.kotlinpoet.TypeSpec
 
 private val IRI_CLASS = ClassName("com.geoknoesis.kastor.rdf", "Iri")
 
-internal class EnumGenerator(private val logger: KSPLogger) {
+public class EnumGenerator(private val logger: KSPLogger) {
 
-    internal fun generateEnums(model: OntologyModel, packageName: String): Map<String, FileSpec> =
+    public fun generateEnums(model: OntologyModel, packageName: String): Map<String, FileSpec> =
         model.enums.sortedBy { it.name }.associate { it.name to fileFor(it, packageName) }
 
     private fun fileFor(e: EnumModel, packageName: String): FileSpec {

@@ -384,11 +384,11 @@ oqsh:WrongEquivalentPropertiesShape
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P27" ;
     rdfs:label      "Equivalent properties should agree on rdfs:domain and rdfs:range" ;
-    rdfs:comment    "OOPS! P27 'Defining wrong equivalent properties': if two properties are owl:equivalentProperty, asserting different rdfs:domain or rdfs:range values breaks the intended semantics." ;
+    rdfs:comment    "OOPS! P27 'Defining wrong equivalent properties': if two properties are owl:equivalentProperty, asserting different rdfs:domain or rdfs:range values breaks the intended semantics. The asserted domain (range) SETS are compared, when both properties assert one: equivalent properties that both declare domains {A, B} agree; a property with no domain at all inherits the other's through the equivalence and is not reported." ;
     sh:targetSubjectsOf owl:equivalentProperty ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Property {$this} is owl:equivalentProperty to {?value} but their rdfs:domain and/or rdfs:range differ." ;
-                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?value WHERE { $this owl:equivalentProperty ?value . FILTER ( isIRI($this) && isIRI(?value) ) { $this rdfs:domain ?d1 . ?value rdfs:domain ?d2 . FILTER ( ?d1 != ?d2 ) } UNION { $this rdfs:range ?r1 . ?value rdfs:range ?r2 . FILTER ( ?r1 != ?r2 ) } }""" ] ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?value WHERE { $this owl:equivalentProperty ?value . FILTER ( isIRI($this) && isIRI(?value) ) { $this rdfs:domain ?d . FILTER EXISTS { ?value rdfs:domain ?anyD } FILTER NOT EXISTS { ?value rdfs:domain ?d } } UNION { ?value rdfs:domain ?d . FILTER EXISTS { $this rdfs:domain ?anyD } FILTER NOT EXISTS { $this rdfs:domain ?d } } UNION { $this rdfs:range ?r . FILTER EXISTS { ?value rdfs:range ?anyR } FILTER NOT EXISTS { ?value rdfs:range ?r } } UNION { ?value rdfs:range ?r . FILTER EXISTS { $this rdfs:range ?anyR } FILTER NOT EXISTS { $this rdfs:range ?r } } }""" ] ;
     sh:severity     sh:Warning .
 
 oqsh:DomainIsClassShape
@@ -489,12 +489,12 @@ oqsh:UntypedClassShape
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P34" ;
     rdfs:label      "Classes referenced as classes are declared as owl:Class" ;
-    rdfs:comment    "OOPS! P34. Implicit class declarations work in OWL Full but break OWL DL tooling." ;
+    rdfs:comment    "OOPS! P34. Implicit class declarations work in OWL Full but break OWL DL tooling. Datatypes are not classes: an IRI declared rdfs:Datatype or owl:DataRange (the range of a datatype property, possibly defined by a datatype restriction), and the built-in XSD and RDF datatypes, are not reported." ;
     sh:targetObjectsOf rdfs:subClassOf , rdf:type , owl:equivalentClass , owl:disjointWith , rdfs:domain , rdfs:range ;
     sh:targetSubjectsOf rdfs:subClassOf , owl:equivalentClass , owl:disjointWith ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "IRI {$this} is used as a class but is not declared as owl:Class or rdfs:Class." ;
-                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this rdf:type owl:Class } FILTER NOT EXISTS { $this rdf:type rdfs:Class } FILTER NOT EXISTS { $this rdf:type owl:DeprecatedClass } FILTER ( !strstarts(str($this), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2001/XMLSchema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/ns/shacl#") ) BIND(1 AS ?v) }""" ] .
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this rdf:type owl:Class } FILTER NOT EXISTS { $this rdf:type rdfs:Class } FILTER NOT EXISTS { $this rdf:type owl:DeprecatedClass } FILTER NOT EXISTS { $this rdf:type rdfs:Datatype } FILTER NOT EXISTS { $this rdf:type owl:DataRange } FILTER ( !strstarts(str($this), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2001/XMLSchema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/ns/shacl#") ) BIND(1 AS ?v) }""" ] .
 
 oqsh:UntypedPropertyShape
     a               sh:NodeShape ;
@@ -503,11 +503,11 @@ oqsh:UntypedPropertyShape
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P35" ;
     rdfs:label      "Properties used as predicates are declared as properties" ;
-    rdfs:comment    "OOPS! P35. Same logic as P34 but for predicates. SHACL has no target for predicates, so this shape scans the whole graph from one focus node and reports each offending predicate once, as sh:value and in the message." ;
+    rdfs:comment    "OOPS! P35. Same logic as P34 but for predicates. A typing as an OWL property characteristic (owl:FunctionalProperty, owl:TransitiveProperty, ...) is a declaration too, and the well-known RDF, RDFS, OWL, SKOS, SHACL, DCMI terms and DC elements 1.1 vocabularies are exempt. SHACL has no target for predicates, so this shape scans the whole graph from one focus node and reports each offending predicate once, as sh:value and in the message." ;
     sh:targetNode   owl:Thing ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "IRI {?value} is used as a predicate but is not declared as a property." ;
-                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT DISTINCT ?value WHERE { ?s ?value ?o . FILTER NOT EXISTS { ?value rdf:type owl:ObjectProperty } FILTER NOT EXISTS { ?value rdf:type owl:DatatypeProperty } FILTER NOT EXISTS { ?value rdf:type owl:AnnotationProperty } FILTER NOT EXISTS { ?value rdf:type rdf:Property } FILTER NOT EXISTS { ?value rdf:type owl:DeprecatedProperty } FILTER ( !strstarts(str(?value), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?value), "http://purl.org/dc/terms/") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/ns/shacl#") ) }""" ] .
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT DISTINCT ?value WHERE { ?s ?value ?o . FILTER NOT EXISTS { ?value rdf:type owl:ObjectProperty } FILTER NOT EXISTS { ?value rdf:type owl:DatatypeProperty } FILTER NOT EXISTS { ?value rdf:type owl:AnnotationProperty } FILTER NOT EXISTS { ?value rdf:type rdf:Property } FILTER NOT EXISTS { ?value rdf:type owl:DeprecatedProperty } FILTER NOT EXISTS { ?value rdf:type ?characteristic . FILTER ( ?characteristic IN ( owl:FunctionalProperty, owl:InverseFunctionalProperty, owl:TransitiveProperty, owl:SymmetricProperty, owl:AsymmetricProperty, owl:ReflexiveProperty, owl:IrreflexiveProperty, owl:OntologyProperty ) ) } FILTER ( !strstarts(str(?value), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?value), "http://purl.org/dc/terms/") ) FILTER ( !strstarts(str(?value), "http://purl.org/dc/elements/1.1/") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/ns/shacl#") ) }""" ] .
 
 oqsh:OrphanClassShape
     a               sh:NodeShape ;
@@ -519,8 +519,8 @@ oqsh:OrphanClassShape
     rdfs:comment    "OOPS! P04. A class with no structural links may be dead code." ;
     sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "Class is unconnected: no subclass/superclass/equivalence/disjointness links, no instances, not used as domain or range." ;
-                      sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdf:type owl:Class . FILTER ( isIRI($this) ) FILTER ( $this != owl:Thing && $this != owl:Nothing ) FILTER NOT EXISTS { $this rdfs:subClassOf ?x . FILTER ( ?x != owl:Thing ) } FILTER NOT EXISTS { ?x rdfs:subClassOf $this } FILTER NOT EXISTS { $this owl:equivalentClass ?x } FILTER NOT EXISTS { ?x owl:equivalentClass $this } FILTER NOT EXISTS { $this owl:disjointWith ?x } FILTER NOT EXISTS { ?x owl:disjointWith $this } FILTER NOT EXISTS { ?p rdfs:domain $this } FILTER NOT EXISTS { ?p rdfs:range $this } FILTER NOT EXISTS { ?i rdf:type $this } BIND(1 AS ?v) }" ] ;
+                      sh:message "Class is unconnected: no subclass/superclass/equivalence/disjointness links, no instances, not used as domain or range, in a class expression (owl:unionOf, owl:intersectionOf, ...) or as a restriction filler." ;
+                      sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdf:type owl:Class . FILTER ( isIRI($this) ) FILTER ( $this != owl:Thing && $this != owl:Nothing ) FILTER NOT EXISTS { $this rdfs:subClassOf ?x . FILTER ( ?x != owl:Thing ) } FILTER NOT EXISTS { ?x rdfs:subClassOf $this } FILTER NOT EXISTS { $this owl:equivalentClass ?x } FILTER NOT EXISTS { ?x owl:equivalentClass $this } FILTER NOT EXISTS { $this owl:disjointWith ?x } FILTER NOT EXISTS { ?x owl:disjointWith $this } FILTER NOT EXISTS { ?p rdfs:domain $this } FILTER NOT EXISTS { ?p rdfs:range $this } FILTER NOT EXISTS { ?i rdf:type $this } FILTER NOT EXISTS { ?list rdf:first $this } FILTER NOT EXISTS { ?x owl:someValuesFrom|owl:allValuesFrom|owl:onClass|owl:complementOf $this } FILTER NOT EXISTS { $this owl:unionOf|owl:intersectionOf|owl:oneOf|owl:complementOf|owl:disjointUnionOf ?x } BIND(1 AS ?v) }" ] ;
     sh:severity     sh:Info .
 
 # =============================================================================
@@ -870,7 +870,7 @@ oqsh:NamespaceMismatchShape
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P40" ;
     rdfs:label      "Classes/properties should not be coined under a vocabulary namespace differing from their declaring ontology hosts" ;
-    rdfs:comment    "OOPS! P40 / namespace hijacking: the bundled fixture asserts FOAF-aligned IRIs inside a document whose canonical ontology announces a distant host." ;
+    rdfs:comment    "OOPS! P40 / namespace hijacking: the bundled fixture asserts FOAF-aligned IRIs inside a document whose canonical ontology announces a distant host. Only a redefinition is reported, an external term that this document also describes (labels, comments, domain, range, superclasses...). A bare declaration (only rdf:type triples, as Protégé writes for every referenced external class or property, and as P34/P35 require) is not." ;
     sh:targetClass  owl:Class , owl:ObjectProperty , owl:DatatypeProperty ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "{$this} is declared in ontology {?value}, whose HTTP host differs — possible vocabulary hijacking (OOPS P40)." ;
@@ -889,6 +889,10 @@ oqsh:NamespaceMismatchShape
                           FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/1999/02/22-rdf-syntax-ns#\")))
                           FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/2000/01/rdf-schema#\")))
                           FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/2001/XMLSchema#\")))
+                          FILTER EXISTS {
+                            $this ?localP ?localO .
+                            FILTER (?localP != rdf:type)
+                          }
                           FILTER NOT EXISTS {
                             ?value owl:imports ?imp .
                             FILTER isIRI(?imp)

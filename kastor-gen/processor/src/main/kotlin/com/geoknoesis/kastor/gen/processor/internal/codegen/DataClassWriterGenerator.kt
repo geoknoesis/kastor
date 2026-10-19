@@ -17,6 +17,8 @@ import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FunSpec
+import com.squareup.kotlinpoet.MemberName
+import com.squareup.kotlinpoet.joinToCode
 
 /**
  * Generates a `toTriples(record, subject)` function that serializes a data-class snapshot
@@ -26,7 +28,8 @@ import com.squareup.kotlinpoet.FunSpec
  * it is NOT written to a separate file.
  *
  * ## Design constraints
- * - Returns `List<RdfTriple>` only; callers decide whether to append or replace.
+ * - Returns `List<RdfTriple>` only; callers decide whether to append or replace. [buildReplaceInGraphFunction]
+ *   generates the scoped replace (`replaceInGraph`) that keeps every predicate `toTriples` does not write.
  * - Always emits `rdf:type` for the shape's target class.
  * - Literals are written with the property's declared `sh:datatype` (via `XsdLiterals.encode`).
  * - Object properties in [NestedMode.DATA_CLASS] cannot be serialized (no subject IRI available)
@@ -44,6 +47,8 @@ public class DataClassWriterGenerator(
     private val rdfBackedClass   = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked")
     private val rdfVocabRdfClass = ClassName(CodegenConstants.VOCAB_PACKAGE, "RDF")
     private val xsdLiterals      = ClassName(CodegenConstants.RUNTIME_PACKAGE, "XsdLiterals")
+    private val mutableGraphClass = ClassName(CodegenConstants.RDF_PACKAGE, "MutableRdfGraph")
+    private val replacePredicates = MemberName(CodegenConstants.RUNTIME_PACKAGE, "replacePredicates")
 
     // ── Public entry point ────────────────────────────────────────────────────
 
@@ -62,7 +67,8 @@ public class DataClassWriterGenerator(
                 kdocText(
                     "Serializes a [${dcClassName.simpleName}] snapshot to a list of RDF triples.\n\n" +
                         "Always includes `rdf:type ${shape.targetClass}`.\n" +
-                        "Callers are responsible for clearing stale triples before adding the result.\n" +
+                        "Callers are responsible for clearing stale triples before adding the result; " +
+                        "[replaceInGraph] does that for the predicates written here only.\n" +
                         "Object sub-objects (if any) must be serialized separately.\n" +
                         (if (nestedMode == NestedMode.DATA_CLASS) {
                             "\n**Note:** `NestedMode.DATA_CLASS` object properties are not included — " +
@@ -90,6 +96,42 @@ public class DataClassWriterGenerator(
 
         fn.addStatement("return triples")
         return fn.build()
+    }
+
+    /**
+     * `replaceInGraph(graph, record, subject)`: the scoped read-modify-write companion of `toTriples`. It replaces, in
+     * one atomic edit, only the predicates `toTriples` writes (and adds `rdf:type`), so predicates the record does not
+     * model, object links it skips ([NestedMode.DATA_CLASS]) and complex-path triples are kept.
+     */
+    public fun buildReplaceInGraphFunction(
+        shape: ShaclShape,
+        dcClassName: ClassName,
+        context: JsonLdContext = JsonLdContext(prefixes = emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap()),
+        knownTypes: Set<String>? = null,
+        properties: List<ShaclProperty> = shape.properties.sortedBy { it.path },
+    ): FunSpec {
+        val written = properties
+            .filterNot { nestedMode == NestedMode.DATA_CLASS && TypeMapper.valueKind(it, context, knownTypes, nestedMode) == ValueKind.OBJECT }
+            .map { it.path }
+            .distinct()
+            .sorted()
+        val predicates = written.map { CodeBlock.of("%T(%S)", iriClass, it) }.joinToCode(", ")
+        return FunSpec.builder("replaceInGraph")
+            .addKdoc(
+                "%L",
+                kdocText(
+                    "Writes [record] to [graph] as the description of [subject], in one atomic edit: the values of the " +
+                        "predicates [toTriples] writes are replaced by its triples and `rdf:type ${shape.targetClass}` is " +
+                        "added. Every other triple of [subject] (other types, predicates the record does not model" +
+                        (if (nestedMode == NestedMode.DATA_CLASS) ", object links skipped in `NestedMode.DATA_CLASS`" else "") +
+                        ") is kept.\n\nRequires an `AtomicMutableRdfGraph`; other graphs are rejected before any change."
+                ),
+            )
+            .addParameter("graph", mutableGraphClass)
+            .addParameter("record", dcClassName)
+            .addParameter("subject", iriClass)
+            .addStatement("graph.%M(subject, listOf(%L), toTriples(record, subject))", replacePredicates, predicates)
+            .build()
     }
 
     // ── Per-property write code ───────────────────────────────────────────────
