@@ -97,6 +97,16 @@ class JenaReasonerConfigTest {
     }
 
     @Test
+    fun `materializationThreshold bounds classification like the other calls`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            JenaReasoner(ReasonerConfig.rdfs().copy(materializationThreshold = 10)).classify(chain(10, 10))
+        }
+        assertTrue(error.message!!.contains("materializationThreshold"), error.message)
+        val classes = JenaReasoner(ReasonerConfig.rdfs().copy(materializationThreshold = 10_000)).classify(chain(10, 10)).classHierarchy
+        assertTrue(classes.isNotEmpty())
+    }
+
+    @Test
     fun `timeout is enforced`() {
         // Deterministic: a fake clock advancing 1 ms per budget check exhausts a 50 ms budget after 50 checks.
         val now = java.util.concurrent.atomic.AtomicLong()
