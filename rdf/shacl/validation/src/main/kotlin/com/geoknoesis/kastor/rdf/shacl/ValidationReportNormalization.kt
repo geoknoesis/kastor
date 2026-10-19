@@ -20,9 +20,22 @@ fun ValidationViolation.paritySortKey(): String {
     val pathKey = path?.joinToString("") { termParityKey(it) }.orEmpty()
     val valueKey = value?.let { termParityKey(it) }.orEmpty()
     // Every field is length-prefixed, so no field content can imitate a separator and the key is injective.
-    return listOf(focusKey, componentKey, pathKey, valueKey, severity.name, shapeUri.orEmpty())
+    return listOf(focusKey, componentKey, pathKey, valueKey, severity.name, shapeParityKey(shapeUri))
         .joinToString("") { lengthPrefixed(it) }
 }
+
+/**
+ * The source shape of a result. A blank node shape (an anonymous property shape, typically) has no engine-independent
+ * name: each engine and each parse labels it differently (`_:...`), so only the fact that it is blank is kept. Its
+ * results are still told apart by their focus node, path, component, value and severity; two blank shapes that agree
+ * on all of these give rows with the same key, which a parity comparison counts as a multiset.
+ */
+private fun shapeParityKey(shapeUri: String?): String =
+    when {
+        shapeUri == null -> "N"
+        shapeUri.startsWith("_:") -> "B"
+        else -> "I" + shapeUri
+    }
 
 fun ValidationReport.sortedParityViolationKeys(): List<String> =
     violations.map { it.paritySortKey() }.sorted()
