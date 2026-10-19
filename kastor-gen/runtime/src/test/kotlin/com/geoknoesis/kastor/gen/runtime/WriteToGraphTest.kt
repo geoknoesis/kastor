@@ -95,11 +95,13 @@ class WriteToGraphTest {
         val triples = targetGraph.getTriples()
         assertEquals(6, triples.size, "Target graph should contain all 6 triples including blank nodes")
         assertTrue(triples.any { it.subject == alice && it.predicate == FOAF.name })
-        assertTrue(triples.any { it.subject == alice && it.predicate == FOAF.knows && it.obj == b1 })
-        assertTrue(triples.any { it.subject == b1 && it.predicate == FOAF.name })
-        assertTrue(triples.any { it.subject == b1 && it.predicate == FOAF.mbox })
-        assertTrue(triples.any { it.subject == b1 && it.predicate == FOAF.knows && it.obj == b2 })
-        assertTrue(triples.any { it.subject == b2 && it.predicate == FOAF.name })
+        // Blank nodes are written as fresh nodes, consistently within the write.
+        val n1 = targetGraph.find(alice, FOAF.knows).single().obj as BlankNode
+        val n2 = targetGraph.find(n1, FOAF.knows).single().obj as BlankNode
+        assertTrue(n1 != b1 && n1 != b2 && n2 != b1 && n2 != b2 && n1 != n2)
+        assertEquals(listOf("Bob"), names(targetGraph, n1))
+        assertEquals(1, targetGraph.find(n1, FOAF.mbox).size)
+        assertEquals(listOf("Charlie"), names(targetGraph, n2))
 
         repo.close()
     }
@@ -202,12 +204,13 @@ class WriteToGraphTest {
         val person: TestPersonForWriteToGraph = RdfRef(b1, repo.defaultGraph).asType()
         val targetGraph = Rdf.graph { }
 
-        // Should work with blank node as rdf.node
-        (person as RdfBacked).writeToGraph(targetGraph)
+        // Should work with blank node as rdf.node; the node is written as a fresh blank node, which is returned
+        val written = (person as RdfBacked).writeToGraph(targetGraph)
 
         val triples = targetGraph.getTriples()
         assertEquals(1, triples.size)
-        assertEquals(b1, triples.first().subject)
+        assertTrue(written is BlankNode && written != b1, written.toString())
+        assertEquals(written, triples.first().subject)
 
         repo.close()
     }
@@ -364,8 +367,11 @@ class WriteToGraphTest {
         val triples = targetGraph.getTriples()
         assertEquals(6, triples.size, "Should contain all triples without infinite loop")
         assertTrue(triples.any { it.subject == alice && it.predicate == FOAF.name })
-        assertTrue(triples.any { it.subject == b1 && it.predicate == FOAF.name })
-        assertTrue(triples.any { it.subject == b2 && it.predicate == FOAF.name })
+        val n1 = targetGraph.find(alice, FOAF.knows).single().obj as BlankNode
+        val n2 = targetGraph.find(n1, FOAF.knows).single().obj as BlankNode
+        assertEquals(n1, targetGraph.find(n2, FOAF.knows).single().obj, "the cycle is kept between the fresh nodes")
+        assertEquals(listOf("Bob"), names(targetGraph, n1))
+        assertEquals(listOf("Charlie"), names(targetGraph, n2))
 
         repo.close()
     }
@@ -409,5 +415,56 @@ class WriteToGraphTest {
 
         repo.close()
     }
-}
 
+    private fun names(graph: RdfGraph, node: RdfResource): List<String> =
+        graph.find(node, FOAF.name).map { (it.obj as Literal).lexical }.sorted()
+
+    private fun registerPlainFactory() {
+        OntoMapper.register(TestPersonForWriteToGraph::class.java, replace = true) { handle ->
+            object : TestPersonForWriteToGraph, RdfBacked {
+                override val rdf = handle
+                override val name: List<String> get() = emptyList()
+                override val age: List<Int>? get() = null
+            }
+        }
+    }
+
+    @Test
+    fun `writeToGraph does not merge closure blank nodes with same-labelled nodes of the target graph`() {
+        registerPlainFactory()
+        val alice = Iri("http://example.org/alice")
+        val b0 = bnode("b0")
+        val source = com.geoknoesis.kastor.rdf.provider.MemoryGraph(listOf(
+            RdfTriple(alice, FOAF.knows, b0),
+            RdfTriple(b0, FOAF.name, Literal("Bob")),
+        ))
+        val target = com.geoknoesis.kastor.rdf.provider.MemoryGraph(listOf(RdfTriple(b0, FOAF.name, Literal("Unrelated"))))
+
+        (RdfRef(alice, source).asType<TestPersonForWriteToGraph>() as RdfBacked).writeToGraph(target)
+
+        assertEquals(listOf("Unrelated"), names(target, b0), "the target's own _:b0 is untouched")
+        val copied = target.find(alice, FOAF.knows).single().obj as BlankNode
+        assertNotEquals(b0, copied)
+        assertEquals(listOf("Bob"), names(target, copied))
+    }
+
+    @Test
+    fun `copying to a new IRI in the same graph gives the copy its own blank nodes`() {
+        registerPlainFactory()
+        val alice = Iri("http://example.org/alice")
+        val copy = Iri("http://example.org/copy")
+        val b0 = bnode("b0")
+        val graph = com.geoknoesis.kastor.rdf.provider.MemoryGraph(listOf(
+            RdfTriple(alice, FOAF.knows, b0),
+            RdfTriple(b0, FOAF.name, Literal("Bob")),
+        ))
+
+        val written = (RdfRef(alice, graph).asType<TestPersonForWriteToGraph>() as RdfBacked).writeToGraph(graph, copy)
+
+        assertEquals(copy, written)
+        val copied = graph.find(copy, FOAF.knows).single().obj as BlankNode
+        assertNotEquals(b0, copied, "the copy does not share the original's nested node")
+        graph.removeTriple(RdfTriple(copied, FOAF.name, Literal("Bob")))
+        assertEquals(listOf("Bob"), names(graph, b0), "editing the copy leaves the original intact")
+    }
+}

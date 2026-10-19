@@ -182,4 +182,32 @@ class OntologyGenerationTaskTest {
         assertTrue(stub.contains("Class.forName(\"demo.impl.PersonWrapper\")"), stub)
         assertEquals("package demo.domain", stub.lines().first { it.startsWith("package") })
     }
+
+    @Test
+    fun `sh in value sets become enums that interfaces and wrappers use, as with KSP`() {
+        val t = task { interfacePackage = "demo.domain"; wrapperPackage = "demo.impl" }
+        write(
+            "shapes.ttl",
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix ex: <https://example.test/> .
+            @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+            ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
+                sh:property [ sh:path ex:status ; sh:name "status" ; sh:class ex:Status ; sh:maxCount 1 ;
+                              sh:in ( ex:Active ex:Retired ) ] .
+            """.trimIndent(),
+        )
+        t.generateOntology()
+        val domain = File(output(t), "demo/domain")
+        val enums = domain.listFiles()!!.filter { "sealed interface" in it.readText() }
+        assertEquals(1, enums.size, domain.list()!!.toList().toString())
+        val enumFile = enums.single()
+        val enumName = enumFile.nameWithoutExtension
+        assertEquals("Status", enumName)
+        assertTrue("https://example.test/Active" in enumFile.readText() && "https://example.test/Retired" in enumFile.readText(), enumFile.readText())
+        val person = File(domain, "Person.kt").readText()
+        assertTrue("val status: $enumName?" in person, person)
+        val wrapper = File(output(t), "demo/impl/PersonWrapper.kt").readText()
+        assertTrue("demo.domain.$enumName" in wrapper, wrapper)
+    }
 }

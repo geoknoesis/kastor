@@ -12,9 +12,9 @@ import com.google.devtools.ksp.processing.KSPLogger
 
 private const val XSD = "http://www.w3.org/2001/XMLSchema#"
 
-internal class ShaclEnumExtractor(private val logger: KSPLogger) {
+public class ShaclEnumExtractor(private val logger: KSPLogger) {
 
-    fun enrich(model: OntologyModel): OntologyModel {
+    public fun enrich(model: OntologyModel): OntologyModel {
         val context = model.context
         val classShapeIris = model.shapes.map { it.targetClass }.toSet()
         val byName = LinkedHashMap<String, EnumModel>()

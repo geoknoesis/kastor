@@ -20,6 +20,9 @@ import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
 
+/** Alias under which generated wrappers import the runtime `writeToGraph` extension (their member shadows the name). */
+private const val WRITE_TO_GRAPH_ALIAS = "kastorWriteToGraph"
+
 /**
  * Generator for Kotlin wrapper classes from SHACL shapes and JSON-LD context using KotlinPoet.
  * Creates RDF-backed wrapper implementations.
@@ -91,7 +94,9 @@ public class OntologyWrapperGenerator(
 
         // Add imports
         fileBuilder.addImport(runtime, "RdfBacked", "OntoMapper", "KastorGraphOps", "RdfRef", "RdfHandle", "DefaultRdfHandle", "ShaclViolation", "ValidationResult")
-        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfResource", "MutableRdfGraph", "BlankNode", "getCbdClosure")
+        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfResource", "MutableRdfGraph", "BlankNode")
+        // The member writeToGraph delegates to the runtime extension of the same name, imported under an alias.
+        fileBuilder.addAliasedImport(MemberName(CodegenConstants.RUNTIME_PACKAGE, "writeToGraph"), WRITE_TO_GRAPH_ALIAS)
 
         // Build wrapper class
         val classBuilder = TypeSpec.classBuilder(wrapperName)
@@ -449,6 +454,7 @@ public class OntologyWrapperGenerator(
         }
 
     private fun generateWriteToGraph(): FunSpec {
+        val rdfResource = ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource")
         return FunSpec.builder("writeToGraph")
             .addKdoc(
                 "Writes the CBD (Concise Bounded Description) closure of this instance to the target graph.\n\n" +
@@ -456,9 +462,12 @@ public class OntologyWrapperGenerator(
                 "1. All triples where this resource is the subject (direct properties)\n" +
                 "2. Recursively, for any blank node object, all triples where that blank node is the subject\n\n" +
                 "This method extracts the complete resource description from the backing graph and writes it\n" +
-                "to the target graph, following blank nodes recursively but not following IRIs.\n\n" +
+                "to the target graph, following blank nodes recursively but not following IRIs. Blank nodes are\n" +
+                "written as fresh nodes (one per source node within this call), so they never merge with nodes of\n" +
+                "the target graph and a copy never shares nested nodes with the original.\n\n" +
                 "@param targetGraph The mutable graph to write triples to\n" +
-                "@param subject Optional subject IRI. If not provided, uses rdf.node as Iri\n" +
+                "@param subject Optional subject IRI. If not provided, uses rdf.node (a fresh blank node when it is one)\n" +
+                "@return the subject the description was written for\n" +
                 "@throws IllegalArgumentException if subject is required but not available"
             )
             .addParameter(
@@ -470,32 +479,10 @@ public class OntologyWrapperGenerator(
                     .defaultValue("null")
                     .build()
             )
-            .addCode(
-                CodeBlock.builder()
-                    .addStatement("val originalSubject = (rdf.node as? %T)", iriClass)
-                    .addStatement("  ?: (rdf.node as? %T)", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
-                    .addStatement("  ?: throw IllegalArgumentException(%S)", "Subject resource required")
-                    .addStatement("")
-                    .addStatement("// Extract CBD closure from backing graph using original subject")
-                    .addStatement("val cbdTriples = rdf.graph.getCbdClosure(originalSubject)")
-                    .addStatement("")
-                    .addStatement("// If a different subject is provided, remap triples")
-                    .addStatement("val triplesToWrite = if (subject != null && subject != originalSubject) {")
-                    .addStatement("  cbdTriples.map { triple ->")
-                    .addStatement("    if (triple.subject == originalSubject) {")
-                    .addStatement("      %T(subject, triple.predicate, triple.obj)", ClassName(CodegenConstants.RDF_PACKAGE, "RdfTriple"))
-                    .addStatement("    } else {")
-                    .addStatement("      triple")
-                    .addStatement("    }")
-                    .addStatement("  }")
-                    .addStatement("} else {")
-                    .addStatement("  cbdTriples")
-                    .addStatement("}")
-                    .addStatement("")
-                    .addStatement("// Write to target graph")
-                    .addStatement("targetGraph.addTriples(triplesToWrite)")
-                    .build()
-            )
+            .returns(rdfResource)
+            // Through the RdfBacked type the runtime extension is called (not this member).
+            .addStatement("val backed: %T = this", ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked"))
+            .addStatement("return backed.%N(targetGraph, subject)", WRITE_TO_GRAPH_ALIAS)
             .build()
     }
 

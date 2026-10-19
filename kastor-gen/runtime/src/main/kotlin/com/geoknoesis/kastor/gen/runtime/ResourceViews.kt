@@ -104,9 +104,13 @@ interface Resource {
 
   fun setResource(pred: Iri, value: RdfResource) = setValues(pred, listOf(value))
 
+  /**
+   * Replaces the values of [pred] with [values] in one atomic edit of [editor]: readers never see the predicate
+   * without values, and a failure restores the old ones. An [editor] that is not an
+   * [com.geoknoesis.kastor.rdf.AtomicMutableRdfGraph] is rejected before any change.
+   */
   fun setValues(pred: Iri, values: List<RdfTerm>) {
-    clear(pred)
-    values.forEach { addValue(pred, it) }
+    editor.replaceValues(uri, pred, values.map { RdfTriple(uri, pred, it) })
   }
 
   fun addValue(pred: Iri, value: RdfTerm) {

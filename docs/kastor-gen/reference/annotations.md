@@ -88,7 +88,7 @@ The processor emits (for each SHACL shape):
 class OntologyGenerator
 ```
 
-With `generateWriteSupport = true` the factory gains a `toTriples` function alongside `from`:
+With `generateWriteSupport = true` the factory gains `toTriples` and `replaceInGraph` functions alongside `from`:
 
 ```kotlin
 // Generated (simplified):
@@ -104,21 +104,30 @@ object PersonRecordFactory {
         // … one statement per property …
         return triples
     }
+
+    // Replaces only the predicates toTriples writes (and adds rdf:type), in one atomic edit.
+    fun replaceInGraph(graph: MutableRdfGraph, record: PersonRecord, subject: Iri) { ... }
 }
 ```
 
-Callers integrate it with the `replaceValues` / `replaceResource` runtime helpers:
+Write a modified record back with `replaceInGraph`:
 
 ```kotlin
 val updated = record.copy(name = "New Name")
-val newTriples = PersonRecordFactory.toTriples(updated, subject)
-graph.replaceResource(subject, newTriples)   // atomic swap of all subject triples
+PersonRecordFactory.replaceInGraph(graph, updated, subject)   // atomic, scoped to the record's predicates
 ```
+
+`replaceInGraph` replaces the values of the predicates the record models and writes, and adds the
+`rdf:type`. Everything else about the subject is kept: other types, predicates the shape does not model,
+triples of complex `sh:path`s (which are not generated), and object links that `toTriples` cannot write
+(`NestedMode.DATA_CLASS` snapshots carry no subject for nested objects). Do **not** use
+`graph.replaceResource(subject, toTriples(...))` for this: `replaceResource` removes *every* triple of the
+subject, so it would delete all of those.
 
 Replacement helpers require `AtomicMutableRdfGraph`: standalone `MemoryGraph` and graphs of
 Memory, Jena, and RDF4J repositories support it. Graphs without atomic support (including standalone
 Jena model adapters) reject the edit before changing data. Replacement triples must match the supplied
-subject, and `replaceValues` also checks the predicate. An edit joins an existing repository transaction;
+subject, and `replaceValues` also checks the predicate (`replacePredicates`, used by `replaceInGraph`, checks the subject). An edit joins an existing repository transaction;
 there is no nested savepoint, so let failures escape that transaction to roll it back.
 
 **Example — data class only (no live wrappers):**
@@ -292,7 +301,8 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
    - Missing values are never replaced by invented defaults (`""`, `0`, `false`).
    - A **non-null** single-valued property throws `MaterializationException` (an `IllegalStateException`) with the message
      `Required value missing for <member> <path>` when its value is missing. There is no lenient option.
-   - A value that cannot be decoded (e.g. `"abc"` for an `Int`) follows `MaterializationPolicy.illTypedValues`:
+   - A value that cannot be decoded (e.g. `"abc"^^xsd:integer` for an `Int`, or `"42"^^xsd:string`, whose
+     datatype is not an XSD integer type) follows `MaterializationPolicy.illTypedValues`:
      `THROW` (default) raises `MaterializationException` naming the value, its datatype, the member and the
      expected type; `SKIP` omits the value and logs a warning. This applies to lists, nullable and non-null
      members, and mutable getters. Under `SKIP`, a non-null property whose only values were skipped counts
