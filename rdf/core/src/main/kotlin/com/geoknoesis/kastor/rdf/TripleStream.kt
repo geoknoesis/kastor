@@ -24,12 +24,20 @@ internal class EagerBaseIriFallback(private val warn: (String) -> Unit) {
     private val warnedIgnored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** Reports, once per provider class, that [RdfProvider.parseDataset] dropped a base IRI it was given. */
-    fun recordIgnoredDatasetBase(provider: RdfProvider) {
+    fun recordIgnoredDatasetBase(provider: RdfProvider) = recordIgnoredBase(provider, "parseDataset", "the dataset")
+
+    /** Reports, once per provider class, that [RdfProvider.parseGraph] dropped a base IRI it was given. */
+    fun recordIgnoredGraphBase(provider: RdfProvider) = recordIgnoredBase(provider, "parseGraph", "the graph")
+
+    /** True once a dropped base IRI of [method] (`parseGraph` / `parseDataset`) was reported for [provider]'s class. */
+    fun reportedIgnoredBase(provider: RdfProvider, method: String): Boolean = "$method:${provider.javaClass.name}" in warnedIgnored
+
+    private fun recordIgnoredBase(provider: RdfProvider, method: String, input: String) {
         val key = provider.javaClass.name
-        if (!warnedIgnored.add(key)) return
+        if (!warnedIgnored.add("$method:$key")) return
         warn(
-            "RDF provider '${provider.id}' ($key) does not override parseDataset with a base IRI; the base IRI is " +
-                "ignored and relative IRIs in the dataset are resolved (or rejected) by the provider's own default. " +
+            "RDF provider '${provider.id}' ($key) does not override $method with a base IRI; the base IRI is " +
+                "ignored and relative IRIs in $input are resolved (or rejected) by the provider's own default. " +
                 "This warning is logged once per provider.",
         )
     }

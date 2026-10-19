@@ -3,7 +3,6 @@ package com.geoknoesis.kastor.rdf
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
 import java.util.ServiceLoader
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -79,7 +78,8 @@ class DefaultProviderRegistry(
     private val providers = LinkedHashMap<String, Registration>()
     private val providersByType = LinkedHashMap<String, RdfProvider>()
     private var nextSequence = 0L
-    private val discoveryErrors = CopyOnWriteArrayList<Throwable>()
+    /** The errors of the latest discovery run only: each run replaces the list, so it never grows across runs. */
+    @Volatile private var discoveryErrors: List<Throwable> = emptyList()
 
     init {
         if (registerDefaultMemoryProvider) {
@@ -213,7 +213,8 @@ class DefaultProviderRegistry(
         return orderedProviders().groupBy { it.getProviderCategory() }.mapValues { it.value.size }
     }
 
-    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors.toList()
+    /** The errors of the latest provider discovery run (empty if it had none). */
+    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors
 
     private fun toTypeKey(providerId: String, variantId: String): String {
         return "$providerId:$variantId"
@@ -334,7 +335,9 @@ class DefaultProviderRegistry(
         val iterator = try {
             ServiceLoader.load(RdfProvider::class.java).iterator()
         } catch (e: Throwable) {
-            recordDiscoveryFailure(e)
+            val errors = ArrayList<Throwable>(1)
+            recordDiscoveryFailure(e, errors)
+            discoveryErrors = errors
             return
         }
         discoverFrom(iterator)
@@ -343,15 +346,25 @@ class DefaultProviderRegistry(
     /**
      * Registers every provider [iterator] yields. A provider that fails to load (a broken service file, a missing
      * class, a throwing constructor) is recorded in [getDiscoveryErrors] and skipped; the rest still register.
+     * The errors of this run replace those of the previous one.
      */
     internal fun discoverFrom(iterator: Iterator<RdfProvider>) {
+        val errors = ArrayList<Throwable>()
+        try {
+            discoverFrom(iterator, errors)
+        } finally {
+            discoveryErrors = errors
+        }
+    }
+
+    private fun discoverFrom(iterator: Iterator<RdfProvider>, errors: MutableList<Throwable>) {
         var consecutiveFailures = 0
         while (true) {
             try {
                 if (!iterator.hasNext()) return
                 register(iterator.next())
             } catch (e: Throwable) {
-                recordDiscoveryFailure(e)
+                recordDiscoveryFailure(e, errors)
                 // A broken iterator that keeps failing on hasNext() would loop forever; ServiceLoader advances past the
                 // bad entry on failure, but bound the retries so a misbehaving source cannot hang start-up.
                 if (++consecutiveFailures > MAX_DISCOVERY_FAILURES) return
@@ -361,9 +374,9 @@ class DefaultProviderRegistry(
         }
     }
 
-    private fun recordDiscoveryFailure(e: Throwable) {
+    private fun recordDiscoveryFailure(e: Throwable, errors: MutableList<Throwable>) {
         if (e is VirtualMachineError) throw e
-        discoveryErrors.add(e)
+        errors.add(e)
         try {
             discoveryErrorHandler(e)
         } catch (_: Exception) {
