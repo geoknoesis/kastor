@@ -119,10 +119,14 @@ internal object SparqlConstraintEvaluator {
             return repo
         }
 
-        fun select(query: String, bindings: Map<String, RdfTerm>, timeout: Duration): List<BindingSet> {
+        /**
+         * The solutions of [query], at most [limit] of them: the result iterator is not read further and is closed,
+         * so a query asked only whether it has a solution stops at the first one.
+         */
+        fun select(query: String, bindings: Map<String, RdfTerm>, timeout: Duration, limit: Int = Int.MAX_VALUE): List<BindingSet> {
             inPlace?.let { dataset ->
                 try {
-                    return run(dataset, query, bindings, timeout)
+                    return run(dataset, query, bindings, timeout, limit)
                 } catch (_: UnsupportedOperationException) {
                     logOnce("unsupported-bound-queries", dataset, warn = true) {
                         "${dataset.javaClass.simpleName} does not support bound, timed SPARQL queries: SHACL-SPARQL " +
@@ -131,12 +135,13 @@ internal object SparqlConstraintEvaluator {
                     inPlace = null
                 }
             }
-            return run(copied(), query, bindings, timeout)
+            return run(copied(), query, bindings, timeout, limit)
         }
 
-        private fun run(target: SparqlQueryable, query: String, bindings: Map<String, RdfTerm>, timeout: Duration): List<BindingSet> =
+        private fun run(target: SparqlQueryable, query: String, bindings: Map<String, RdfTerm>, timeout: Duration, limit: Int): List<BindingSet> =
             try {
-                target.withSelectRows(SparqlSelectQuery(query), bindings, timeout) { it.toList() }
+                // withSelectRows closes the result when consume returns; take() stops reading it at the limit.
+                target.withSelectRows(SparqlSelectQuery(query), bindings, timeout) { it.take(limit).toList() }
             } catch (e: ShaclValidationException) {
                 throw e
             } catch (e: UnsupportedOperationException) {
@@ -147,7 +152,7 @@ internal object SparqlConstraintEvaluator {
             }
 
         fun selectReturnsRows(query: String, focus: RdfTerm?, timeout: Duration): Boolean =
-            select(query, if (focus == null) emptyMap() else mapOf("this" to focus), timeout).isNotEmpty()
+            select(query, if (focus == null) emptyMap() else mapOf("this" to focus), timeout, limit = 1).isNotEmpty()
 
         override fun close() {
             copy?.close()

@@ -17,9 +17,14 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     // CLI system properties are not automatically forwarded to forked test JVMs.
-    listOf("shacl.w3c.useNative", "shacl.w3c.manifest").forEach { name ->
+    listOf("shacl.w3c.useNative", "shacl.w3c.manifest", "shacl.w3c.includeNonApproved").forEach { name ->
         providers.systemProperty(name).orNull?.let { systemProperty(name, it) }
     }
+    // Run the manifest rows that are not (yet) approved too: -PshaclW3cIncludeNonApproved=true.
+    if (providers.gradleProperty("shaclW3cIncludeNonApproved").orNull == "true") {
+        systemProperty("shacl.w3c.includeNonApproved", "true")
+    }
+    inputs.property("shaclW3cIncludeNonApproved", providers.gradleProperty("shaclW3cIncludeNonApproved").orElse("false"))
     // Explicit opt-out: a missing or empty W3C suite fails the conformance test unless this is set.
     val allowMissingW3c = providers.gradleProperty("shaclW3cAllowMissingData").orNull == "true"
     systemProperty("shacl.w3c.allowMissingData", allowMissingW3c.toString())

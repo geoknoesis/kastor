@@ -20,8 +20,15 @@ internal const val PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS = 16
 /** The reduced step budget of a value is the full one divided by this, ... */
 internal const val PATTERN_DEGRADED_STEP_DIVISOR = 1024L
 
-/** ... but at least this many steps. */
+/** ... but at least this many steps, ... */
 internal const val PATTERN_MIN_DEGRADED_STEPS = 1024L
+
+/**
+ * ... and at least this many steps per character of the value (never more than the full budget). A pattern that
+ * does not backtrack reads each character a few times, so an ordinary value of any length stays decidable, while
+ * catastrophic backtracking (exponential in the length) is still stopped at a cost linear in the value.
+ */
+internal const val PATTERN_DEGRADED_STEPS_PER_CHAR = 64L
 
 /**
  * The budget of one pattern evaluation: [limit] steps of the regular expression engine, and a wall-clock backstop

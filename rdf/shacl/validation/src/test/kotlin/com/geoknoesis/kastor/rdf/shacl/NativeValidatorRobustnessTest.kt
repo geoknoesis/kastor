@@ -66,6 +66,56 @@ class NativeValidatorRobustnessTest {
         assertTrue(validator.validate(graph("""ex:a a ex:T ; ex:p $values ."""), linearShapes).isValid)
     }
 
+    /** 20 distinct hostile values on ex:p of focus node [focus]: more than enough to reach the run-wide cap. */
+    private fun hostileFocus(focus: String) =
+        "$focus a ex:T ; ex:p " + (0 until 20).joinToString(" , ") { "\"$hostile$it\"" } + " .\n"
+
+    @Test
+    fun `a value decided before the cap stays decided when it is asked again after it`() {
+        // ^(.*a){3}$ reads ~36,000 characters of this 41-character value: within the full budget (50,000 steps at
+        // 1 ms), far beyond the reduced one. ex:a asks before the hostile values of ex:b reach the cap, ex:c after.
+        val expensive = "a".repeat(40) + "b"
+        val shapes = graph(
+            """
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+              sh:property [ sh:path ex:p ; sh:pattern "$catastrophic" ] ;
+              sh:property [ sh:path ex:q ; sh:pattern "^(.*a){3}${'$'}" ] .
+            """,
+        )
+        val data = graph("ex:a a ex:T ; ex:q \"$expensive\" .\n" + hostileFocus("ex:b") + "ex:c a ex:T ; ex:q \"$expensive\" .")
+        val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(1)))
+        validator.patternClock = frozenClock
+        val report = validator.validate(data, shapes)
+
+        val onQ = report.violations.filter { it.path == listOf(Iri("http://example.org/q")) }
+        assertEquals(2, onQ.size, onQ.toString())
+        assertTrue(onQ.none { it.isUndecided }, "the same value has the same answer for every focus node: $onQ")
+        assertEquals(20, report.violations.count { it.isPatternTimeout })
+    }
+
+    @Test
+    fun `a long ordinary value is still decided after many hostile values`() {
+        // 10 ms of patternTimeout is 500,000 steps; the reduced budget is a thousandth of that, far less than this
+        // 100,000-character value needs (one read per character). The reduced budget must grow with the value.
+        val base64Like = "QUJD".repeat(25_000)
+        val shapes = graph(
+            """
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+              sh:property [ sh:path ex:p ; sh:pattern "$catastrophic" ] ;
+              sh:property [ sh:path ex:q ; sh:pattern "^[A-Za-z0-9+/]*={0,2}${'$'}" ] .
+            """,
+        )
+        val data = graph(hostileFocus("ex:a") + "ex:z a ex:T ; ex:q \"$base64Like\" , \"$base64Like!\" .")
+        val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(10)))
+        validator.patternClock = frozenClock
+        val report = validator.validate(data, shapes)
+
+        val onQ = report.violations.filter { it.path == listOf(Iri("http://example.org/q")) }
+        assertTrue(onQ.none { it.isUndecided }, onQ.joinToString { it.message })
+        assertEquals(1, onQ.size, "only the value ending in '!' violates the pattern")
+        assertEquals(20, report.violations.count { it.isPatternTimeout })
+    }
+
     // --- clocks with a negative origin -------------------------------------------------------------------------------
 
     @Test
@@ -96,6 +146,34 @@ class NativeValidatorRobustnessTest {
         assertFalse(report.isValid)
         assertEquals(1, report.violations.size, report.violations.toString())
         assertEquals(1L, validator.patternEvaluations, "the first failing value decides sh:node; the others are not matched")
+    }
+
+    @Test
+    fun `a SPARQL constraint asked for its answer only reads its first solution`() {
+        val pulled = java.util.concurrent.atomic.AtomicInteger()
+        val factory: () -> com.geoknoesis.kastor.rdf.RdfRepository = {
+            val real = com.geoknoesis.kastor.rdf.jena.JenaProvider().createRepository("memory", com.geoknoesis.kastor.rdf.RdfConfig())
+            object : com.geoknoesis.kastor.rdf.RdfRepository by real {
+                override fun <T> withSelectRows(
+                    query: com.geoknoesis.kastor.rdf.SparqlSelect,
+                    bindings: Map<String, com.geoknoesis.kastor.rdf.RdfTerm>,
+                    timeout: Duration,
+                    consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T,
+                ): T = real.withSelectRows(query, bindings, timeout) { rows -> consume(rows.onEach { pulled.incrementAndGet() }) }
+            }
+        }
+        val d = '$'
+        // sh:not only needs to know whether the inner shape conforms: one solution answers that.
+        val shapes = graph(
+            """
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+              sh:not [ sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { ${d}this <http://example.org/p> ?value }''' ] ] .
+            """,
+        )
+        val data = graph("ex:a a ex:T ; ex:p " + (1..50).joinToString(" , ") + " .")
+        val report = NativeShaclValidator(ValidationConfig(), factory).validate(data, shapes)
+        assertTrue(report.isValid, report.violations.toString())
+        assertEquals(1, pulled.get(), "solutions read")
     }
 
     // --- shared validator --------------------------------------------------------------------------------------------
