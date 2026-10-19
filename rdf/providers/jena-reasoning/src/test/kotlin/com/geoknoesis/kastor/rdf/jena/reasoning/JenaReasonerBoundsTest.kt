@@ -256,4 +256,84 @@ class JenaReasonerBoundsTest {
         assertTrue(error.message!!.contains("forward closure"), "fails before reading the closure: ${error.message}")
         assertEquals(1, prepared.get())
     }
+
+    @Test
+    fun `consistency checks are not bounded by the materialization threshold`() {
+        // The forward transitive rule makes preparation build ~20,000 deductions, far above the threshold.
+        val transitive = ReasonerConfig(
+            reasonerType = ReasonerType.CUSTOM,
+            customRules = listOf(com.geoknoesis.kastor.rdf.reasoning.CustomRule("trans", "(?a <${ex}next> ?b), (?b <${ex}next> ?c)", "(?a <${ex}next> ?c)")),
+            materializationThreshold = 50,
+        )
+        val links = turtle(buildString {
+            appendLine("@prefix ex: <$ex> .")
+            for (i in 0 until 200) appendLine("ex:n$i ex:next ex:n${i + 1} .")
+        })
+        val reasoner = JenaReasoner(transitive)
+        assertTrue(reasoner.isConsistent(links))
+        assertTrue(reasoner.validateOntology(links).isValid)
+        // Calls that report inferred triples still enforce it.
+        assertThrows(IllegalArgumentException::class.java) { reasoner.getInferredTriples(links) }
+    }
+
+    /**
+     * An interrupted caller returns at once; the worker it abandons must stop at its next budget check instead of
+     * reading the closure until the (one hour) deadline while holding its permit. The worker is held in the
+     * `afterPrepare` seam until the caller is gone; the budget checks it makes after that are counted.
+     */
+    @Test
+    @org.junit.jupiter.api.Timeout(300)
+    fun `an interrupted call stops its abandoned worker at the next budget check`() {
+        val calls = listOf<(JenaReasoner, RdfGraph) -> Any?>(
+            { r, g -> r.reason(g) },
+            { r, g -> r.getInferredTriples(g) },
+            { r, g -> r.classify(g) },
+        )
+        for (call in calls) {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val workers = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+            val released = java.util.concurrent.atomic.AtomicBoolean()
+            val workerClockReads = AtomicInteger()
+            val clock = {
+                if (released.get() && Thread.currentThread() in workers) workerClockReads.incrementAndGet()
+                System.nanoTime()
+            }
+            val hold: (org.apache.jena.rdf.model.InfModel) -> Unit = {
+                entered.countDown()
+                var interrupted = false
+                while (true) {
+                    try {
+                        release.await()
+                        break
+                    } catch (_: InterruptedException) {
+                        interrupted = true
+                    }
+                }
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+            val permits = Semaphore(1)
+            val threads = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-jena-prepare").also { workers.add(it) } }
+            val reasoner = JenaReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofHours(1)), clock, { it.prepare() }, permits, threads, hold)
+            val graph = chain(20, 50) // over a thousand inferred triples, each read with a budget check
+            var failure: Throwable? = null
+            val caller = Thread { failure = runCatching { call(reasoner, graph) }.exceptionOrNull() }
+            caller.isDaemon = true
+            caller.start()
+            try {
+                assertTrue(entered.await(60, TimeUnit.SECONDS), "the worker is running")
+                caller.interrupt()
+                caller.join(TimeUnit.SECONDS.toMillis(60))
+                assertFalse(caller.isAlive, "the interrupted caller returns")
+                assertTrue(failure is IllegalStateException && failure!!.message!!.contains("timed out"), failure.toString())
+            } finally {
+                released.set(true)
+                release.countDown()
+            }
+            assertTrue(permits.tryAcquire(60, TimeUnit.SECONDS), "the abandoned worker returns its permit")
+            permits.release()
+            workers.forEach { it.join(TimeUnit.SECONDS.toMillis(60)) }
+            assertTrue(workerClockReads.get() <= 1, "the abandoned worker stopped at once, but read the clock ${workerClockReads.get()} times")
+        }
+    }
 }
