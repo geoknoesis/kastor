@@ -6,6 +6,7 @@ plugins {
 
 dependencies {
   implementation(libs.slf4j.api)
+  implementation(libs.titanium.jsonld)
   testImplementation(libs.junit.params)
 
   implementation(libs.jena.base)

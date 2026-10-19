@@ -35,7 +35,8 @@ dependencies {
   implementation(libs.rdf4j.sail.inferencer)
   implementation(libs.rdf4j.shacl)
 
-  runtimeOnly(libs.rdf4j.rio.jsonld)
+  implementation(libs.rdf4j.rio.jsonld)
+  implementation(libs.hasmac.jsonld)
   runtimeOnly(libs.rdf4j.rio.turtle)
   runtimeOnly(libs.rdf4j.rio.rdfxml)
   runtimeOnly(libs.rdf4j.rio.n3)
