@@ -104,7 +104,14 @@ internal object SparqlLexer {
  * strings, IRIs with characters that are illegal in an IRIREF) keep the variable and are returned as provider
  * initial bindings.
  */
-internal class SparqlQueryTemplate private constructor(private val parts: List<Part>) {
+internal class SparqlQueryTemplate private constructor(
+    private val parts: List<Part>,
+    /**
+     * Whether a solution can bind `?failure`: the query mentions the variable (as a variable token, never inside a
+     * string, IRI or comment). A variable the query never mentions is never bound, not even by `SELECT *`.
+     */
+    val mayBindFailure: Boolean,
+) {
 
     private enum class Context { PLAIN, PROJECTION, GROUP_OR_ORDER }
 
@@ -209,7 +216,8 @@ internal class SparqlQueryTemplate private constructor(private val parts: List<P
                 index++
             }
             if (text.isNotEmpty()) parts.add(Text(text.toString()))
-            return SparqlQueryTemplate(parts)
+            val mayBindFailure = tokens.any { it.kind == SparqlToken.Kind.VARIABLE && it.variableName == "failure" }
+            return SparqlQueryTemplate(parts, mayBindFailure)
         }
 
         /** For `BOUND ( ?preBound )` starting at [start]: (index of the closing parenthesis, variable name), else null. */

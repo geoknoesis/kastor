@@ -78,7 +78,9 @@ import com.geoknoesis.kastor.rdf.shacl.native.stronglyConnectedComponents
  * - Conformance checks are three-valued (conforms / fails / undefined) and combined with Kleene logic: a shape and
  *   `sh:and` fail as soon as one part definitely fails, `sh:or` / `sh:someValue` conform as soon as one part definitely
  *   conforms, qualified counts are bounded by the definite answers, and an answer is undefined only when it really
- *   depends on an undefined answer. Results therefore never depend on operand, constraint or target order.
+ *   depends on an undefined answer. Results therefore never depend on operand, constraint or target order, with one
+ *   bounded exception: once a run has met many hostile `sh:pattern` values, whether a value that is expensive to
+ *   match (but not hostile) is decided can depend on whether it is first matched before or after that (see below).
  * - Recursion. SHACL leaves recursive shapes undefined; the engine applies a sound, evaluation-order independent
  *   interpretation. The compiler finds the shapes that can reach themselves (strongly connected components of the
  *   static shape dependency graph); only those can recurse over data. Nested checks of any other shape recurse at
@@ -113,7 +115,9 @@ import com.geoknoesis.kastor.rdf.shacl.native.stronglyConnectedComponents
  *   evaluation, with the same results.
  * - `sh:pattern` evaluations are bounded in regular expression engine steps and, for long values, run on a thread
  *   with a fixed stack size, so their outcome does not depend on the machine or on the caller's stack (see
- *   [ValidationConfig.patternTimeout]).
+ *   [ValidationConfig.patternTimeout]). Within a run, a (pattern, value) has a single answer, whoever asks. After
+ *   [PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS] values of a run have used up their whole budget, values not matched yet get
+ *   a reduced budget that still grows linearly with their length (see [matchPattern]).
  */
 internal class NativeShaclValidator(
     private val config: ValidationConfig,
@@ -305,9 +309,9 @@ internal class NativeShaclValidator(
         val undefined = HashMap<AtomKey, UndefinedCause>()
         /**
          * Pattern evaluations of this run that are remembered, per (pattern constraint, lexical form): every
-         * undecided one, and every one that ran on the pattern evaluation thread. The answer for such a value is the
-         * same every time it is asked, and its budget is spent once per value rather than once per focus node or
-         * solver pass.
+         * undecided one, every one that ran on the pattern evaluation thread, and every one that took at least the
+         * reduced budget of its value (see [matchPattern]). The answer for a value is the same every time it is
+         * asked, and an expensive budget is spent once per value rather than once per focus node or solver pass.
          */
         val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()
         private var patternWorker: PatternWorker? = null
@@ -347,8 +351,8 @@ internal class NativeShaclValidator(
         fun checkDeadline() {
             budget.check()
         }
-        fun select(query: String, bindings: Map<String, RdfTerm>) =
-            session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
+        fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
+            session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume)
         /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
         fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
         /** [value] for the pattern evaluation [evaluation]. */
@@ -1896,8 +1900,7 @@ internal class NativeShaclValidator(
      * ([PATTERN_WORKER_STACK_BYTES]): the outcome is the same at any shape nesting depth and for any stack size of
      * the validating thread. Shorter values are matched on the validating thread (a thread hand-over per value would
      * dominate the cost of ordinary patterns); if that overflows, the match is repeated on the evaluation thread,
-     * so it is still the fixed stack that decides. Every outcome of the evaluation thread is remembered for the run:
-     * a value decided once stays decided.
+     * so it is still the fixed stack that decides. Every outcome of the evaluation thread is remembered for the run.
      *
      * A value on which the pattern uses up its budget, or exhausts the stack of the evaluation thread, has no
      * answer. That is not an error of the run: one slow or hostile literal must not prevent the validation of
@@ -1912,19 +1915,30 @@ internal class NativeShaclValidator(
      *
      * **Run-wide cap.** The budget above is per value, so N distinct hostile values would cost N budgets. After
      * [PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS] evaluations of a run have used up their whole budget, every value that has
-     * not been matched yet gets 1/[PATTERN_DEGRADED_STEP_DIVISOR] of it (at least [PATTERN_MIN_DEGRADED_STEPS] steps): an
-     * ordinary value is still decided, a hostile one is undecided at a small, bounded cost. Data without hostile
-     * values never reaches the cap, so it is evaluated as before. The outcome depends on the order of evaluation,
-     * which for a given shapes graph and data graph is fixed.
+     * not been matched yet gets a reduced budget ([reducedPatternSteps]): 1/[PATTERN_DEGRADED_STEP_DIVISOR] of the full
+     * one, but at least [PATTERN_MIN_DEGRADED_STEPS] steps and at least [PATTERN_DEGRADED_STEPS_PER_CHAR] steps per
+     * character of the value, and never more than the full budget. A pattern that does not backtrack reads each
+     * character a few times, so an ordinary value of any length is still decided; a hostile one is undecided at a cost
+     * linear in its length. Data without hostile values never reaches the cap, so it is evaluated as before.
+     *
+     * **One answer per value.** Within a run, a (pattern, value) has one answer, whoever asks and whenever (a
+     * conformance check through `sh:node` or `sh:not`, the report of a focus node, another solver pass): every
+     * outcome that could differ under the reduced budget, i.e. every undecided one and every decided one that took
+     * at least the reduced budget of its value, is remembered for the run. A cheaper evaluation is not remembered:
+     * the engine is deterministic, so it gives the same answer under either budget. The remembered entries refer to
+     * the lexical forms of the data and each stands for at least [PATTERN_MIN_DEGRADED_STEPS] steps of work, so
+     * their number is bounded by the run's work. Whether an expensive value (more than its reduced budget, within
+     * the full one) is decided can still depend on whether it is first matched before or after the cap is reached,
+     * i.e. on the order of evaluation, which for a given shapes graph and data graph is fixed.
      */
     private fun matchPattern(c: PropertyConstraint.Pattern, lexical: String, shape: RdfResource, ctx: ValidationContext): PatternOutcome {
         if (ctx.patternOutcomes.isNotEmpty()) ctx.patternOutcomes[c to lexical]?.let { return it }
         ctx.counters.patternEvaluations++
         // Run-wide cap: once PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS evaluations used up their whole budget, a value not
         // matched before only gets a small fraction of it, so many distinct hostile values cost a bounded total.
-        val steps =
-            if (ctx.patternBudgetExhaustions < PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS) patternStepBudget
-            else (patternStepBudget / PATTERN_DEGRADED_STEP_DIVISOR).coerceAtLeast(PATTERN_MIN_DEGRADED_STEPS).coerceAtMost(patternStepBudget)
+        val reduced = reducedPatternSteps(lexical.length)
+        val steps = if (ctx.patternBudgetExhaustions < PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS) patternStepBudget else reduced
+        val stepsBefore = ctx.counters.patternSteps
         var result = if (lexical.length < ctx.patternInlineMaxLength) runPattern(c, lexical, ctx, steps) else null
         val onWorker = result == null || result == PatternRun.OUT_OF_STACK
         if (onWorker) {
@@ -1942,8 +1956,9 @@ internal class NativeShaclValidator(
                         ValidationViolation.PATTERN_TIMEOUT_CODE,
                         "${describe(c, shape)} used up its evaluation budget (ValidationConfig.patternTimeout = " +
                             "${config.patternTimeout}: $patternStepBudget regular expression engine steps, or " +
-                            "$PATTERN_WALL_CLOCK_FACTOR times that duration; $steps steps once ${PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS} " +
-                            "evaluations of the run have used up the whole budget) on a value of ${lexical.length} characters, so " +
+                            "$PATTERN_WALL_CLOCK_FACTOR times that duration; $reduced steps for this value once " +
+                            "${PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS} evaluations of the run have used up the whole budget; " +
+                            "this evaluation had $steps) on a value of ${lexical.length} characters, so " +
                             "whether the value matches is unknown and it is not accepted; the pattern probably backtracks " +
                             "catastrophically (nested or overlapping quantifiers)",
                     ),
@@ -1961,8 +1976,20 @@ internal class NativeShaclValidator(
             }
         val undecided = outcome.undecided
         if (undecided != null && config.strictMode) throw ShaclValidationException(undecided.reason)
-        if (undecided != null || onWorker) ctx.patternOutcomes[c to lexical] = outcome
+        // Remember every outcome another budget could change: one value, one answer for the whole run.
+        if (undecided != null || onWorker || ctx.counters.patternSteps - stepsBefore >= reduced) {
+            ctx.patternOutcomes[c to lexical] = outcome
+        }
         return outcome
+    }
+
+    /**
+     * The step budget of a value of [length] characters once the run-wide cap is reached: a fraction of the full
+     * budget, but never less than a linear allowance for the value, and never more than the full budget.
+     */
+    private fun reducedPatternSteps(length: Int): Long {
+        val linear = if (length > Long.MAX_VALUE / PATTERN_DEGRADED_STEPS_PER_CHAR) Long.MAX_VALUE else length * PATTERN_DEGRADED_STEPS_PER_CHAR
+        return maxOf(patternStepBudget / PATTERN_DEGRADED_STEP_DIVISOR, PATTERN_MIN_DEGRADED_STEPS, linear).coerceAtMost(patternStepBudget)
     }
 
     /**
@@ -1991,7 +2018,9 @@ internal class NativeShaclValidator(
      * SHACL-SPARQL: one result per solution; `?value`, `?path`, `?message` and `?failure` are honoured. Pre-bound
      * variables are substituted by the engine ([com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate]), so
      * results do not depend on the SPARQL provider. A `?message` binding takes precedence over the constraint's
-     * `sh:message`, which takes precedence over the shape's (SHACL-SPARQL result mapping).
+     * `sh:message`, which takes precedence over the shape's (SHACL-SPARQL result mapping). With [firstOnly] (a
+     * conformance check, which only needs to know whether there is a solution) only the first result is built, and
+     * only the first solution is read unless the query can bind `?failure`.
      */
     private fun evaluateSparql(
         focus: RdfTerm,
@@ -2008,39 +2037,45 @@ internal class NativeShaclValidator(
         if ("shapesGraph" in c.preBound) preBound["shapesGraph"] = SparqlConstraintEvaluator.SHAPES_GRAPH_IRI
         val (query, providerBindings) = c.template.bind(preBound)
         val out = mutableListOf<ValidationViolation>()
-        for (row in ctx.select(query, providerBindings)) {
-            val failure = row.get("failure")
-            if (failure != null && isLexicallyTrue(failure)) {
-                throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
-            }
-            // When only the answer is needed, later solutions are still scanned for ?failure but not built into results.
-            if (firstOnly && out.isNotEmpty()) continue
-            val value = row.get("value") ?: if (path == null) focus else null
-            val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
-            fun substitute(lit: Literal): Literal {
-                val text = messagePlaceholder.replace(lit.lexical) { m ->
-                    val term = row.get(m.groupValues[1]) ?: preBound[m.groupValues[1]]
-                    term?.let { displayTerm(it) } ?: m.value
+        // The solutions are streamed, never collected. When only the answer is needed, the first solution gives it;
+        // a query that can bind ?failure is still read to the end (a ?failure solution anywhere makes the check a
+        // failure, nested or not), without building results; one that cannot stops at the first solution.
+        ctx.select(query, providerBindings) { rows ->
+            for (row in rows) {
+                val failure = row.get("failure")
+                if (failure != null && isLexicallyTrue(failure)) {
+                    throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
                 }
-                return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
+                // Only a query that can bind ?failure gets here after its first result: it is scanned, not built.
+                if (firstOnly && out.isNotEmpty()) continue
+                val value = row.get("value") ?: if (path == null) focus else null
+                val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
+                fun substitute(lit: Literal): Literal {
+                    val text = messagePlaceholder.replace(lit.lexical) { m ->
+                        val term = row.get(m.groupValues[1]) ?: preBound[m.groupValues[1]]
+                        term?.let { displayTerm(it) } ?: m.value
+                    }
+                    return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
+                }
+                val messages =
+                    listOfNotNull(row.get("message") as? Literal).ifEmpty { c.messages }.ifEmpty { tpl.messages }.map { substitute(it) }
+                out.add(
+                    violation(
+                        focus = focus,
+                        tpl = tpl,
+                        constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
+                        message = "SPARQL constraint ${c.constraintNode.displayId()} returned a solution",
+                        value = value,
+                        // SHACL-SPARQL: a sh:severity on the SPARQL-based constraint is the result severity.
+                        severity = c.severity ?: tpl.severity,
+                        severityIri = if (c.severity != null) c.severityCustomIri else tpl.severityCustomIri,
+                        messages = messages,
+                        sourceConstraint = c.constraintNode,
+                        path = rowPath,
+                    ),
+                )
+                if (firstOnly && !c.template.mayBindFailure) break
             }
-            val messages =
-                listOfNotNull(row.get("message") as? Literal).ifEmpty { c.messages }.ifEmpty { tpl.messages }.map { substitute(it) }
-            out.add(
-                violation(
-                    focus = focus,
-                    tpl = tpl,
-                    constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
-                    message = "SPARQL constraint ${c.constraintNode.displayId()} returned a solution",
-                    value = value,
-                    // SHACL-SPARQL: a sh:severity on the SPARQL-based constraint is the result severity.
-                    severity = c.severity ?: tpl.severity,
-                    severityIri = if (c.severity != null) c.severityCustomIri else tpl.severityCustomIri,
-                    messages = messages,
-                    sourceConstraint = c.constraintNode,
-                    path = rowPath,
-                ),
-            )
         }
         return out
     }
