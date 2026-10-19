@@ -15,6 +15,9 @@ import java.io.Closeable
  * **Key Design Principles:**
  * - **Read-only**: Datasets are immutable views for query execution
  * - **Multi-source**: Graphs can come from different repositories
+ * - **Blank-node scope**: independent sources receive distinct blank-node namespaces. Use the repository
+ *   builder overloads or [GraphRef] source tracking to preserve shared blank nodes across one repository's graphs.
+ *   A graph without source tracking is an independent source (reusing the same graph instance shares its scope).
  * - **Optimized**: Uses FROM clauses when graphs share a repository
  * - **SPARQL-compliant**: Follows SPARQL 1.1 dataset semantics exactly
  * 

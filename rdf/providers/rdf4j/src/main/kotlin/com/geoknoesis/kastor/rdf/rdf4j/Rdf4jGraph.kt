@@ -88,7 +88,14 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
 internal open class Rdf4jGraph(
     protected val repo: Rdf4jRepository,
     private val context: Resource? = null,
-) : MutableRdfGraph {
+) : AtomicMutableRdfGraph, SourceTrackedGraph {
+
+    override val sourceRepository: RdfRepository get() = repo
+    override val sourceGraphName: Iri? get() = (context as? org.eclipse.rdf4j.model.IRI)?.stringValue()?.let(::Iri)
+
+    override fun mutateAtomically(operations: MutableRdfGraph.() -> Unit) {
+        repo.transaction { operations(this@Rdf4jGraph) }
+    }
 
     final override fun equals(other: Any?): Boolean =
         this === other || (other is Rdf4jGraph && other.repo === repo && other.context == context)

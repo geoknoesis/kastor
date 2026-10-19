@@ -79,7 +79,7 @@ Suites that must never disappear are named with `--require-suite CLASS=MIN`. The
 | [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
 | [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | OSV audit of dependencies introduced by the PR, secret-pattern scan, GitHub dependency review |
-| [`native-lifecycle.yml`](.github/workflows/native-lifecycle.yml) | Manual | Opt-in ONNX embedding lifecycle and soak tests |
+| [`native-lifecycle.yml`](.github/workflows/native-lifecycle.yml) | Weekly + manual | ONNX embedding lifecycle and soak tests |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
 | [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → GitHub Pages |
 

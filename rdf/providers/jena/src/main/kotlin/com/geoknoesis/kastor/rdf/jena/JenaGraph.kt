@@ -30,7 +30,15 @@ internal open class JenaGraph(
     private val graphKey: String = "",
     /** Skip statements that are not representable as Kastor terms (with a warning) instead of throwing. */
     private val lenientRead: Boolean = false,
-) : MutableRdfGraph {
+) : AtomicMutableRdfGraph {
+
+    override fun mutateAtomically(operations: MutableRdfGraph.() -> Unit) {
+        if (readOnly) throw UnsupportedOperationException(UNION_GRAPH_READ_ONLY)
+        val owner = repository ?: throw UnsupportedOperationException(
+            "Atomic edits require a repository-backed Jena graph",
+        )
+        owner.transaction { operations(this@JenaGraph) }
+    }
 
     /** Runs [block] against this graph's read view (inference view for inference repositories). */
     internal fun <T> read(block: (Model) -> T): T =
@@ -185,7 +193,10 @@ internal class JenaRepositoryGraph(
     private val owner: JenaRepository,
     private val key: String,
     override val readOnly: Boolean = false,
-) : JenaGraph(model, owner, key), VersionedRdfGraph {
+) : JenaGraph(model, owner, key), VersionedRdfGraph, SourceTrackedGraph {
+
+    override val sourceRepository: RdfRepository get() = owner
+    override val sourceGraphName: Iri? get() = key.takeIf { it.isNotEmpty() }?.let(::Iri)
 
     override val modificationStamp: Long get() = owner.modificationStamp()
 

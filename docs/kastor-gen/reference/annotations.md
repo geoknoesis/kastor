@@ -115,6 +115,12 @@ val newTriples = PersonRecordFactory.toTriples(updated, subject)
 graph.replaceResource(subject, newTriples)   // atomic swap of all subject triples
 ```
 
+Replacement helpers require `AtomicMutableRdfGraph`: standalone `MemoryGraph` and graphs of
+Memory, Jena, and RDF4J repositories support it. Graphs without atomic support (including standalone
+Jena model adapters) reject the edit before changing data. Replacement triples must match the supplied
+subject, and `replaceValues` also checks the predicate. An edit joins an existing repository transaction;
+there is no nested savepoint, so let failures escape that transaction to roll it back.
+
 **Example — data class only (no live wrappers):**
 
 ```kotlin

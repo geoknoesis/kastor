@@ -14,6 +14,18 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (repository review)
+
+- Resource, predicate-value, and generated property replacements now use atomic graph edits. Memory graphs and
+  repository-backed Jena/RDF4J graphs roll back failed edits; unsupported graphs reject replacements before mutation.
+  Replacement collections are copied and checked for matching subjects and predicates before existing data is removed.
+- Multi-source datasets isolate blank nodes from independent sources, including inside nested triple terms, while
+  retaining shared identity across graphs from one repository. Provider graph handles now expose source tracking.
+- Generic repository configuration diagnostics redact option values, including passwords, custom headers, and URLs.
+- Native embedding lifecycle and soak checks now run weekly as well as on manual request.
+- Offline coverage floors increased from 20% to 55% for embedding and from 5% to 75% for LLM explanations,
+  based on fresh measurements of 66.8% and 85.3% respectively.
+
 ### Fixed (round-nine audit)
 
 - Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError` from one
