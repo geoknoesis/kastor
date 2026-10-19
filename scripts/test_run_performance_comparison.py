@@ -1,5 +1,7 @@
 import importlib.util
 from pathlib import Path
+import json
+import tempfile
 import struct
 import unittest
 
@@ -33,6 +35,25 @@ class PerformanceRunnerTest(unittest.TestCase):
         self.assertEqual([dict(group=0, logical=8, core=4, efficiency=1, flags=0)], RUNNER.decode_cpu_sets(data))
         for broken in [b'x', struct.pack('<II', 0, 0), row[:-1]]:
             with self.assertRaises(ValueError): RUNNER.decode_cpu_sets(broken)
+
+    def test_longer_isomorphism_warmup_is_equal_for_both_revisions(self):
+        before = RUNNER.command('java','baseline.jar','isomorphism',1,Path('baseline.json'),15)
+        after = RUNNER.command('java','candidate.jar','isomorphism',1,Path('candidate.json'),15)
+        self.assertEqual(before[:2]+before[3:-1], after[:2]+after[3:-1])
+        self.assertEqual('15', before[before.index('-wi')+1])
+        self.assertEqual('8', before[before.index('-i')+1])
+
+    def test_scaling_merge_preserves_all_samples_and_requires_both_groups(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            output = Path(scratch)
+            first = {'benchmark':'lookup', 'primaryMetric':{'rawData':[[1,2],[3,4]]}}
+            second = {'benchmark':'isomorphism', 'primaryMetric':{'rawData':[[5,6],[7,8]]}}
+            (output/'baseline-scaling.json').write_text(json.dumps([first]))
+            with self.assertRaises(FileNotFoundError): RUNNER.merge_scaling_reports(output,'baseline')
+            self.assertFalse((output/'baseline.json').exists())
+            (output/'baseline-isomorphism.json').write_text(json.dumps([second]))
+            RUNNER.merge_scaling_reports(output,'baseline')
+            self.assertEqual([first,second],json.loads((output/'baseline.json').read_text()))
 
     def test_comparison_commands_use_the_same_jvm_and_measurement_profile(self):
         before=RUNNER.command('java','baseline.jar','case',4,Path('baseline.json'))

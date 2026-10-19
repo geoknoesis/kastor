@@ -96,10 +96,18 @@ def pin_cpus():
     return dict(platform=sys.platform, allowed=allowed, selected=selected, topology=topology)
 
 
-def command(java, jar, benchmark, threads, output):
-    return [str(java), '-jar', str(jar), benchmark, '-wi', '5', '-i', '8', '-w', '1s', '-r', '1s',
+def command(java, jar, benchmark, threads, output, warmups=5):
+    return [str(java), '-jar', str(jar), benchmark, '-wi', str(warmups), '-i', '8', '-w', '1s', '-r', '1s',
             '-f', '2', '-t', str(threads), '-foe', 'true', '-jvmArgs', '-Xmx1024m -XX:ActiveProcessorCount=2',
             '-prof', 'gc', '-rf', 'json', '-rff', str(output)]
+
+
+def merge_scaling_reports(output, name):
+    """Retain complete original JMH records from both scaling groups for the existing strict gate."""
+    records = []
+    for suffix in ['-scaling', '-isomorphism']:
+        records.extend(json.loads((output/(name+suffix+'.json')).read_text(encoding='utf-8')))
+    (output/(name+'.json')).write_text(json.dumps(records, indent=2)+'\n', encoding='utf-8')
 
 
 def main():
@@ -120,15 +128,24 @@ def main():
                    jars={k: dict(path=str(v), sha256=hashlib.file_digest(v.open('rb'), 'sha256').hexdigest()) for k,v in jars.items()},
                    commands=[])
     profile_path = args.output/'profile.json'
-    for benchmark, threads, suffix in [('.*ScalingBenchmark.*', 1, ''), ('.*SharedValidationBenchmark.*', 4, '-contention')]:
+    # Isomorphism was still compiling during early measured iterations after five seconds of warmup.
+    # Give BOTH revisions fifteen warmup iterations for that workload; keep every measured sample.
+    stages = [
+        (r'.*ScalingBenchmark\.(?!symmetricIsomorphism$).*', 1, '-scaling', 5),
+        (r'.*CoreScalingBenchmark\.symmetricIsomorphism', 1, '-isomorphism', 15),
+        ('.*SharedValidationBenchmark.*', 4, '-contention', 5),
+    ]
+    for benchmark, threads, suffix, warmups in stages:
         for name, jar in jars.items():
             label = name + suffix
-            argv = command(args.java, jar, benchmark, threads, args.output/(label+'.json'))
+            argv = command(args.java, jar, benchmark, threads, args.output/(label+'.json'), warmups)
             profile['commands'].append(argv)
             profile_path.write_text(json.dumps(profile, indent=2)+'\n', encoding='utf-8')
             print('Measuring ' + label, flush=True)
             with (args.output/(label+'.log')).open('w', encoding='utf-8') as log:
                 subprocess.run(argv, check=True, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    for name in jars:
+        merge_scaling_reports(args.output, name)
     print('All measurements complete; apply scripts/check-performance.py to both report pairs', flush=True)
 
 
