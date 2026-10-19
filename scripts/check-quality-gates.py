@@ -60,7 +60,9 @@ def coverage(directory, policy):
             if counter is None:
                 raise ValueError(f'Missing {kind} counter: {report}')
             covered, missed = int(counter.get('covered')), int(counter.get('missed'))
-            ratio = covered / (covered + missed) if covered + missed else 1
+            if covered < 0 or missed < 0 or covered + missed == 0:
+                raise ValueError(f'Empty or invalid {kind} counter: {report}')
+            ratio = covered / (covered + missed)
             if ratio < minimum:
                 raise ValueError(f'{module}: {kind} coverage {ratio:.1%}; expected {minimum:.1%}')
             print(f'{module}: {kind} {ratio:.1%}, minimum {minimum:.1%}')

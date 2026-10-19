@@ -38,6 +38,17 @@ class QualityGatesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Failed tests'):
                 GATES.tests(directory, {'modules': {'present': 1}})
 
+    def test_empty_or_negative_coverage_counts_fail_closed(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            report = directory/'module/reports/jacoco/test/jacocoTestReport.xml'
+            report.parent.mkdir(parents=True)
+            for covered, missed in [(0, 0), (-1, 5), (5, -1)]:
+                with self.subTest(covered=covered, missed=missed):
+                    report.write_text(f'<report><counter type="LINE" covered="{covered}" missed="{missed}"/></report>')
+                    with self.assertRaisesRegex(ValueError, 'Empty or invalid'):
+                        GATES.coverage(directory, {'modules': {'module': {'line': .9}}})
+
     def test_healthy_line_coverage_cannot_hide_branch_regression(self):
         with tempfile.TemporaryDirectory() as scratch:
             directory = Path(scratch)
