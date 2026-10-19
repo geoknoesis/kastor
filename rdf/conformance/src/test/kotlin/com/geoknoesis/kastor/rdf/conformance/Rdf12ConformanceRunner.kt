@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DynamicNode
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.DynamicTest.dynamicTest
 import java.io.InputStream
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -77,11 +78,23 @@ object ConformanceAllowlist {
 
     /**
      * Checkout-independent key for a W3C test IRI. Manifests without an `@base` (the RDF 1.1 suites)
-     * yield `file:` IRIs containing the absolute checkout path; those are reduced to the part starting
-     * at `test-data/` so allowlist rows match in every checkout and on CI.
+     * yield `file:` IRIs containing the absolute checkout path; those are keyed as `test-data/` followed
+     * by the path relative to [corpusDir] (the configured corpus, see [TestData.corpusDir]), so allowlist
+     * rows match in every checkout, on CI and with `-PconformanceDataDir=<dir>`. A `file:` IRI outside
+     * [corpusDir] is reduced to the part starting at `test-data/`, if it has one.
      */
-    fun testKey(iri: String): String {
+    fun testKey(iri: String, corpusDir: Path = TestData.corpusDir): String {
         if (!iri.startsWith("file:")) return iri
+        val fragment = iri.indexOf('#').let { if (it < 0) "" else iri.substring(it) }
+        val file = try {
+            Path.of(URI(iri.removeSuffix(fragment))).toAbsolutePath().normalize()
+        } catch (_: Exception) {
+            null
+        }
+        val root = corpusDir.toAbsolutePath().normalize()
+        if (file != null && file.startsWith(root)) {
+            return "test-data/" + root.relativize(file).joinToString("/") + fragment
+        }
         val index = iri.indexOf("/test-data/")
         return if (index < 0) iri else iri.substring(index + 1)
     }

@@ -142,8 +142,13 @@ class SparqlEndpointRobustnessTest {
             SparqlRepository(SparqlEndpointConfig(url, readTimeout = h, requestTimeout = limit), transport).use { repo ->
                 for ((name, call) in calls(repo).filter { it.first != "stream" }) {
                     val start = System.nanoTime()
-                    val e = assertThrows(RdfQueryException::class.java, { call() }, name)
-                    assertTrue(e.message!!.contains("400 ms deadline"), "$name: ${e.message}")
+                    if (name == "update") {
+                        // A 2xx update was applied: its stalled body is abandoned at the deadline, without failing the call.
+                        call()
+                    } else {
+                        val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                        assertTrue(e.message!!.contains("400 ms deadline"), "$name: ${e.message}")
+                    }
                     assertEndedAtLimit(limit, start, name)
                 }
             }
@@ -324,8 +329,13 @@ class SparqlEndpointRobustnessTest {
             failClose = false
             for ((name, call) in calls(repo)) {
                 val start = System.nanoTime()
-                val e = assertThrows(RdfQueryException::class.java, { call() }, name)
-                assertTrue(e.message!!.contains("read timed out after 300 ms"), "$name: the read timeout was not enforced: ${e.message}")
+                if (name == "update") {
+                    // A 2xx update was applied: its stalled body is abandoned at the read timeout, without failing the call.
+                    call()
+                } else {
+                    val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                    assertTrue(e.message!!.contains("read timed out after 300 ms"), "$name: the read timeout was not enforced: ${e.message}")
+                }
                 assertEndedAtLimit(limit, start, name)
             }
         }
