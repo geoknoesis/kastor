@@ -11,6 +11,7 @@ import com.geoknoesis.kastor.gen.processor.internal.codegen.WrapperGenerator
 import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
 import com.google.devtools.ksp.getDeclaredFunctions
 import com.google.devtools.ksp.isAbstract
+import com.google.devtools.ksp.isLocal
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
@@ -25,6 +26,9 @@ import com.google.devtools.ksp.validate
  *   give `Outer_InnerWrapper`), or to two wrapper classes whose source files would collide on a case-insensitive
  *   file system (`Foo` and `FOO` give `FooWrapper.kt` and `FOOWrapper.kt`: distinct classes, but the build would
  *   only work on a case-sensitive file system). The message says which of the two it is;
+ * - **error**: an `@Rdf(iri = …)` declaration no wrapper can implement: a class, abstract class, object, enum or
+ *   annotation class (wrappers implement interfaces), a generic interface, or a `private`, `protected` or local
+ *   interface (or one nested in such a declaration);
  * - **error**: an abstract property or function without `@Rdf` (the wrapper could not implement it); members with a
  *   default implementation are left alone, and so is `rdf` of `RdfBacked`, which every wrapper implements itself
  *   (`@Rdf interface X : RdfBacked` is supported);
@@ -93,6 +97,10 @@ public class OntoMapperProcessor(
       }
       val qualified = symbol.qualifiedName?.asString() ?: return@forEach
       if (qualified in processedClasses) return@forEach
+      unsupportedDeclarationReason(symbol)?.let { reason ->
+        logger.error("@Rdf type $qualified: no wrapper is generated because $reason.", symbol)
+        return@forEach
+      }
       // Interfaces generated from SHACL by OntologyProcessor also carry @Rdf(iri) and come with their own
       // wrapper; generating a second one would fail with FileAlreadyExistsException in the next round.
       val wrapperName = "${symbol.packageName.asString()}.${WrapperGenerator.wrapperName(qualified, symbol.packageName.asString())}"
@@ -156,6 +164,45 @@ public class OntoMapperProcessor(
     }
 
     return symbols.filterNot { it.validate() }.toList()
+  }
+
+  /**
+   * Why no wrapper can implement [declaration], or `null` when one can: the wrapper is a non-generic `internal` class
+   * in another file of the same package that implements the type as an interface, so the type must be a
+   * non-generic interface visible to that file (no `private` or `protected` declaration on the way to it).
+   */
+  private fun unsupportedDeclarationReason(declaration: KSClassDeclaration): String? {
+    if (declaration.classKind != ClassKind.INTERFACE) {
+      val kind = when (declaration.classKind) {
+        ClassKind.CLASS -> if (Modifier.ABSTRACT in declaration.modifiers) "an abstract class" else "a class"
+        ClassKind.OBJECT -> "an object"
+        ClassKind.ENUM_CLASS -> "an enum class"
+        ClassKind.ENUM_ENTRY -> "an enum entry"
+        ClassKind.ANNOTATION_CLASS -> "an annotation class"
+        ClassKind.INTERFACE -> "an interface"
+      }
+      return "it is $kind; @Rdf(iri = ...) wrappers are generated for interfaces only (declare it as an interface)"
+    }
+    if (declaration.typeParameters.isNotEmpty()) {
+      val parameters = declaration.typeParameters.joinToString(", ") { it.name.asString() }
+      return "it has type parameters <$parameters>; generic @Rdf interfaces are not supported (declare a " +
+        "non-generic interface)"
+    }
+    var current: KSDeclaration? = declaration
+    while (current != null) {
+      val hidden = when {
+        current.isLocal() -> "local"
+        Modifier.PRIVATE in current.modifiers -> "private"
+        Modifier.PROTECTED in current.modifiers -> "protected"
+        else -> null
+      }
+      if (hidden != null) {
+        val owner = if (current === declaration) "it is" else "its enclosing ${current.qualifiedName?.asString() ?: current.simpleName.asString()} is"
+        return "$owner $hidden, so the generated wrapper (in another file) cannot implement it; make it internal or public"
+      }
+      current = current.parentDeclaration
+    }
+    return null
   }
 
   private fun wrapperQualifiedName(model: ClassModel): String =

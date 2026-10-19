@@ -120,8 +120,12 @@ public class DataClassFactoryGenerator(
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
         // One write per path: members that alias a path (same path under two inherited names) hold the same values.
         val writtenProperties = members.filter { it.primaryForPath }.map { it.typing }
-        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties)
-            ?.let { objectBuilder.addFunction(it) }
+        writerGenerator?.let { writer ->
+            objectBuilder.addFunction(
+                writer.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties),
+            )
+            objectBuilder.addFunction(writer.buildReplaceInGraphFunction(shape, dcClassName, context, knownTypes, writtenProperties))
+        }
 
         file.addType(objectBuilder.build())
         logger.info("Generated factory: $fName")

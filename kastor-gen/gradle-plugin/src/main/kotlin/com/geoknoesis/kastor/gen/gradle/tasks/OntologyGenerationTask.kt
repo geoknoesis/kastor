@@ -11,6 +11,8 @@ import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.EnumGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.ShaclEnumExtractor
 import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
 import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
@@ -259,13 +261,20 @@ abstract class OntologyGenerationTask : DefaultTask() {
         val fullModel = OntologyModel(shaclShapes, jsonLdContext)
         val files = mutableListOf<FileSpec>()
         try {
+            // As in the KSP processor (GenerationCoordinator): `sh:in` value sets become enums, generated into the
+            // interface package, which interfaces and wrappers reference. The instance DSL keeps String setters.
+            val enriched = ShaclEnumExtractor(kspLogger).enrich(fullModel)
+            if (generateInterfaces || generateWrappers) {
+                GenerationNames.checkCollisions(enriched)
+                files += EnumGenerator(kspLogger).generateEnums(enriched, interfacePackage).values
+            }
             if (generateInterfaces) {
                 files += InterfaceGenerator(kspLogger, ValidationAnnotations.NONE)
-                    .generateInterfaces(fullModel, interfacePackage, fallbackUnshapedToIri = true).values
+                    .generateInterfaces(enriched, interfacePackage, fallbackUnshapedToIri = true).values
             }
             if (generateWrappers) {
                 val wrappers = OntologyWrapperGenerator(kspLogger)
-                    .generateWrappers(fullModel, wrapperPackage, interfacePackage, fallbackUnshapedToIri = true)
+                    .generateWrappers(enriched, wrapperPackage, interfacePackage, fallbackUnshapedToIri = true)
                 files += wrappers.values
                 if (wrapperPackage != interfacePackage) {
                     // OntoMapper looks for <Interface>Wrapper / <Interface>Factory next to the interface; this stub

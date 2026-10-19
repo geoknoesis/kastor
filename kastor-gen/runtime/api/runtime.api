@@ -167,8 +167,8 @@ public final class com/geoknoesis/kastor/gen/runtime/MaterializationKt {
 	public static final fun materializeIn (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lkotlin/reflect/KClass;)Ljava/lang/Object;
 	public static final fun materializeIn (Ljava/lang/Iterable;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lkotlin/reflect/KClass;)Ljava/util/List;
 	public static final fun ref (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/gen/runtime/RdfRef;
-	public static final fun writeToGraph-M5LFpjQ (Lcom/geoknoesis/kastor/gen/runtime/RdfBacked;Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Ljava/lang/String;)V
-	public static synthetic fun writeToGraph-M5LFpjQ$default (Lcom/geoknoesis/kastor/gen/runtime/RdfBacked;Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Ljava/lang/String;ILjava/lang/Object;)V
+	public static final fun writeToGraph-M5LFpjQ (Lcom/geoknoesis/kastor/gen/runtime/RdfBacked;Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public static synthetic fun writeToGraph-M5LFpjQ$default (Lcom/geoknoesis/kastor/gen/runtime/RdfBacked;Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/MaterializationPolicy {
@@ -446,6 +446,7 @@ public final class com/geoknoesis/kastor/gen/runtime/ValidationResult$Violations
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/WriteSupportKt {
+	public static final fun replacePredicates (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Collection;Ljava/util/Collection;)V
 	public static final fun replaceResource (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Collection;)V
 	public static final fun replaceValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Ljava/util/Collection;)V
 }

@@ -12,10 +12,13 @@ import java.time.LocalDate
 /**
  * Lexical-form codecs used by generated wrappers, data-class factories, writers and DSL builders.
  *
- * Decoders return `null` for ill-typed lexical forms (callers decide whether that is an error) and follow
- * XML Schema lexical rules rather than Kotlin's (`"1"`/`"0"` are booleans, `INF`/`-INF`/`NaN` are
- * floating-point values, integers are unbounded). [encode] always produces a literal with the
- * *declared* datatype so values round-trip without losing their type.
+ * Decoders return `null` for ill-typed literals (callers decide whether that is an error): a lexical form that is
+ * not valid for the target type, or a datatype outside the target's XSD family (`"42"^^xsd:string` is not an
+ * integer). Integer decoders accept the XSD integer types (`xsd:integer` and its derived types); [bigDecimal] also
+ * `xsd:decimal`; [float] and [double] every XSD numeric type; [boolean] `xsd:boolean`; [localDate] `xsd:date`.
+ * Lexical forms follow XML Schema rules rather than Kotlin's (`"1"`/`"0"` are booleans, `INF`/`-INF`/`NaN` are
+ * floating-point values, integers are unbounded). [string] reads the lexical form of any literal. [encode]
+ * always produces a literal with the *declared* datatype so values round-trip without losing their type.
  */
 object XsdLiterals {
 
@@ -25,7 +28,18 @@ object XsdLiterals {
   private val DECIMAL = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
   private val DATE = Regex("(-?)([0-9]{4,})-([0-9]{2})-([0-9]{2})(Z|[+-][0-9]{2}:[0-9]{2})?")
 
-  private fun integerLexical(literal: Literal): String? = literal.lexical.trim().takeIf { INTEGER.matches(it) }
+  private val INTEGER_DATATYPES = setOf(
+    "integer", "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
+    "long", "int", "short", "byte", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
+  ).map { "http://www.w3.org/2001/XMLSchema#$it" }.toSet()
+  private val DECIMAL_DATATYPES = INTEGER_DATATYPES + "http://www.w3.org/2001/XMLSchema#decimal"
+  private val FLOATING_DATATYPES =
+    DECIMAL_DATATYPES + "http://www.w3.org/2001/XMLSchema#float" + "http://www.w3.org/2001/XMLSchema#double"
+
+  private fun Literal.typedIn(datatypes: Set<String>): Literal? = takeIf { it.datatype.value in datatypes }
+
+  private fun integerLexical(literal: Literal): String? =
+    literal.typedIn(INTEGER_DATATYPES)?.lexical?.trim()?.takeIf { INTEGER.matches(it) }
 
   /** xsd:int and smaller types; `[+-]?digits` (a leading `+` is valid XSD), range-checked. */
   fun int(literal: Literal): Int? = integerLexical(literal)?.toIntOrNull()
@@ -36,24 +50,30 @@ object XsdLiterals {
 
   /** xsd:decimal: `[+-]?(digits[.digits] | .digits)`; exponents are not decimal syntax. */
   fun bigDecimal(literal: Literal): BigDecimal? =
-    literal.lexical.trim().takeIf { DECIMAL.matches(it) }?.let(::BigDecimal)
+    literal.typedIn(DECIMAL_DATATYPES)?.lexical?.trim()?.takeIf { DECIMAL.matches(it) }?.let(::BigDecimal)
 
-  fun float(literal: Literal): Float? = when (val s = literal.lexical.trim()) {
+  fun float(literal: Literal): Float? = when (val s = literal.typedIn(FLOATING_DATATYPES)?.lexical?.trim()) {
+    null -> null
     "INF", "+INF" -> Float.POSITIVE_INFINITY
     "-INF" -> Float.NEGATIVE_INFINITY
     "NaN" -> Float.NaN
     else -> if (s.any { it.isLetter() && it != 'e' && it != 'E' }) null else s.toFloatOrNull()
   }
 
-  fun double(literal: Literal): Double? = when (val s = literal.lexical.trim()) {
+  fun double(literal: Literal): Double? = when (val s = literal.typedIn(FLOATING_DATATYPES)?.lexical?.trim()) {
+    null -> null
     "INF", "+INF" -> Double.POSITIVE_INFINITY
     "-INF" -> Double.NEGATIVE_INFINITY
     "NaN" -> Double.NaN
     else -> if (s.any { it.isLetter() && it != 'e' && it != 'E' }) null else s.toDoubleOrNull()
   }
 
-  /** xsd:boolean: `true`/`1` and `false`/`0`. */
-  fun boolean(literal: Literal): Boolean? = booleanLexical(literal.lexical)
+  /** xsd:boolean: `true`/`1` and `false`/`0`. Literals of other datatypes are ill-typed. */
+  fun boolean(literal: Literal): Boolean? =
+    literal.typedIn(BOOLEAN_DATATYPE)?.let { booleanLexical(it.lexical) }
+
+  private val BOOLEAN_DATATYPE = setOf("http://www.w3.org/2001/XMLSchema#boolean")
+  private val DATE_DATATYPE = setOf("http://www.w3.org/2001/XMLSchema#date")
 
   fun booleanLexical(lexical: String): Boolean? = when (lexical.trim()) {
     "true", "1" -> true
@@ -66,7 +86,7 @@ object XsdLiterals {
    * more (`12345-06-07`, without the `+` that ISO-8601 requires) or be negative (`-0044-03-15`, proleptic).
    */
   fun localDate(literal: Literal): LocalDate? {
-    val match = DATE.matchEntire(literal.lexical.trim()) ?: return null
+    val match = DATE.matchEntire(literal.typedIn(DATE_DATATYPE)?.lexical?.trim() ?: return null) ?: return null
     val (sign, year, month, day, timezone) = match.destructured
     if (timezone.isNotEmpty() && timezone != "Z") {
       val hours = timezone.substring(1, 3).toInt()
