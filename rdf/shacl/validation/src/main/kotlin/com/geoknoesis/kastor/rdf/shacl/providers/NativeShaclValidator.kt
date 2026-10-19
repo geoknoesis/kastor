@@ -351,8 +351,8 @@ internal class NativeShaclValidator(
         fun checkDeadline() {
             budget.check()
         }
-        fun select(query: String, bindings: Map<String, RdfTerm>, limit: Int = Int.MAX_VALUE) =
-            session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), limit)
+        fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
+            session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume)
         /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
         fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
         /** [value] for the pattern evaluation [evaluation]. */
@@ -2019,7 +2019,8 @@ internal class NativeShaclValidator(
      * variables are substituted by the engine ([com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate]), so
      * results do not depend on the SPARQL provider. A `?message` binding takes precedence over the constraint's
      * `sh:message`, which takes precedence over the shape's (SHACL-SPARQL result mapping). With [firstOnly] (a
-     * conformance check, which only needs to know whether there is a solution) only the first solution is read.
+     * conformance check, which only needs to know whether there is a solution) only the first result is built, and
+     * only the first solution is read unless the query can bind `?failure`.
      */
     private fun evaluateSparql(
         focus: RdfTerm,
@@ -2036,39 +2037,45 @@ internal class NativeShaclValidator(
         if ("shapesGraph" in c.preBound) preBound["shapesGraph"] = SparqlConstraintEvaluator.SHAPES_GRAPH_IRI
         val (query, providerBindings) = c.template.bind(preBound)
         val out = mutableListOf<ValidationViolation>()
-        // When only the answer is needed, the first solution gives it: later solutions are not read (nor checked for
-        // ?failure; a run that reports the constraint's results reads them all).
-        for (row in ctx.select(query, providerBindings, limit = if (firstOnly) 1 else Int.MAX_VALUE)) {
-            val failure = row.get("failure")
-            if (failure != null && isLexicallyTrue(failure)) {
-                throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
-            }
-            val value = row.get("value") ?: if (path == null) focus else null
-            val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
-            fun substitute(lit: Literal): Literal {
-                val text = messagePlaceholder.replace(lit.lexical) { m ->
-                    val term = row.get(m.groupValues[1]) ?: preBound[m.groupValues[1]]
-                    term?.let { displayTerm(it) } ?: m.value
+        // The solutions are streamed, never collected. When only the answer is needed, the first solution gives it;
+        // a query that can bind ?failure is still read to the end (a ?failure solution anywhere makes the check a
+        // failure, nested or not), without building results; one that cannot stops at the first solution.
+        ctx.select(query, providerBindings) { rows ->
+            for (row in rows) {
+                val failure = row.get("failure")
+                if (failure != null && isLexicallyTrue(failure)) {
+                    throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
                 }
-                return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
+                // Only a query that can bind ?failure gets here after its first result: it is scanned, not built.
+                if (firstOnly && out.isNotEmpty()) continue
+                val value = row.get("value") ?: if (path == null) focus else null
+                val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
+                fun substitute(lit: Literal): Literal {
+                    val text = messagePlaceholder.replace(lit.lexical) { m ->
+                        val term = row.get(m.groupValues[1]) ?: preBound[m.groupValues[1]]
+                        term?.let { displayTerm(it) } ?: m.value
+                    }
+                    return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
+                }
+                val messages =
+                    listOfNotNull(row.get("message") as? Literal).ifEmpty { c.messages }.ifEmpty { tpl.messages }.map { substitute(it) }
+                out.add(
+                    violation(
+                        focus = focus,
+                        tpl = tpl,
+                        constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
+                        message = "SPARQL constraint ${c.constraintNode.displayId()} returned a solution",
+                        value = value,
+                        // SHACL-SPARQL: a sh:severity on the SPARQL-based constraint is the result severity.
+                        severity = c.severity ?: tpl.severity,
+                        severityIri = if (c.severity != null) c.severityCustomIri else tpl.severityCustomIri,
+                        messages = messages,
+                        sourceConstraint = c.constraintNode,
+                        path = rowPath,
+                    ),
+                )
+                if (firstOnly && !c.template.mayBindFailure) break
             }
-            val messages =
-                listOfNotNull(row.get("message") as? Literal).ifEmpty { c.messages }.ifEmpty { tpl.messages }.map { substitute(it) }
-            out.add(
-                violation(
-                    focus = focus,
-                    tpl = tpl,
-                    constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
-                    message = "SPARQL constraint ${c.constraintNode.displayId()} returned a solution",
-                    value = value,
-                    // SHACL-SPARQL: a sh:severity on the SPARQL-based constraint is the result severity.
-                    severity = c.severity ?: tpl.severity,
-                    severityIri = if (c.severity != null) c.severityCustomIri else tpl.severityCustomIri,
-                    messages = messages,
-                    sourceConstraint = c.constraintNode,
-                    path = rowPath,
-                ),
-            )
         }
         return out
     }

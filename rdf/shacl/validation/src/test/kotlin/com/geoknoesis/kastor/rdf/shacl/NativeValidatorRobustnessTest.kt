@@ -176,6 +176,25 @@ class NativeValidatorRobustnessTest {
         assertEquals(1, pulled.get(), "solutions read")
     }
 
+    @Test
+    fun `a failure solution after an ordinary one fails a nested SPARQL check`() {
+        val d = '$'
+        // The first solution alone would answer sh:not; the third reports ?failure, which must still fail the run.
+        val shapes = graph(
+            """
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+              sh:not [ sh:sparql [ sh:select '''
+                SELECT ${d}this ?value ?failure WHERE { ${d}this <http://example.org/p> ?value . BIND (?value = 3 AS ?failure) }
+                ORDER BY ?value''' ] ] .
+            """,
+        )
+        val data = graph("ex:a a ex:T ; ex:p 1 , 2 , 3 .")
+        val error = org.junit.jupiter.api.assertThrows<ShaclValidationException> {
+            NativeShaclValidator(ValidationConfig()).validate(data, shapes)
+        }
+        assertTrue(error.message.orEmpty().contains("?failure"), error.message)
+    }
+
     // --- shared validator --------------------------------------------------------------------------------------------
 
     @Test
