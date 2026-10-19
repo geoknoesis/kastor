@@ -5,11 +5,18 @@ plugins {
 }
 
 dependencies {
+  implementation(libs.slf4j.api)
+  testImplementation(libs.junit.params)
+
+  implementation(libs.jena.base)
+  api(libs.jena.core)
+  implementation(libs.jena.dboe.transaction)
+
   api(project(":rdf:core"))
-  implementation(project(":rdf:sparql-contract"))
-  api(libs.jena.libs) { isTransitive = true }
+  api(project(":rdf:sparql-contract"))
+
   api(libs.jena.arq)
-  api(libs.jena.tdb2)
+  implementation(libs.jena.tdb2)
 }
 
 publishing {

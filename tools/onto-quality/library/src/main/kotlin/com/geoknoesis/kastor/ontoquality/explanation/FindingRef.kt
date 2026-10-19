@@ -1,16 +1,12 @@
 package com.geoknoesis.kastor.ontoquality.explanation
 
 import com.geoknoesis.kastor.ontoquality.QualityFinding
-import com.geoknoesis.kastor.rdf.BlankNode
-import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.LangString
-import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.RdfTerm
-import com.geoknoesis.kastor.rdf.vocab.XSD
-import java.security.MessageDigest
 
 /**
  * Stable SHA-256 key for joining LLM explanations to a [QualityFinding].
+ *
+ * Encoding version 2 uses typed, length-framed UTF-16 fields. Keys from the earlier encoding must be
+ * regenerated from findings; previously saved explanations cannot be joined using their old keys.
  *
  * The digest is derived from finding content (severity, message, shape, focus, paths, pitfall metadata,
  * constraint type, violation codes; a literal value with its datatype and language), **not** from row position in [com.geoknoesis.kastor.ontoquality.QualityReport.findings],
@@ -28,99 +24,9 @@ import java.security.MessageDigest
 @JvmInline
 value class FindingRef(val hexSha256: String) {
     companion object {
-        fun from(finding: QualityFinding): FindingRef {
-            val canonical = canonicalPayload(finding)
-            val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
-            val hex =
-                buildString(digest.size * 2) {
-                    for (b in digest) {
-                        val i = b.toInt() and 0xff
-                        append(HEX[i ushr 4])
-                        append(HEX[i and 0x0f])
-                    }
-                }
-            return FindingRef(hex)
-        }
+        fun from(finding: QualityFinding): FindingRef = FindingRef(FindingIdentityEncoding.digest(finding))
 
-        /**
-         * Retained for API compatibility; [reportOrderIndex] is ignored (refs are order-independent).
-         */
-        fun from(finding: QualityFinding, @Suppress("UNUSED_PARAMETER") reportOrderIndex: Int): FindingRef =
-            from(finding)
-
-        private val HEX = "0123456789abcdef".toCharArray()
-
-        private fun canonicalPayload(finding: QualityFinding): String {
-            val v = finding.violation
-            return buildString {
-                append(v.severity.name).append('\u001f')
-                append(v.constraint.constraintType.name).append('\u001f')
-                append(finding.stableMessage).append('\u001f')
-                append(shapeKey(v.shapeUri)).append('\u001f')
-                append(v.violationCode ?: "").append('\u001f')
-                append(v.resultSeverityIri ?: "").append('\u001f')
-                append(finding.category.name).append('\u001f')
-                append(finding.tier.name).append('\u001f')
-                append(pitfallKey(finding)).append('\u001f')
-                append(termKey(v.focusNode, finding)).append('\u001f')
-                append(v.path?.joinToString("\u001e") { pathKey(it, finding) } ?: "").append('\u001f')
-                append(v.value?.let { termKey(it, finding) } ?: "")
-            }
-        }
-
-        /**
-         * Anonymous (property) shapes are reported by their blank-node label, which changes whenever the shapes graph
-         * is parsed; they are keyed as `_:` only (constraint type, path, message and severity identify the finding).
-         */
-        private fun shapeKey(shapeUri: String?): String =
-            when {
-                shapeUri == null -> ""
-                shapeUri.startsWith("_:") -> "_:"
-                else -> shapeUri
-            }
-
-        private fun pitfallKey(f: QualityFinding): String =
-            when (val p = f.pitfall) {
-                null -> ""
-                is com.geoknoesis.kastor.ontoquality.PitfallReference.Oops -> "OOPS:${p.number}"
-                is com.geoknoesis.kastor.ontoquality.PitfallReference.Skos -> "SKOS:${p.number}"
-                is com.geoknoesis.kastor.ontoquality.PitfallReference.OntoQuality -> "OQ:${p.number}"
-                is com.geoknoesis.kastor.ontoquality.PitfallReference.KastorExtension -> "KASTOR:${p.code}"
-                com.geoknoesis.kastor.ontoquality.PitfallReference.Convention -> "CONVENTION"
-            }
-
-        /** A blank node in a path is a node of the shapes graph: its parser label never reaches the ref. */
-        private fun pathKey(term: RdfTerm, finding: QualityFinding): String =
-            if (term is BlankNode) finding.blankNodeKeys[term] ?: "_:" else termKey(term, finding)
-
-        private fun termKey(term: RdfTerm, finding: QualityFinding): String =
-            when (term) {
-                is Iri -> term.value
-                is BlankNode -> finding.blankNodeKeys[term] ?: term.toString()
-                is Literal -> literalKey(term)
-                else -> term.toString()
-            }
-
-        /** Marks a literal written with its datatype and language; never the first character of a plain string key. */
-        private const val TYPED_LITERAL = "\u001d"
-
-        /**
-         * A literal is identified by its lexical form, datatype, language and base direction: `"x"@en`, `"x"@fr`,
-         * `"1"` and `"1"^^xsd:integer` are four values. A plain `xsd:string` keeps its lexical form as key (as
-         * before, so refs of findings on plain strings did not change); every other literal is written with a
-         * marker and a length-prefixed lexical form, which no plain string key can imitate.
-         */
-        private fun literalKey(literal: Literal): String {
-            val tagged = literal as? LangString
-            if (tagged == null && literal.datatype == XSD.string && !literal.lexical.startsWith(TYPED_LITERAL)) return literal.lexical
-            return buildString {
-                append(TYPED_LITERAL).append(literal.lexical.length).append(':').append(literal.lexical)
-                append("^^").append(literal.datatype.value)
-                if (tagged != null) {
-                    append('@').append(tagged.normalizedLang)
-                    tagged.direction?.let { append("--").append(it.name) }
-                }
-            }
-        }
+        /** Retained for API compatibility; refs are independent of report order. */
+        fun from(finding: QualityFinding, @Suppress("UNUSED_PARAMETER") reportOrderIndex: Int): FindingRef = from(finding)
     }
 }

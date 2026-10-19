@@ -1,3 +1,16 @@
+public abstract interface class com/geoknoesis/kastor/rdf/AtomicMutableRdfGraph : com/geoknoesis/kastor/rdf/MutableRdfGraph {
+	public abstract fun mutateAtomically (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/AtomicMutableRdfGraph$DefaultImpls {
+	public static fun addTriples (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;Ljava/lang/Iterable;)V
+	public static fun addTriples (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;Lkotlin/sequences/Sequence;)V
+	public static fun find-BohvoVE (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
+	public static fun getTriplesSequence (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;)Lkotlin/sequences/Sequence;
+	public static fun removeTriples (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;Ljava/lang/Iterable;)Z
+	public static fun removeTriples (Lcom/geoknoesis/kastor/rdf/AtomicMutableRdfGraph;Lkotlin/sequences/Sequence;)Z
+}
+
 public abstract interface class com/geoknoesis/kastor/rdf/BindingSet {
 	public abstract fun get (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
 	public fun getBoolean (Ljava/lang/String;)Ljava/lang/Boolean;
@@ -39,6 +52,14 @@ public final class com/geoknoesis/kastor/rdf/BlankNode : com/geoknoesis/kastor/r
 	public fun toString ()Ljava/lang/String;
 	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
 	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/BlankNodeScopes {
+	public fun <init> ()V
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun graph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun mapTerm (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
 }
 
 public final class com/geoknoesis/kastor/rdf/CommonPrefixes {
@@ -88,6 +109,10 @@ public final class com/geoknoesis/kastor/rdf/DatasetBuilder {
 	public static synthetic fun namedGraph-Iaav0Og$default (Lcom/geoknoesis/kastor/rdf/DatasetBuilder;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/DatasetBuilder;
 	public final fun namedGraph-UeRWmDE (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/DatasetBuilder;
 	public final fun namedGraphs ([Lkotlin/Pair;)Lcom/geoknoesis/kastor/rdf/DatasetBuilder;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/DatasetClauseSupport {
+	public abstract fun supportsDatasetGraph-J_zqV-w (Ljava/lang/String;)Z
 }
 
 public final class com/geoknoesis/kastor/rdf/DatasetKt {
@@ -2092,7 +2117,7 @@ public final class com/geoknoesis/kastor/rdf/provider/EmptySparqlQueryResult : c
 	public fun toList ()Ljava/util/List;
 }
 
-public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoesis/kastor/rdf/MutableRdfGraph, com/geoknoesis/kastor/rdf/VersionedRdfGraph {
+public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoesis/kastor/rdf/AtomicMutableRdfGraph, com/geoknoesis/kastor/rdf/SourceTrackedGraph, com/geoknoesis/kastor/rdf/VersionedRdfGraph {
 	public fun <init> (Ljava/util/Collection;)V
 	public fun addTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)V
 	public fun addTriples (Ljava/lang/Iterable;)V
@@ -2101,9 +2126,12 @@ public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoes
 	public fun clear ()Z
 	public fun find-BohvoVE (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
 	public fun getModificationStamp ()J
+	public fun getSourceGraphName-UX4i1w8 ()Ljava/lang/String;
+	public fun getSourceRepository ()Lcom/geoknoesis/kastor/rdf/RdfRepository;
 	public fun getTriples ()Ljava/util/List;
 	public fun getTriplesSequence ()Lkotlin/sequences/Sequence;
 	public fun hasTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Z
+	public fun mutateAtomically (Lkotlin/jvm/functions/Function1;)V
 	public fun removeTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Z
 	public fun removeTriples (Ljava/lang/Iterable;)Z
 	public fun removeTriples (Ljava/util/Collection;)Z

@@ -112,8 +112,11 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
  *
  * Term conversion is exact (IRIs, blank node ids, language tags, datatypes). RDF4J 5.x has no literal
- * base-direction support, so the direction of an RDF 1.2 directional language string is dropped (the language tag
- * is kept).
+ * base-direction support. Directional language strings in shapes or data (including nested triple terms) are
+ * rejected before loading: dropping their direction could falsely report conformance. Use JenaValidation or the
+ * native SHACL validator for RDF 1.2 directional literals.
+ * ShaclSail also cannot compile blank-node or triple-term `sh:hasValue` parameters; these shapes are rejected
+ * before loading with the same alternatives, while blank nodes and triple terms in data remain supported.
  */
 @OptIn(KastorGenInternalApi::class)
 class Rdf4jValidation private constructor(
@@ -128,7 +131,7 @@ class Rdf4jValidation private constructor(
   constructor() : this(null as List<Statement>?, configuredMaxCachedGraphs(), false)
 
   /** Validates against the SHACL shapes in [shapes] (converted once at construction). */
-  constructor(shapes: RdfGraph) : this(toStatements(shapes.getTriples()), configuredMaxCachedGraphs(), false)
+  constructor(shapes: RdfGraph) : this(admitShapes(toStatements(shapes.getTriples())), configuredMaxCachedGraphs(), false)
 
   /**
    * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph), keeping the
@@ -151,7 +154,7 @@ class Rdf4jValidation private constructor(
    * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
    */
   constructor(shapes: RdfGraph? = null, maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean) :
-    this(shapes?.let { toStatements(it.getTriples()) }, maxCachedGraphs, assumeImmutable)
+    this(shapes?.let { admitShapes(toStatements(it.getTriples())) }, maxCachedGraphs, assumeImmutable)
 
   /** Test hook: runs inside the load transaction, before commit (to simulate a store failure). */
   @Volatile internal var beforeLoadCommit: (() -> Unit)? = null
@@ -227,6 +230,13 @@ class Rdf4jValidation private constructor(
     private fun toStatements(triples: List<RdfTriple>): List<Statement> =
       triples.map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
 
+    private fun admitShapes(statements: List<Statement>): List<Statement> {
+      require(statements.none { it.predicate == SHACL.HAS_VALUE && (it.`object` is BNode || it.`object` is Triple) }) {
+        "RDF4J SHACL validation does not support blank-node or triple-term sh:hasValue parameters; use JenaValidation or the native SHACL validator"
+      }
+      return statements
+    }
+
     private fun toResource(term: RdfTerm): Resource = when (term) {
       is Iri -> vf.createIRI(term.value)
       is BlankNode -> vf.createBNode(term.id.removePrefix("_:"))
@@ -235,8 +245,12 @@ class Rdf4jValidation private constructor(
 
     private fun toValue(term: RdfTerm): Value = when (term) {
       is Iri, is BlankNode -> toResource(term)
-      // RDF4J 5.x cannot carry a base direction; keep the language tag.
-      is LangString -> vf.createLiteral(term.lexical, term.lang)
+      is LangString -> {
+        require(term.direction == null) {
+          "RDF4J SHACL validation does not support literal base direction; use JenaValidation or the native SHACL validator"
+        }
+        vf.createLiteral(term.lexical, term.lang)
+      }
       is Literal -> vf.createLiteral(term.lexical, vf.createIRI(term.datatype.value))
       is TripleTerm -> vf.createTriple(toResource(term.triple.subject), vf.createIRI(term.triple.predicate.value), toValue(term.triple.obj))
       else -> throw IllegalArgumentException("Cannot convert $term to an RDF4J value")
@@ -349,7 +363,7 @@ class Rdf4jValidation private constructor(
    */
   private fun load(triples: List<RdfTriple>, previous: Store?): Store {
     val statements = toStatements(triples)
-    val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
+    val newShapes = if (fixedShapes == null) ShapeIndex(admitShapes(extractEmbeddedShapes(statements))) else null
     val repo = previous?.repository ?: repositoryFactory()
     try {
       repo.connection.use { connection ->

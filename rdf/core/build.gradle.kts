@@ -3,8 +3,10 @@ plugins {
 }
 
 dependencies {
+  implementation(libs.slf4j.api)
+
   api(project(":rdf:sparql-contract"))
-  implementation(libs.kotlinx.coroutines.core)
+  api(libs.kotlinx.coroutines.core)
   // Core has no other main-source deps beyond those declared at root.
   // For tests we add a real provider so calls to `Rdf.memory()` resolve to a
   // SPARQL-capable backend. We deliberately use `testRuntimeOnly` so the core

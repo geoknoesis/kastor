@@ -5,7 +5,13 @@ on:
     inputs:
       baseline_ref:
         description: "Verified baseline ref containing the same benchmark cases"
-        required: true
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      baseline_ref:
+        description: "Override the reviewed baseline manifest only when deliberately changing the reference"
+        required: false
         type: string
 
 permissions:
@@ -17,11 +23,28 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Test the performance report gate
-        run: python scripts/test_check_performance.py
+      - name: Test the performance report gate and CPU selection
+        run: |
+          python scripts/test_check_performance.py
+          python scripts/test_run_performance_comparison.py
+      - name: Select the reviewed source baseline
+        id: baseline
+        env:
+          BASELINE_OVERRIDE: ${{ inputs.baseline_ref }}
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          from pathlib import Path
+          reference = json.loads(Path('benchmarks/shacl/jmh/baselines/reference.json').read_text())
+          print('ref=' + (os.environ.get('BASELINE_OVERRIDE') or reference['commit']))
+          print('budget=' + str(reference['maximumRegression']))
+          print('scaling=' + str(reference['minimumScalingCases']))
+          print('contention=' + str(reference['minimumContentionCases']))
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.baseline_ref }}
+          ref: ${{ steps.baseline.outputs.ref }}
           path: build/performance-baseline
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -31,20 +54,31 @@ jobs:
       - name: Build both harnesses before measuring
         shell: bash
         run: |
-          ./gradlew -p build/performance-baseline :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
-          ./gradlew :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
+          # Apply the identical new contention harness to the pinned production baseline.
+          harness=benchmarks/shacl/jmh/src/jmh/java/com/geoknoesis/kastor/benchmarks/shacl/SharedValidationBenchmark.java
+          cp "$harness" "build/performance-baseline/$harness"
+          ./gradlew -p build/performance-baseline :benchmarks:shacl:test :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
+          ./gradlew :benchmarks:shacl:test :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
       - name: Measure baseline then candidate on the same runner
         shell: bash
         run: |
           mkdir -p build/performance-results
+          git rev-parse HEAD > build/performance-results/candidate-source.txt
+          git -C build/performance-baseline rev-parse HEAD > build/performance-results/baseline-source.txt
+          sha256sum benchmarks/shacl/jmh/src/jmh/java/com/geoknoesis/kastor/benchmarks/shacl/SharedValidationBenchmark.java > build/performance-results/shared-harness.sha256
           baseline_jars=(build/performance-baseline/build/modules/benchmarks/shacl/libs/*-jmh.jar)
           candidate_jars=(build/modules/benchmarks/shacl/libs/*-jmh.jar)
           test "${#baseline_jars[@]}" -eq 1
           test "${#candidate_jars[@]}" -eq 1
-          java -jar "${baseline_jars[0]}" '.*ScalingBenchmark.*' -wi 5 -i 8 -w 1s -r 1s -f 2 -t 1 -jvmArgs '-Xmx1024m -XX:ActiveProcessorCount=2' -prof gc -rf json -rff build/performance-results/baseline.json
-          java -jar "${candidate_jars[0]}" '.*ScalingBenchmark.*' -wi 5 -i 8 -w 1s -r 1s -f 2 -t 1 -jvmArgs '-Xmx1024m -XX:ActiveProcessorCount=2' -prof gc -rf json -rff build/performance-results/candidate.json
+          python scripts/run-performance-comparison.py "${baseline_jars[0]}" "${candidate_jars[0]}" build/performance-results
       - name: Gate latency and allocation regressions
-        run: python scripts/check-performance.py build/performance-results/baseline.json build/performance-results/candidate.json
+        env:
+          MAX_REGRESSION: ${{ steps.baseline.outputs.budget }}
+          MIN_SCALING: ${{ steps.baseline.outputs.scaling }}
+          MIN_CONTENTION: ${{ steps.baseline.outputs.contention }}
+        run: |
+          python scripts/check-performance.py build/performance-results/baseline.json build/performance-results/candidate.json --max-regression "$MAX_REGRESSION" --minimum-cases "$MIN_SCALING"
+          python scripts/check-performance.py build/performance-results/baseline-contention.json build/performance-results/candidate-contention.json --max-regression "$MAX_REGRESSION" --minimum-cases "$MIN_CONTENTION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

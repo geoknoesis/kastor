@@ -361,7 +361,7 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
             "@prefix", "@protected", "@propagate",
         )
 
-        /** Term definition keywords that leave a term a plain name for its IRI (see [expanded]). */
+        /** Term definition keywords that leave a term a plain name for its IRI (see `expanded`). */
         val TYPE_TERM_KEYWORDS: Set<String> = setOf("@id", "@context", "@protected", "@propagate", "@prefix")
 
         /** The gen-delims of RFC 3986 that end an IRI used as a prefix. */

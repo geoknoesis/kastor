@@ -5,9 +5,12 @@ plugins {
 }
 
 dependencies {
-  api(project(":rdf:jena"))
-  implementation(project(":rdf:reasoning"))
-  implementation(libs.jena.arq)
+  implementation(libs.jena.core)
+  api(project(":rdf:core"))
+
+  implementation(project(":rdf:jena"))
+  api(project(":rdf:reasoning"))
+  runtimeOnly(libs.jena.arq)
   // Cross-provider parity tests (ReasonerAxiomParityTest).
   testImplementation(project(":rdf:rdf4j-reasoning"))
 }

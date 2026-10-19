@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf
 
 import java.io.Closeable
+import java.util.IdentityHashMap
 
 /**
  * Implementation of Dataset with optimization for same-repository graphs.
@@ -63,11 +64,12 @@ internal class DatasetImpl(
     private val namedGraphRefs: Map<Iri, GraphRef>
 ) : Dataset {
 
-    override val defaultGraphs: List<RdfGraph> = defaultGraphRefs
-    override val namedGraphs: Map<Iri, RdfGraph> = namedGraphRefs
+    private val scopes = DatasetGraphScopes(defaultGraphRefs + namedGraphRefs.values)
+    override val defaultGraphs: List<RdfGraph> = defaultGraphRefs.map(scopes::graph)
+    override val namedGraphs: Map<Iri, RdfGraph> = namedGraphRefs.mapValues { scopes.graph(it.value) }
 
     /** Creates the temporary repository used by the materialized path; replaceable for tests. */
-    internal var materializationRepositoryFactory: () -> RdfRepository = { Rdf.memory() }
+    internal var materializationRepositoryFactory: () -> RdfRepository = { DatasetRepositories.create(namedGraphs.keys) }
 
     /** A dataset expressible as dataset clauses against a single repository. */
     private class QueryPlan(val repository: RdfRepository, val from: List<Iri>, val fromNamed: List<Iri>) {
@@ -101,14 +103,15 @@ internal class DatasetImpl(
         val repository = defaultGraphRefs.firstOrNull()?.sourceRepository
         val names = defaultGraphRefs.map { it.sourceGraphName }
         when {
-            defaultGraphRefs.size == 1 -> defaultGraphRefs.first().getReferencedGraph()
-            repository != null && defaultGraphRefs.all { it.sourceRepository == repository } && names.none { it == null } ->
+            defaultGraphRefs.size == 1 -> defaultGraphs.first()
+            repository != null && defaultGraphRefs.all { it.sourceRepository === repository } && names.none { it == null } &&
+                defaultGraphs.zip(defaultGraphRefs).all { (graph, ref) -> graph === ref.getReferencedGraph() } ->
                 OptimizedUnionGraph(repository, names.filterNotNull().distinct())
-            else -> UnionGraph(defaultGraphRefs.map { it.getReferencedGraph() })
+            else -> UnionGraph(defaultGraphs)
         }
     }
 
-    override fun getNamedGraph(name: Iri): RdfGraph? = namedGraphRefs[name]?.getReferencedGraph()
+    override fun getNamedGraph(name: Iri): RdfGraph? = namedGraphs[name]
 
     override fun hasNamedGraph(name: Iri): Boolean = namedGraphRefs.containsKey(name)
 
@@ -187,12 +190,19 @@ internal class DatasetImpl(
     }
 
     override fun close() {
-        val graphsToClose = LinkedHashSet<RdfGraph>()
-        defaultGraphRefs.forEach { graphsToClose.add(it.getReferencedGraph()) }
-        namedGraphRefs.values.forEach { graphsToClose.add(it.getReferencedGraph()) }
-        graphsToClose.forEach { graph ->
-            if (graph is Closeable) graph.close()
+        val seen = IdentityHashMap<RdfGraph, Boolean>()
+        var failure: Throwable? = null
+        for (ref in defaultGraphRefs.asSequence() + namedGraphRefs.values.asSequence()) {
+            val graph = ref.getReferencedGraph()
+            if (seen.put(graph, true) != null || graph !is Closeable) continue
+            try {
+                graph.close()
+            } catch (error: Throwable) {
+                val first = failure
+                if (first == null) failure = error else if (first !== error) first.addSuppressed(error)
+            }
         }
+        failure?.let { throw it }
     }
 
     private fun requireNoDatasetClauses(queryText: String) {
@@ -207,11 +217,15 @@ internal class DatasetImpl(
         // A repository without a SPARQL engine cannot run the query in place: its graphs are read through the graph
         // API and queried in the temporary repository, as the graphs of several repositories are.
         if (repository is com.geoknoesis.kastor.rdf.provider.MemoryRepository) return null
-        if (defaultGraphRefs.any { it.sourceRepository != repository }) return null
-        if (namedGraphRefs.any { (name, ref) -> ref.sourceRepository != repository || ref.sourceGraphName != name }) {
+        if (defaultGraphRefs.any { it.sourceRepository !== repository }) return null
+        if (namedGraphRefs.any { (name, ref) -> ref.sourceRepository !== repository || ref.sourceGraphName != name }) {
             return null
         }
         val names = defaultGraphRefs.map { it.sourceGraphName }
+        val clauseSupport = repository as? DatasetClauseSupport
+        if (clauseSupport != null &&
+            (names.filterNotNull() + namedGraphRefs.keys).any { !clauseSupport.supportsDatasetGraph(it) }
+        ) return null
         return when {
             names.none { it == null } ->
                 QueryPlan(repository, names.filterNotNull().distinct(), namedGraphRefs.keys.toList())
@@ -254,10 +268,10 @@ internal class DatasetImpl(
     private fun materializeGraphs(repo: RdfRepository) {
         repo.transaction {
             repo.editDefaultGraph().addTriples(
-                defaultGraphRefs.asSequence().flatMap { it.getReferencedGraph().getTriplesSequence() }
+                this@DatasetImpl.defaultGraphs.asSequence().flatMap { it.getTriplesSequence() }
             )
-            namedGraphRefs.forEach { (name, ref) ->
-                repo.editGraph(name).addTriples(ref.getReferencedGraph().getTriplesSequence())
+            this@DatasetImpl.namedGraphs.forEach { (name, graph) ->
+                repo.editGraph(name).addTriples(graph.getTriplesSequence())
             }
         }
     }
@@ -267,14 +281,20 @@ internal class DatasetImpl(
      * materialize its result before returning.
      */
     private fun <T> executeOnMaterializedUnion(execute: (RdfRepository) -> T): T {
-        val unionRepo = materializationRepositoryFactory()
-        try {
+        return materializationRepositoryFactory().use { unionRepo ->
+            checkMaterializationSupport(unionRepo)
             materializeGraphs(unionRepo)
-            return execute(unionRepo)
-        } finally {
-            unionRepo.close()
+            execute(unionRepo)
         }
     }
+
+    private fun checkMaterializationSupport(repo: RdfRepository) {
+        if (!DatasetRepositories.supports(repo, namedGraphs.keys)) throw UnsupportedOperationException(
+            "The query provider reserves a selected named graph IRI. Add a compatible in-memory SPARQL provider " +
+                "(for example rdf-jena) to query this dataset without changing its graph identities.",
+        )
+    }
+
 }
 
 /**
@@ -295,7 +315,7 @@ internal class DatasetImpl(
  * Known limits: this is a hand-written scanner over the query text, not a SPARQL parser. It recognises the
  * constructs above and nothing else; a query it cannot analyse with confidence is rejected (or left unrewritten)
  * rather than guessed at, and a grammar feature added to SPARQL later is invisible to it until the scanner learns
- * it. [SparqlScannerDifferentialTest] compares it with a real parser; extend that test before extending the scanner.
+ * it. `SparqlScannerDifferentialTest` compares it with a real parser; extend that test before extending the scanner.
  */
 internal object SparqlDatasetClauses {
     private enum class Kind { WORD, IRI, STRING, VAR, PUNCT }

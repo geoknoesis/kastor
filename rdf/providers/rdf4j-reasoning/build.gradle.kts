@@ -5,8 +5,15 @@ plugins {
 }
 
 dependencies {
-  api(project(":rdf:rdf4j"))
-  implementation(project(":rdf:reasoning"))
+  implementation(libs.rdf4j.model.api)
+  implementation(libs.rdf4j.model.vocabulary)
+  implementation(libs.rdf4j.model)
+  implementation(libs.rdf4j.repository.api)
+  implementation(libs.rdf4j.sail.api)
+  api(project(":rdf:core"))
+
+  implementation(project(":rdf:rdf4j"))
+  api(project(":rdf:reasoning"))
   implementation(libs.rdf4j.repository.sail)
   implementation(libs.rdf4j.sail.memory)
   implementation(libs.rdf4j.sail.inferencer)

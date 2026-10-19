@@ -1,12 +1,14 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.BlankNodeScopes
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.shacl.ImportConfig
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.ShapesGraphAccessException
+import java.util.IdentityHashMap
 
 /**
  * The `owl:imports` closure of a shapes graph, resolved offline against the supplied graphs ([ImportConfig]).
@@ -25,11 +27,18 @@ internal object OwlImportsExpander {
         maxTriples: Long = Long.MAX_VALUE,
         budget: ValidationBudget = ValidationBudget.NONE,
         warnings: MutableCollection<String>? = null,
+        scopes: BlankNodeScopes? = null,
     ): RdfGraph {
         budget.check("shape imports")
         if (!cfg.resolveOwlImports) return root
         val acc = LinkedHashSet<RdfTriple>()
+        if (root.size().toLong() > maxTriples) throw ShaclValidationException(
+            "Imported shapes (${root.size()} triples) exceed ValidationConfig.maxCombinedGraphTriples ($maxTriples) while resolving owl:imports",
+        )
+        val graphScopes = scopes ?: BlankNodeScopes(preservedGraph = root)
+        budget.check("shape imports")
         val visited = mutableSetOf<Iri>()
+        val processed = IdentityHashMap<RdfGraph, Boolean>()
         val queue = ArrayDeque<Pair<RdfGraph, Int>>()
         queue.addLast(root to 0)
         fun overBudget(what: String, size: Long): Nothing = throw ShaclValidationException(
@@ -38,8 +47,11 @@ internal object OwlImportsExpander {
         while (queue.isNotEmpty()) {
             budget.check("shape imports")
             val (g, depth) = queue.removeFirst()
+            // Breadth-first traversal reaches a graph at its shallowest depth. Aliases and cycles must not
+            // repeatedly snapshot it or traverse its imports; distinct graph instances still keep their scope.
+            if (processed.put(g, true) != null) continue
             if (g.size().toLong() > maxTriples) overBudget("Imported shapes", g.size().toLong())
-            val triples = budget.snapshot(g, "shape imports")
+            val triples = budget.snapshot(graphScopes.graph(g), "shape imports")
             triples.forEach {
                 budget.check("shape imports")
                 acc.add(it)

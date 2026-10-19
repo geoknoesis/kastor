@@ -83,7 +83,13 @@ class Rdf4jRepository(
     private val repository: Repository,
     internal val inference: Boolean,
     lenientRead: Boolean,
-) : RdfRepository {
+) : RdfRepository, DatasetClauseSupport {
+
+    // Sail interprets these IRIs as the null context in dataset clauses, even though the graph API can store
+    // ordinary named contexts with these names. Keep their source identity, but materialize dataset selections.
+    override fun supportsDatasetGraph(name: Iri): Boolean =
+        name.value != org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL.stringValue() &&
+            name.value != org.eclipse.rdf4j.model.vocabulary.SESAME.NIL.stringValue()
 
     /** Wraps [repository]; graph reads are strict (see [lenientRead]). */
     constructor(repository: Repository, inference: Boolean = false) : this(repository, inference, false)

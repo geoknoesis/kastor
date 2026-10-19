@@ -21,6 +21,6 @@ dependencies {
   testImplementation(project(":rdf:sparql"))
   testImplementation(project(":rdf:reasoning"))
   testImplementation(project(":rdf:shacl-validation"))
-  testImplementation(libs.junit.jupiter)
+
 }
 

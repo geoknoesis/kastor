@@ -44,7 +44,13 @@ class OpenAiExplanationIntegrationTest {
 
             val enricher =
                 qualityExplanationEnricher(
-                    LlmExplanationConfig(provider = LlmProvider.OPENAI),
+                    LlmExplanationConfig(
+                        provider = LlmProvider.OPENAI,
+                        requestTimeout = Duration.ofSeconds(45),
+                        maxTotalDuration = Duration.ofMinutes(2),
+                        maxRetries = 1,
+                        maxOutputTokens = 1024,
+                    ),
                 )
             val explained =
                 enricher.enrich(

@@ -7,16 +7,18 @@
 // opt-out: `-PconformanceAllowMissingData=true`.
 
 dependencies {
-  implementation(project(":rdf:core"))
-  implementation(project(":rdf:jena"))
-  implementation(project(":rdf:rdf4j"))
+  testImplementation(libs.jena.arq)
+  testImplementation(libs.jena.core)
+  testImplementation(libs.opentest4j)
+  testImplementation(project(":rdf:core"))
+  testImplementation(project(":rdf:jena"))
+  testImplementation(project(":rdf:rdf4j"))
 
   // Use jena-arq directly to parse manifests - keeps the conformance harness
   // independent of Kastor's parsers (which is what we are testing).
-  implementation(libs.jena.arq)
 
   testImplementation(libs.kotlin.test)
-  testImplementation(libs.junit.jupiter)
+
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 

@@ -3,8 +3,11 @@ plugins {
 }
 
 dependencies {
+  testImplementation(libs.jena.core)
+  api(project(":rdf:sparql-contract"))
+
   api(project(":rdf:core"))
-  implementation(libs.kotlinx.coroutines.core)
+  api(libs.kotlinx.coroutines.core)
   testRuntimeOnly(project(":rdf:jena"))
   // Rendered queries/updates/Turtle are validated with Jena's parsers in tests.
   testImplementation(libs.jena.arq)

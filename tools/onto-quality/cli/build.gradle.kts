@@ -79,6 +79,13 @@ configurations.named("runtimeClasspath") { extendsFrom(applicationRuntimeOnly.ge
 configurations.named("testRuntimeClasspath") { extendsFrom(applicationRuntimeOnly.get()) }
 
 dependencies {
+  implementation(libs.slf4j.api)
+
+  implementation(libs.clikt.core)
+  testImplementation(libs.mordant.core)
+  implementation(libs.kotlinx.serialization.core)
+  implementation(project(":rdf:shacl-validation"))
+
   implementation(project(":tools:onto-quality"))
   implementation(project(":tools:onto-quality-metrics"))
   implementation(project(":tools:onto-quality-embed"))

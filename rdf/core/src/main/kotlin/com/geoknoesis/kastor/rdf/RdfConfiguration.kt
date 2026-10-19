@@ -9,6 +9,10 @@ data class RdfConfig(
     val options: Map<String, String> = emptyMap(),
     val requirements: ProviderRequirements? = null
 ) {
+    /** Option values may contain credentials, including in URLs or provider-specific keys. */
+    override fun toString(): String =
+        "RdfConfig(providerId=$providerId, variantId=$variantId, options=<redacted>, requirements=$requirements)"
+
     fun providerIdTyped(): ProviderId? = providerId?.let(::ProviderId)
 
     fun variantIdTyped(): VariantId? = variantId?.let(::VariantId)

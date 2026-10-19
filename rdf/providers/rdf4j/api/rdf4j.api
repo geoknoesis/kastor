@@ -36,7 +36,7 @@ public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jProvider : com/geoknoesi
 	public fun variants ()Ljava/util/List;
 }
 
-public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoesis/kastor/rdf/RdfRepository {
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoesis/kastor/rdf/DatasetClauseSupport, com/geoknoesis/kastor/rdf/RdfRepository {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository$Companion;
 	public fun <init> (Lorg/eclipse/rdf4j/repository/Repository;Z)V
 	public synthetic fun <init> (Lorg/eclipse/rdf4j/repository/Repository;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -64,6 +64,7 @@ public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoe
 	public fun readTransaction (Lkotlin/jvm/functions/Function1;)V
 	public fun removeGraph-J_zqV-w (Ljava/lang/String;)Z
 	public fun select (Lcom/geoknoesis/kastor/rdf/SparqlSelect;)Lcom/geoknoesis/kastor/rdf/SparqlQueryResult;
+	public fun supportsDatasetGraph-J_zqV-w (Ljava/lang/String;)Z
 	public fun transaction (Lkotlin/jvm/functions/Function1;)V
 	public fun update-asdzE4I (Ljava/lang/String;)V
 	public fun withConstructTriples (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;

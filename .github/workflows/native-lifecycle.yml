@@ -2,6 +2,8 @@ name: Native embedding lifecycle
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 3" # Weekly native inference and resource-lifecycle regression check.
 
 permissions:
   contents: read
@@ -32,15 +34,20 @@ jobs:
           cache: gradle
       - name: Verify native inference, ownership and repeated cleanup
         shell: bash
-        run: ./gradlew :tools:onto-quality-embed:test :tools:onto-quality:test --no-daemon --max-workers=1
+        run: >-
+          ./gradlew :tools:onto-quality-embed:test :tools:onto-quality:test
+          :tools:onto-quality-embed:jacocoTestReport :tools:onto-quality:jacocoTestReport
+          --no-daemon --max-workers=1
+      - name: Require native line and branch coverage
+        run: python scripts/check-quality-gates.py coverage build/modules scripts/coverage-native.json
       - name: Reject missing or skipped native tests
         run: >-
-          python scripts/check-test-results.py build/modules/tools/onto-quality-embed/test-results/test --minimum 15
+          python scripts/check-test-results.py build/modules/tools/onto-quality-embed/test-results/test --minimum 37
           --require-suite com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest
           --require-suite com.geoknoesis.kastor.ontoquality.embed.NativeResourceSoakTest
       - name: Reject missing or skipped semantic integration tests
         run: >-
-          python scripts/check-test-results.py build/modules/tools/onto-quality/test-results/test --minimum 72
+          python scripts/check-test-results.py build/modules/tools/onto-quality/test-results/test --minimum 125
           --require-suite com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest
           --require-suite 'com.geoknoesis.kastor.ontoquality.OopsCalibrationTest$SemanticTierAfterEnrichment'
       - name: Retain native lifecycle evidence

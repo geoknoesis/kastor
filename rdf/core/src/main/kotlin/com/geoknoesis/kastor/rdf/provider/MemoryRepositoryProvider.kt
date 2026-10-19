@@ -151,7 +151,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private fun newGraph(name: Iri?): MemoryGraph {
         val key: Any = name ?: DEFAULT_GRAPH_KEY
         touched(key)
-        return MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo, { touched(key) }, { stampOf(key) })
+        return MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo, { touched(key) }, { stampOf(key) }).also { graph ->
+            graph.atomicTransaction = { block -> transaction { block() } }
+            graph.ownerRepository = this
+            graph.ownerGraphName = name
+        }
     }
 
     /** Records that [name] lost its backing graph; called while holding the write lock. */
@@ -293,7 +297,12 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
      * graph. It is read like the stamp of the default graph: without taking the lock, as the calling thread sees the
      * graph (see [VersionedRdfGraph]), failing once the repository is closed.
      */
-    private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph, VersionedRdfGraph {
+    private inner class NamedGraphView(private val name: Iri) : AtomicMutableRdfGraph, VersionedRdfGraph, SourceTrackedGraph {
+        override val sourceRepository: RdfRepository get() = this@MemoryRepository
+        override val sourceGraphName: Iri get() = name
+        override fun mutateAtomically(operations: MutableRdfGraph.() -> Unit) {
+            transaction { operations(this@NamedGraphView) }
+        }
         private val repository: MemoryRepository get() = this@MemoryRepository
 
         private inline fun <T> reading(block: (MemoryGraph?) -> T): T = lock.read { checkAccess(false); block(graphs[name]) }
@@ -360,7 +369,7 @@ class MemoryGraph internal constructor(
     private val onChange: (() -> Unit)? = null,
     /** The stamp the owning repository keeps for this graph, as the calling thread sees it; `null` as [onChange]. */
     private val repositoryStamp: (() -> Long)? = null,
-) : MutableRdfGraph, VersionedRdfGraph {
+) : AtomicMutableRdfGraph, VersionedRdfGraph, SourceTrackedGraph {
     constructor() : this(emptyList())
     constructor(initialTriples: Collection<RdfTriple>) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
 
@@ -368,6 +377,42 @@ class MemoryGraph internal constructor(
     private val subjects = mutableMapOf<RdfResource, MutableSet<RdfTriple>>()
     private val predicates = mutableMapOf<Iri, MutableSet<RdfTriple>>()
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
+    internal var atomicTransaction: ((() -> Unit) -> Unit)? = null
+    internal var ownerRepository: MemoryRepository? = null
+    internal var ownerGraphName: Iri? = null
+    override val sourceRepository: RdfRepository? get() = ownerRepository
+    override val sourceGraphName: Iri? get() = ownerGraphName
+    private var atomicUndo: MutableList<() -> Unit>? = null
+    @Volatile private var atomicThread: Thread? = null
+    private var atomicStamp = 0L
+
+    override fun mutateAtomically(operations: MutableRdfGraph.() -> Unit) {
+        atomicTransaction?.let { transaction -> transaction { operations(this) }; return }
+        access(true)
+        lock.write {
+            access(true)
+            if (atomicUndo != null) { operations(this); return@write }
+            val undo = ArrayList<() -> Unit>()
+            atomicStamp = stamp
+            atomicThread = Thread.currentThread()
+            atomicUndo = undo
+            try {
+                operations(this)
+            } catch (failure: Throwable) {
+                atomicUndo = null
+                undo.asReversed().forEach { action ->
+                    try { action() } catch (rollback: Throwable) {
+                        if (rollback !== failure) failure.addSuppressed(rollback)
+                    }
+                }
+                throw failure
+            } finally {
+                atomicUndo = null
+                stamp = atomicStamp
+                atomicThread = null
+            }
+        }
+    }
     /** The stamp of a stand-alone graph: moved (under the write lock) by every change of the content. */
     @Volatile private var stamp = 0L
     /**
@@ -379,12 +424,16 @@ class MemoryGraph internal constructor(
      * closed, like a read of the content (a stand-alone graph has no repository and never fails).
      */
     override val modificationStamp: Long get() {
-        val ofRepository = repositoryStamp ?: return stamp
+        val ofRepository = repositoryStamp ?: return if (atomicThread === Thread.currentThread()) atomicStamp else stamp
         return ofRepository()
     }
 
     /** Moves the stamp to a new value; called while holding the write lock. */
-    internal fun touch() { if (onChange != null) onChange.invoke() else stamp++ }
+    internal fun touch() {
+        if (onChange != null) onChange.invoke()
+        else if (atomicThread === Thread.currentThread()) atomicStamp++
+        else stamp++
+    }
     init { if (initialTriples.isNotEmpty()) addTriples(initialTriples) }
 
     private fun addUnlocked(triple: RdfTriple) {
@@ -394,6 +443,7 @@ class MemoryGraph internal constructor(
             predicates.getOrPut(triple.predicate) { linkedSetOf() }.add(triple)
             objects.getOrPut(triple.obj) { linkedSetOf() }.add(triple)
             recordUndo?.invoke { removeTriple(triple) }
+            atomicUndo?.add { removeTriple(triple) }
         }
     }
 
@@ -405,6 +455,7 @@ class MemoryGraph internal constructor(
         }
         remove(subjects, triple.subject); remove(predicates, triple.predicate); remove(objects, triple.obj)
         recordUndo?.invoke { addTriple(triple) }
+        atomicUndo?.add { addTriple(triple) }
         return true
     }
 
@@ -442,6 +493,7 @@ class MemoryGraph internal constructor(
             triples.clear(); subjects.clear(); predicates.clear(); objects.clear()
             touch()
             recordUndo?.invoke { addTriples(snapshot) }
+            atomicUndo?.add { addTriples(snapshot) }
             true
         }
     }

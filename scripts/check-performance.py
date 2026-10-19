@@ -40,11 +40,18 @@ def main():
     parser.add_argument("baseline")
     parser.add_argument("candidate")
     parser.add_argument("--max-regression", type=float, default=0.15)
+    parser.add_argument("--minimum-cases", type=int, default=1)
     args = parser.parse_args()
     if not 0 <= args.max_regression < 1:
         parser.error("--max-regression must be in [0, 1)")
+    if args.minimum_cases < 1:
+        parser.error("--minimum-cases must be positive")
     before, after = cases(args.baseline), cases(args.candidate)
     failures = []
+    if len(before) < args.minimum_cases or len(after) < args.minimum_cases:
+        failures.append(f"Incomplete case population: baseline={len(before)}, candidate={len(after)}, minimum={args.minimum_cases}")
+    for key in after.keys() - before.keys():
+        failures.append(f"Unmatched candidate case: {key}")
     for key, old in before.items():
         new = after.get(key)
         if new is None:

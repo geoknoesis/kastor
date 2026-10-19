@@ -249,6 +249,7 @@ internal object BlankNodeKeys {
         private val firstRootEdge = ArrayList<RootEdge?>()
 
         private val digest = MessageDigest.getInstance("SHA-256")
+        private val textBuffer = ByteArray(2048)
         private val predicateIds = HashMap<String, Long>()
         private val inner = ArrayList<BlankNode>()
         private var outHi = 0L
@@ -657,9 +658,8 @@ internal object BlankNodeKeys {
         }
 
         private fun put(text: String) {
-            val bytes = text.toByteArray(Charsets.UTF_8)
-            putLong(bytes.size.toLong())
-            digest.update(bytes)
+            putLong(text.length.toLong())
+            digest.updateUtf16Units(text, textBuffer)
         }
 
         private fun putLong(value: Long) {

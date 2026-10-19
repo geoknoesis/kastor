@@ -1,6 +1,7 @@
 # Release acceptance and supported limits
 
-The acceptance ledger is [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md).
+The current remediation ledger is [OCTOBER_REMEDIATION.md](OCTOBER_REMEDIATION.md).
+The historical release task ledger is [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md).
 An engineering score is a review judgment, not a guarantee or an automated release switch.
 
 ## Version and compatibility

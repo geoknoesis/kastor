@@ -74,7 +74,7 @@ internal class GraphDigester(salt: ByteArray = randomSalt()) {
         sink.term(triple.obj)
     }
 
-    /** The digest of a content given as one unambiguous string per triple (see [NativeLoader.encode]). */
+    /** The digest of content given as one unambiguous string per triple (see [GraphStateCache.NativeLoader.encode]). */
     fun digestEncoded(triples: Iterable<String>): GraphDigest = sum(triples) { sink, encoded -> sink.encoded(encoded) }
 
     private inline fun <T> sum(items: Iterable<T>, feed: (Sink, T) -> Unit): GraphDigest {

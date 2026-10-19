@@ -51,8 +51,11 @@ jobs:
           python scripts/test_check_build_pins.py
           python scripts/test_check_readme_imports.py
           python scripts/test_check_performance.py
+          python scripts/test_run_performance_comparison.py
           python scripts/test_check_doc_versions.py
           python scripts/test_check_release_provenance.py
+          python scripts/test_check_quality_gates.py
+          python scripts/test_check_code_complexity.py
 
       - name: Documentation version references
         run: python scripts/check-doc-versions.py
@@ -64,6 +67,9 @@ jobs:
 
       - name: README samples import what they use
         run: python scripts/check-readme-imports.py
+
+      - name: Prevent growth of large or complex Kotlin components
+        run: python scripts/check-code-complexity.py
 
       - name: Gradle check (tests, ABI, BOM coverage, coverage floors)
         run: ./gradlew check --no-daemon -x :rdf:conformance:test
@@ -79,35 +85,26 @@ jobs:
           netsh int ipv4 show excludedportrange protocol=tcp
           Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
-      - name: Dependency health (advisory)
+      - name: Dependency health
         id: build-health
-        # Advisory only: a failure here must not skip the conformance, test-count and coverage gates below.
-        continue-on-error: true
         run: ./gradlew buildHealth --no-daemon
         shell: bash
 
-      - name: Report advisory dependency health failure
-        # continue-on-error turns the step green in the UI; surface the failure as a warning and in the summary.
-        if: steps.build-health.outcome == 'failure'
-        shell: bash
-        run: |
-          echo "::warning title=buildHealth failed::Dependency health (advisory) failed on ${{ matrix.os }}. The job continues; see the 'Dependency health (advisory)' step log and build/reports/dependency-analysis."
-          {
-            echo "### :warning: buildHealth failed (advisory)"
-            echo
-            echo "\`./gradlew buildHealth\` failed on \`${{ matrix.os }}\`. The build continued because the step is advisory;"
-            echo "check the *Dependency health (advisory)* step log."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Require reviewed dependency advice
+        run: python scripts/check-quality-gates.py dependencies build/reports/dependency-analysis/build-health-report.json scripts/dependency-advice-exceptions.json
 
       - name: RDF 1.2 conformance smoke
         run: ./gradlew :rdf:conformance:conformanceSmokeTest --no-daemon
         shell: bash
 
       - name: Verify executed test counts and skips
-        # Floor is ~90% of the executed count without the RDF corpus and with the bundled SHACL fixture
-        # (2,797 on 2026-10-02 after round seven, about 3,370 after round eight; 3,100 is about 92% of that); raise it as tests are added.
+        # Floor is about 95% of the October offline population with the bundled SHACL fixture.
+        # Per-module floors below prevent another module from hiding a missing suite.
         # New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 3100 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
+
+      - name: Require each tested module to remain populated
+        run: python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -192,7 +189,10 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 3100 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
+
+      - name: Require each tested module to remain populated
+        run: python3 scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 
       - name: Upload verification reports
         if: always()

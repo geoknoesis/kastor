@@ -18,7 +18,13 @@ assertj = "3.27.7"
 dependencyAnalysis = "3.19.2"
 kotlinpoet = "2.4.0"
 clikt = "5.1.0"
-owlapi = "4.5.29"
+owlapi = "5.1.9"
+caffeine = "3.2.4"
+commonsCodec = "1.22.0"
+commonsIo = "2.22.0"
+jclSlf4j = "2.0.18"
+kotlinxIo = "0.8.2"
+reactiveStreams = "1.0.4"
 hermit = "1.4.5.519"
 jackson = "2.22.3"
 jacksonAnnotations = "2.22"
@@ -42,7 +48,26 @@ pluginPublish = "2.2.1"
 # CycloneDX SBOM generator, applied to every published module (attached as the `cyclonedx` classifier).
 cyclonedx = "3.4.1"
 
+opentest4j = "1.3.0"
+mordantcore = "3.0.2"
+ktorclientapache5 = "3.2.2"
+ktorclientcore = "3.2.3"
+ktorserializationkotlinxjson = "3.2.2"
+ktorservercore = "3.2.2"
+lettucecore = "7.2.1.RELEASE"
+nettycommon = "4.2.18.Final"
+nettyhandler = "4.2.18.Final"
+opentelemetryexporterlogging = "1.66.0"
+opentelemetryexporterotlp = "1.66.0"
+reactorcore = "3.6.6"
+kotlinreflect = "2.3.10"
+kotlinxSerializationJsonResolved = "0.4.4"
+
 [libraries]
+caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
+commons-codec = { module = "commons-codec:commons-codec", version.ref = "commonsCodec" }
+commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
+jcl-slf4j = { module = "org.slf4j:jcl-over-slf4j", version.ref = "jclSlf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -102,6 +127,56 @@ libthrift = { module = "org.apache.thrift:libthrift", version.ref = "libthrift" 
 lz4-java = { module = "at.yawk.lz4:lz4-java", version.ref = "lz4Java" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
+
+jena-core = { module = "org.apache.jena:jena-core", version.ref = "jena" }
+rdf4j-model-api = { module = "org.eclipse.rdf4j:rdf4j-model-api", version.ref = "rdf4j" }
+rdf4j-model-vocabulary = { module = "org.eclipse.rdf4j:rdf4j-model-vocabulary", version.ref = "rdf4j" }
+rdf4j-model = { module = "org.eclipse.rdf4j:rdf4j-model", version.ref = "rdf4j" }
+rdf4j-sail-api = { module = "org.eclipse.rdf4j:rdf4j-sail-api", version.ref = "rdf4j" }
+jena-base = { module = "org.apache.jena:jena-base", version.ref = "jena" }
+opentest4j = { module = "org.opentest4j:opentest4j", version.ref = "opentest4j" }
+jena-dboe-transaction = { module = "org.apache.jena:jena-dboe-transaction", version.ref = "jena" }
+jena-ontapi = { module = "org.apache.jena:jena-ontapi", version.ref = "jena" }
+jena-rdfpatch = { module = "org.apache.jena:jena-rdfpatch", version.ref = "jena" }
+jena-shex = { module = "org.apache.jena:jena-shex", version.ref = "jena" }
+jena-tdb1 = { module = "org.apache.jena:jena-tdb1", version.ref = "jena" }
+rdf4j-common-exception = { module = "org.eclipse.rdf4j:rdf4j-common-exception", version.ref = "rdf4j" }
+rdf4j-common-iterator = { module = "org.eclipse.rdf4j:rdf4j-common-iterator", version.ref = "rdf4j" }
+rdf4j-query = { module = "org.eclipse.rdf4j:rdf4j-query", version.ref = "rdf4j" }
+rdf4j-queryalgebra-model = { module = "org.eclipse.rdf4j:rdf4j-queryalgebra-model", version.ref = "rdf4j" }
+rdf4j-queryparser-api = { module = "org.eclipse.rdf4j:rdf4j-queryparser-api", version.ref = "rdf4j" }
+rdf4j-queryparser-sparql = { module = "org.eclipse.rdf4j:rdf4j-queryparser-sparql", version.ref = "rdf4j" }
+rdf4j-rio-api = { module = "org.eclipse.rdf4j:rdf4j-rio-api", version.ref = "rdf4j" }
+owlapi-api = { module = "net.sourceforge.owlapi:owlapi-api", version.ref = "owlapi" }
+owlapi-apibinding = { module = "net.sourceforge.owlapi:owlapi-apibinding", version.ref = "owlapi" }
+owlapi-impl = { module = "net.sourceforge.owlapi:owlapi-impl", version.ref = "owlapi" }
+clikt-core = { module = "com.github.ajalt.clikt:clikt-core", version.ref = "clikt" }
+mordant-core = { module = "com.github.ajalt.mordant:mordant-core", version.ref = "mordantcore" }
+kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinxSerializationJson" }
+agents-tools = { module = "ai.koog:agents-tools", version.ref = "koog" }
+prompt-executor-anthropic-client = { module = "ai.koog:prompt-executor-anthropic-client", version.ref = "koog" }
+prompt-executor-clients = { module = "ai.koog:prompt-executor-clients", version.ref = "koog" }
+prompt-executor-model = { module = "ai.koog:prompt-executor-model", version.ref = "koog" }
+prompt-executor-ollama-client = { module = "ai.koog:prompt-executor-ollama-client", version.ref = "koog" }
+prompt-executor-openai-client-base = { module = "ai.koog:prompt-executor-openai-client-base", version.ref = "koog" }
+prompt-executor-openai-client = { module = "ai.koog:prompt-executor-openai-client", version.ref = "koog" }
+prompt-llm = { module = "ai.koog:prompt-llm", version.ref = "koog" }
+prompt-model = { module = "ai.koog:prompt-model", version.ref = "koog" }
+ktor-client-apache5 = { module = "io.ktor:ktor-client-apache5", version.ref = "ktorclientapache5" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktorclientcore" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktorserializationkotlinxjson" }
+ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktorservercore" }
+lettuce-core = { module = "io.lettuce:lettuce-core", version.ref = "lettucecore" }
+netty-common = { module = "io.netty:netty-common", version.ref = "nettycommon" }
+netty-handler = { module = "io.netty:netty-handler", version.ref = "nettyhandler" }
+opentelemetry-exporter-logging = { module = "io.opentelemetry:opentelemetry-exporter-logging", version.ref = "opentelemetryexporterlogging" }
+opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetryexporterotlp" }
+reactor-core = { module = "io.projectreactor:reactor-core", version.ref = "reactorcore" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlinreflect" }
+kotlinx-schema-generator-json = { module = "org.jetbrains.kotlinx:kotlinx-schema-generator-json", version.ref = "kotlinxSerializationJsonResolved" }
+junit-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+junit-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
+junit-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "junit" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -20,6 +20,11 @@ dependencies {
     api(platform(libs.netty.bom))
     api(platform(libs.opentelemetry.bom))
     constraints {
+        api(libs.slf4j.api)
+        api(libs.caffeine)
+        api(libs.commons.codec)
+        api(libs.commons.io)
+        api(libs.jcl.slf4j)
         api(libs.guava)
         api(libs.commons.beanutils)
         api(libs.httpclient5)

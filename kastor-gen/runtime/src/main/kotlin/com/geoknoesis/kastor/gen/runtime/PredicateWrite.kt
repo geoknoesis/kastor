@@ -11,66 +11,75 @@ import com.geoknoesis.kastor.rdf.RdfTriple
 
 /**
  * Replaces all **literal** objects for ([RdfBacked.rdf]'s subject, [predicate]) with [literal].
- * Requires the backing [RdfGraph] to be a [MutableRdfGraph] (same instance used for reads and writes).
+ * Requires an atomic mutable backing graph (same instance used for reads and writes).
  */
 fun RdfBacked.replacePredicateLiterals(predicate: Iri, literal: Literal) {
   val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
   val editor = rdf.graph as? MutableRdfGraph ?: error(
     "Graph is not mutable; use a mutable graph/repository to assign literal-backed properties.",
   )
-  val stale =
-    rdf.graph
-      .find(subj, predicate)
-      .filter { it.obj is Literal }
-      .toList()
-  if (stale.isNotEmpty()) {
-    editor.removeTriples(stale)
+  editor.atomicEdit {
+    val stale =
+      rdf.graph
+        .find(subj, predicate)
+        .filter { it.obj is Literal }
+        .toList()
+    if (stale.isNotEmpty()) {
+      editor.removeTriples(stale)
+    }
+    editor.addTriple(RdfTriple(subj, predicate, literal))
   }
-  editor.addTriple(RdfTriple(subj, predicate, literal))
 }
 
 /**
  * Removes all **literal** objects for ([RdfBacked.rdf]'s subject, [predicate]); used when a nullable
- * literal-backed property is set to `null`. Requires a [MutableRdfGraph] backing store.
+ * literal-backed property is set to `null`. Requires an atomic mutable backing store.
  */
 fun RdfBacked.clearPredicateLiterals(predicate: Iri) {
   val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
   val editor = rdf.graph as? MutableRdfGraph ?: error(
     "Graph is not mutable; use a mutable graph/repository to assign literal-backed properties.",
   )
-  val stale = rdf.graph.find(subj, predicate).filter { it.obj is Literal }.toList()
-  if (stale.isNotEmpty()) editor.removeTriples(stale)
+  editor.atomicEdit {
+    val stale = rdf.graph.find(subj, predicate).filter { it.obj is Literal }.toList()
+    if (stale.isNotEmpty()) editor.removeTriples(stale)
+  }
 }
 
 /**
  * Removes all **non-literal** (IRI or blank node) objects for ([RdfBacked.rdf]'s subject, [predicate]); used when
- * a nullable object-backed property is set to `null`. Requires a [MutableRdfGraph] backing store.
+ * a nullable object-backed property is set to `null`. Requires an atomic mutable backing store.
  */
 fun RdfBacked.clearPredicateObjects(predicate: Iri) {
   val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
   val editor = rdf.graph as? MutableRdfGraph ?: error(
     "Graph is not mutable; use a mutable graph/repository to assign object-backed properties.",
   )
-  val stale = rdf.graph.find(subj, predicate).filter { it.obj is Iri || it.obj is BlankNode }.toList()
-  if (stale.isNotEmpty()) editor.removeTriples(stale)
+  editor.atomicEdit {
+    val stale = rdf.graph.find(subj, predicate).filter { it.obj is Iri || it.obj is BlankNode }.toList()
+    if (stale.isNotEmpty()) editor.removeTriples(stale)
+  }
 }
 
 /**
  * Replaces all **non-literal** (IRI or blank node) objects for ([RdfBacked.rdf]'s subject, [predicate]) with [obj].
- * Requires a [MutableRdfGraph] backing store.
+ * Requires an atomic mutable backing store.
  */
 fun RdfBacked.replacePredicateObjectTerm(predicate: Iri, obj: RdfTerm) {
+  require(obj is RdfResource) { "Object-backed properties require an IRI or blank node" }
   val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
   val editor = rdf.graph as? MutableRdfGraph ?: error(
     "Graph is not mutable; use a mutable graph/repository to assign object-backed properties.",
   )
-  val stale =
-    rdf.graph
-      .find(subj, predicate)
-      .filter { it.obj is Iri || it.obj is BlankNode }
-      .toList()
-  if (stale.isNotEmpty()) {
-    editor.removeTriples(stale)
+  editor.atomicEdit {
+    val stale =
+      rdf.graph
+        .find(subj, predicate)
+        .filter { it.obj is Iri || it.obj is BlankNode }
+        .toList()
+    if (stale.isNotEmpty()) {
+      editor.removeTriples(stale)
+    }
+    editor.addTriple(RdfTriple(subj, predicate, obj))
   }
-  editor.addTriple(RdfTriple(subj, predicate, obj))
 }
