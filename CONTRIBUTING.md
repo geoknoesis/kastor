@@ -64,6 +64,21 @@ git push
 
 Check that new checksums belong to the artifacts the PR updates. This step is deliberately not automated: a `pull_request_target` job would run Gradle from the PR with a write-scoped token. Minor and patch bumps are grouped into one weekly PR (`.github/dependabot.yml`); major upgrades follow the upgrade plan. The JUnit artifacts (`org.junit*`) share one catalog version, so they have their own group covering every update type. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
 
+### Quality regression gates
+
+`python scripts/check-code-complexity.py` prevents growth beyond reviewed Kotlin file/function ceilings.
+Prefer extracting responsibilities to raising a ceiling. Dependency advice is required in CI:
+
+```bash
+./gradlew buildHealth
+python scripts/check-quality-gates.py dependencies build/reports/dependency-analysis/build-health-report.json scripts/dependency-advice-exceptions.json
+python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
+```
+
+Review each dependency exception for service loading, reflection and public API exposure. The native workflow
+adds inference/soak coverage; `live-llm.yml` manually runs a bounded synthetic OpenAI fixture with the repository's
+`OPENAI_API_KEY` secret and rejects a skipped integration test. Performance comparison is part of release readiness.
+
 ### Tests that skip
 
 Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json), keyed by test class and test name. CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. Every entry needs a non-empty reason without absolute machine paths (`file:///`, `C:\`, `/home/...`); `scripts/check-test-results.py` enforces this. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
@@ -74,11 +89,12 @@ Suites that must never disappear are named with `--require-suite CLASS=MIN`. The
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` (Linux, Windows; macOS on push/schedule); `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` and reviewed dependency advice (Linux, Windows; macOS on push/schedule); `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
 | [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
 | [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
 | [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | OSV audit of dependencies introduced by the PR, secret-pattern scan, GitHub dependency review |
+| [`live-llm.yml`](.github/workflows/live-llm.yml) | Manual | Bounded live OpenAI integration, execution gate and coverage |
 | [`native-lifecycle.yml`](.github/workflows/native-lifecycle.yml) | Weekly + manual | ONNX embedding lifecycle and soak tests |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
 | [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → GitHub Pages |

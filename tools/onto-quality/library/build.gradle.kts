@@ -5,16 +5,17 @@ plugins {
 }
 
 dependencies {
+  implementation(libs.jena.core)
+
   api(project(":rdf:core"))
   api(project(":rdf:shacl-validation"))
   api(libs.kotlinx.coroutines.core)
   implementation(libs.slf4j.api)
-  implementation(project(":rdf:reasoning"))
+  api(project(":rdf:reasoning"))
   implementation(project(":rdf:reasoning-hermit"))
   implementation(project(":rdf:jena"))
   implementation(project(":rdf:jena-reasoning"))
   implementation(libs.jena.arq)
-  testImplementation(project(":rdf:testkit"))
   testImplementation(project(":tools:onto-quality-embed"))
   testImplementation(project(":tools:onto-quality-metrics"))
   testImplementation("org.junit.jupiter:junit-jupiter-params:${libs.versions.junit.get()}")

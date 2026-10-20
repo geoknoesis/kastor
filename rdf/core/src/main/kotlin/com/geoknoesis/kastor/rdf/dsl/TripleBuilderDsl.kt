@@ -130,7 +130,7 @@ abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> internal constructor() 
     }
 
     /**
-     * Bracket assignment syntax: person[FOAF.name] = "Alice"
+     * Bracket assignment syntax: `person[FOAF.name] = "Alice"`
      */
     operator fun RdfResource.set(predicate: Iri, value: RdfTerm) {
         collected.add(RdfTriple(this, predicate, value))

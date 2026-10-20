@@ -51,7 +51,7 @@ internal class Undecided(val code: String, val reason: String)
 
 /**
  * Why a conformance answer is undefined: undefined [recursion], an undecided [pattern], or both. A question that
- * is undefined without an entry in [ValidationContext.undefined] is undefined by recursion only.
+ * is undefined without an entry in [NativeValidationContext.undefined] is undefined by recursion only.
  */
 internal class UndefinedCause(val recursion: Boolean, val pattern: Undecided?)
 

@@ -9,7 +9,7 @@ dependencies {
   implementation(libs.slf4j.api)
 
   testImplementation(libs.kotlin.test)
-  testImplementation(libs.junit.jupiter)
+
   testRuntimeOnly(libs.junit.platform.launcher)
   // Tests rely on `Rdf.memory()`, which now requires a SPARQL-capable provider
   // to be discoverable via ServiceLoader. Adding Jena as a runtime-only test

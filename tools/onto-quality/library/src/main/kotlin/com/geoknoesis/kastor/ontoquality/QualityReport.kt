@@ -13,6 +13,8 @@ import com.geoknoesis.kastor.ontoquality.integration.MetricsContext
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.shacl.ValidationReport
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
@@ -190,7 +192,10 @@ data class QualityReport(
             if (nodes.isEmpty()) return emptyMap()
             val shapesGraph: RdfGraph? by lazy(LazyThreadSafetyMode.NONE) { shapes?.invoke() }
             var keys = emptyMap<BlankNode, String>()
-            val pathNodes = raw.violations.flatMapTo(HashSet()) { v -> v.path.orEmpty().filterIsInstance<BlankNode>() }
+            val pathNodes = raw.violations.flatMapTo(HashSet()) { v ->
+                v.path.orEmpty().filterIsInstance<BlankNode>() +
+                    listOfNotNull(v.resultPathNode as? BlankNode, v.sourceConstraint as? BlankNode)
+            }
             if (pathNodes.isNotEmpty()) shapesGraph?.let { keys = BlankNodeKeys.compute(it, pathNodes, prefix = "_:s") }
             if (keys.size < nodes.size) keys = keys + BlankNodeKeys.compute(asserted, nodes - keys.keys)
             if (keys.size < nodes.size && materialised != null && materialised !== asserted) {
@@ -288,14 +293,28 @@ data class QualityFinding @JvmOverloads constructor(
 
     companion object {
         /**
-         * Blank nodes referenced by [violation]: its focus node, value and path, and the `_:label` references in its
-         * message (a SHACL-SPARQL message can interpolate any variable).
+         * Blank nodes referenced by [violation], including nested terms, paths, source constraints, reifiers and
+         * `_:label` references in its message (a SHACL-SPARQL message can interpolate any variable).
          */
         internal fun blankNodesOf(violation: ValidationViolation): Set<BlankNode> =
             buildSet {
-                (violation.focusNode as? BlankNode)?.let(::add)
-                (violation.value as? BlankNode)?.let(::add)
-                violation.path?.forEach { (it as? BlankNode)?.let(::add) }
+                fun collect(term: RdfTerm?, depth: Int = 0) {
+                    require(depth <= 128) { "Finding triple term nesting exceeds 128 levels" }
+                    when (term) {
+                        is BlankNode -> add(term)
+                        is TripleTerm -> {
+                            collect(term.triple.subject, depth + 1)
+                            collect(term.triple.obj, depth + 1)
+                        }
+                        else -> Unit
+                    }
+                }
+                collect(violation.focusNode)
+                collect(violation.value)
+                violation.path?.forEach { collect(it) }
+                collect(violation.resultPathNode)
+                collect(violation.sourceConstraint)
+                collect(violation.context[ValidationViolation.REIFIER_CONTEXT_KEY] as? RdfTerm)
                 addAll(blankNodeReferences(violation.message))
             }
 

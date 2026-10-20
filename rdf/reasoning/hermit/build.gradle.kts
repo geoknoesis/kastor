@@ -5,16 +5,21 @@ plugins {
 }
 
 dependencies {
+  implementation(libs.slf4j.api)
+
+  implementation(libs.owlapi.api)
+  implementation(libs.owlapi.apibinding)
+  testImplementation(libs.owlapi.impl)
+
     api(project(":rdf:core"))
-    implementation(project(":rdf:reasoning"))
+    api(project(":rdf:reasoning"))
     // Turtle / RDF/XML round-trip uses Rdf.parse / RdfGraph.serialize (provider SPI).
-    implementation(project(":rdf:jena"))
+    runtimeOnly(project(":rdf:jena"))
 
     // OWL API 4.x + HermiT (versions aligned; isolated to this module).
     implementation(libs.owlapi.distribution)
     implementation(libs.hermit)
 
-    testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

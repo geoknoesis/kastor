@@ -265,13 +265,14 @@ class CliTest {
         val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--explain", "--output", dir.resolve("o.txt").toString())
 
         val quiet = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { throwing }, env = llmEnv)).test(argv)
-        assertFalse(quiet.stderr.contains("at com.geoknoesis.kastor.ontoquality.cli.MainKt"), quiet.stderr)
+        val stackFrame = Regex("""(?m)^\s+at \S+\([^()\r\n]+:\d+\)""")
+        assertFalse(stackFrame.containsMatchIn(quiet.stderr), quiet.stderr)
 
         for (debugArgv in listOf(argv + "--debug", listOf("--debug") + argv)) {
             val debug = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { throwing }, env = llmEnv)).test(debugArgv)
             assertEquals(EXIT_OK, debug.statusCode, debug.stderr)
             assertTrue(debug.stderr.contains("java.lang.IllegalStateException: down\\u001B[2J\\u202Eevil"), debug.stderr)
-            assertTrue(debug.stderr.contains("at com.geoknoesis.kastor.ontoquality.cli.MainKt"), debug.stderr)
+            assertTrue(stackFrame.containsMatchIn(debug.stderr), debug.stderr)
             assertNoRawControls(debug.stderr)
         }
     }

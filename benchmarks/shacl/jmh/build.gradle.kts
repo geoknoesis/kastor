@@ -108,7 +108,7 @@ tasks.register("shaclCompareKastorPyTierA") {
     } catch (e: Exception) {
       println(
           "PySHACL leg skipped (${e.javaClass.simpleName}: ${e.message}). " +
-              "Set KASTOR_PYTHON or install pyshacl — see benchmarks/shacl/jmh/scripts/pyshacl/README.md",
+              "Set KASTOR_PYTHON or install pyshacl â€” see benchmarks/shacl/jmh/scripts/pyshacl/README.md",
       )
     }
   }

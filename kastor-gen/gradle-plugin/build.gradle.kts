@@ -6,7 +6,9 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":kastor-gen:processor"))
+  implementation(project(":rdf:core"))
+
+    api(project(":kastor-gen:processor"))
 
     // Gradle API
     implementation(gradleApi())
@@ -14,16 +16,16 @@ dependencies {
     // so the plugin never ships a second copy of KGP classes into consumer builds.
 
     // KSP
-    implementation(libs.ksp.symbol.processing.api)
+    api(libs.ksp.symbol.processing.api)
 
     // KotlinPoet (transitive from processor, but needed for FileSpec)
-    implementation(libs.kotlinpoet)
+    api(libs.kotlinpoet)
 
     // Testing
     testImplementation(libs.kotlin.test)
-    testImplementation(libs.junit.jupiter)
+
     testImplementation(gradleTestKit())
-    testImplementation(project(":kastor-gen:runtime"))
+    implementation(project(":kastor-gen:runtime"))
     testImplementation(project(":rdf:sparql-contract"))
 }
 

@@ -77,6 +77,10 @@ configurations.named("runtimeClasspath") { extendsFrom(applicationRuntimeOnly.ge
 configurations.named("testRuntimeClasspath") { extendsFrom(applicationRuntimeOnly.get()) }
 
 dependencies {
+  testImplementation(libs.jena.arq)
+  testImplementation(libs.jena.base)
+  testImplementation(libs.slf4j.api)
+
   implementation(project(":rdf:core"))
   // Parsing and serialization. `diff` uses rdf-core's graph isomorphism, so the test kit is not an application dependency.
   implementation(project(":rdf:jena"))

@@ -12,7 +12,6 @@ import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.shacl.ShapesDigestMode
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
-import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 /**
@@ -43,15 +42,27 @@ internal object ShapesStructuralDigest {
             .sortedWith { a, b -> budget.tick("shape digest sorting"); a.compareTo(b) }
         budget.check("shape digest")
         val md = MessageDigest.getInstance("SHA-256")
-        md.update(profilePart.toByteArray(StandardCharsets.UTF_8))
-        md.update(0)
-        md.update(flagPart.toByteArray(StandardCharsets.UTF_8))
-        md.update(0)
-        rows.forEach { row ->
-            budget.tick("shape digest")
-            md.update(row.toByteArray(StandardCharsets.UTF_8))
-            md.update(0)
+        val buffer = ByteArray(2048)
+        fun updateField(value: String) {
+            // Charset encoders replace unpaired surrogates. Hash raw UTF-16 units instead, with an explicit
+            // length frame, so distinct in-memory terms cannot acquire the same cache key through replacement.
+            for (shift in 24 downTo 0 step 8) md.update((value.length ushr shift).toByte())
+            var offset = 0
+            while (offset < value.length) {
+                budget.check("shape digest")
+                val count = minOf(buffer.size / 2, value.length - offset)
+                repeat(count) { i ->
+                    val code = value[offset + i].code
+                    buffer[2 * i] = (code ushr 8).toByte()
+                    buffer[2 * i + 1] = code.toByte()
+                }
+                md.update(buffer, 0, count * 2)
+                offset += count
+            }
         }
+        updateField(profilePart)
+        updateField(flagPart)
+        rows.forEach(::updateField)
         return md.digest().joinToString("") { b -> "%02x".format(b) }
     }
 

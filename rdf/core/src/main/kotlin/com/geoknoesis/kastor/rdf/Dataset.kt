@@ -182,10 +182,10 @@ class DatasetBuilder {
      * @param name The IRI name for this graph in the dataset
      * @param graph The graph to add
      * @return This builder for method chaining
-     * @throws IllegalArgumentException if a named graph called [name] was already added
+     * @throws IllegalArgumentException when [name] was already added
      */
     fun namedGraph(name: Iri, graph: RdfGraph): DatasetBuilder {
-        require(name !in namedGraphs) { "Duplicate named graph name in dataset: $name" }
+        require(name !in namedGraphs) { "Duplicate named graph name: ${name.value}" }
         namedGraphs[name] = graph
         return this
     }

@@ -9,14 +9,14 @@ tasks.test {
 }
 
 dependencies {
+  implementation(libs.slf4j.api)
+
   api(project(":rdf:core"))
-  api(project(":rdf:shacl-validation"))
+  runtimeOnly(project(":rdf:shacl-validation"))
   implementation(project(":rdf:jena"))
   implementation(libs.onnxruntime)
   implementation(libs.djl.huggingface.tokenizers)
-  testImplementation(project(":rdf:testkit"))
-  testImplementation(libs.junit.jupiter)
-  testImplementation("org.junit.jupiter:junit-jupiter-params:${libs.versions.junit.get()}")
+
 }
 
 publishing {

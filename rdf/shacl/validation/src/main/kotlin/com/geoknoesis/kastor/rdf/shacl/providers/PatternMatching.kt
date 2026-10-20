@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 
 // Regular-expression evaluation support of [NativeShaclValidator]: step budget, counting CharSequence, worker thread.
 
-/** Thrown out of a regex match whose per-evaluation budget ([ValidationConfig.patternTimeout]) is used up. */
+/** Thrown out of a regex match exceeding [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.patternTimeout]. */
 internal class PatternBudgetExceeded : RuntimeException(null, null, false, false)
 
 /** Stack size of the pattern evaluation thread of a run (see `matchPattern`). */

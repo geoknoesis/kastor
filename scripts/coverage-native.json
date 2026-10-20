@@ -1,0 +1,6 @@
+{
+  "modules": {
+    "tools/onto-quality-embed": {"line": 0.75, "branch": 0.55},
+    "tools/onto-quality": {"line": 0.85, "branch": 0.70}
+  }
+}

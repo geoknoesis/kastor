@@ -5,10 +5,10 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":rdf:core"))
-    implementation(libs.kotlinx.coroutines.core)
+    api(project(":rdf:core"))
+
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.assertj.core)
+
 }
 
 publishing {

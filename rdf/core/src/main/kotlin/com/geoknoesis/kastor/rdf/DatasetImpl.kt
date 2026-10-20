@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf
 
 import java.io.Closeable
+import java.util.IdentityHashMap
 
 /**
  * Implementation of Dataset with optimization for same-repository graphs.
@@ -68,7 +69,7 @@ internal class DatasetImpl(
     override val namedGraphs: Map<Iri, RdfGraph> = namedGraphRefs.mapValues { scopes.graph(it.value) }
 
     /** Creates the temporary repository used by the materialized path; replaceable for tests. */
-    internal var materializationRepositoryFactory: () -> RdfRepository = { Rdf.memory() }
+    internal var materializationRepositoryFactory: () -> RdfRepository = { DatasetRepositories.create(namedGraphs.keys) }
 
     /** A dataset expressible as dataset clauses against a single repository. */
     private class QueryPlan(val repository: RdfRepository, val from: List<Iri>, val fromNamed: List<Iri>) {
@@ -189,12 +190,19 @@ internal class DatasetImpl(
     }
 
     override fun close() {
-        val graphsToClose = LinkedHashSet<RdfGraph>()
-        defaultGraphRefs.forEach { graphsToClose.add(it.getReferencedGraph()) }
-        namedGraphRefs.values.forEach { graphsToClose.add(it.getReferencedGraph()) }
-        graphsToClose.forEach { graph ->
-            if (graph is Closeable) graph.close()
+        val seen = IdentityHashMap<RdfGraph, Boolean>()
+        var failure: Throwable? = null
+        for (ref in defaultGraphRefs.asSequence() + namedGraphRefs.values.asSequence()) {
+            val graph = ref.getReferencedGraph()
+            if (seen.put(graph, true) != null || graph !is Closeable) continue
+            try {
+                graph.close()
+            } catch (error: Throwable) {
+                val first = failure
+                if (first == null) failure = error else if (first !== error) first.addSuppressed(error)
+            }
         }
+        failure?.let { throw it }
     }
 
     private fun requireNoDatasetClauses(queryText: String) {
@@ -214,6 +222,10 @@ internal class DatasetImpl(
             return null
         }
         val names = defaultGraphRefs.map { it.sourceGraphName }
+        val clauseSupport = repository as? DatasetClauseSupport
+        if (clauseSupport != null &&
+            (names.filterNotNull() + namedGraphRefs.keys).any { !clauseSupport.supportsDatasetGraph(it) }
+        ) return null
         return when {
             names.none { it == null } ->
                 QueryPlan(repository, names.filterNotNull().distinct(), namedGraphRefs.keys.toList())
@@ -269,14 +281,20 @@ internal class DatasetImpl(
      * materialize its result before returning.
      */
     private fun <T> executeOnMaterializedUnion(execute: (RdfRepository) -> T): T {
-        val unionRepo = materializationRepositoryFactory()
-        try {
+        return materializationRepositoryFactory().use { unionRepo ->
+            checkMaterializationSupport(unionRepo)
             materializeGraphs(unionRepo)
-            return execute(unionRepo)
-        } finally {
-            unionRepo.close()
+            execute(unionRepo)
         }
     }
+
+    private fun checkMaterializationSupport(repo: RdfRepository) {
+        if (!DatasetRepositories.supports(repo, namedGraphs.keys)) throw UnsupportedOperationException(
+            "The query provider reserves a selected named graph IRI. Add a compatible in-memory SPARQL provider " +
+                "(for example rdf-jena) to query this dataset without changing its graph identities.",
+        )
+    }
+
 }
 
 /**
@@ -297,7 +315,7 @@ internal class DatasetImpl(
  * Known limits: this is a hand-written scanner over the query text, not a SPARQL parser. It recognises the
  * constructs above and nothing else; a query it cannot analyse with confidence is rejected (or left unrewritten)
  * rather than guessed at, and a grammar feature added to SPARQL later is invisible to it until the scanner learns
- * it. [SparqlScannerDifferentialTest] compares it with a real parser; extend that test before extending the scanner.
+ * it. `SparqlScannerDifferentialTest` compares it with a real parser; extend that test before extending the scanner.
  */
 internal object SparqlDatasetClauses {
     private enum class Kind { WORD, IRI, STRING, VAR, PUNCT }

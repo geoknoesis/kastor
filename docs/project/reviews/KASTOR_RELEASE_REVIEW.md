@@ -1,6 +1,14 @@
 # Release-candidate review
 
-## Current score - 5 October 2026: 80.0/100
+## Working tree remediation 19 October 2026
+
+The subsequent working-tree self-review identified false conformance from dropped literal direction in the
+generated-code RDF4J adapter, finding-key collisions, and ineffective duplicate named-graph validation. Their
+fixes and the remaining verification requirements are tracked in [October remediation](OCTOBER_REMEDIATION.md).
+The 9.5/10 target requires verification of the final candidate and independent review. It is not an independent
+audit score or release approval.
+
+## Latest independent audit 5 October 2026: 80.0/100
 
 The round-nine audit of `main` at `474e2f2` (seven independent reviewers, strict audit scale) scored
 **80.0/100**. The previous audit (round 8) scored 79.7. An earlier 82/100 self-assessment written on
@@ -16,7 +24,7 @@ The round-nine audit of `main` at `474e2f2` (seven independent reviewers, strict
 | Build and release engineering | 10% | 77 |
 | Documentation and usability | 5% | about 82 |
 
-Open items that cap the score: `main` CI has failed intermittently on flaky concurrency tests; the
+Open items recorded at that audit: `main` CI had failed intermittently on flaky concurrency tests; the
 concurrency-heavy code (`GraphStateCache`, Jena queued steps) is the main defect source; the evaluator core of
 `NativeShaclValidator` and several other files remain very large; release and CI findings (for example the
 publish gate and checksum-only dependency verification) are tracked in the audit and not all closed; the

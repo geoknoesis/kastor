@@ -11,6 +11,8 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoning
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.ontoquality.reasoning.toReasonerConfigOrNull
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.BlankNodeScopes
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.ValidationReport
@@ -25,10 +27,11 @@ private val qualityCheckerLogger = LoggerFactory.getLogger(QualityChecker::class
 
 class QualityChecker private constructor(
     private val validator: ShaclValidator,
-    private val catalogs: List<ShapeCatalog>,
+    private val sourceCatalogs: List<ShapeCatalog>,
     private val metricsProvider: MetricsProvider?,
 ) {
-    private val mergedShapes: RdfGraph by lazy { Companion.mergeCatalogShapes(catalogs) }
+    private val catalogs: List<ShapeCatalog> by lazy { scopeCatalogs(sourceCatalogs) }
+    private val mergedShapes: RdfGraph by lazy { mergeScopedCatalogShapes(catalogs) }
 
     private val metadataByShape: Map<String, ShapeMetadata> by lazy {
         catalogs.fold(emptyMap()) { acc, c -> acc + c.shapeMetadata }
@@ -156,6 +159,28 @@ class QualityChecker private constructor(
         fun builder(validator: ShaclValidator): Builder = Builder(validator)
 
         internal fun mergeCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
+            return mergeScopedCatalogShapes(scopeCatalogs(catalogs))
+        }
+
+        private fun scopeCatalogs(catalogs: List<ShapeCatalog>): List<ShapeCatalog> {
+            val scopes = BlankNodeScopes()
+            return catalogs.map { catalog ->
+                val source = catalog.loadShapesGraph()
+                val scoped = scopes.graph(source)
+                // Keys use BlankNode.toString(), whose label encoding is not the raw node id. Build the map
+                // from actual shape subjects rather than trying to parse those display strings back into ids.
+                val blankKeys = source.getTriplesSequence().map { it.subject }.filterIsInstance<BlankNode>()
+                    .distinct().associate { it.toString() to scopes.mapTerm(source, it).toString() }
+                object : ShapeCatalog by catalog {
+                    override fun loadShapesGraph(): RdfGraph = scoped
+                    override val shapeMetadata = catalog.shapeMetadata.mapKeys { (key, _) ->
+                        blankKeys[key] ?: key
+                    }
+                }
+            }
+        }
+
+        private fun mergeScopedCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
             val merged = JenaBridge.createEmptyModel()
             for (c in catalogs) {
                 merged.addTriples(c.loadShapesGraph().getTriples())

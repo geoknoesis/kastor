@@ -3,6 +3,9 @@ plugins {
 }
 
 dependencies {
+  implementation(libs.jena.core)
+  testImplementation(project(":rdf:sparql-contract"))
+
   api(project(":rdf:core"))
   implementation(project(":rdf:jena"))
   implementation(libs.jena.arq)

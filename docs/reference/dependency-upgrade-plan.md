@@ -29,7 +29,7 @@ follow-up pull requests, **one family per PR**, in the order below.
 | 6 | JUnit Jupiter / Platform | **done 2026-10-01**: 6.1.3 (one `junit` catalog version for both) | 6.1.x | Major version (JDK 17+ baseline, removed deprecated APIs). No test code used a removed API. The same tests run and skip as on 5.13.4, so `scripts/test-skip-allowlist.json` and the executed-test floors are unchanged. Only visible change: JUnit 6 quotes string arguments in `@ParameterizedTest` display names (`[1] "jena"` instead of `[1] jena`); no allowlist entry or required suite depends on those names. Supersedes Dependabot PRs #24 and #25. |
 | 7 | ONNX Runtime (with DJL tokenizers) | **done 2026-10-01**: 1.30.0 (DJL tokenizers 0.38.0) | 1.30.x | Native binaries: verified locally on Windows with the opt-in embedding tests; `native-lifecycle.yml` must still pass on Linux and Windows before merging. Large verification-metadata churn. From Dependabot PR #28. |
 | 8 | `ai.koog:koog-agents` | 0.8.0 (pre-1.0) | 1.0.x | Breaking API changes expected. Isolated to `onto-quality-llm-koog`. Coordinate with its explanation tests (OpenAI tests stay opt-in). |
-| 9 | OWL API + HermiT | 4.5.29 + 1.4.5.519 | OWL API 5.x with a maintained HermiT build | Largest change: OWL API 5 changes the Guava/RDF4J transitive graph and package APIs. Needs a spike: run the reasoning-hermit tests, the release-contract resource/timeout checks and a dependency audit. Consider an alternative reasoner if HermiT has no OWL API 5 build. |
+| 9 | OWL API + HermiT | 5.1.9 + 1.4.5.519 | A maintained OWL API/HermiT pair | The October catalog correction records the 5.1.9 version already selected by HermiT and the lockfiles; it is not a runtime upgrade. A future maintained pair needs a compatibility spike covering reasoning, resource/time limits, dependency audit and mixed-provider consumers. |
 
 Security floors (Jackson, Netty, OpenTelemetry, Guava, HttpComponents, mime4j, Thrift, jsoup,
 commons-lang3, lz4) live in `gradle/build-platform` and the catalog. Raise them as part of the
@@ -85,7 +85,7 @@ Blockers, in order:
    `httpcore5` 5.4.3 and `rdf4j-http-client-{api,jdk,apache5}`, and raises `jsonld-java` to 0.13.6 and `commons-text`
    to 1.15.0. `scripts/audit-dependencies.py` and the staging gate were not run against this set.
 
-Not a blocker: OWL API 4.5.29 pulls RDF4J Rio **2.3.2** into `rdf-reasoning-hermit` (and the `onto-quality` tools).
+The legacy OWL API/HermiT transitive graph includes RDF4J Rio **2.3.2** into `rdf-reasoning-hermit` (and the `onto-quality` tools).
 No module in this build combines it with `rdf-rdf4j`, so those lockfiles do not change. A consumer that puts both on
 one classpath already gets a mixed RDF4J graph today; with 6.x OWL API's Rio parsers would run against a major version
 four releases newer, so that combination should be treated as unsupported until step 9.

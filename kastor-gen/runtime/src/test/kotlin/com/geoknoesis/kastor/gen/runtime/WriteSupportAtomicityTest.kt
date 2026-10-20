@@ -13,6 +13,32 @@ class WriteSupportAtomicityTest {
     private val replacement = old.copy(obj = string("new"))
 
     @Test
+    fun `object replacements reject literals and quoted triples before entering an edit`() {
+        val resource = old.copy(obj = Iri("urn:object"))
+        val backing = MemoryGraph(listOf(old, resource))
+        val stamp = backing.modificationStamp
+        var edits = 0
+        val graph = object : AtomicMutableRdfGraph by backing {
+            override fun mutateAtomically(operations: MutableRdfGraph.() -> Unit) {
+                edits++
+                backing.mutateAtomically(operations)
+            }
+        }
+        val view = object : RdfBacked { override val rdf = DefaultRdfHandle(s, graph, emptySet()) }
+        listOf(string("invalid"), TripleTerm(resource)).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) { view.replacePredicateObjectTerm(p, invalid) }
+            assertEquals(setOf(old, resource), backing.getTriples().toSet())
+            assertEquals(stamp, backing.modificationStamp)
+        }
+        assertEquals(0, edits)
+        listOf(Iri("urn:new"), BlankNode("new")).forEach { valid ->
+            view.replacePredicateObjectTerm(p, valid)
+            assertEquals(setOf(old, resource.copy(obj = valid)), backing.getTriples().toSet())
+        }
+        assertEquals(2, edits)
+    }
+
+    @Test
     fun `invalid replacement subjects and predicates fail without deleting existing data`() {
         val graph = MemoryGraph(listOf(old))
         val otherSubject = replacement.copy(subject = Iri("urn:other"))

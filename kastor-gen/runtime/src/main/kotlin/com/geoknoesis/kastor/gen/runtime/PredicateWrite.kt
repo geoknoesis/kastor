@@ -66,6 +66,7 @@ fun RdfBacked.clearPredicateObjects(predicate: Iri) {
  * Requires an atomic mutable backing store.
  */
 fun RdfBacked.replacePredicateObjectTerm(predicate: Iri, obj: RdfTerm) {
+  require(obj is RdfResource) { "Object-backed properties require an IRI or blank node" }
   val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
   val editor = rdf.graph as? MutableRdfGraph ?: error(
     "Graph is not mutable; use a mutable graph/repository to assign object-backed properties.",

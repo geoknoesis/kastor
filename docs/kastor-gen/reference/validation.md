@@ -208,8 +208,13 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
   concurrently, so a validator can be shared between threads. Call `close()` (or use `use { }`) to release
   the repositories and the loaded data (a repository still used by a call is released when that call
   returns); `validate` after `close()` throws `IllegalStateException`.
-- RDF4J 5.x has no base-direction support, so the direction of an RDF 1.2 directional language string is
-  dropped (the language tag is kept).
+- RDF4J 5.x SHACL has no base-direction support. `Rdf4jValidation` rejects directional language strings
+  in shapes and data, including nested triple terms, before loading them. Use `JenaValidation` or the native
+  validator for these terms. A failed conversion leaves the previous cached data intact.
+- Its SHACL query compiler also cannot handle blank-node or triple-term `sh:hasValue` parameters.
+  These shapes fail admission with `IllegalArgumentException`, including embedded shapes and failed reloads.
+  Use Jena or native validation for those parameters; blank nodes and triple terms in data remain supported.
+  Native validation requires `ValidationConfig.allowTripleTermsInShapeParameters = true` for triple-term parameters.
 
 ### Graph cache
 

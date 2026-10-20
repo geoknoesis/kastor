@@ -23,7 +23,7 @@ def report():
 
 
 class PerformanceGate(unittest.TestCase):
-    def run_gate(self, before, after):
+    def run_gate(self, before, after, *extra):
         scratch = ROOT / "build/review/performance-gate-checks"
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as directory:
@@ -31,7 +31,7 @@ class PerformanceGate(unittest.TestCase):
             for path, value in zip(paths, (before, after)):
                 path.write_text(json.dumps(value), encoding="utf-8")
             return subprocess.run([sys.executable, str(ROOT / "scripts/check-performance.py"),
-                                   *map(str, paths)], capture_output=True, text=True)
+                                   *map(str, paths), *extra], capture_output=True, text=True)
 
     def test_identical_complete_reports_pass(self):
         result = self.run_gate(report(), report())
@@ -74,6 +74,14 @@ class PerformanceGate(unittest.TestCase):
     def test_missing_or_duplicate_cases_fail(self):
         for after in ([], report() * 2):
             self.assertNotEqual(0, self.run_gate(report(), after).returncode)
+
+    def test_unmatched_candidate_cases_and_partial_populations_fail(self):
+        extra = copy.deepcopy(report()[0])
+        extra['params']['size'] = '1000'
+        self.assertNotEqual(0, self.run_gate(report(), report()+[extra]).returncode)
+        self.assertNotEqual(0, self.run_gate(report(), report(), '--minimum-cases', '2').returncode)
+        complete = report()+[extra]
+        self.assertEqual(0, self.run_gate(complete, complete, '--minimum-cases', '2').returncode)
 
     def test_nonfinite_or_incompatible_metrics_fail(self):
         for field, value in (("score", float("nan")), ("score", float("inf")),

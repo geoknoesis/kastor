@@ -16,6 +16,36 @@ and is kept as is; it was never published to Maven Central.
 
 ### Fixed (repository review)
 
+- Generated-code RDF4J validation rejects unsupported directional literals instead of discarding direction and
+  potentially reporting false conformance. Admission includes shape parameters, data and nested triple terms.
+  Unsupported blank-node and triple-term `sh:hasValue` parameters also fail admission before store loading.
+- Finding reference encoding v2 distinguishes RDF term kinds, absent values, framed fields, nested terms and
+  arbitrary UTF-16 values. Saved explanation keys from the old encoding must be regenerated from their findings.
+- Dataset builders reject duplicate named-graph insertion before replacing an earlier graph, including bulk and
+  repository overloads.
+- Dependency scopes now expose types used by public APIs and declare directly used modules. Koog and Jena
+  umbrella dependencies are narrowed, parser services retain runtime dependencies, and existing resolved version
+  floors are preserved. The OWL API catalog now reflects its already-resolved 5.1.9 version.
+- Native validation preparation, recursive solving, property constraints, run state and report assembly have
+  separate components; CLI input, output, options, model setup and LLM handling are split from command orchestration.
+- CI gates reviewed dependency exceptions, module test populations and complexity growth. Coverage floors are
+  raised near measured baselines, with branch coverage and separate native/live coverage policies.
+- Release readiness includes baseline performance comparison. A manual, secret-gated live LLM workflow requires
+  its bounded integration fixture to execute.
+- SHACL compile-cache digests distinguish arbitrary UTF-16 term values without charset replacement collisions.
+  Hashing uses bounded buffers with cooperative budget checks. Internal digest values change accordingly.
+- Temporary dataset repositories retain the original query or capability error when cleanup also fails.
+  Provider selection closes rejected and failing candidates, and transfers ownership only on acceptance.
+  Dataset closure attempts every distinct graph and attaches later cleanup errors to the first failure.
+- Aliases and cycles in `owl:imports` scan each graph instance once, preserving breadth-first depth handling.
+- RDF4J datasets materialize selections of reserved `rdf4j:nil` / `sesame:nil` graph names instead of treating
+  them as the repository's default graph, keeping dataset queries consistent with their graph views.
+  Reserved named graphs use a compatible installed query provider; queries fail clearly when none is available.
+- SHACL `owl:imports`, discovered shapes, and quality-catalog merges isolate blank nodes from independent sources, including nested
+  triple terms. Imports preserve root identities and repeated-source identity, enforce merged triple limits, and
+  produce stable labels for compiled-shape cache reuse.
+  Catalog metadata follows remapped anonymous shapes so pitfall labels and categories remain attached to findings.
+- Object-backed property replacements reject literals and quoted triples before opening an atomic edit.
 - Resource, predicate-value, and generated property replacements now use atomic graph edits. Memory graphs and
   repository-backed Jena/RDF4J graphs roll back failed edits; unsupported graphs reject replacements before mutation.
   Replacement collections are copied and checked for matching subjects and predicates before existing data is removed.
@@ -23,7 +53,7 @@ and is kept as is; it was never published to Maven Central.
   retaining shared identity across graphs from one repository. Provider graph handles now expose source tracking.
 - Generic repository configuration diagnostics redact option values, including passwords, custom headers, and URLs.
 - Native embedding lifecycle and soak checks now run weekly as well as on manual request.
-- Offline coverage floors increased from 20% to 55% for embedding and from 5% to 75% for LLM explanations,
+- Offline coverage floors increased from 20% to 60% for embedding and from 5% to 80% for LLM explanations,
   based on fresh measurements of 66.8% and 85.3% respectively.
 
 ### Fixed (round-ten audit)

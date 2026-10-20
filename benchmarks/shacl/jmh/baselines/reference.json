@@ -1,0 +1,8 @@
+{
+  "commit": "5c8c8280d108cdc7dcc3cda194604f4fae023c9a",
+  "benchmarks": ".*ScalingBenchmark.*",
+  "maximumRegression": 0.15,
+  "reason": "Fixed source baseline before the October working-tree remediation; compare both revisions on the same runner and retain smoke-test and JMH evidence.",
+  "minimumScalingCases": 12,
+  "minimumContentionCases": 2
+}

@@ -83,17 +83,18 @@ Exact naming is illustrative; final API lives in `onto-quality` (or optional `on
 
 ### 4.1 Finding reference (`FindingRef`)
 
-Stable key for joining explanations to rows, independent of list index:
+**Encoding migration:** finding references now use encoding v2, with RDF term-kind tags and nullable,
+length-framed UTF-16 fields. An IRI and a string with the same text have different keys. References remain
+stable under report reordering and preserve keyed blank-node identity inside nested triple terms. Regenerate
+old reference keys from the original findings and regenerate or explicitly migrate saved explanation joins;
+old hashes cannot be converted to v2 hashes without their finding content.
 
-- Preferred: **hash** (e.g. SHA-256 of canonical UTF-8 string) of:
-  - shape focus nodes / path from `ValidationViolation` (whatever Kastor exposes consistently),
-  - `shapeUri` if present,
-  - normalized `message`,
-  - severity,
-  - optional `pitfall` id string.
-- Document the canonical serialization in code so the same `QualityReport` always yields the same ids.
 
-If a violation lacks stable focus identifiers, fall back to hash including **index in sorted findings list** and document that instability.
+The key hashes severity, constraint type, stable message, source shape, violation codes, category, tier,
+pitfall metadata, focus, path, source constraint and value. RDF terms have distinct kind tags; literal lexical
+form, datatype, language and direction participate. Null values and empty strings differ. Keyed blank nodes
+retain their graph identity, and report order never participates. Anonymous shapes without a structural key
+use a stable anonymous marker instead of a parser label.
 
 ### 4.2 `FindingExplanation` (new)
 

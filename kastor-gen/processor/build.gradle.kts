@@ -27,23 +27,27 @@ kotlin {
 }
 
 dependencies {
+  implementation(libs.jena.core)
+  testRuntimeOnly(libs.slf4j.api)
+  api(project(":rdf:core"))
+
   api(project(":kastor-gen:runtime"))
   
   // KSP dependencies
-  implementation(libs.ksp.symbol.processing.api)
+  api(libs.ksp.symbol.processing.api)
 
   // KotlinPoet for type-safe code generation
-  implementation(libs.kotlinpoet)
-  implementation(libs.kotlinpoet.ksp)
+  api(libs.kotlinpoet)
+
 
   // JSON serialization for JSON-LD context parsing
   implementation(libs.kotlinx.serialization.json)
   
   // Optional: Jena for compile-time schema parsing
-  implementation(libs.jena.arq)
+  runtimeOnly(libs.jena.arq)
   
   testImplementation(libs.kotlin.test)
-  testImplementation(libs.junit.jupiter)
+
   // In-process Kotlin compiler used by tests that compile generated sources for tricky
   // ontology inputs (same artifact/version the Kotlin Gradle plugin already resolves).
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:${libs.versions.kotlin.get()}")

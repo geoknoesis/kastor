@@ -23,41 +23,51 @@ val platformProjects = setOf(":bom", ":build-platform")
 
 /**
  * Line-coverage floors enforced by `jacocoTestCoverageVerification` (wired into `check`).
- * Measured from a clean local run (2026-09-12/13) minus roughly five to ten points of headroom;
+ * Ratcheted against the October remediation runs with modest headroom;
  * ratchet upwards as coverage improves. Every published module with unit tests has an entry, except:
- *  - :rdf:sparql-contract: interfaces and value types only, no tests of its own (covered by providers).
  *  - :kastor-gen:gradle-plugin: its tests run the plugin in out-of-process Gradle TestKit builds, which
  *    the JaCoCo agent of the test JVM does not see (measured 0%). The plugin is gated by TestKit
  *    behaviour tests and release-plugin-smoke instead.
  * Non-published modules (examples, benchmarks, :rdf:conformance, :rdf:examples) are not gated.
  */
 val coverageFloors = mapOf(
-  ":rdf:core" to "0.75", // measured 80.7% with serialization dispatch and round-trip contract tests
-  ":rdf:jena" to "0.45",
-  ":rdf:rdf4j" to "0.50",
+  ":rdf:core" to "0.78", // measured 80.7% with serialization dispatch and round-trip contract tests
+  ":rdf:jena" to "0.85",
+  ":rdf:rdf4j" to "0.90",
   ":rdf:reasoning" to "0.65",
   ":rdf:reasoning-hermit" to "0.50",
   ":rdf:shacl-dsl" to "0.60",
-  ":rdf:shacl-validation" to "0.50",
+  ":rdf:shacl-validation" to "0.85",
   ":rdf:sparql-lang" to "0.85", // measured 88.7% with DSL execution contract tests
   ":rdf:sparql" to "0.55",
+  ":rdf:sparql-contract" to "0.80",
   ":rdf:testkit" to "0.75",
   ":rdf:jena-reasoning" to "0.80", // measured 92.5%
   ":rdf:rdf4j-reasoning" to "0.85", // measured 94.3%
   ":rdf:cli" to "0.70", // measured 80.5%
-  ":kastor-gen:processor" to "0.50",
-  ":kastor-gen:runtime" to "0.75", // measured 79.8% after predicate-write and property-delegate contract tests
-  ":kastor-gen:validation-jena" to "0.70",
-  ":kastor-gen:validation-rdf4j" to "0.55",
-  ":tools:onto-quality" to "0.75",
+  ":kastor-gen:processor" to "0.80",
+  ":kastor-gen:runtime" to "0.78", // measured 79.8% after predicate-write and property-delegate contract tests
+  ":kastor-gen:validation-jena" to "0.83",
+  ":kastor-gen:validation-rdf4j" to "0.85",
+  ":tools:onto-quality" to "0.85",
   ":tools:onto-quality-metrics" to "0.80",
   // Offline download, resource-budget, and similarity tests measured 66.8% (2026-10-18).
   // Native ONNX inference remains opt-in and is also exercised by the weekly lifecycle workflow.
-  ":tools:onto-quality-embed" to "0.55",
+  ":tools:onto-quality-embed" to "0.60",
   // Offline transport-contract, retry, parsing, and redaction tests measured 85.3% (2026-10-18).
   // Live provider calls stay opt-in; the normal CI floor now protects the offline behavior.
-  ":tools:onto-quality-llm-koog" to "0.75",
-  ":tools:onto-quality-cli" to "0.65", // measured 76.0%
+  ":tools:onto-quality-llm-koog" to "0.80",
+  ":tools:onto-quality-cli" to "0.80", // measured 84.7% after CLI extraction
+)
+
+// Branch coverage protects decisions that high line coverage can miss. Native-only paths have a separate gate.
+val branchCoverageFloors = mapOf(
+  ":rdf:core" to "0.72", ":rdf:jena" to "0.75", ":rdf:rdf4j" to "0.78",
+  ":rdf:shacl-validation" to "0.72", ":kastor-gen:processor" to "0.65",
+  ":kastor-gen:runtime" to "0.68", ":tools:onto-quality" to "0.70",
+  ":tools:onto-quality-embed" to "0.45", ":tools:onto-quality-llm-koog" to "0.63",
+  ":rdf:sparql-contract" to "0.58", ":kastor-gen:validation-rdf4j" to "0.60",
+  ":kastor-gen:validation-jena" to "0.60", ":tools:onto-quality-cli" to "0.64",
 )
 
 subprojects {
@@ -65,6 +75,9 @@ subprojects {
   // Tool classpaths (including Dokka) do not see :build-platform. Apply the same security
   // floors there. None of this is published.
   configurations.configureEach {
+    // This JVM build already declares kotlin-stdlib. The compatibility common module's metadata
+    // only redirects to that same module and contributes no files to a JVM classpath.
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-common")
     resolutionStrategy.eachDependency {
       when {
         requested.group.startsWith("com.fasterxml.jackson") -> useVersion(
@@ -74,18 +87,30 @@ subprojects {
         requested.group == "org.jsoup" && requested.name == "jsoup" -> useVersion(rootProject.libs.versions.jsoup.get())
         requested.group == "org.freemarker" && requested.name == "freemarker" -> useVersion(rootProject.libs.versions.freemarker.get())
         requested.group == "org.apache.commons" && requested.name == "commons-lang3" -> useVersion(rootProject.libs.versions.commonsLang3.get())
+        requested.group == "org.slf4j" && requested.name == "slf4j-api" -> useVersion(rootProject.libs.versions.slf4j.get())
+        requested.group == "org.slf4j" && requested.name == "jcl-over-slf4j" -> useVersion(rootProject.libs.versions.jclSlf4j.get())
+        requested.group == "com.github.ben-manes.caffeine" && requested.name == "caffeine" -> useVersion(rootProject.libs.versions.caffeine.get())
+        requested.group == "commons-codec" && requested.name == "commons-codec" -> useVersion(rootProject.libs.versions.commonsCodec.get())
+        requested.group == "commons-io" && requested.name == "commons-io" -> useVersion(rootProject.libs.versions.commonsIo.get())
+        requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-coroutines-") -> useVersion(rootProject.libs.versions.coroutines.get())
+        requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-io-") -> useVersion(rootProject.libs.versions.kotlinxIo.get())
+        requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-serialization-") -> useVersion(rootProject.libs.versions.kotlinxSerializationJson.get())
+        requested.group == "org.reactivestreams" && requested.name == "reactive-streams" -> useVersion(rootProject.libs.versions.reactiveStreams.get())
+        requested.group == "org.jetbrains.kotlin" &&
+          (requested.name.startsWith("kotlin-stdlib") || requested.name == "kotlin-reflect") -> useVersion(rootProject.libs.versions.kotlin.get())
       }
     }
   }
   // Platform modules must not apply Kotlin/java-library.
   val isPlatform = project.path in platformProjects
+  val isJvmModule = !isPlatform && buildFile.isFile
 
   val skipDependencyAnalysis =
-    isPlatform ||
+    !isJvmModule ||
       project.path.startsWith(":benchmarks:") ||
       project.path.startsWith(":examples:")
 
-  if (!isPlatform) {
+  if (isJvmModule) {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "java-library")
     if (!skipDependencyAnalysis) {
@@ -99,7 +124,7 @@ subprojects {
     apply(plugin = "com.google.devtools.ksp")
   }
 
-  if (!isPlatform) {
+  if (isJvmModule) {
     extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
       jvmToolchain(21)
     }
@@ -114,7 +139,7 @@ subprojects {
 
   // Repositories are declared only in settings.gradle.kts (FAIL_ON_PROJECT_REPOS).
 
-  if (!isPlatform) {
+  if (isJvmModule) {
     // Build-internal third-party platforms and security floors. Added at resolution time to
     // every resolvable configuration that sees a Kastor project (the same reach the former
     // BOM-borne floors had), and never to a declared/published scope, so consumers' POMs and
@@ -134,9 +159,9 @@ subprojects {
     dependencies {
       add("api", platform(project(":bom")))
       add("testImplementation", rootProject.libs.kotlin.test)
-      add("testImplementation", rootProject.libs.junit.jupiter)
+      add("testImplementation", rootProject.libs.junit.api)
+      add("testRuntimeOnly", rootProject.libs.junit.engine)
       add("testRuntimeOnly", rootProject.libs.junit.platform.launcher)
-      add("implementation", rootProject.libs.slf4j.api)
 
       // Add KSP dependencies for projects that use it (but not the processor itself or runtime).
       // Exclude simple hello-world and hello-codegen examples (they can enable KSP manually if needed).
@@ -194,6 +219,9 @@ subprojects {
               value = "COVEREDRATIO"
               minimum = floor.toBigDecimal()
             }
+            branchCoverageFloors[project.path]?.let { branchFloor ->
+              limit { counter = "BRANCH"; value = "COVEREDRATIO"; minimum = branchFloor.toBigDecimal() }
+            }
           }
         }
       }
@@ -235,7 +263,7 @@ subprojects {
   }
 
   pluginManager.withPlugin("maven-publish") {
-    if (!isPlatform) {
+    if (isJvmModule) {
       apply(plugin = "org.jetbrains.dokka")
       extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
@@ -354,7 +382,7 @@ gradle.taskGraph.whenReady {
 // Collect only current task outputs, retaining module paths to avoid filename collisions.
 val collectArtifacts = tasks.register<org.gradle.api.tasks.Sync>("collectArtifacts") {
   duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.FAIL
-  subprojects.forEach { p ->
+  subprojects.filter { it.buildFile.isFile }.forEach { p ->
     dependsOn("${p.path}:assemble")
     if (p.path !in platformProjects) {
       listOf("jar", "sourcesJar", "javadocJar").forEach { taskName ->
@@ -370,7 +398,7 @@ val collectArtifacts = tasks.register<org.gradle.api.tasks.Sync>("collectArtifac
 // Root aggregate build task
 tasks.register("build") {
   dependsOn(collectArtifacts)
-  dependsOn(subprojects.map { "${it.path}:check" })
+  dependsOn(subprojects.filter { it.buildFile.isFile }.map { "${it.path}:check" })
   dependsOn("conformanceSmokeTest")
 }
 

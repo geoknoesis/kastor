@@ -5,10 +5,17 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":rdf:core"))
-    implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.slf4j.api)
+  testImplementation(libs.junit.params)
+
+  testImplementation(libs.jena.core)
+  testImplementation(libs.opentest4j)
+  implementation(project(":rdf:sparql-contract"))
+
+    api(project(":rdf:core"))
+    api(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.assertj.core)
+
     testImplementation(project(":rdf:jena"))
     testImplementation(project(":rdf:rdf4j"))
     testImplementation(libs.jena.arq)

@@ -6,12 +6,14 @@ plugins {
 }
 
 dependencies {
+  testImplementation(libs.jena.core)
+  implementation(libs.kotlinx.serialization.core)
+
   api(project(":rdf:core"))
   api(project(":tools:onto-quality"))
   implementation(libs.kotlinx.serialization.json)
-  testImplementation(project(":rdf:jena"))
-  testImplementation(libs.jena.arq)
-  testImplementation(project(":rdf:testkit"))
+  testRuntimeOnly(project(":rdf:jena"))
+  testRuntimeOnly(libs.jena.arq)
 }
 
 publishing {

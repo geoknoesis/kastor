@@ -5,6 +5,10 @@ plugins {
 }
 
 dependencies {
+  testImplementation(libs.jena.arq)
+  testImplementation(libs.jena.core)
+  api(project(":rdf:sparql-contract"))
+
   api(project(":rdf:core"))
   testImplementation(project(":rdf:jena"))
   // Tests only: the reference parser the streaming result decoder (JsonBindingRows) is compared with.
