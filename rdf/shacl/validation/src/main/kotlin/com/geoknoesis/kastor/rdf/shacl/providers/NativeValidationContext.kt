@@ -28,7 +28,7 @@ internal class NativeValidationContext(
     val dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = instrumentation.dropRecordedRead
     /**
      * Pattern evaluations of this run that used up their whole step budget. Past the full-budget exhaustion limit
-     * of them, a value that has not been matched before gets a reduced budget (see [NativeShaclValidator.matchPattern]).
+     * of them, a value that has not been matched before gets a reduced budget (see [NativePatternEvaluator]).
      */
     var patternBudgetExhaustions = 0
     val memo = HashMap<AtomKey, Conformance>()
@@ -42,7 +42,7 @@ internal class NativeValidationContext(
     /**
      * Pattern evaluations of this run that are remembered, per (pattern constraint, lexical form): every
      * undecided one, every one that ran on the pattern evaluation thread, and every one that took at least the
-     * reduced budget of its value (see [NativeShaclValidator.matchPattern]). The answer for a value is the same every
+     * reduced budget of its value (see [NativePatternEvaluator]). The answer for a value is the same every
      * time it is asked, and an expensive budget is spent once per value rather than once per focus node or solver pass.
      */
     val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()

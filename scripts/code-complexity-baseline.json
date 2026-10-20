@@ -10,11 +10,8 @@
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "kastor-gen/runtime/src/main/kotlin/com/geoknoesis/kastor/gen/runtime/GraphStateCache.kt": {
-      "lines": 961,
-      "functions": {
-        "pin:7bf6982d36a2": 50
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
+      "lines": 942,
+      "reason": "Cache lifecycle and admission orchestration; handle matching extracted and all function branch counts now within the default limit. Remaining file length is frozen for further design review."
     },
     "rdf/cli/src/main/kotlin/com/geoknoesis/kastor/rdf/cli/KastorRdfCli.kt": {
       "lines": 787,
@@ -112,17 +109,6 @@
     "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/ShapesCompiler.kt": {
       "lines": 1108,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/providers/NativePropertyConstraints.kt": {
-      "functions": {
-        "NativeShaclValidator.evaluateConstraint:56ce65a85802": 171,
-        "fingerprints:97c48b042bc6": 167
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/providers/NativeShaclValidator.kt": {
-      "lines": 1319,
-      "reason": "Merged round-ten pattern consistency and streaming SPARQL fixes into the extracted validator. Main entry point is 1319 lines versus 2306 upstream. Frozen at integration; further growth requires review."
     },
     "rdf/sparql/contract/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings.kt": {
       "lines": 938,
