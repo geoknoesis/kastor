@@ -574,7 +574,7 @@ class GraphStateCacheBoundsTest {
                                 val expected = subject.inner.getTriples().toSet()
                                 f.cache.use(subject.handle()) { state ->
                                     if (state.triples != expected) stale += "thread $t step $step graph $index: ${state.triples.size} triples, expected ${expected.size}"
-                                    if (state.released && exclusive) stale += "thread $t step $step graph $index: released state"
+                                    if (state.released) stale += "thread $t step $step graph $index: released state"
                                 }
                             }
                         }

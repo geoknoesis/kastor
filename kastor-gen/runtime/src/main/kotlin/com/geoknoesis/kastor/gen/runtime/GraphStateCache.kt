@@ -13,55 +13,6 @@ import java.util.concurrent.atomic.AtomicIntegerArray
 import java.util.concurrent.locks.ReentrantLock
 
 /**
- * Marker for graphs whose `equals` / `hashCode` identify the live graph they denote ("handle equality"): two handles
- * are equal exactly when they denote the same graph of the same store (for example the same named graph of the same
- * repository instance), whatever the content of the graph is at the time. Both functions must be cheap, must not
- * read the graph, and must not block.
- *
- * [GraphStateCache] finds the state built for an equal handle when a handle is obtained anew for every call
- * (`repository.getGraph(name)`), and replaces that state in place when the content of the graph changed.
- */
-@KastorGenInternalApi
-interface HandleEqualGraph : RdfGraph
-
-/**
- * A stamped graph that can tell whether its current [modificationStamp] is private to the calling thread's open
- * transaction, i.e. identifies content with **uncommitted** writes of that thread, which no other thread reads and
- * which stops existing when the transaction ends.
- *
- * [GraphStateCache] does not keep a state built for such a stamp (it could never be hit again once the transaction
- * ends, and no other thread may be served it): the caller gets a private state that is released when its use ends,
- * and the state cached for the committed content stays in place for the other threads.
- *
- * Implementing this interface is optional. A graph that does not implement it is still handled correctly as long as
- * its stamps follow the contract of [VersionedRdfGraph] (a stamp identifies the content the calling thread would read
- * now, and is never reused): the state of the graph is then rebuilt in place whenever the stamp a caller reads is not
- * one the cached state is known for. Providers that cannot implement this interface can be described with
- * [GraphStateCache.Settings.transactionPrivate] instead.
- */
-@KastorGenInternalApi
-interface TransactionScopedGraph : VersionedRdfGraph {
-    /**
-     * True when the value [modificationStamp] returns to the calling thread right now is private to its open
-     * transaction. Must be cheap and must not block.
-     */
-    val isStampTransactionPrivate: Boolean
-}
-
-/**
- * Thrown by a validation when every cached and every temporary copy of the data graphs stayed in use for the whole
- * wait and the validator is configured not to build copies beyond its limit.
- */
-class GraphStateCacheSaturatedException(message: String) : IllegalStateException(message)
-
-/**
- * Thrown by a validation whose thread was interrupted while it waited for another caller (for the copy of the data
- * graph that another caller is building, or for a free copy). The interrupt status of the thread is set again before
- * this exception is thrown.
- */
-class GraphStateCacheInterruptedException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
-
-/**
  * Bounded cache of a state derived from the content of data graphs (for example a SHACL engine's own copy of the
  * data), shared by the validation adapters. The state of a graph is rebuilt only when the graph is new to the cache
  * or its content changed.
@@ -135,7 +86,8 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  * state slot under a strict limit is different, see Bound).
  *
  * ## Bound
- * At most [maxEntries] states are cached, plus at most [Settings.maxTemporaryStates] temporary ones:
+ * At most [maxEntries] current generations are cached, plus at most [Settings.maxTemporaryStates] temporary entries.
+ * In shared-reader mode, a reader of a replaced generation also retains it until its [use] block ends:
  * - When a new graph arrives and the cache is full, an entry that no caller is using is released: first one whose
  *   handle was garbage collected, then the least recently used one.
  * - When every entry is in use, the new graph gets a private temporary state that is released when its [use] block
@@ -144,7 +96,7 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  *   be waiting for a repository lock that this caller holds), and then builds a private state **beyond** the limit,
  *   in the caller's thread, which is released when its use ends. With `overflowWaitMillis = null` the limit is
  *   strict: the call waits up to [Settings.temporaryWaitMillis] and then fails with
- *   [GraphStateCacheSaturatedException], and at most `maxEntries + maxTemporaryStates` states exist at any time.
+ *   [GraphStateCacheSaturatedException], and at most `maxEntries + maxTemporaryStates` current entries exist.
  *   That wait is the same for a caller inside a transaction, which may hold its repository lock for all of it: it is
  *   long (10 s by default) and ends in a failure, so choose a small [Settings.temporaryWaitMillis] when callers
  *   hold repository locks and the limit is strict.
@@ -162,8 +114,8 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  * @param maxEntries maximum number of cached states (at least 1).
  * @param exclusive true when a state supports one user at a time: the [use] block then runs under the entry lock and
  *   a rebuild may update the previous state in place. With false, blocks of the same graph run concurrently, a
- *   rebuild always creates a new state, and [release] of the replaced state may be called while a block still reads
- *   it.
+ *   rebuild always creates a new state. A replaced state is released after its last reader leaves [use]. Active
+ *   readers may therefore retain older generations in addition to the cached and temporary entry limits.
  * @param load builds the state for a snapshot of a graph's triples; `previous` is the state to update in place
  *   (only when [exclusive]) or null. Must leave `previous` usable when it throws. Never called concurrently for one
  *   entry; it must not read the data graph.
@@ -377,7 +329,7 @@ class GraphStateCache<S : Any>(
      * known to identify that content (the newest last; a few are kept, because the stamp of a store moves when any
      * of its graphs changes and threads read it at different times).
      */
-    private class Loaded<S>(val state: S, val stamps: LongArray?, val digest: GraphDigest) {
+    private class Loaded<S : Any>(val state: CachedGraphState<S>, val stamps: LongArray?, val digest: GraphDigest) {
         fun isFor(stamp: Long?, digest: GraphDigest?, byContent: Boolean): Boolean =
             if (stamp != null && !byContent) stamps != null && stamp in stamps else this.digest == digest
 
@@ -396,7 +348,7 @@ class GraphStateCache<S : Any>(
         val done = CountDownLatch(1)
     }
 
-    private class Entry<S>(val temporary: Boolean, val counted: Boolean) {
+    private class Entry<S : Any>(val temporary: Boolean, val counted: Boolean) {
         // Guarded by the cache lock.
 
         /** The handles this entry is found by; more than one only under [Settings.assumeImmutable]. */
@@ -556,16 +508,24 @@ class GraphStateCache<S : Any>(
                             flight?.let { endFlight(entry, it) }
                             flight = null
                         }
-                        if (state != null) return block(state)
+                        if (state != null) return block(state.value)
                     }
                 } else {
                     val state = try {
-                        synchronized(entry) { ensure(entry, stamp, digest, snapshot, trusted, ownTransaction) }
+                        synchronized(entry) {
+                            ensure(entry, stamp, digest, snapshot, trusted, ownTransaction)?.also { it.retain() }
+                        }
                     } finally {
                         flight?.let { endFlight(entry, it) }
                         flight = null
                     }
-                    if (state != null) return block(state)
+                    if (state != null) {
+                        try {
+                            return block(state.value)
+                        } finally {
+                            state.relinquish()?.let(::releaseQuietly)
+                        }
+                    }
                 }
                 if (ownTransaction && !entry.temporary) {
                     // The committed state was replaced since the peek: a transaction never loads into a shared entry.
@@ -616,7 +576,7 @@ class GraphStateCache<S : Any>(
         snapshot: Snapshot?,
         trusted: Boolean,
         byContent: Boolean,
-    ): S? {
+    ): CachedGraphState<S>? {
         val current = entry.loaded
         if (current != null && (trusted || current.isFor(stamp, digest, byContent))) return current.state
         if (snapshot == null || digest == null) return null
@@ -628,12 +588,13 @@ class GraphStateCache<S : Any>(
             signal(Event.STAMP_REFRESH)
             return current.state
         }
-        val previous = if (exclusive) current?.state else null
+        val previous = if (exclusive) current?.state?.value else null
         val state = build(snapshot, previous)
-        entry.loaded = Loaded(state, if (stamp != null && !byContent) longArrayOf(stamp) else null, digest)
+        val generation = if (current?.state?.value === state) current.state else CachedGraphState(state)
+        entry.loaded = Loaded(generation, if (stamp != null && !byContent) longArrayOf(stamp) else null, digest)
         signal(Event.LOAD)
-        if (current != null && current.state !== state) releaseQuietly(current.state)
-        return state
+        if (current != null && current.state !== generation) current.state.retire()?.let(::releaseQuietly)
+        return generation
     }
 
     private enum class Mode {
@@ -675,16 +636,7 @@ class GraphStateCache<S : Any>(
                     if (found == null && handleEqual) {
                         // Equal handles are compared outside the lock; an entry is created only once every entry that
                         // could be equal was examined, so two equal handles never get two entries.
-                        val unexamined = ArrayList<Triple<Entry<S>, HandleRef, RdfGraph>>()
-                        for (e in entries) {
-                            if (rejected?.contains(e) == true) continue
-                            for (ref in e.handles) {
-                                if (!ref.equal || ref.hash != hash) continue
-                                val handle = ref.reference.get() ?: continue
-                                if (handle.javaClass === data.javaClass) unexamined += Triple(e, ref, handle)
-                            }
-                        }
-                        if (unexamined.isNotEmpty()) candidates = unexamined
+                        candidates = handleCandidates(data, hash, rejected).takeIf { it.isNotEmpty() }
                     }
                 }
                 if (candidates == null) {
@@ -765,22 +717,7 @@ class GraphStateCache<S : Any>(
                         }
                     }
                     if (found != null) {
-                        if (!found.temporary && found.handles.none { it.reference.get() === data }) {
-                            val live = found.handles.filter { it.reference.get() != null }
-                            if (created || live.isEmpty()) {
-                                found.handles = listOf(HandleRef(referenceFactory(data, handleEqual), handleEqual, hash))
-                                if (created) found.stamped = data is VersionedRdfGraph
-                            } else if (byHandle) {
-                                // The newest of the equal handles replaces the one it was found equal to.
-                                val fresh = HandleRef(referenceFactory(data, handleEqual), handleEqual, hash)
-                                found.handles = (live.filter { it !== verifiedRef } + fresh).takeLast(MAX_HANDLES)
-                            } else if (settings.assumeImmutable) {
-                                // Found by content: a second graph with the same content. Neither changes, so both
-                                // handles denote this state, and the next call finds it without reading the graph.
-                                val fresh = HandleRef(referenceFactory(data, handleEqual), handleEqual, hash)
-                                found.handles = (live + fresh).takeLast(MAX_HANDLES)
-                            }
-                        }
+                        rememberHandle(found, data, handleEqual, hash, created, byHandle, verifiedRef)
                         found.lastUsed = ++useCounter
                         found.lastUsedNanos = clock()
                         found.users++
@@ -805,6 +742,50 @@ class GraphStateCache<S : Any>(
                     list.forEach { set += it.first }
                 }
             }
+        }
+    }
+
+    /** Candidate collection holds the cache lock; actual handle equality is checked after unlocking. */
+    private fun handleCandidates(
+        data: RdfGraph,
+        hash: Int,
+        rejected: Set<Entry<S>>?,
+    ): List<Triple<Entry<S>, HandleRef, RdfGraph>> {
+        val candidates = ArrayList<Triple<Entry<S>, HandleRef, RdfGraph>>()
+        for (entry in entries) {
+            if (rejected?.contains(entry) == true) continue
+            for (ref in entry.handles) {
+                if (!ref.equal || ref.hash != hash) continue
+                val handle = ref.reference.get() ?: continue
+                if (handle.javaClass === data.javaClass) candidates += Triple(entry, ref, handle)
+            }
+        }
+        return candidates
+    }
+
+    /** Refreshes handle metadata while the cache lock is held; never calls graph equality or reads graph content. */
+    private fun rememberHandle(
+        entry: Entry<S>,
+        data: RdfGraph,
+        handleEqual: Boolean,
+        hash: Int,
+        created: Boolean,
+        byHandle: Boolean,
+        verifiedRef: HandleRef?,
+    ) {
+        if (entry.temporary || entry.handles.any { it.reference.get() === data }) return
+        val live = entry.handles.filter { it.reference.get() != null }
+        if (!created && live.isNotEmpty() && !byHandle && !settings.assumeImmutable) return
+        val fresh = HandleRef(referenceFactory(data, handleEqual), handleEqual, hash)
+        if (created || live.isEmpty()) {
+            entry.handles = listOf(fresh)
+            if (created) entry.stamped = data is VersionedRdfGraph
+        } else if (byHandle) {
+            // Replace the equal handle that was compared with the most recently used one.
+            entry.handles = (live.filter { it !== verifiedRef } + fresh).takeLast(MAX_HANDLES)
+        } else if (settings.assumeImmutable) {
+            // An immutable graph found by content may be found by this handle without another graph read.
+            entry.handles = (live + fresh).takeLast(MAX_HANDLES)
         }
     }
 
@@ -873,7 +854,7 @@ class GraphStateCache<S : Any>(
     private fun releaseAll(released: List<Entry<S>>, rethrow: Boolean) {
         var failure: Throwable? = null
         for (entry in released) {
-            val state = synchronized(entry) { entry.loaded.also { entry.loaded = null } }?.state ?: continue
+            val state = synchronized(entry) { entry.loaded.also { entry.loaded = null } }?.state?.retire() ?: continue
             try {
                 release(state)
             } catch (e: Throwable) {
