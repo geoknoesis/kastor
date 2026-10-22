@@ -14,6 +14,7 @@ val buildTimeOnly = setOf(":kastor-gen:processor", ":kastor-gen:gradle-plugin")
 
 val bomProjects = listOf(
     ":rdf:core",
+    ":rdf:holon",
     ":rdf:sparql-contract",
     ":rdf:sparql-lang",
     ":rdf:shacl-dsl",

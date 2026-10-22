@@ -32,6 +32,7 @@ val platformProjects = setOf(":bom", ":build-platform")
  */
 val coverageFloors = mapOf(
   ":rdf:core" to "0.78", // measured 80.7% with serialization dispatch and round-trip contract tests
+  ":rdf:holon" to "0.80",
   ":rdf:jena" to "0.85",
   ":rdf:rdf4j" to "0.90",
   ":rdf:reasoning" to "0.65",

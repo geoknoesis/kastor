@@ -12,6 +12,7 @@
     "kastor-gen/validation-rdf4j": 58,
     "rdf/cli": 39,
     "rdf/core": 592,
+    "rdf/holon": 56,
     "rdf/examples": 8,
     "rdf/jena": 163,
     "rdf/jena-reasoning": 25,

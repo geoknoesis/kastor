@@ -1,0 +1,174 @@
+public final class com/geoknoesis/kastor/rdf/holon/Holon {
+	public final fun aggregated ()Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public final fun asDataset (Lcom/geoknoesis/kastor/rdf/holon/HolonScope;ZLkotlin/jvm/functions/Function0;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public static synthetic fun asDataset$default (Lcom/geoknoesis/kastor/rdf/holon/Holon;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;ZLkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public final fun convert (Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;)Lcom/geoknoesis/kastor/rdf/holon/HolonConversion;
+	public static synthetic fun convert$default (Lcom/geoknoesis/kastor/rdf/holon/Holon;Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonConversion;
+	public final fun direct ()Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public final fun effectiveShapes (Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getContext ()Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public final fun getId ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun global ()Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public fun hashCode ()I
+	public final fun resolve (Lcom/geoknoesis/kastor/rdf/holon/HolonScope;)Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public static synthetic fun resolve$default (Lcom/geoknoesis/kastor/rdf/holon/Holon;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public fun toString ()Ljava/lang/String;
+	public final fun validate-Jp1kQnw (Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonValidation;
+	public static synthetic fun validate-Jp1kQnw$default (Lcom/geoknoesis/kastor/rdf/holon/Holon;Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonValidation;
+	public final fun visible ()Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonContext {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/holon/HolonContext$Companion;
+	public final fun effectiveShapes (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getAssertedGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getDefaultGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getFiltered ()Z
+	public final fun getMetadata ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getNamedGraphs ()Ljava/util/Map;
+	public final fun getProfile ()Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public final fun getRegistry ()Ljava/util/Set;
+	public final fun getSnapshotId ()Ljava/lang/String;
+	public final fun getSourceId ()Ljava/lang/String;
+	public final fun resolve (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;)Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public static synthetic fun resolve$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonContext$Companion {
+	public final fun fromDataset (Lcom/geoknoesis/kastor/rdf/Dataset;Lcom/geoknoesis/kastor/rdf/RdfGraph;ZZLjava/lang/String;Z)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public static synthetic fun fromDataset$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext$Companion;Lcom/geoknoesis/kastor/rdf/Dataset;Lcom/geoknoesis/kastor/rdf/RdfGraph;ZZLjava/lang/String;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public final fun fromGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;ZLjava/lang/String;Z)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public static synthetic fun fromGraph$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext$Companion;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;ZLjava/lang/String;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public final fun of (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Ljava/lang/String;Z)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public static synthetic fun of$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext$Companion;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Ljava/lang/String;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonConversion {
+	public final fun getContext ()Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public final fun getDerivedMappings ()Ljava/util/Map;
+	public final fun getDiscardedAssertions ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getPreservation ()Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonConversionKt {
+	public static final fun convert (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;)Lcom/geoknoesis/kastor/rdf/holon/HolonConversion;
+	public static synthetic fun convert$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonConversion;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonDsl {
+	public final fun content (Lcom/geoknoesis/kastor/rdf/RdfGraph;)V
+	public final fun content (Lkotlin/jvm/functions/Function1;)V
+	public final fun getGraphName ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun getId ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun imports ([Lcom/geoknoesis/kastor/rdf/RdfResource;)V
+	public final fun importsShapes (Ljava/lang/Iterable;)V
+	public final fun importsShapes-J_zqV-w (Ljava/lang/String;)V
+	public final fun parent (Lcom/geoknoesis/kastor/rdf/RdfResource;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonDslKt {
+	public static final fun holons (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+	public static synthetic fun holons$default (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonContext;
+}
+
+public abstract interface annotation class com/geoknoesis/kastor/rdf/holon/HolonDslMarker : java/lang/annotation/Annotation {
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonError : java/lang/Enum {
+	public static final field CONFLICTING_MAPPING Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field ILL_FORMED_SHAPES_GRAPH Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field INVALID_GRAPH_NAME Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field MISSING_BASE_ASSERTION Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field MISSING_REIFICATION Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field MISSING_SHAPES_GRAPH Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field MULTIPLE_PARENTS Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field NON_TRIPLE_TERM_REIFICATION Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field PARENT_CYCLE Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNKNOWN_HOLON Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNMAPPED_BLANK_NODE_HOLON Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNREGISTERED_MEMBERSHIP_HOLON Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNREGISTERED_PARENT_ENDPOINT Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNREPRESENTABLE_CONVERSION Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNRESOLVED_IMPORT Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static final field UNSUPPORTED_CAPABILITY Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getId ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonException : java/lang/RuntimeException {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/holon/HolonError;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/holon/HolonError;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCondition ()Lcom/geoknoesis/kastor/rdf/holon/HolonError;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonKt {
+	public static final fun get (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/holon/Holon;
+	public static final fun holon (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/holon/Holon;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonPreservation : java/lang/Enum {
+	public static final field ASSERTION Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;
+	public static final field CONTENT Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/holon/HolonPreservation;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonProfile : java/lang/Enum {
+	public static final field DATASET Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public static final field MIXED Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public static final field REIFIER Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonQueriesKt {
+	public static final fun asDataset (Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;ZLkotlin/jvm/functions/Function0;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public static synthetic fun asDataset$default (Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;ZLkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonResolution {
+	public final fun getAttributedGraphs ()Ljava/util/Map;
+	public final fun getFiltered ()Z
+	public final fun getGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getHolon ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun getMetadata ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getProfile ()Lcom/geoknoesis/kastor/rdf/holon/HolonProfile;
+	public final fun getScope ()Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public final fun getSnapshotId ()Ljava/lang/String;
+	public final fun getSourceId ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonScope : java/lang/Enum {
+	public static final field AGGREGATED Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public static final field DIRECT Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public static final field GLOBAL Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public static final field VISIBLE Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/holon/HolonScope;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonValidation {
+	public final fun getEffectiveShapes ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getEntailmentRegime-tqZU9bw ()Ljava/lang/String;
+	public final fun getReport ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public final fun getResolution ()Lcom/geoknoesis/kastor/rdf/holon/HolonResolution;
+	public final fun getShapeGraphNames ()Ljava/util/Set;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonValidationKt {
+	public static final fun validate-TYQxqFA (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/holon/HolonValidation;
+	public static synthetic fun validate-TYQxqFA$default (Lcom/geoknoesis/kastor/rdf/holon/HolonContext;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Map;Lcom/geoknoesis/kastor/rdf/holon/HolonScope;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/holon/HolonValidation;
+}
+
+public final class com/geoknoesis/kastor/rdf/holon/HolonsDsl {
+	public final fun holon (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun holon$default (Lcom/geoknoesis/kastor/rdf/holon/HolonsDsl;Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+

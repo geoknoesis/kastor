@@ -47,6 +47,7 @@ flowchart TB
   subgraph rdfstack ["RDF stack"]
     sp_c[rdf:sparql-contract]
     core[rdf:core]
+    holon[rdf:holon]
     sp_l[rdf:sparql-lang]
     sh_dsl[rdf:shacl-dsl]
     jena[rdf:jena]
@@ -68,6 +69,8 @@ flowchart TB
   gen --> kgr
   kgr --> core
   core --> sp_c
+  holon --> core
+  holon --> shacl
   sp_l --> core
   sh_dsl --> core
   sh_dsl --> sp_l
@@ -90,6 +93,15 @@ flowchart TB
 Exact dependency edges differ per module; the diagram shows **typical** vertical relationships.
 
 ## Adapter modules and classpath shape
+
+**RDF-H**
+
+The optional `:rdf:holon` module (`rdf/holon`, artifact `rdf-holon`) depends on `rdf:core` and
+`rdf:shacl-validation`. Registry resolution, content extraction, conversion, and attributed snapshots use
+Kastor terms without provider types. Validation uses the native SHACL engine and a bundled W3C syntax graph;
+it needs an installed Turtle parser to read that bundled resource. The standard-SPARQL bridge requires an
+installed query provider. Public `Dataset` graph names are IRIs; RDF-H snapshots additionally retain
+blank-node graph names. See [RDF-H usage](../guides/how-to-use-datasets.md#rdf-h-holon-scopes) for the query limits.
 
 **Stores vs reasoning SPI**
 

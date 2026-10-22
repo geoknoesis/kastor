@@ -14,6 +14,18 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Added
+
+- Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
+  dataset/reifier/mixed profiles, mode-specific errors, direct/aggregated/visible/global scopes,
+  attributed results, checked content/assertion-preserving conversion, and per-holon SHACL validation.
+  `RDFH` vocabulary constants and the `h:` DSL prefix are available in core. The query bridge uses standard
+  SPARQL and reports unsupported blank-node or empty graph names instead of dropping attribution.
+  The module includes an external JSON adapter for the RDF-H conversion/validation conformance suite.
+- Added a `holons { holon(id) { content { ... } } }` Kotlin DSL with explicit parent, content-import
+  and shapes-import declarations. Snapshot-bound `Holon` handles expose content, scopes, query datasets,
+  validation and context-wide conversion through the same checked RDF-H processing model.
+
 ### Fixed (repository review)
 
 - Generated-code RDF4J validation rejects unsupported directional literals instead of discarding direction and

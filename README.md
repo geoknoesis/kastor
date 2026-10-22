@@ -57,6 +57,10 @@ Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces 
 
 ### What Kastor Adds
 
+**RDF-H 0.8:** the optional `rdf-holon` module resolves an explicit holon registry over named graphs,
+RDF 1.2 reifiers, or declared mixed data. It supports direct, aggregated and visible content,
+attribution, checked conversion, and scoped SHACL validation. See [RDF-H usage](docs/kastor/guides/how-to-use-datasets.md#rdf-h-holon-scopes).
+
 🎨 **Natural language DSL**: `person has FOAF.name with "Alice"` instead of verbose Model API calls  
 🔒 **Type-safe SPARQL**: Compile-time validated queries with Kotlin-idiomatic builders  
 🚀 **Kotlin idioms**: Extension functions, sealed classes, null safety, coroutines  

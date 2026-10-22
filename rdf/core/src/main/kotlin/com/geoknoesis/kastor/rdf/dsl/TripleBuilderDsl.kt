@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.GEO
 import com.geoknoesis.kastor.rdf.vocab.PROV
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.RDFH
 import com.geoknoesis.kastor.rdf.vocab.SKOS
 import com.geoknoesis.kastor.rdf.vocab.TIME
 import com.geoknoesis.kastor.rdf.vocab.VOID
@@ -29,6 +30,7 @@ internal object DslBlankNodes {
 /** Built-in prefix mappings shared by all DSLs. */
 internal fun builtInPrefixes(): MutableMap<String, String> = mutableMapOf(
     "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "h" to RDFH.namespace,
     "rdfs" to "http://www.w3.org/2000/01/rdf-schema#",
     "owl" to "http://www.w3.org/2002/07/owl#",
     "sh" to "http://www.w3.org/ns/shacl#",

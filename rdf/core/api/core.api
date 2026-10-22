@@ -2604,6 +2604,27 @@ public final class com/geoknoesis/kastor/rdf/vocab/RDF : com/geoknoesis/kastor/r
 	public fun term-XER-m2Y (Ljava/lang/String;)Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/vocab/RDFH : com/geoknoesis/kastor/rdf/vocab/Vocabulary {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/vocab/RDFH;
+	public fun contains-J_zqV-w (Ljava/lang/String;)Z
+	public final fun getAssertedBaseTripleShape-tqZU9bw ()Ljava/lang/String;
+	public final fun getCompleteHolon-tqZU9bw ()Ljava/lang/String;
+	public final fun getCompositionHierarchyShape-tqZU9bw ()Ljava/lang/String;
+	public final fun getContentGraph-tqZU9bw ()Ljava/lang/String;
+	public final fun getContentGraphMappingShape-tqZU9bw ()Ljava/lang/String;
+	public final fun getHolon-tqZU9bw ()Ljava/lang/String;
+	public final fun getHolonIntegrityShape-tqZU9bw ()Ljava/lang/String;
+	public final fun getImports-tqZU9bw ()Ljava/lang/String;
+	public final fun getImportsShapes-tqZU9bw ()Ljava/lang/String;
+	public final fun getInHolon-tqZU9bw ()Ljava/lang/String;
+	public fun getNamespace ()Ljava/lang/String;
+	public final fun getParentHolon-tqZU9bw ()Ljava/lang/String;
+	public fun getPrefix ()Ljava/lang/String;
+	public final fun getReifierMembershipShape-tqZU9bw ()Ljava/lang/String;
+	public fun localname-J_zqV-w (Ljava/lang/String;)Ljava/lang/String;
+	public fun term-XER-m2Y (Ljava/lang/String;)Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/rdf/vocab/RDFS : com/geoknoesis/kastor/rdf/vocab/Vocabulary {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/vocab/RDFS;
 	public fun contains-J_zqV-w (Ljava/lang/String;)Z

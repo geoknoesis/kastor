@@ -11,6 +11,7 @@ This section covers the advanced features and capabilities of the Kastor RDF fra
 
 ### **Data Validation**
 - [SHACL Validation](shacl-validation.md) - Constraint validation using SHACL shapes
+- [RDF-H Holon Scopes](../guides/how-to-use-datasets.md#rdf-h-holon-scopes) - Explicit content units, hierarchy, imports, conversion, and scoped validation
 - [Ontology Quality](ontology-quality.md) — Curated ontology pitfall catalogues (`onto-quality`), optional **semantic** (embedding) tier, optional **reasoning** tier (Jena / HermiT, **K07**)
 
 ## 🔧 Feature Architecture
