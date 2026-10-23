@@ -65,7 +65,7 @@ class UnsupportedShaclFeatureException(
 
 /**
  * A SHACL-SPARQL query breaks the pre-binding restrictions (`MINUS`, `SERVICE`, `VALUES`, re-binding a pre-bound
- * variable, or a sub-query that does not project `$this`).
+ * variable).
  */
 class SparqlPreBindingRestrictionException(message: String, cause: Throwable? = null) :
     ShapeCompileException(message, cause)

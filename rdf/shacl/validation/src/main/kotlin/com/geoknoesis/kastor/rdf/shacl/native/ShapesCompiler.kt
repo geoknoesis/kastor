@@ -950,11 +950,9 @@ internal object ShapesCompiler {
         val text = (index.objects(node, SHACL.select).singleOrNull() as? Literal)?.lexical
             ?: throw ShapeCompileException("SPARQL constraint $node must have exactly one sh:select string literal")
         // $PATH is replaced only as a variable token, never inside strings, IRIs or comments.
-        val body = SparqlQueryTemplate.substitutePath(text) {
-            val p = path ?: throw ShapeCompileException("SPARQL constraint $node uses \$PATH but is not attached to a property shape")
-            renderSparqlPath(p)
-        }
-        SparqlQueryTemplate.restrictionViolation(body)?.let { what ->
+        // On a node shape $PATH stays unbound.
+        val body = SparqlQueryTemplate.substitutePath(text, path?.let { { renderSparqlPath(it) } })
+        SparqlQueryTemplate.restrictionViolation(body, SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND)?.let { what ->
             throw SparqlPreBindingRestrictionException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
         }
         val query = SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)) + body
@@ -962,7 +960,7 @@ internal object ShapesCompiler {
         val sev = if (severityIris.isEmpty()) null else parseSeverityValues(severityIris, ViolationSeverity.VIOLATION)
         return PropertyConstraint.Sparql(
             constraintNode = node,
-            template = SparqlQueryTemplate.compile(query),
+            template = SparqlQueryTemplate.compile(query, SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND),
             messages = index.objects(node, SHACL.message).filterIsInstance<Literal>(),
             severity = sev?.level,
             severityCustomIri = sev?.customIri,

@@ -102,6 +102,16 @@ class SparqlPreBindingProviderTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `sub-select without this works for IRI focus nodes and fails for blank-node focus nodes`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetSubjectsOf ex:p ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { { SELECT ?y WHERE { ${'$'}this <http://example.org/p> ?y . FILTER (?y > 1) } } }''' ] .
+        """
+        assertEquals(listOf(ex("b")), validate(provider, "ex:a ex:p 1 . ex:b ex:p 2 .", shapes).violations.map { it.focusNode })
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "[] ex:p 2 .", shapes) }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `validateDataset on a repository queries it in place without copying`(provider: String) {
         val repo = repository(provider)
         repo.use {

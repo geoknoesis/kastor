@@ -21,9 +21,12 @@ internal class SparqlToken(val kind: Kind, val text: String) {
 internal object SparqlLexer {
     private val iriRef = java.util.regex.Pattern.compile("<[^<>\"{}|^`\\\\\\u0000-\\u0020]*>")
 
-    private fun isVariableChar(c: Char): Boolean =
+    fun isVariableChar(c: Char): Boolean =
         // SPARQL VARNAME: PN_CHARS_U, digits, U+00B7, U+0300..U+036F, U+203F..U+2040 (code points kept ASCII in source).
         c.isLetterOrDigit() || c == '_' || c.code == 0xB7 || c.code in 0x300..0x36F || c.code in 0x203F..0x2040
+
+    /** First character of a SPARQL VARNAME: PN_CHARS_U or a digit (the middle dot and combining marks only follow). */
+    fun isVariableStart(c: Char): Boolean = c.isLetterOrDigit() || c == '_'
 
     private fun isWordStart(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c == ':'
 
@@ -70,7 +73,7 @@ internal object SparqlLexer {
                     i = matcher.end()
                     kind = SparqlToken.Kind.IRI
                 }
-                (c == '?' || c == '$') && i + 1 < query.length && isVariableChar(query[i + 1]) -> {
+                (c == '?' || c == '$') && i + 1 < query.length && isVariableStart(query[i + 1]) -> {
                     i++
                     while (i < query.length && isVariableChar(query[i])) i++
                     kind = SparqlToken.Kind.VARIABLE
@@ -93,8 +96,8 @@ internal object SparqlLexer {
 }
 
 /**
- * A SHACL-SPARQL query with its pre-bound variables (`$this`, `$currentShape`, `$shapesGraph`) located at compile
- * time, so pre-binding is performed by the SHACL engine itself and behaves identically on every SPARQL provider,
+ * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$currentShape`,
+ * `$shapesGraph`, `$value` or a component's parameter names) located at compile time, so pre-binding is performed by the SHACL engine itself and behaves identically on every SPARQL provider,
  * including inside sub-queries.
  *
  * [bind] substitutes IRIs and literals syntactically: in a triple pattern or expression the term replaces the
@@ -167,9 +170,10 @@ internal class SparqlQueryTemplate private constructor(
     }
 
     companion object {
-        val PRE_BOUND_NAMES: Set<String> = setOf("this", "currentShape", "shapesGraph")
+        /** Pre-bound variables of a `sh:sparql` constraint: `$this` plus Kastor's `$currentShape` / `$shapesGraph` extension. */
+        val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this", "currentShape", "shapesGraph")
 
-        fun compile(query: String): SparqlQueryTemplate {
+        fun compile(query: String, preBound: Set<String>): SparqlQueryTemplate {
             val parts = ArrayList<Part>()
             val text = StringBuilder()
             var context = Context.PLAIN
@@ -181,7 +185,7 @@ internal class SparqlQueryTemplate private constructor(
             while (index < tokens.size) {
                 val token = tokens[index]
                 if (token.isWord("BOUND")) {
-                    val bound = matchBoundOfPreBound(tokens, index)
+                    val bound = matchBoundOfPreBound(tokens, index, preBound)
                     if (bound != null) {
                         if (text.isNotEmpty()) { parts.add(Text(text.toString())); text.setLength(0) }
                         parts.add(BoundCheck(tokens.subList(index, bound.first + 1).joinToString("") { it.text }, bound.second))
@@ -206,7 +210,7 @@ internal class SparqlQueryTemplate private constructor(
                         "{", "}" -> context = Context.PLAIN
                     }
                 }
-                if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in PRE_BOUND_NAMES) {
+                if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
                     if (text.isNotEmpty()) { parts.add(Text(text.toString())); text.setLength(0) }
                     val slotContext = if (context != Context.PLAIN && depth == 0) context else Context.PLAIN
                     parts.add(Slot(token.text, token.variableName, slotContext, ordinal++))
@@ -221,7 +225,7 @@ internal class SparqlQueryTemplate private constructor(
         }
 
         /** For `BOUND ( ?preBound )` starting at [start]: (index of the closing parenthesis, variable name), else null. */
-        private fun matchBoundOfPreBound(tokens: List<SparqlToken>, start: Int): Pair<Int, String>? {
+        private fun matchBoundOfPreBound(tokens: List<SparqlToken>, start: Int, preBound: Set<String>): Pair<Int, String>? {
             var i = start + 1
             fun nextSignificant(): SparqlToken? {
                 while (i < tokens.size && !tokens[i].significant) i++
@@ -229,58 +233,104 @@ internal class SparqlQueryTemplate private constructor(
             }
             if (nextSignificant()?.text != "(") return null
             val variable = nextSignificant() ?: return null
-            if (variable.kind != SparqlToken.Kind.VARIABLE || variable.variableName !in PRE_BOUND_NAMES) return null
+            if (variable.kind != SparqlToken.Kind.VARIABLE || variable.variableName !in preBound) return null
             if (nextSignificant()?.text != ")") return null
             return (i - 1) to variable.variableName
         }
 
         /**
-         * SHACL-SPARQL pre-binding restrictions, checked on tokens (never inside strings, IRIs or comments): no
-         * `MINUS`, `SERVICE` or `VALUES`, no `AS` re-binding a pre-bound variable, and sub-queries must project
-         * `$this` when the query uses it (`SELECT *` projects every in-scope variable). Returns a description of
-         * the first violation, or null.
+         * SHACL-SPARQL pre-binding restrictions (spec Appendix A), checked on tokens (never inside strings, IRIs or
+         * comments): no `MINUS`, `SERVICE` or `VALUES`, and no `AS` re-binding any of the [preBound] variables.
+         * A sub-select that uses a pre-bound variable without projecting it is allowed (SHACL 1.2). Returns a
+         * description of the first violation, or null.
          */
-        fun restrictionViolation(query: String): String? {
+        fun restrictionViolation(query: String, preBound: Set<String>): String? {
             val tokens = SparqlLexer.tokenize(query).filter { it.significant }
             for ((index, token) in tokens.withIndex()) {
                 if (token.kind != SparqlToken.Kind.WORD) continue
                 when (token.text.uppercase()) {
                     "MINUS", "SERVICE", "VALUES" -> return token.text.uppercase()
                     "AS" -> tokens.getOrNull(index + 1)?.let { next ->
-                        if (next.kind == SparqlToken.Kind.VARIABLE && next.variableName in PRE_BOUND_NAMES) {
+                        if (next.kind == SparqlToken.Kind.VARIABLE && next.variableName in preBound) {
                             return "AS to re-bind the pre-bound variable \$${next.variableName}"
                         }
                     }
                 }
             }
-            val usesThis = tokens.any { it.kind == SparqlToken.Kind.VARIABLE && it.variableName == "this" }
-            if (!usesThis) return null
-            val selects = tokens.indices.filter { tokens[it].isWord("SELECT") }
-            for (select in selects.drop(1)) {
-                var j = select + 1
-                var projectsThis = false
-                while (j < tokens.size && !tokens[j].isWord("WHERE") && !tokens[j].isWord("FROM") && tokens[j].text != "{") {
-                    val t = tokens[j]
-                    if (t.kind == SparqlToken.Kind.PUNCT && t.text == "*") projectsThis = true
-                    if (t.kind == SparqlToken.Kind.VARIABLE && t.variableName == "this") projectsThis = true
-                    j++
-                }
-                if (!projectsThis) return "a sub-query that does not project \$this"
-            }
             return null
         }
 
-        /** Replaces every `$PATH` variable token (outside strings, IRIs and comments) with [rendered]. */
-        fun substitutePath(query: String, rendered: () -> String): String {
+        /**
+         * Replaces every `$PATH` / `?PATH` variable token (outside strings, IRIs and comments) with the rendered
+         * path. A null [rendered] (node shapes) leaves the variable unbound and the query unchanged.
+         */
+        fun substitutePath(query: String, rendered: (() -> String)?): String {
+            if (rendered == null) return query
             val tokens = SparqlLexer.tokenize(query)
             if (tokens.none { isPathToken(it) }) return query
             val path = rendered()
             return tokens.joinToString("") { if (isPathToken(it)) path else it.text }
         }
 
-        fun usesPath(query: String): Boolean = SparqlLexer.tokenize(query).any { isPathToken(it) }
+        private fun isPathToken(token: SparqlToken) = token.kind == SparqlToken.Kind.VARIABLE && token.variableName == "PATH"
 
-        private fun isPathToken(token: SparqlToken) = token.kind == SparqlToken.Kind.VARIABLE && token.text == "\$PATH"
+        /** Rewrites an `ASK` query into `SELECT (1 AS ?__kastor_ask)`, so one solution means the ASK is true. */
+        fun askAsSelect(query: String): String {
+            val tokens = SparqlLexer.tokenize(query)
+            val ask = tokens.indexOfFirst { it.isWord("ASK") }
+            if (ask < 0) return query
+            return tokens.withIndex().joinToString("") { (i, t) -> if (i == ask) "SELECT (1 AS ?__kastor_ask)" else t.text }
+        }
+
+        /**
+         * Variables projected by the outermost `SELECT` (explicit variables and `(expr AS ?v)` aliases, in order), or
+         * null when the query has no `SELECT` or projects `*`.
+         */
+        fun projectedVariables(query: String): List<String>? {
+            val tokens = SparqlLexer.tokenize(query).filter { it.significant }
+            var i = tokens.indexOfFirst { it.isWord("SELECT") }
+            if (i < 0) return null
+            i++
+            while (i < tokens.size && (tokens[i].isWord("DISTINCT") || tokens[i].isWord("REDUCED"))) i++
+            val projected = ArrayList<String>()
+            var depth = 0
+            while (i < tokens.size) {
+                val t = tokens[i]
+                if (depth == 0 && (t.isWord("WHERE") || t.isWord("FROM") || t.text == "{")) break
+                when {
+                    t.kind == SparqlToken.Kind.PUNCT && t.text == "(" -> depth++
+                    t.kind == SparqlToken.Kind.PUNCT && t.text == ")" -> depth--
+                    t.kind == SparqlToken.Kind.PUNCT && t.text == "*" && depth == 0 -> return null
+                    t.kind == SparqlToken.Kind.VARIABLE && depth == 0 -> projected.add(t.variableName)
+                    t.isWord("AS") && depth == 1 ->
+                        tokens.getOrNull(i + 1)?.takeIf { it.kind == SparqlToken.Kind.VARIABLE }?.let { projected.add(it.variableName) }
+                }
+                i++
+            }
+            return projected
+        }
+
+        /**
+         * The local name of [iri] per SHACL 1.2 SPARQL 4.2.1: the longest NCName at the end of the IRI that is not
+         * immediately preceded by the first colon of the IRI.
+         */
+        fun localName(iri: Iri): String {
+            val value = iri.value
+            val firstColon = value.indexOf(':')
+            var start = value.length
+            while (start > 0 && isNcNameChar(value[start - 1])) start--
+            while (start < value.length && (!isNcNameStart(value[start]) || start - 1 == firstColon)) start++
+            return value.substring(start)
+        }
+
+        private fun isNcNameStart(c: Char) = c.isLetter() || c == '_'
+
+        private fun isNcNameChar(c: Char) =
+            c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c.code == 0xB7 || c.code in 0x300..0x36F || c.code in 0x203F..0x2040
+
+        /** Whether [name] is a SPARQL VARNAME, so `?name` is a legal variable. */
+        fun isVarName(name: String): Boolean =
+            name.isNotEmpty() && SparqlLexer.isVariableStart(name[0]) && name.all { SparqlLexer.isVariableChar(it) }
 
         /** `<iri>`, or null when the IRI contains characters that SPARQL's IRIREF production forbids. */
         fun renderIri(iri: String): String? =
