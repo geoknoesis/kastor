@@ -124,6 +124,7 @@ internal sealed class PropertyConstraint {
         val messages: List<Literal>,
         val severity: ViolationSeverity?,
         val severityCustomIri: Iri?,
+        val annotations: List<SparqlResultAnnotation>,
     ) : PropertyConstraint() {
         /** Pre-bound variables the query references (`this`, `currentShape`, `shapesGraph`). */
         val preBound: Set<String> get() = template.preBound
@@ -964,6 +965,7 @@ internal object ShapesCompiler {
             messages = index.objects(node, SHACL.message).filterIsInstance<Literal>(),
             severity = sev?.level,
             severityCustomIri = sev?.customIri,
+            annotations = compileResultAnnotations(node, index),
         )
     }
 

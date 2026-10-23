@@ -65,6 +65,31 @@ class ValidationReportRdfTest {
         assertTrue(triples.none { it.predicate == KastorShaclVocabulary.resultStatus }, "an ordinary failure has no result status")
     }
 
+    @Test
+    fun `custom source component and annotations are exported`() {
+        val ex = "http://example.org/"
+        val v =
+            ValidationViolation(
+                severity = ViolationSeverity.VIOLATION,
+                constraint = ShaclConstraint(constraintType = ConstraintType.SPARQL_CONSTRAINT),
+                focusNode = Iri("${ex}a"),
+                message = "m",
+                sourceConstraintComponent = Iri("${ex}C"),
+                resultAnnotations = mapOf(Iri("${ex}time") to listOf(com.geoknoesis.kastor.rdf.string("t"))),
+            )
+        val triples = roundTrip(
+            ValidationReport(
+                isValid = false, violations = listOf(v), warnings = emptyList(),
+                statistics = ValidationStatistics(1, 1, 1, 1, 1, emptyMap(), emptyMap(), emptyMap(), Duration.ZERO),
+                validationTime = Duration.ZERO, validatedResources = 1, validatedConstraints = 1,
+            ),
+        )
+        val row = triples.single { it.predicate == SHACL.sourceConstraintComponent }
+        assertEquals(Iri("${ex}C"), row.obj)
+        assertEquals(1, triples.count { it.predicate == SHACL.sourceConstraintComponent })
+        assertTrue(triples.any { it.subject == row.subject && it.predicate == Iri("${ex}time") && it.obj == com.geoknoesis.kastor.rdf.string("t") })
+    }
+
     private val reportNode = Iri("urn:x-test:report")
 
     private fun roundTrip(report: ValidationReport) =

@@ -79,7 +79,7 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
         row - SHACL.resultMessage - v.message
     }
     v.shapeUri?.let { parseReportShapeRef(it) }?.let { row - SHACL.sourceShape - it }
-    v.constraint.constraintType.toSourceConstraintComponentIri()?.let { cc ->
+    (v.sourceConstraintComponent ?: v.constraint.constraintType.toSourceConstraintComponentIri())?.let { cc ->
         row - SHACL.sourceConstraintComponent - cc
     }
     val pathNode = v.resultPathNode
@@ -92,6 +92,7 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
     }
     v.value?.let { row - SHACL.value - it }
     v.sourceConstraint?.let { row - SHACL.sourceConstraint - it }
+    v.resultAnnotations.forEach { (property, values) -> values.forEach { row - property - it } }
     // Kastor extensions (never in the sh: namespace): an undecided constraint is told apart from a failure, and a
     // sh:reifierShape result names its reifier.
     v.resultStatus?.let { row - KastorShaclVocabulary.resultStatus - it }

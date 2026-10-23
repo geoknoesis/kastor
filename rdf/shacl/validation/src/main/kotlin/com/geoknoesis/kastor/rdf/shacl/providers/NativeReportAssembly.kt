@@ -22,6 +22,8 @@ internal fun violation(
     messages: List<Literal> = tpl.messages,
     sourceConstraint: RdfTerm? = null,
     path: ReportPath? = tpl.path,
+    sourceConstraintComponent: Iri? = null,
+    resultAnnotations: Map<Iri, List<RdfTerm>> = emptyMap(),
 ): ValidationViolation =
     ValidationViolation(
         severity = severity,
@@ -36,6 +38,8 @@ internal fun violation(
         resultPathTriples = path?.triples ?: emptyList(),
         resultMessages = messages,
         sourceConstraint = sourceConstraint,
+        sourceConstraintComponent = sourceConstraintComponent,
+        resultAnnotations = resultAnnotations,
     )
 
 /**
