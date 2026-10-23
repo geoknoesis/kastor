@@ -26,15 +26,30 @@ internal object SparqlPrefixes {
             val queue = ArrayDeque<RdfTerm>()
             holders.forEach { queue.addAll(withVersionedSubjects(it, index)) }
             while (queue.isNotEmpty()) {
+                index.tick("SPARQL prefix collection")
                 val holder = queue.removeFirst()
                 if (holder !is RdfResource || !visited.add(holder)) continue
                 declarations(holder, index, out)
                 index.objects(holder, OWL.imports).forEach { queue.addAll(withVersionedSubjects(it, index)) }
             }
         } else {
-            // Only resources that declare prefixes matter; instance-hood includes rdfs:subClassOf.
-            val declarers = index.triples.filter { it.predicate == SHACL.declare }.map { it.subject }.distinct()
-            declarers.filter { r -> graphClasses.any { index.isInstanceOf(r, it) } }.forEach { declarations(it, index, out) }
+            out.putAll(index.graphLevelPrefixes)
+        }
+        return out
+    }
+
+    /** Declarations of all SHACL instances of the graph classes; cached per index as [ShapeGraphIndex.graphLevelPrefixes]. */
+    fun graphLevel(index: ShapeGraphIndex): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        // Only resources that declare prefixes matter; instance-hood includes rdfs:subClassOf.
+        val declarers = LinkedHashSet<RdfResource>()
+        for (t in index.triples) {
+            index.tick("SPARQL prefix collection")
+            if (t.predicate == SHACL.declare) declarers.add(t.subject)
+        }
+        for (r in declarers) {
+            index.tick("SPARQL prefix collection")
+            if (graphClasses.any { index.isInstanceOf(r, it) }) declarations(r, index, out)
         }
         return out
     }

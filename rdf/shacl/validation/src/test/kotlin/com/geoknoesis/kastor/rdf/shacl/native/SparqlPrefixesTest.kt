@@ -4,9 +4,13 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicLong
 
 class SparqlPrefixesTest {
     private fun ex(local: String) = Iri("http://example.org/$local")
@@ -112,5 +116,22 @@ class SparqlPrefixesTest {
                 """.trimIndent(),
             ),
         )
+    }
+
+    @Test
+    fun `graph-level scan is cached per index and stops at the preparation budget`() {
+        val ttl = (0 until 300).joinToString("\n") {
+            "ex:G$it a sh:ShapesGraph ; sh:declare [ sh:prefix \"p$it\" ; sh:namespace \"http://p$it/\" ] ."
+        }
+        val triples = Rdf.parse(header + "\n" + ttl, RdfFormat.TURTLE).getTriples()
+
+        val unlimited = ShapeGraphIndex(triples)
+        assertEquals(300, SparqlPrefixes.collect(ex("C"), unlimited).size)
+        assertSame(unlimited.graphLevelPrefixes, unlimited.graphLevelPrefixes)
+
+        val now = AtomicLong()
+        val index = ShapeGraphIndex(triples, ValidationBudget(Duration.ofNanos(10)) { now.get() })
+        now.set(1_000)
+        assertThrows(ShaclValidationException::class.java) { SparqlPrefixes.collect(ex("C"), index) }
     }
 }

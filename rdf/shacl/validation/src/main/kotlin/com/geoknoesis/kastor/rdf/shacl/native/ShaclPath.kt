@@ -43,6 +43,12 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
         budget.check("shape indexing")
     }
 
+    /** Cooperative budget check for compile-time loops over this index. */
+    fun tick(phase: String) = budget.tick(phase)
+
+    /** Graph-level `sh:declare` prefixes (used by nodes without `sh:prefixes`), computed once per index. */
+    val graphLevelPrefixes: Map<String, String> by lazy { SparqlPrefixes.graphLevel(this) }
+
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 
     fun hasSubject(sub: RdfResource): Boolean = bySubject.containsKey(sub)
