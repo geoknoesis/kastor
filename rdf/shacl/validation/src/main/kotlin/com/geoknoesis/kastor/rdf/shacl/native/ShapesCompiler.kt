@@ -317,7 +317,6 @@ internal object ShapesCompiler {
     private val shSparqlExpr = Iri(SHACL.namespace + "sparqlExpr")
     private val shOptional = Iri(SHACL.namespace + "optional")
     private val shBodyExpression = Iri(SHACL.namespace + "bodyExpression")
-    private val shShapesGraph = Iri(SHACL.namespace + "ShapesGraph")
     private val validatorPredicates = setOf(
         Iri(SHACL.namespace + "validator"), Iri(SHACL.namespace + "nodeValidator"), Iri(SHACL.namespace + "propertyValidator"),
     )
@@ -958,12 +957,7 @@ internal object ShapesCompiler {
         SparqlQueryTemplate.restrictionViolation(body)?.let { what ->
             throw SparqlPreBindingRestrictionException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
         }
-        val prefixes = collectPrefixDeclarations(node, index)
-        val query = prefixes.entries.joinToString("") { (p, ns) ->
-            val namespace = SparqlQueryTemplate.renderIri(ns)
-                ?: throw ShapeCompileException("sh:namespace <$ns> of prefix '$p' is not a valid SPARQL IRI")
-            "PREFIX $p: $namespace\n"
-        } + body
+        val query = SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)) + body
         val severityIris = index.objects(node, SHACL.severity).filterIsInstance<Iri>()
         val sev = if (severityIris.isEmpty()) null else parseSeverityValues(severityIris, ViolationSeverity.VIOLATION)
         return PropertyConstraint.Sparql(
@@ -973,44 +967,6 @@ internal object ShapesCompiler {
             severity = sev?.level,
             severityCustomIri = sev?.customIri,
         )
-    }
-
-    /**
-     * `sh:prefixes` → `sh:declare [ sh:prefix; sh:namespace ]`, following `owl:imports` of the prefix holders. The
-     * prefix declarations of `sh:ShapesGraph` nodes (SHACL 1.2) apply to every query for prefixes not declared
-     * through `sh:prefixes`; a `PREFIX` written in the query text itself still takes precedence.
-     */
-    private fun collectPrefixDeclarations(node: RdfResource, index: ShapeGraphIndex): Map<String, String> {
-        val out = LinkedHashMap<String, String>()
-        val visited = HashSet<RdfTerm>()
-        val queue = ArrayDeque(index.objects(node, SHACL.prefixes))
-        while (queue.isNotEmpty()) {
-            val holder = queue.removeFirst()
-            if (holder !is RdfResource || !visited.add(holder)) continue
-            for (decl in index.objects(holder, SHACL.declare)) {
-                val d = decl as? RdfResource ?: throw ShapeCompileException("sh:declare value must be a resource: $decl")
-                val prefix = (index.objectSingle(d, SHACL.prefixProperty) as? Literal)?.lexical
-                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:prefix literal")
-                val namespace = (index.objectSingle(d, SHACL.namespaceProperty) as? Literal)?.lexical
-                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:namespace literal")
-                val existing = out.putIfAbsent(prefix, namespace)
-                if (existing != null && existing != namespace) {
-                    throw ShapeCompileException("Conflicting sh:declare for prefix '$prefix': <$existing> vs <$namespace>")
-                }
-            }
-            queue.addAll(index.objects(holder, OWL.imports))
-        }
-        for (shapesGraph in index.subjects(RDF.type, shShapesGraph)) {
-            for (decl in index.objects(shapesGraph, SHACL.declare)) {
-                val d = decl as? RdfResource ?: throw ShapeCompileException("sh:declare value must be a resource: $decl")
-                val prefix = (index.objectSingle(d, SHACL.prefixProperty) as? Literal)?.lexical
-                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:prefix literal")
-                val namespace = (index.objectSingle(d, SHACL.namespaceProperty) as? Literal)?.lexical
-                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:namespace literal")
-                out.putIfAbsent(prefix, namespace)
-            }
-        }
-        return out
     }
 
     /** Renders a SHACL property path as a SPARQL 1.1 property path (for `$PATH` substitution). */
