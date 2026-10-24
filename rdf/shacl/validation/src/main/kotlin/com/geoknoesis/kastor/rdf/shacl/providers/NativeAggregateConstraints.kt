@@ -141,8 +141,9 @@ private fun collectClosedByTypesProperties(focus: RdfResource, ctx: NativeValida
  *
  * A computed `sh:uniqueValuesFor` (SHACL 1.2 Node Expressions §8) gives each focus node V its own properties
  * ([resolveUniqueValuesFor]): V has a result when another target has the same values as V for all of them. The keys
- * are indexed once per property, and each focus node is compared only with the targets that share its rarest value
- * set, so distinct property lists do not each cost a pass over the targets. Deactivation is checked before the
+ * are indexed once per property; per property list, the composite keys are counted over the targets that share a focus
+ * node's rarest value set, each such set once, so distinct property lists do not each cost a pass over the targets
+ * and a value shared by many targets is not rescanned per focus node. Deactivation is checked before the
  * properties are resolved.
  */
 internal fun NativeShaclValidator.validateUniqueValuesForShape(
@@ -252,17 +253,24 @@ private fun NativeShaclValidator.validateDynamicUniqueValuesFor(
         byTarget
     }
     for ((props, foci) in byProps) {
+        // Per property list, how many targets have each composite key (the ids of their value sets), counted over the
+        // buckets the focus nodes need, each scanned once for the list and each target counted once.
+        val counts = HashMap<List<Int?>, Int>()
+        val scanned = HashSet<Pair<Int, Int>>()
+        val counted = HashSet<RdfResource>()
         for (focus in foci) {
-            // The targets with the same values as the focus node for every property: all of them are in the targets
-            // that share its value set for the property where that set is the rarest. A focus node with no value for
-            // any property has no key.
+            // The targets with the same values as the focus node for every property are all in the targets that share
+            // its value set for the property where that set is the rarest, so once that bucket is counted, the count
+            // of its key is complete. A focus node with no value for any property has no key.
             val own = props.map { idsOf(it)[focus] }
             val rarest = props.indices.filter { own[it] != null }.minByOrNull { buckets.getValue(props[it]).getValue(own[it]!!).size } ?: continue
-            var shared = 0
-            for (candidate in buckets.getValue(props[rarest]).getValue(own[rarest]!!)) {
-                ctx.budget.tick("uniqueValuesFor")
-                if (props.indices.all { i -> ids.getValue(props[i])[candidate] == own[i] }) shared += multiplicity.getValue(candidate)
+            if (scanned.add(rarest to own[rarest]!!)) {
+                for (candidate in buckets.getValue(props[rarest]).getValue(own[rarest]!!)) {
+                    ctx.budget.tick("uniqueValuesFor")
+                    if (counted.add(candidate)) counts.merge(props.map { ids.getValue(it)[candidate] }, multiplicity.getValue(candidate), Int::plus)
+                }
             }
+            val shared = counts[own] ?: 0
             if (shared >= 2) duplicates.add(focus to shared)
         }
     }

@@ -937,6 +937,21 @@ class DynamicShaclTest {
     }
 
     @Test
+    fun `a dynamic sh uniqueValuesFor on a value shared by many targets stays linear`() {
+        // 12000 targets share ex:c 1 and differ on ex:d, and every one is keyed on ex:c (with ex:e, which none has): the
+        // rarest value set of each is the one all share, so scanning it per focus node would compare 144 million keys.
+        val n = 12_000
+        val data = buildString {
+            for (i in 0 until n) appendLine("ex:t$i a ex:T ; ex:keys ex:c , ex:e ; ex:c 1 ; ex:d $i .")
+        }
+        val shapes = "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
+        val config = ValidationConfig(timeout = java.time.Duration.ofSeconds(15))
+        val report = validate("jena", data, shapes, config)
+        assertEquals(config.maxViolations, report.violations.size)
+        assertTrue(report.violations.all { "shared with ${n - 1} other" in it.message }, report.violations.take(3).toString())
+    }
+
+    @Test
     fun `a dynamic sh uniqueValuesFor with a distinct property list per target stays linear`() {
         // 12000 targets, each keyed on a property of its own: one pass over the targets per distinct list would compare
         // 144 million keys (over 30 s here); the timeout stops such a run. ex:x and ex:y share ex:t0's key on ex:k0, and
