@@ -1019,7 +1019,7 @@ class JenaRepository private constructor(
 
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withRead {
         val parsed = parseSelect(query)
-        val exec = queryOperation(query.sparql) { execution(query, parsed).build() }
+        val exec = queryOperation(query.sparql) { execution(query, parsed, Long.MAX_VALUE).build() }
         exec.use { consumeRows(it, query.sparql, consume) }
     }
 
@@ -1033,10 +1033,17 @@ class JenaRepository private constructor(
         return parsed
     }
 
-    /** An execution of [parsed] over the query dataset, restricted ([JenaQuerySandbox.restrict]) for a sandboxed [query]. */
-    private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query): org.apache.jena.query.QueryExecutionDatasetBuilder {
+    /**
+     * An execution of [parsed] over the query dataset, restricted ([JenaQuerySandbox.restrict]) for a sandboxed [query],
+     * whose custom functions then run their nested queries until [deadline] ([hooks] clock; [Long.MAX_VALUE] for none).
+     */
+    private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder {
         val builder = QueryExecution.dataset(queryDataset()).query(parsed)
-        return if (query is SandboxedSelectQuery) JenaQuerySandbox.restrict(builder) else builder
+        return if (query is SandboxedSelectQuery) {
+            JenaQuerySandbox.restrict(builder, query.functions, 0, deadline) { hooks.clock() }
+        } else {
+            builder
+        }
     }
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
@@ -1067,14 +1074,15 @@ class JenaRepository private constructor(
     private fun <T> withSelectRowsSubstituted(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T = withRead {
         val parsed = parseSelect(query)
+        // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation),
+        // and the nested queries of custom functions.
+        val deadline = hooks.clock() + timeout.toNanos().coerceAtLeast(1)
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
             bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
-            execution(query, parsed).substitution(initial)
+            execution(query, parsed, deadline).substitution(initial)
                 .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
         }
-        // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation).
-        val deadline = hooks.clock() + timeout.toNanos().coerceAtLeast(1)
         exec.use { consumeRows(it, query.sparql, deadline, consume) }
     }
 

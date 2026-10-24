@@ -1,0 +1,166 @@
+package com.geoknoesis.kastor.rdf.jena
+
+import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfConfig
+import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.RdfRepository
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
+import com.geoknoesis.kastor.rdf.SparqlFunction
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.string
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.CleanupMode
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Custom SPARQL functions (SHACL 1.2 SPARQL Extensions, section 7) are visible to the one sandboxed query that carries
+ * them; their bodies run nested sandboxed queries on the calling query's dataset, and every error is a SPARQL error.
+ */
+class JenaSparqlFunctionTest {
+
+    private val repository: RdfRepository = JenaProvider().createRepository("memory", RdfConfig()).apply {
+        editDefaultGraph().addTriples(
+            Rdf.parse("<urn:a> <urn:l> \"x\"@en , \"y\"@en , \"z\"@de .", RdfFormat.TURTLE).getTriples()
+        )
+    }
+
+    @AfterEach fun close() = repository.close()
+
+    private val spaced = SparqlFunction("urn:spaced", listOf(false, false)) { call ->
+        string("${(call.arguments[0] as Literal).lexical} ${(call.arguments[1] as Literal).lexical}")
+    }
+
+    private val count = SparqlFunction("urn:count", listOf(false, true)) { call ->
+        val bindings = mapOf("s" to call.arguments[0]!!) + (call.arguments[1]?.let { mapOf("lang" to it) } ?: emptyMap())
+        call.select(
+            SandboxedSelectQuery(
+                "SELECT (COUNT(?l) AS ?n) WHERE { ?s <urn:l> ?l FILTER langMatches(lang(?l), COALESCE(?lang, 'en')) }"
+            ),
+            bindings,
+        ) { rows -> rows.single().get("n") }
+    }
+
+    private val library = SparqlFunctionLibrary.of(listOf(spaced, count))
+
+    /** The value of `?v` in each row, with [library], on the untimed and on the timed path (which must agree). */
+    private fun values(sparql: String, functions: SparqlFunctionLibrary = library): List<RdfTerm?> {
+        val untimed = repository.withSelectRows(SandboxedSelectQuery(sparql, functions)) { rows -> rows.map { it.get("v") }.toList() }
+        val timed = repository.withSelectRows(SandboxedSelectQuery(sparql, functions), emptyMap(), Duration.ofSeconds(30)) { rows ->
+            rows.map { it.get("v") }.toList()
+        }
+        assertEquals(untimed, timed)
+        return untimed
+    }
+
+    private fun value(sparql: String, functions: SparqlFunctionLibrary = library): RdfTerm? = values(sparql, functions).single()
+
+    private fun lexical(sparql: String, functions: SparqlFunctionLibrary = library): String? =
+        (value(sparql, functions) as Literal?)?.lexical
+
+    @Test
+    fun `library functions are called with evaluated arguments`() {
+        assertEquals("John Doe", lexical("SELECT ?v WHERE { BIND (<urn:spaced>('John', 'Doe') AS ?v) }"))
+        assertEquals("2", lexical("SELECT ?v WHERE { BIND (<urn:count>(<urn:a>) AS ?v) }"))
+        assertEquals("1", lexical("SELECT ?v WHERE { BIND (<urn:count>(<urn:a>, 'de') AS ?v) }"))
+        // Arguments are evaluated per solution.
+        assertEquals("x x", lexical("SELECT ?v WHERE { <urn:a> <urn:l> ?l FILTER (lang(?l) = 'en' && str(?l) = 'x') BIND (<urn:spaced>(str(?l), str(?l)) AS ?v) }"))
+    }
+
+    @Test
+    fun `errors follow SPARQL semantics`() {
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:count>(?unbound) AS ?v) }"))
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:spaced>('a') AS ?v) }"))
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:spaced>('a', 'b', 'c') AS ?v) }"))
+        // A failing body is an error too, and so is a body that returns nothing.
+        val failing = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:boom", emptyList()) { throw IllegalStateException("boom") },
+            SparqlFunction("urn:none", emptyList()) { null },
+        ))
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:boom>() AS ?v) }", failing))
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:none>() AS ?v) }", failing))
+        // In a FILTER, an error is false.
+        assertEquals(emptyList<RdfTerm?>(), values("SELECT ?v WHERE { BIND (1 AS ?v) FILTER (<urn:boom>()) }", failing))
+    }
+
+    @Test
+    fun `a declaration cannot shadow a built-in function`() {
+        val hijack = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("http://www.w3.org/2005/xpath-functions#concat", listOf(true, true)) { string("hijacked") },
+        ))
+        assertEquals(
+            "ab",
+            lexical("PREFIX fn: <http://www.w3.org/2005/xpath-functions#> SELECT ?v WHERE { BIND (fn:concat('a', 'b') AS ?v) }", hijack),
+        )
+    }
+
+    @Test
+    fun `nested queries stay sandboxed`() {
+        val refusals = AtomicInteger()
+        val remote = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:remote", emptyList()) { call ->
+                try {
+                    call.select(SandboxedSelectQuery("SELECT * WHERE { SERVICE <http://127.0.0.1:1/s> {} }"), emptyMap()) { rows ->
+                        rows.firstOrNull()?.get("x")
+                    }
+                } catch (e: IllegalArgumentException) {
+                    // Refused statically, before any request.
+                    refusals.incrementAndGet()
+                    throw e
+                }
+            },
+        ))
+        assertEquals(listOf<RdfTerm?>(null), values("SELECT ?v WHERE { BIND (<urn:remote>() AS ?v) }", remote))
+        assertEquals(2, refusals.get())
+    }
+
+    @Test
+    fun `recursion ends at the depth limit`() {
+        val calls = AtomicInteger()
+        lateinit var recursive: SparqlFunctionLibrary
+        recursive = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:self", emptyList()) { call ->
+                calls.incrementAndGet()
+                call.select(SandboxedSelectQuery("SELECT (<urn:self>() AS ?x) {}", recursive), emptyMap()) { rows ->
+                    rows.single().get("x")
+                }
+            },
+        ))
+        assertNull(value("SELECT ?v WHERE { BIND (<urn:self>() AS ?v) }", recursive))
+        // Bodies run in the top query and in nested queries 1 to MAX_FUNCTION_DEPTH, on each of the two paths.
+        assertEquals(2 * (MAX_FUNCTION_DEPTH + 1), calls.get())
+    }
+
+    @Test
+    // The nested query runs inside the read transaction of the calling query. (TDB2 files stay mapped on Windows: no cleanup.)
+    fun `nested queries read the store of every variant`(@TempDir(cleanup = CleanupMode.NEVER) dir: Path) {
+        val data = Rdf.parse("<urn:a> <urn:l> \"x\"@en , \"y\"@en , \"z\"@de .", RdfFormat.TURTLE).getTriples()
+        val sparql = "SELECT ?v WHERE { BIND (<urn:count>(<urn:a>) AS ?v) }"
+        listOf(
+            JenaProvider().createRepository("memory-inference", RdfConfig()),
+            JenaRepository.Tdb2Repository(dir.toString()),
+        ).forEach { store ->
+            store.use {
+                it.editDefaultGraph().addTriples(data)
+                assertEquals("2", (it.withSelectRows(SandboxedSelectQuery(sparql, library)) { rows -> rows.single().get("v") } as Literal).lexical)
+            }
+        }
+    }
+
+    @Test
+    fun `functions are per query`() {
+        val sparql = "SELECT ?v WHERE { BIND (<urn:spaced>('John', 'Doe') AS ?v) }"
+        assertEquals("John Doe", lexical(sparql))
+        assertNull(value(sparql, SparqlFunctionLibrary.EMPTY))
+        assertNull(repository.withSelectRows(SparqlSelectQuery(sparql)) { rows -> rows.single().get("v") })
+    }
+}

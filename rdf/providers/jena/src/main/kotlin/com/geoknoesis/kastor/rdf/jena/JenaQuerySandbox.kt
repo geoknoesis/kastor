@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.jena
 
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import org.apache.jena.graph.Node
 import org.apache.jena.query.Query
 import org.apache.jena.query.QueryExecutionDatasetBuilder
@@ -41,17 +42,39 @@ internal object JenaQuerySandbox {
      * Runs a sandboxed query with registries that cannot reach outside the store, whatever IRI the query computes at
      * run time (ARQ's `CALL(iri, …)` builds a function IRI from data, which [check] cannot see): functions and
      * property functions with a `java:` IRI are not found, so no class is loaded, and SERVICE has no executor.
+     *
+     * The custom [functions] of the query are visible to this one execution only, at nesting [depth], and their nested
+     * queries end by [deadline] (a [clock] value; [Long.MAX_VALUE] for none). Per SHACL 1.2 SPARQL Extensions section
+     * 7.3, a built-in function wins over a custom function with the same IRI.
      */
-    fun restrict(builder: QueryExecutionDatasetBuilder): QueryExecutionDatasetBuilder = builder
-        .set(ARQConstants.registryFunctions, NoJavaFunctions(FunctionRegistry.get()))
+    fun restrict(
+        builder: QueryExecutionDatasetBuilder,
+        functions: SparqlFunctionLibrary,
+        depth: Int,
+        deadline: Long,
+        clock: () -> Long,
+    ): QueryExecutionDatasetBuilder = builder
+        .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock))
         .set(ARQConstants.registryPropertyFunctions, NoJavaPropertyFunctions(PropertyFunctionRegistry.get()))
         .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
 
-    private class NoJavaFunctions(private val base: FunctionRegistry) : FunctionRegistry() {
+    /** The [base] functions without `java:` ones, then the custom [functions]; nothing is ever registered. */
+    private class SandboxFunctions(
+        private val base: FunctionRegistry,
+        private val functions: SparqlFunctionLibrary,
+        private val depth: Int,
+        private val deadline: Long,
+        private val clock: () -> Long,
+    ) : FunctionRegistry() {
         override fun get(uri: String): FunctionFactory? = getFunctionFactory(uri)
-        override fun getFunctionFactory(uri: String): FunctionFactory? = if (isJava(uri)) null else base.getFunctionFactory(uri)
-        override fun getFunction(uri: String): Function? = if (isJava(uri)) null else base.getFunction(uri)
-        override fun isRegistered(uri: String): Boolean = !isJava(uri) && base.isRegistered(uri)
+        override fun getFunctionFactory(uri: String): FunctionFactory? {
+            if (isJava(uri)) return null
+            base.getFunctionFactory(uri)?.let { return it }
+            val function = functions.function(uri) ?: return null
+            return FunctionFactory { JenaLibraryFunction(function, depth, deadline, clock) }
+        }
+        override fun getFunction(uri: String): Function? = getFunctionFactory(uri)?.create(uri)
+        override fun isRegistered(uri: String): Boolean = getFunctionFactory(uri) != null
     }
 
     private class NoJavaPropertyFunctions(private val base: PropertyFunctionRegistry) : PropertyFunctionRegistry() {
