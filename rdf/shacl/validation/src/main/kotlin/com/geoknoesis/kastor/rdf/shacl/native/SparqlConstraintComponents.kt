@@ -120,7 +120,7 @@ internal class SparqlComponentCatalog private constructor(
         val nodeKinds = constants(SHACL.nodeKind).mapNotNull(::iris).filter { it.isNotEmpty() }
         val datatypes = constants(SHACL.datatype).mapNotNull(::iris).filter { it.isNotEmpty() }
         val blankExcluding =
-            nodeKinds.any { kinds -> kinds.isNotEmpty() && kinds.all { it in NON_BLANK_KINDS } } ||
+            nodeKinds.any { kinds -> kinds.all { it in NON_BLANK_KINDS } } ||
                 datatypes.isNotEmpty() ||
                 constants(SHACL.`in`).any { v -> members(v)?.none { it is BlankNode } == true } ||
                 LITERAL_ONLY.any { p -> constants(p).any { it is Literal } } ||

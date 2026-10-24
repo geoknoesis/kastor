@@ -75,6 +75,8 @@ and is kept as is; it was never published to Maven Central.
   nodes". `sh:languageIn []`, also a compile error before, is now the empty list and rejects every value.
 - `[]` at a single-node parameter (`sh:minCount []`, `sh:pattern []`, the four bounds, ...) used to be a compile error,
   or for the bounds a constant blank-node bound; it now fails at run time with "no nodes".
+- A computed `sh:closed` (with its computed `sh:ignoredProperties`) or `sh:reificationRequired` is now evaluated for
+  literal focus nodes too, so a broken expression fails the run; a literal still has nothing to close or reify.
 
 ### Fixed (Dynamic SHACL)
 
