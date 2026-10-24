@@ -69,6 +69,12 @@ and is kept as is; it was never published to Maven Central.
   ignored).
 - An undeclared function called at `sh:closed`, `sh:ignoredProperties` or `sh:uniqueValuesFor` on a property shape is now
   reported as an unsupported feature, although these parameters have no effect there.
+- A list at a single-node parameter, such as `sh:minCount ( 1 )`, used to be a compile error; it is now a list
+  expression, and `sh:minCount ( 1 )` means 1.
+- `sh:datatype []`, `sh:nodeKind []` and `sh:rootClass []` used to be compile errors; they now fail at run time with "no
+  nodes". `sh:languageIn []`, also a compile error before, is now the empty list and rejects every value.
+- `[]` at a single-node parameter (`sh:minCount []`, `sh:pattern []`, the four bounds, ...) used to be a compile error,
+  or for the bounds a constant blank-node bound; it now fails at run time with "no nodes".
 
 ### Fixed (Dynamic SHACL)
 

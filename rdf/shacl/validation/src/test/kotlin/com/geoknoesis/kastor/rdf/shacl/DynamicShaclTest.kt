@@ -186,6 +186,28 @@ class DynamicShaclTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `ill-formed constants that are now node expressions`(provider: String) {
+        // CHANGELOG "Changed": these were compile errors (or, for the bounds, a constant blank-node bound).
+        // A list at a single-node parameter is a list expression: sh:minCount ( 1 ) means 1.
+        val minCount = validate(provider, "ex:a ex:q 1 .", prop("sh:minCount ( 1 )")).violations.single()
+        assertEquals(ConstraintType.MIN_COUNT, minCount.constraint.constraintType)
+        assertTrue(validate(provider, "ex:a ex:v 1 .", prop("sh:minCount ( 1 )")).violations.isEmpty())
+        // [] is the empty expression: no nodes, a run-time failure, at the IRI-or-list and the single-node parameters.
+        for (body in listOf(
+            "sh:datatype []", "sh:nodeKind []", "sh:rootClass []", "sh:minCount []", "sh:maxLength []", "sh:pattern []",
+            "sh:minInclusive []", "sh:maxExclusive []",
+        )) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:v 1 .", prop(body)) }, body)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "no nodes" in message, "$body: $message")
+        }
+        // At a pure-list parameter, no nodes is the empty list: sh:languageIn [] rejects every value.
+        val languageIn = validate(provider, "ex:a ex:v \"x\"@en , \"y\" .", prop("sh:languageIn []"))
+        assertEquals(2, languageIn.violations.size, languageIn.violations.toString())
+        assertTrue(languageIn.violations.all { it.constraint.constraintType == ConstraintType.LANGUAGE_IN }, languageIn.violations.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a dynamic parameter on a node shape reads the focus node`(provider: String) {
         val inclusive = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:maxInclusive [ shnex:pathValues ex:lim ] ."
         val v = validate(provider, "ex:a ex:lim 3 .", inclusive).violations.single()

@@ -289,22 +289,22 @@ The parameters of SPARQL-based constraint components are computed under the rule
 
 - A single node parameter fails on no output and on two or more. The same holds for a parameter of a SPARQL-based constraint component, even an `sh:optional` one.
 - An IRI or list parameter fails on no output.
-- Counts and lengths need a non-negative `xsd:integer`-family literal, bounds a literal, and booleans an `xsd:boolean` literal. A computed `"1"^^xsd:boolean` or `"0"^^xsd:boolean` is well typed but not true, as everywhere else: only `"true"^^xsd:boolean` is true.
+- Counts and lengths need a non-negative `xsd:integer`, `xsd:nonNegativeInteger` or `xsd:long` literal that fits in a 32-bit signed integer (other integer datatypes, such as `xsd:int`, are rejected), bounds a literal, and booleans an `xsd:boolean` literal. A computed `"1"^^xsd:boolean` or `"0"^^xsd:boolean` is well typed but not true, as everywhere else: only `"true"^^xsd:boolean` is true.
 - `sh:pattern` and `sh:flags` need `xsd:string` literals, and the pattern must compile with the flags.
 - `sh:class`, `sh:rootClass`, `sh:datatype`, `sh:uniqueValuesFor` and `sh:ignoredProperties` members need IRIs. `sh:languageIn` members need `xsd:string` literals. `sh:nodeKind` takes one of the seven node kinds when there is one output, and one of the four kinds a list may hold when there are several.
 - `sh:closed` needs an `xsd:boolean` literal or `sh:ByTypes`: `true` and `sh:ByTypes` close the shape, any other boolean does not, and anything else fails.
 - A triple term needs `ValidationConfig.allowTripleTermsInShapeParameters`, as for a constant.
 - The output is capped by `ValidationConfig.maxPathValueNodes`, and every evaluation ticks the run budget.
 
-**Shapes, recursion and limits.** The shapes a parameter expression reads are compiled, and the shape depends on them as it does for `sh:expression`. They are read as non-monotone, so a data cycle through one is undecided and fails validation. A computed `sh:pattern` is bounded by the pattern budget (`patternTimeout`). The engine keeps at most 4096 instantiated constraints per run: past that, more are built when needed and none is evicted.
+**Shapes, recursion and limits.** The shapes a parameter expression reads are compiled, and the shape depends on them as it does for `sh:expression`. They are read as non-monotone, so a data cycle through one is undecided and fails validation. A computed `sh:pattern` is bounded by the pattern budget (`patternTimeout`). The engine keeps at most 4096 instantiated constraints per run, holding at most `maxPathValueNodes` nodes in all (their parameter values and the instances built from them): past either limit, more are built when needed and none is evicted.
 
 **Details by parameter.**
 
 - **`sh:pattern` and `sh:flags`:** with computed `sh:flags`, a constant `sh:pattern` is checked at compile time only for being a string literal. Its regex is compiled at run time with the resolved flags, because validity can depend on them (`q`, `x`). With constant `sh:flags`, the flags are validated at compile time, also when `sh:pattern` is computed.
-- **`sh:closed`:** a computed `sh:closed` must be the only `sh:closed` value of the shape, and at most one `sh:ignoredProperties` value may be computed (its output is added to the constant values). Otherwise the shapes graph is ill-formed (`ShapeCompileException`). A computed `sh:ignoredProperties` is evaluated only for focus nodes for which the shape is closed. It is dropped at compile time when `sh:closed` is constant false or absent, and skipped at run time when a computed `sh:closed` resolves to false, so a broken expression there fails the run only for closed focus nodes. `validateClosedShapes = false` skips both.
-- **`sh:uniqueValuesFor`:** a computed value is evaluated for every focus node that is not deactivated, whatever the number of targets, so a broken expression fails the run even with one target. Targets are compared only when they resolve to the same list.
+- **`sh:closed`:** a computed `sh:closed` must be the only `sh:closed` value of the shape, and at most one `sh:ignoredProperties` value may be computed (its output is added to the constant values). Otherwise the shapes graph is ill-formed (`ShapeCompileException`). A computed `sh:ignoredProperties` is evaluated only for focus nodes for which the shape is closed. It is dropped at compile time when `sh:closed` is constant false or absent, and skipped at run time when a computed `sh:closed` resolves to false, so a broken expression there fails the run only for closed focus nodes. Both are evaluated for literal focus nodes too, so a broken expression fails the run, though a literal has no properties to close. `validateClosedShapes = false` skips both.
+- **`sh:uniqueValuesFor`:** a computed value is evaluated for every focus node that is not deactivated, whatever the number of targets, so a broken expression fails the run even with one target. Each focus node is compared with the other targets on the properties it resolves to. Each property is indexed once, from its triples. For each distinct list, the targets that share a focus node's rarest value set are counted once, and every step ticks the run budget.
 - **`sh:qualifiedMaxCount`:** a computed one is non-monotone in recursion, like a constant one.
-- **`sh:reificationRequired`:** a computed value on a property shape whose `sh:path` is not a predicate IRI is reported as `REIFIER_CONSTRAINT_ON_COMPLEX_PATH`, like the constant `true`.
+- **`sh:reificationRequired`:** a computed value on a property shape whose `sh:path` is not a predicate IRI is reported as `REIFIER_CONSTRAINT_ON_COMPLEX_PATH`, like the constant `true`. A computed value is evaluated for literal focus nodes too, so a broken expression fails the run, though a literal has no triples to reify.
 
 **Unsupported expressions at a parameter.** A parameter may hold a constant as well as an expression, so a blank node there is classified more carefully than at `sh:values` or `sh:deactivated`:
 
@@ -318,8 +318,8 @@ At `sh:values`, `sh:expression` and `sh:deactivated` both kinds are unsupported 
 
 | Declaration | Needed |
 |---|---|
-| `sh:nodeKind` | an IRI among `sh:IRI`, `sh:Literal`, `sh:IRIOrLiteral`, `sh:TripleTerm`, or a list that holds only these |
-| `sh:datatype` | any |
+| `sh:nodeKind` | an IRI among `sh:IRI`, `sh:Literal`, `sh:IRIOrLiteral`, `sh:TripleTerm`, or a non-empty list that holds only these |
+| `sh:datatype` | any IRI or non-empty list (an empty list makes no constraint) |
 | `sh:in` | a list with no blank-node member |
 | `sh:pattern`, `sh:minLength`, `sh:maxLength`, `sh:minInclusive`, `sh:maxInclusive`, `sh:minExclusive`, `sh:maxExclusive` | a literal |
 | `sh:languageIn`, `sh:rootClass` | any |
