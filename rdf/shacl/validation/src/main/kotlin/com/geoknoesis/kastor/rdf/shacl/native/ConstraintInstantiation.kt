@@ -39,6 +39,13 @@ internal object ConstraintInstantiation {
         fun single(): RdfTerm = values[component.parameters.single()]?.singleOrNull()
             ?: throw ShapeCompileException("${DynamicParameters.displayName(component.parameters.single())} needs exactly one value")
         fun members(): List<RdfTerm> = values[component.parameters.single()].orEmpty()
+        // A parameter of a multi-parameter component: null when absent.
+        fun optional(pred: Iri): RdfTerm? = values[pred]?.let {
+            it.singleOrNull() ?: throw ShapeCompileException("${DynamicParameters.displayName(pred)} needs exactly one value")
+        }
+        fun string(pred: Iri): String? = optional(pred)?.let {
+            literalString(it) ?: throw ShapeCompileException("${DynamicParameters.displayName(pred)} must be a string literal")
+        }
         fun iris(notIri: (RdfTerm) -> String): List<Iri> = members().map { it as? Iri ?: throw ShapeCompileException(notIri(it)) }
         return when (component) {
             DynamicComponent.MIN_COUNT -> PropertyConstraint.MinCount(parseNonNegativeInt(single(), "sh:minCount"))
@@ -72,14 +79,44 @@ internal object ConstraintInstantiation {
             DynamicComponent.LANGUAGE_IN -> PropertyConstraint.LanguageIn(
                 members().map { literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals") },
             )
+            DynamicComponent.PATTERN -> {
+                val pattern = string(SHACL.pattern) ?: throw ShapeCompileException("sh:pattern needs exactly one value")
+                val flags = string(SHACL.flags)
+                PropertyConstraint.Pattern(pattern, flags, compileShaclPattern(pattern, flags))
+            }
+            DynamicComponent.QUALIFIED -> {
+                val shape = checkNotNull(extras.qualifiedShape) { "sh:qualifiedValueShape missing" }
+                val disjoint = optional(SHACL.qualifiedValueShapesDisjoint)?.let { isLexicallyTrue(it) } ?: false
+                PropertyConstraint.Qualified(
+                    shape,
+                    optional(SHACL.qualifiedMinCount)?.let { parseNonNegativeInt(it, "sh:qualifiedMinCount") },
+                    optional(SHACL.qualifiedMaxCount)?.let { parseNonNegativeInt(it, "sh:qualifiedMaxCount") },
+                    disjoint,
+                    // The sibling shapes of Core §7.7.1 are excluded only when the shapes are disjoint.
+                    if (disjoint) extras.siblings else emptyList(),
+                )
+            }
+            // sh:reificationRequired is a parameter of each sh:reifierShape constraint (Core §7.8.5), and a constraint
+            // of its own only without one.
+            DynamicComponent.REIFICATION -> {
+                val required = optional(SHACL.reificationRequired)?.let { isLexicallyTrue(it) } ?: false
+                extras.reifierShape?.let { PropertyConstraint.ReifierShape(it, required) } ?: PropertyConstraint.ReificationRequired(required)
+            }
         }
     }
 
     private val counts: Set<Iri> by lazy {
-        setOf(SHACL.minCount, SHACL.maxCount, SHACL.minLength, SHACL.maxLength, SHACL.minListLength, SHACL.maxListLength)
+        setOf(
+            SHACL.minCount, SHACL.maxCount, SHACL.minLength, SHACL.maxLength, SHACL.minListLength, SHACL.maxListLength,
+            SHACL.qualifiedMinCount, SHACL.qualifiedMaxCount,
+        )
     }
     private val bounds: Set<Iri> by lazy { setOf(SHACL.minInclusive, SHACL.maxInclusive, SHACL.minExclusive, SHACL.maxExclusive) }
-    private val booleans: Set<Iri> by lazy { setOf(SHACL.uniqueLang, SHACL.singleLine, SHACL.uniqueMembers) }
+    private val booleans: Set<Iri> by lazy {
+        setOf(SHACL.uniqueLang, SHACL.singleLine, SHACL.uniqueMembers, SHACL.qualifiedValueShapesDisjoint, SHACL.reificationRequired)
+    }
+    /** Core §7.4.3: the values of `sh:pattern` and `sh:flags` are `xsd:string` literals. */
+    private val strings: Set<Iri> by lazy { setOf(SHACL.pattern, SHACL.flags) }
     private val booleanLexicals = setOf("true", "false", "1", "0")
     private val iriMembers: Set<Iri> by lazy { setOf(SHACL.`class`, SHACL.datatype, SHACL.rootClass) }
 
@@ -108,7 +145,11 @@ internal object ConstraintInstantiation {
                 } else {
                     "${DynamicParameters.displayName(parameter)} expects an xsd:boolean literal, got $node"
                 }
+            // The rule that gives the D6 message; instantiate's IRI check is the backstop (and the check of constants).
             in iriMembers -> if (node is Iri) null else "${DynamicParameters.displayName(parameter)} expects IRIs, got $node"
+            // A pattern that does not compile is rejected by instantiate (compileShaclPattern), as for constants.
+            in strings ->
+                if (node is Literal && node.datatype == XSD.string) null else "${DynamicParameters.displayName(parameter)} expects an xsd:string literal, got $node"
             SHACL.nodeKind -> when {
                 outputs == 1 && node in nodeKinds -> null
                 outputs == 1 -> "sh:nodeKind expects one of ${nodeKinds.joinToString { DynamicParameters.displayName(it) }}, got $node"

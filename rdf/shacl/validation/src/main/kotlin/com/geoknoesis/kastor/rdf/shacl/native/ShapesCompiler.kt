@@ -983,7 +983,7 @@ internal object ShapesCompiler {
             // constraint), may be any node expression.
             t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:deactivated node expression on ${t.subject}" to expression(t.obj)
-            (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && isLexicallyTrue(t.obj))) &&
+            (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && mayBeTrue(t.obj, index))) &&
                 hasNonPredicatePath(t.subject, index) -> {
                 val parameter = if (t.predicate == SHACL.reifierShape) "sh:reifierShape" else "sh:reificationRequired"
                 "$parameter on the non-predicate path of ${t.subject} (reifier constraints need a predicate IRI as sh:path)" to
@@ -991,6 +991,14 @@ internal object ShapesCompiler {
             }
             else -> null
         }
+
+    /**
+     * True when the `sh:reificationRequired` value [term] is, or may be, true: the constant true, or a node expression
+     * (Node Expressions §8), reported like the constant. A blank node that is no node expression stays the compile
+     * error of [DynamicParameters.value].
+     */
+    private fun mayBeTrue(term: RdfTerm, index: ShapeGraphIndex): Boolean =
+        isLexicallyTrue(term) || (term is BlankNode && isSupportedExpression(term, index))
 
     /**
      * True for an active property shape whose `sh:path` is not a predicate IRI. `sh:reifierShape` and
@@ -1013,6 +1021,8 @@ internal object ShapesCompiler {
             is PropertyConstraint.SomeValue -> listOf(c.nestedShape)
             is PropertyConstraint.Shape -> listOf(c.nestedShape)
             is PropertyConstraint.ReifierShape -> listOf(c.nestedShape)
+            // The constant shapes of a multi-parameter component (SHACL 1.2 Node Expressions §8).
+            is PropertyConstraint.Dynamic -> listOfNotNull(c.extras.qualifiedShape, c.extras.reifierShape) + c.extras.siblings
             else -> emptyList()
         }
 
@@ -1313,6 +1323,25 @@ internal object ShapesCompiler {
             val conditions = reifierDeactivation(subject, triples.mapNotNull { (p, o) -> o?.let { p to it } }, index) ?: return
             constraints.add(if (conditions.isEmpty()) c else PropertyConstraint.Deactivatable(c, conditions))
         }
+        // The value of the parameter [pred] (SHACL 1.2 Node Expressions §8), or null for an unsupported expression (see
+        // detectUnsupportedFeatures) ignored with a warning: the constraints that take it are left out.
+        fun valueOf(pred: Iri, term: RdfTerm): ParameterValue? =
+            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)) {
+                null
+            } else {
+                DynamicParameters.value(subject, pred, term, index)
+            }
+        // A component with several parameters, from their [values] (absent ones are not keys): the constant constraint
+        // when every value is a constant, else a Dynamic one. [triples] are its parameter triples, for reifier
+        // deactivation.
+        fun multi(component: DynamicComponent, values: Map<Iri, ParameterValue>, extras: ComponentExtras, vararg triples: Pair<Iri, RdfTerm?>) {
+            val constants = values.mapValues { (_, v) -> (v as? ParameterValue.Constant)?.let { listOf(it.term) } }
+            if (constants.values.all { it != null }) {
+                ConstraintInstantiation.instantiate(component, constants.mapValues { it.value!! }, extras, config)?.let { add(it, *triples) }
+            } else {
+                add(PropertyConstraint.Dynamic(component, values, extras), *triples)
+            }
+        }
         // SHACL 1.2 Node Expressions §8: a constant value is the constant constraint, as ever; a value a node expression
         // computes is a Dynamic one, instantiated per focus node. Both use the parameter triple for reifier deactivation.
         // [members] gives the values of a constant: the term itself for a single-node parameter, the members of a
@@ -1324,9 +1353,7 @@ internal object ShapesCompiler {
             extras: ComponentExtras = ComponentExtras(),
             members: (RdfTerm) -> List<RdfTerm> = { listOf(it) },
         ) {
-            // An unsupported expression (see detectUnsupportedFeatures), ignored with a warning, has no constraint.
-            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)) return
-            when (val value = DynamicParameters.value(subject, pred, term, index)) {
+            when (val value = valueOf(pred, term) ?: return) {
                 is ParameterValue.Constant ->
                     ConstraintInstantiation.instantiate(component, mapOf(pred to members(term)), extras, config)?.let { add(it, pred to term) }
                 is ParameterValue.Computed -> add(PropertyConstraint.Dynamic(component, mapOf(pred to value), extras), pred to term)
@@ -1366,12 +1393,20 @@ internal object ShapesCompiler {
                 }
             }
         }
+        // Each sh:pattern value is one constraint with the shape's sh:flags; either may be computed (Dynamic PATTERN).
         val flagsTerm = atMostOne(SHACL.flags)
-        val flags = flagsTerm?.let { ConstraintInstantiation.literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
-        for (p in index.objects(subject, SHACL.pattern)) {
-            val pat = ConstraintInstantiation.literalString(p) ?: throw ShapeCompileException("sh:pattern must be a string literal")
-            // sh:flags is a parameter of each pattern constraint, so its reifier deactivates all of them.
-            add(PropertyConstraint.Pattern(pat, flags, compileShaclPattern(pat, flags)), SHACL.pattern to p, SHACL.flags to flagsTerm)
+        val flagsValue = flagsTerm?.let { valueOf(SHACL.flags, it) }
+        // A constant sh:flags is checked even when the shape has no sh:pattern, as ever.
+        (flagsValue as? ParameterValue.Constant)?.let {
+            ConstraintInstantiation.literalString(it.term) ?: throw ShapeCompileException("sh:flags must be a string literal")
+        }
+        if (flagsTerm == null || flagsValue != null) {
+            for (p in index.objects(subject, SHACL.pattern)) {
+                val patternValue = valueOf(SHACL.pattern, p) ?: continue
+                val values = listOfNotNull(SHACL.pattern to patternValue, flagsValue?.let { SHACL.flags to it }).toMap()
+                // sh:flags is a parameter of each pattern constraint, so its reifier deactivates all of them.
+                multi(DynamicComponent.PATTERN, values, ComponentExtras(), SHACL.pattern to p, SHACL.flags to flagsTerm)
+            }
         }
         atMostOne(SHACL.minLength)?.let { scalar(DynamicComponent.MIN_LENGTH, SHACL.minLength, it) }
         atMostOne(SHACL.maxLength)?.let { scalar(DynamicComponent.MAX_LENGTH, SHACL.maxLength, it) }
@@ -1439,12 +1474,19 @@ internal object ShapesCompiler {
             val minTerm = atMostOne(SHACL.qualifiedMinCount)
             val maxTerm = atMostOne(SHACL.qualifiedMaxCount)
             val disjointTerm = atMostOne(SHACL.qualifiedValueShapesDisjoint)
-            val min = minTerm?.let { ConstraintInstantiation.parseNonNegativeInt(it, "sh:qualifiedMinCount") }
-            val max = maxTerm?.let { ConstraintInstantiation.parseNonNegativeInt(it, "sh:qualifiedMaxCount") }
-            val disjoint = disjointTerm?.let { isLexicallyTrue(it) } ?: false
-            for (qvs in qualifiedShapes) {
+            val minValue = minTerm?.let { valueOf(SHACL.qualifiedMinCount, it) }
+            val maxValue = maxTerm?.let { valueOf(SHACL.qualifiedMaxCount, it) }
+            val disjointValue = disjointTerm?.let { valueOf(SHACL.qualifiedValueShapesDisjoint, it) }
+            // Constant counts are checked even when the shape has no sh:qualifiedValueShape, as ever.
+            (minValue as? ParameterValue.Constant)?.let { ConstraintInstantiation.parseNonNegativeInt(it.term, "sh:qualifiedMinCount") }
+            (maxValue as? ParameterValue.Constant)?.let { ConstraintInstantiation.parseNonNegativeInt(it.term, "sh:qualifiedMaxCount") }
+            // The sibling shapes matter when the shapes may be disjoint: a computed sh:qualifiedValueShapesDisjoint, or
+            // a constant true.
+            val mayBeDisjoint = disjointValue != null && (disjointValue !is ParameterValue.Constant || isLexicallyTrue(disjointValue.term))
+            val ignored = (minTerm != null && minValue == null) || (maxTerm != null && maxValue == null) || (disjointTerm != null && disjointValue == null)
+            for (qvs in qualifiedShapes.takeUnless { ignored }.orEmpty()) {
                 val siblings =
-                    if (!disjoint) {
+                    if (!mayBeDisjoint) {
                         emptyList()
                     } else {
                         index.subjects(SHACL.`property`, subject)
@@ -1462,23 +1504,33 @@ internal object ShapesCompiler {
                 val shared = arrayOf(SHACL.qualifiedValueShape to qvs, SHACL.qualifiedValueShapesDisjoint to disjointTerm)
                 val minOnly = minTerm?.let { reifierDeactivation(subject, listOf(SHACL.qualifiedMinCount to it), index) }
                 val maxOnly = maxTerm?.let { reifierDeactivation(subject, listOf(SHACL.qualifiedMaxCount to it), index) }
-                if (min == null || max == null || minOnly == maxOnly) {
-                    add(PropertyConstraint.Qualified(qvs, min, max, disjoint, siblings), *shared, SHACL.qualifiedMinCount to minTerm, SHACL.qualifiedMaxCount to maxTerm)
+                val extras = ComponentExtras(qualifiedShape = qvs, siblings = siblings)
+                // The values of one constraint: the given counts, and sh:qualifiedValueShapesDisjoint if present.
+                fun counts(vararg ps: Pair<Iri, ParameterValue?>): Map<Iri, ParameterValue> =
+                    (ps.toList() + (SHACL.qualifiedValueShapesDisjoint to disjointValue)).mapNotNull { (p, v) -> v?.let { p to it } }.toMap()
+                if (minTerm == null || maxTerm == null || minOnly == maxOnly) {
+                    multi(
+                        DynamicComponent.QUALIFIED, counts(SHACL.qualifiedMinCount to minValue, SHACL.qualifiedMaxCount to maxValue), extras,
+                        *shared, SHACL.qualifiedMinCount to minTerm, SHACL.qualifiedMaxCount to maxTerm,
+                    )
                 } else {
-                    add(PropertyConstraint.Qualified(qvs, min, null, disjoint, siblings), *shared, SHACL.qualifiedMinCount to minTerm)
-                    add(PropertyConstraint.Qualified(qvs, null, max, disjoint, siblings), *shared, SHACL.qualifiedMaxCount to maxTerm)
+                    multi(DynamicComponent.QUALIFIED, counts(SHACL.qualifiedMinCount to minValue), extras, *shared, SHACL.qualifiedMinCount to minTerm)
+                    multi(DynamicComponent.QUALIFIED, counts(SHACL.qualifiedMaxCount to maxValue), extras, *shared, SHACL.qualifiedMaxCount to maxTerm)
                 }
             }
             // sh:reificationRequired is an optional parameter of sh:ReifierShapeConstraintComponent (Core §7.8.5): it is
             // part of the constraint of each sh:reifierShape value, and a constraint of its own only without one.
             val reifierShapes = index.objects(subject, SHACL.reifierShape).filterIsInstance<RdfResource>()
             val requiredTerm = atMostOne(SHACL.reificationRequired)
-            val required = requiredTerm?.let { isLexicallyTrue(it) } ?: false
-            if (reifierShapes.isEmpty()) {
-                requiredTerm?.let { add(PropertyConstraint.ReificationRequired(required), SHACL.reificationRequired to it) }
-            }
-            reifierShapes.forEach {
-                add(PropertyConstraint.ReifierShape(it, required), SHACL.reifierShape to it, SHACL.reificationRequired to requiredTerm)
+            val requiredValue = requiredTerm?.let { valueOf(SHACL.reificationRequired, it) }
+            if (requiredTerm == null || requiredValue != null) {
+                val values = requiredValue?.let { mapOf(SHACL.reificationRequired to it) }.orEmpty()
+                if (reifierShapes.isEmpty()) {
+                    requiredTerm?.let { multi(DynamicComponent.REIFICATION, values, ComponentExtras(), SHACL.reificationRequired to it) }
+                }
+                reifierShapes.forEach {
+                    multi(DynamicComponent.REIFICATION, values, ComponentExtras(reifierShape = it), SHACL.reifierShape to it, SHACL.reificationRequired to requiredTerm)
+                }
             }
         }
         index.objects(subject, SHACL.sparql).filterIsInstance<RdfResource>().forEach { node ->

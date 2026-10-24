@@ -48,6 +48,15 @@ internal enum class DynamicComponent(val type: ConstraintType, val parameters: L
     ROOT_CLASS(ConstraintType.ROOT_CLASS, listOf(SHACL.rootClass), ParameterShape.IRI_OR_LIST),
     IN(ConstraintType.IN, listOf(SHACL.`in`), ParameterShape.LIST),
     LANGUAGE_IN(ConstraintType.LANGUAGE_IN, listOf(SHACL.languageIn), ParameterShape.LIST),
+    /** One `sh:pattern` value with the shape's `sh:flags`, if any. */
+    PATTERN(ConstraintType.PATTERN, listOf(SHACL.pattern, SHACL.flags)),
+    /**
+     * `sh:qualifiedMinCount`, `sh:qualifiedMaxCount` and `sh:qualifiedValueShapesDisjoint` of one constant
+     * `sh:qualifiedValueShape` ([ComponentExtras.qualifiedShape]); each count may be absent.
+     */
+    QUALIFIED(ConstraintType.QUALIFIED_VALUE_SHAPE, listOf(SHACL.qualifiedMinCount, SHACL.qualifiedMaxCount, SHACL.qualifiedValueShapesDisjoint)),
+    /** `sh:reificationRequired`, with one constant `sh:reifierShape` ([ComponentExtras.reifierShape]) or none. */
+    REIFICATION(ConstraintType.REIFIER_SHAPE, listOf(SHACL.reificationRequired)),
 }
 
 /** Recognises computed parameter values (SHACL 1.2 Node Expressions §8). */

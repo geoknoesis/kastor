@@ -9,11 +9,15 @@ import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
+import com.geoknoesis.kastor.rdf.shacl.native.DynamicComponent
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
+import com.geoknoesis.kastor.rdf.shacl.providers.DynamicInstanceCache
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotSame
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -526,6 +530,13 @@ class DynamicShaclTest {
             val malformed = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", prop("sh:in [ rdf:rest () ]"), config) }
             val chain = generateSequence<Throwable>(malformed) { it.cause }.toList()
             assertTrue(chain.any { it is ShapeCompileException } && chain.none { it is UnsupportedShaclFeatureException }, malformed.toString())
+            // A blank node that is neither a list nor a node expression is the D4 compile error (ruling D6), never unsupported.
+            for (body in listOf("sh:class [ ex:foo 1 ]", "sh:in [ ex:foo 1 ]")) {
+                val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:v 1 .", prop(body), config) }, body)
+                val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+                assertTrue(causes.any { it is ShapeCompileException } && causes.none { it is UnsupportedShaclFeatureException }, "$body: $error")
+                assertTrue(causes.any { "neither a constant nor a node expression" in it.message.orEmpty() }, "$body: $error")
+            }
         }
         val call = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", prop("sh:class [ ex:undeclared ( ex:A ) ]")) }
         assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported(call))
@@ -552,5 +563,183 @@ class DynamicShaclTest {
         val focusNodes = validate("jena", "ex:a ex:p \"lit\" .", shapes).violations.map { it.focusNode }
         assertTrue(ex("a") in focusNodes, focusNodes.toString())
         assertTrue(focusNodes.any { it is Literal && it.lexical == "lit" }, focusNodes.toString())
+    }
+
+    // --- multi-parameter components: sh:pattern / sh:flags ---------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh pattern reads the pattern from the data`(provider: String) {
+        val v = validate(provider, "ex:a ex:pat \"^[0-9]+$\" ; ex:v \"12\" , \"12a\" .", prop("sh:pattern [ shnex:pathValues ex:pat ]")).violations.single()
+        assertEquals(ex("a") to ConstraintType.PATTERN, v.focusNode to v.constraint.constraintType)
+        assertEquals("12a", (v.value as Literal).lexical)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh flags applies to a constant pattern`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:i , ex:n ; sh:property ex:P . ex:P sh:path ex:v ; sh:pattern \"^abc$\" ; sh:flags [ shnex:pathValues ex:flags ] ."
+        val compiled = ShapesCompiler.compile(g(shapes).getTriples(), ValidationConfig.default())
+        assertTrue(compiled.referencedPropertyShapes.getValue(ex("P")).constraints.single() is PropertyConstraint.Dynamic)
+        val report = validate(provider, "ex:i ex:flags \"i\" ; ex:v \"ABC\" . ex:n ex:flags \"\" ; ex:v \"ABC\" .", shapes)
+        assertEquals(listOf(ex("n") to ConstraintType.PATTERN), report.violations.map { it.focusNode to it.constraint.constraintType })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an invalid dynamic pattern fails`(provider: String) {
+        val cases = listOf(
+            "sh:pattern [ shnex:pathValues ex:p ]" to "\"(\"",
+            "sh:pattern [ shnex:pathValues ex:p ]" to "ex:iri",
+            "sh:pattern [ shnex:pathValues ex:p ]" to "1",
+            "sh:pattern \"a\" ; sh:flags [ shnex:pathValues ex:p ]" to "\"z\"",
+            "sh:pattern \"a\" ; sh:flags [ shnex:pathValues ex:p ]" to "1",
+        )
+        for ((body, bad) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:v \"a\" ; ex:p $bad .", prop(body)) }, "$body $bad")
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && ("sh:pattern" in message || "sh:flags" in message), message)
+        }
+    }
+
+    @Test
+    fun `a pattern read from the data is bounded by the pattern budget`() {
+        // (.*a){30} needs astronomically many backtracking steps to reject sixty a's and a "!" (PatternBudgetTest). The
+        // JDK's regex engine rejects the brief's (a+)+$ on 40 a's and a "!" at once, so it would not reach the budget.
+        val hostile = "a".repeat(60) + "!"
+        val config = ValidationConfig(patternTimeout = java.time.Duration.ofMillis(50))
+        val started = System.nanoTime()
+        val report = validate("jena", "ex:a ex:pat \"^(.*a){30}$\" ; ex:v \"$hostile\" .", prop("sh:pattern [ shnex:pathValues ex:pat ]"), config)
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        val v = report.violations.single()
+        assertTrue(v.isPatternTimeout, v.toString())
+        assertEquals(ConstraintType.PATTERN, v.constraint.constraintType)
+        assertTrue(elapsedMs < 30_000, "took $elapsedMs ms")
+    }
+
+    @Test
+    fun `the dynamic instance cache stops growing at its cap`() {
+        val cache = DynamicInstanceCache(max = 4)
+        val dynamic = PropertyConstraint.Dynamic(DynamicComponent.MIN_COUNT, emptyMap())
+        val first = (0 until 10).map { n -> cache.getOrPut(dynamic, listOf(listOf(int(n)))) { PropertyConstraint.MinCount(n) } }
+        assertEquals(4, cache.size)
+        // A cached key gives the identical instance, not a new one.
+        assertSame(first[0], cache.getOrPut(dynamic, listOf(listOf(int(0)))) { PropertyConstraint.MinCount(0) })
+        // An uncached key is built every time, and the cache stays at its cap.
+        var builds = 0
+        val a = cache.getOrPut(dynamic, listOf(listOf(int(9)))) { builds++; PropertyConstraint.MinCount(9) }
+        val b = cache.getOrPut(dynamic, listOf(listOf(int(9)))) { builds++; PropertyConstraint.MinCount(9) }
+        assertEquals(2, builds)
+        assertNotSame(a, b)
+        assertEquals(4, cache.size)
+    }
+
+    // --- multi-parameter components: qualified value shapes ---------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic qualified counts`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property [ sh:path ex:v ;
+              sh:qualifiedValueShape [ sh:datatype xsd:integer ] ; sh:qualifiedMinCount [ shnex:pathValues ex:minQ ] ] .
+        """
+        val report = validate(provider, "ex:a ex:minQ 2 ; ex:v 1 , \"x\" . ex:b ex:minQ 1 ; ex:v 1 , \"x\" .", shapes)
+        assertEquals(listOf(ex("a") to ConstraintType.QUALIFIED_MIN_COUNT), report.violations.map { it.focusNode to it.constraint.constraintType })
+        val max = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property [ sh:path ex:v ;
+              sh:qualifiedValueShape [ sh:datatype xsd:integer ] ; sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount [ shnex:pathValues ex:maxQ ] ] .
+        """
+        val maxReport = validate(provider, "ex:a ex:maxQ 1 ; ex:v 1 , 2 . ex:b ex:maxQ 2 ; ex:v 1 , 2 .", max)
+        assertEquals(listOf(ex("a") to ConstraintType.QUALIFIED_MAX_COUNT), maxReport.violations.map { it.focusNode to it.constraint.constraintType })
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:maxQ -1 ; ex:v 1 . ex:b ex:maxQ 2 .", max) }
+        assertTrue("Dynamic SHACL" in error.message.orEmpty() && "sh:qualifiedMaxCount" in error.message.orEmpty(), error.message)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh qualifiedValueShapesDisjoint excludes the sibling shapes only when true`(provider: String) {
+        // 1 conforms to the sibling shape ex:Pos too: disjoint, it does not count for ex:Int.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property ex:P1 , ex:P2 .
+            ex:P1 sh:path ex:v ; sh:qualifiedValueShape ex:Int ; sh:qualifiedMinCount 1 ;
+              sh:qualifiedValueShapesDisjoint [ shnex:pathValues ex:disjoint ] .
+            ex:P2 sh:path ex:v ; sh:qualifiedValueShape ex:Pos ; sh:qualifiedMinCount 1 .
+            ex:Int sh:datatype xsd:integer .
+            ex:Pos sh:minInclusive 0 .
+        """
+        val report = validate(provider, "ex:a ex:disjoint true ; ex:v 1 . ex:b ex:disjoint false ; ex:v 1 .", shapes)
+        assertEquals(listOf(ex("a") to ConstraintType.QUALIFIED_MIN_COUNT), report.violations.map { it.focusNode to it.constraint.constraintType })
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:disjoint 1 ; ex:v 1 . ex:b ex:disjoint false .", shapes) }
+        assertTrue("Dynamic SHACL" in error.message.orEmpty() && "sh:qualifiedValueShapesDisjoint" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
+    fun `a reifier that deactivates a dynamic qualifiedMinCount leaves the qualifiedMaxCount`() {
+        // The two counts have different reifiers, so they stay two constraints; ex:minQ is absent, which would fail.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:v ; sh:qualifiedValueShape [ sh:datatype xsd:integer ] ;
+              sh:qualifiedMinCount [ shnex:pathValues ex:minQ ] {| sh:deactivated true |} ;
+              sh:qualifiedMaxCount [ shnex:pathValues ex:maxQ ] ] .
+        """
+        val report = validate("jena", "ex:a ex:maxQ 1 ; ex:v 1 , 2 .", shapes)
+        assertEquals(listOf(ex("a") to ConstraintType.QUALIFIED_MAX_COUNT), report.violations.map { it.focusNode to it.constraint.constraintType })
+    }
+
+    @Test
+    fun `dynamic qualifiedMaxCount in a recursive shape stays non-monotone`() {
+        // ex:a conforms to ex:S iff at most 0 of its ex:p values, i.e. ex:a itself, conform to ex:S: a cycle through a
+        // negative dependency, undefined (R16), exactly as with the constant sh:qualifiedMaxCount 0. The polarity is the
+        // instantiated constraint's: a maximum makes the read negative.
+        fun shapes(max: String) = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ;
+              sh:qualifiedValueShape ex:S ; sh:qualifiedMaxCount $max ] .
+        """
+        val data = "ex:a ex:p ex:a ; ex:max 0 ."
+        val dynamic = validate("jena", data, shapes("[ shnex:pathValues ex:max ]"))
+        val constant = validate("jena", data, shapes("0"))
+        assertTrue(dynamic.violations.isNotEmpty() && dynamic.violations.all { it.isUndefinedRecursion }, dynamic.violations.toString())
+        assertEquals(
+            constant.violations.map { Triple(it.focusNode, it.value, it.isUndefinedRecursion) },
+            dynamic.violations.map { Triple(it.focusNode, it.value, it.isUndefinedRecursion) },
+        )
+        // In strict mode, an undefined answer fails the run.
+        val error = assertThrows(ShaclValidationException::class.java) {
+            validate("jena", data, shapes("[ shnex:pathValues ex:max ]"), ValidationConfig(strictMode = true))
+        }
+        assertTrue("undefined" in error.message.orEmpty(), error.toString())
+    }
+
+    // --- multi-parameter components: sh:reificationRequired ---------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh reificationRequired with and without sh reifierShape`(provider: String) {
+        val data = """
+            ex:t ex:req true ; ex:p 1 .
+            ex:f ex:req false ; ex:p 1 .
+            ex:r ex:req true ; ex:p 2 {| ex:by ex:x |} .
+            ex:s ex:req true ; ex:skip true ; ex:p 3 .
+        """
+        fun shapes(reifierShape: String, targets: String = "ex:t , ex:f , ex:r , ex:s") = """
+            ex:S a sh:NodeShape ; sh:targetNode $targets ; sh:property ex:P .
+            ex:P sh:path ex:p ; $reifierShape sh:reificationRequired _:e {| sh:deactivated [ shnex:pathValues ex:skip ] |} .
+            _:e shnex:pathValues ex:req .
+            ex:RS sh:property [ sh:path ex:by ; sh:minCount 1 ] .
+        """
+        for ((reifierShape, type) in listOf("" to ConstraintType.REIFICATION_REQUIRED, "sh:reifierShape ex:RS ;" to ConstraintType.REIFIER_SHAPE)) {
+            val report = validate(provider, data, shapes(reifierShape))
+            assertEquals(listOf(ex("t") to type), report.violations.map { it.focusNode to it.constraint.constraintType }, "$reifierShape ${report.violations}")
+        }
+        // No output, or one that is no xsd:boolean (constants would read "yes" as false), fails.
+        for (bad in listOf("", "ex:req \"yes\" ;")) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:t $bad ex:p 1 .", shapes("", targets = "ex:t")) }, bad)
+            assertTrue("Dynamic SHACL" in error.message.orEmpty() && "sh:reificationRequired" in error.message.orEmpty(), error.message)
+        }
+    }
+
+    @Test
+    fun `dynamic sh reificationRequired on a complex path is reported`() {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ( ex:a ex:b ) ; sh:reificationRequired [ shnex:pathValues ex:none ] ] ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:a ex:x . ex:x ex:b 1 .", shapes) }
+        assertEquals(setOf(UnsupportedShaclFeature.REIFIER_CONSTRAINT_ON_COMPLEX_PATH), unsupported(error))
+        // Ignored, it constrains nothing: its expression, which has no output, is not evaluated.
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:a ex:a ex:x . ex:x ex:b 1 .", shapes, ignore)
+        assertTrue(report.warnings.any { "sh:reificationRequired" in it.message }, report.warnings.toString())
+        assertTrue(report.violations.isEmpty(), report.violations.toString())
     }
 }

@@ -94,10 +94,10 @@ internal fun NativeShaclValidator.evaluateConstraint(
         is PropertyConstraint.ReificationRequired,
         -> Unit
         is PropertyConstraint.Deactivatable ->
-            when (c.constraint) {
+            when {
                 // Resolved per focus node, with the triples they constrain, by validatePropertyShape: evaluating the
                 // conditions here too would evaluate them twice.
-                is PropertyConstraint.ReifierShape, is PropertyConstraint.ReificationRequired -> Unit
+                c.constraint.isReifierConstraint() -> Unit
                 // SHACL 1.2 Core §3.1.6: a constraint a reifier deactivates for the focus node is ignored. A failure of
                 // the expression is thrown; a provisional answer it reads, when no condition is true, makes the
                 // constraint undefined for now (see evaluateConstraintsForValues).
@@ -107,9 +107,12 @@ internal fun NativeShaclValidator.evaluateConstraint(
             }
         is PropertyConstraint.SparqlComponent ->
             sink.failAll(evaluateSparqlComponent(focus, tpl, values, c, ctx, path != null, firstOnly = !sink.reports))
-        // SHACL 1.2 Node Expressions §8: the constant constraint the computed parameters make for the focus node.
+        // SHACL 1.2 Node Expressions §8: the constant constraint the computed parameters make for the focus node. A
+        // computed sh:reificationRequired is resolved by validatePropertyShape, with the triples it constrains.
         is PropertyConstraint.Dynamic ->
-            resolveDynamic(c, focus, ctx, state.depth, currentShape)?.let { evaluateConstraint(focus, tpl, values, it, ctx, state, currentShape, path, sink) }
+            if (!c.isReifierConstraint()) {
+                resolveDynamic(c, focus, ctx, state.depth, currentShape)?.let { evaluateConstraint(focus, tpl, values, it, ctx, state, currentShape, path, sink) }
+            }
     }
 }
 

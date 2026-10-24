@@ -12,6 +12,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.ClosedMode
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledPropertyShape
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
+import com.geoknoesis.kastor.rdf.shacl.native.DynamicComponent
 import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
 import com.geoknoesis.kastor.rdf.shacl.native.NodeLogicalPart
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
@@ -286,6 +287,15 @@ internal fun NativeShaclValidator.deactivates(expr: NodeExpression, focus: RdfTe
     return out.size == 1 && out.single() == TrueLiteral
 }
 
+/**
+ * True for a `sh:reifierShape` or `sh:reificationRequired` constraint, constant or with a computed
+ * `sh:reificationRequired` (SHACL 1.2 Node Expressions §8): [validatePropertyShape] evaluates them, once per focus node,
+ * with the triples they constrain.
+ */
+internal fun PropertyConstraint.isReifierConstraint(): Boolean =
+    this is PropertyConstraint.ReifierShape || this is PropertyConstraint.ReificationRequired ||
+        (this is PropertyConstraint.Dynamic && component == DynamicComponent.REIFICATION)
+
 /** The constraint type an undefined [ProvisionalUndefined] answer of [c] is reported with. */
 private fun provisionalType(c: PropertyConstraint): ConstraintType =
     when (c) {
@@ -354,16 +364,20 @@ internal fun NativeShaclValidator.validatePropertyShape(
             if (sink.stop) return
         }
     }
-    val reifierConstraints = ps.constraints.filter { it.unwrapped().let { c -> c is PropertyConstraint.ReifierShape || c is PropertyConstraint.ReificationRequired } }
+    val reifierConstraints = ps.constraints.filter { it.unwrapped().isReifierConstraint() }
     if (focus is RdfResource && reifierConstraints.isNotEmpty()) {
         sink.unit { s ->
             // The constraints a reifier deactivates for the focus node are left out (SHACL 1.2 Core §3.1.6).
             val active = reifierConstraints.mapNotNull { c ->
-                if (c is PropertyConstraint.Deactivatable) {
-                    c.constraint.takeUnless { reifierDeactivated(c.deactivatedWhen, focus, tpl, ConstraintType.REIFIER_SHAPE, ctx, state, s) }
-                } else {
-                    c
-                }
+                val guarded =
+                    if (c is PropertyConstraint.Deactivatable) {
+                        c.constraint.takeUnless { reifierDeactivated(c.deactivatedWhen, focus, tpl, ConstraintType.REIFIER_SHAPE, ctx, state, s) }
+                    } else {
+                        c
+                    }
+                // SHACL 1.2 Node Expressions §8: a computed sh:reificationRequired, resolved for the focus node once the
+                // constraint is known to be active.
+                if (guarded is PropertyConstraint.Dynamic) resolveReification(guarded, focus, ps, tpl, ctx, state, s) else guarded
             }
             validateReifierPropertyConstraints(
                 focus = focus,
@@ -375,6 +389,30 @@ internal fun NativeShaclValidator.validatePropertyShape(
                 sink = s,
             )
         }
+    }
+}
+
+/**
+ * The `sh:reifierShape` / `sh:reificationRequired` constraint the computed [c] stands for at [focus] ([resolveDynamic]).
+ * Null when it constrains nothing: on a path that is not a predicate IRI (an unsupported feature, see
+ * `UnsupportedShaclFeature.REIFIER_CONSTRAINT_ON_COMPLEX_PATH`, here ignored), whose expression is not evaluated, or
+ * when the expression reads a provisional answer of the recursion solver, which is reported as undefined.
+ */
+private fun NativeShaclValidator.resolveReification(
+    c: PropertyConstraint.Dynamic,
+    focus: RdfTerm,
+    ps: CompiledPropertyShape,
+    tpl: ResultTemplate,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+): PropertyConstraint? {
+    if (ps.path !is ShaclPath.Predicate) return null
+    return try {
+        resolveDynamic(c, focus, ctx, state.depth, ps.shapeNode)
+    } catch (e: ProvisionalUndefined) {
+        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.REIFIER_SHAPE, null, e.node, e.shape)
+        null
     }
 }
 
