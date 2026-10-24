@@ -90,6 +90,7 @@ class NodeExpressionCompileTest {
             """ex:holder ex:expr [ sh:select "SELECT ?x {}" ; sh:prefixes <urn:a> , <urn:b> ] .""",
             """ex:holder ex:expr [ sh:select 1 ] .""",
             """ex:holder ex:expr [ sh:sparqlExpr "1" , "2" ] .""",
+            """ex:holder ex:expr [ sh:select "SELECT ?x {}" ; sh:prefixes "x" ] .""",
             """ex:holder ex:expr [ a sh:SelectExpression ] .""",
             """ex:holder ex:expr [ a sh:SPARQLExprExpression ] .""",
         )

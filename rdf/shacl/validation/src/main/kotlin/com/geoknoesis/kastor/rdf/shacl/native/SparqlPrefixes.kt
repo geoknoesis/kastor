@@ -24,7 +24,10 @@ internal object SparqlPrefixes {
         if (holders.isNotEmpty()) {
             val visited = HashSet<RdfTerm>()
             val queue = ArrayDeque<RdfTerm>()
-            holders.forEach { queue.addAll(withVersionedSubjects(it, index)) }
+            holders.forEach {
+                if (it !is RdfResource) throw ShapeCompileException("The values of sh:prefixes are IRIs or blank nodes, but $node has $it")
+                queue.addAll(withVersionedSubjects(it, index))
+            }
             while (queue.isNotEmpty()) {
                 index.tick("SPARQL prefix collection")
                 val holder = queue.removeFirst()
