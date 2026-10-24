@@ -316,6 +316,26 @@ class NodeExpressionEvaluationLibraryTest {
     }
 
     @Test
+    // A separate thread: the evaluation is CPU-bound and only stops through the budget, so without it the test must fail
+    // after the timeout rather than hang (an interrupt is only seen at a budget check).
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `exponential recursion through failing arguments stops at the run deadline`() {
+        // §3.2.2: every argument is evaluated before a failure is reported, so ex:f doubles its calls every two levels
+        // until the depth cap fails them: about 2^63 evaluation steps without output, path or SPARQL work.
+        val ttl = """
+            ex:holder ex:expr [ ex:f () ] .
+            ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:f ( [ ex:f () ] [ ex:f () ] ) ] .
+        """
+        val graph = Rdf.parse(prefixes + "\n" + ttl, RdfFormat.TURTLE)
+        val expr = graph.find(ex("holder"), ex("expr"), null).single().obj
+        var now = 0L
+        val config = ValidationConfig.default().copy(timeout = Duration.ofNanos(20_000))
+        val validator = NativeShaclValidator(config) { repository("jena") }.also { it.budgetClock = { now++ } }
+        val e = assertThrows(ShaclValidationException::class.java) { validator.evaluateNodeExpression(graph, expr, null, emptyMap()) }
+        assertTrue(e.message!!.contains("timed out"), e.message)
+    }
+
+    @Test
     @Timeout(120)
     fun `exponential custom function recursion stops at the run deadline`() {
         // ex:dbl(x) calls itself twice on the successor of x: 2^30 calls along a chain of 30 nodes, all without output.

@@ -11,14 +11,14 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 
+/** A `PREFIX p: <ns>` declaration in a SPARQL query text (case-insensitive keyword; `p` may be empty). */
+private val PREFIX_DECLARATION = Regex("(?i)PREFIX\\s+([A-Za-z][A-Za-z0-9_.-]*)?:\\s*<([^>]*)>")
+
 /**
  * Index of the shapes graph. An RDF graph is a **set** of triples: a provider that hands out the same triple twice
  * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
  * forked, so duplicate triples are dropped here and every value list is duplicate-free.
  */
-/** A `PREFIX p: <ns>` declaration in a SPARQL query text (case-insensitive keyword; `p` may be empty). */
-private val PREFIX_DECLARATION = Regex("(?i)PREFIX\\s+([A-Za-z][A-Za-z0-9_.-]*)?:\\s*<([^>]*)>")
-
 internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
     /** All (distinct) shapes-graph triples. */
     val triples: List<RdfTriple>
@@ -79,8 +79,12 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
             }
     }
 
-    /** SHACL SPARQL function declarations by node, as [SparqlFunctionDeclarations] decided them (cached per index). */
-    internal val sparqlFunctionDeclarations = HashMap<RdfResource, Any>()
+    /**
+     * SHACL SPARQL function declarations by node, as [SparqlFunctionDeclarations] decided them (cached per index).
+     * Filled only while the shapes graph is compiled ([ShapesCompiler.compile]: feature detection and the function
+     * set); validation runs never read or write it. Concurrent all the same, as a compiled graph keeps its index.
+     */
+    internal val sparqlFunctionDeclarations = java.util.concurrent.ConcurrentHashMap<RdfResource, Any>()
 
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 
