@@ -165,6 +165,27 @@ class DynamicShaclTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a failed computed sh closed or qualified count inside sh not or sh node stays a failure`(provider: String) {
+        // Checked only for conformance, a failed evaluation must not count as "does not conform" (Review Focus #3).
+        val inners = listOf(
+            "[ sh:closed [ shnex:pathValues ex:none ] ]" to "sh:closed",
+            "[ sh:closed true ; sh:ignoredProperties [ shnex:pathValues ex:v ] ]" to "sh:ignoredProperties",
+            "[ sh:property [ sh:path ex:v ; sh:qualifiedValueShape [ sh:datatype xsd:integer ] ; sh:qualifiedMinCount [ shnex:pathValues ex:none ] ] ]" to
+                "sh:qualifiedMinCount",
+            "[ sh:property [ sh:path ex:v ; sh:qualifiedValueShape [ sh:datatype xsd:integer ] ; sh:qualifiedMaxCount [ shnex:pathValues ex:v ] ] ]" to
+                "sh:qualifiedMaxCount",
+        )
+        for ((inner, parameter) in inners) {
+            for (wrapper in listOf("sh:not", "sh:node")) {
+                val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; $wrapper $inner ."
+                val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:v 1 , 2 .", shapes) }, "$wrapper $inner")
+                val message = error.message.orEmpty()
+                assertTrue("Dynamic SHACL" in message && parameter in message, "$wrapper $inner: $message")
+            }
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a dynamic parameter on a node shape reads the focus node`(provider: String) {
         val inclusive = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:maxInclusive [ shnex:pathValues ex:lim ] ."
         val v = validate(provider, "ex:a ex:lim 3 .", inclusive).violations.single()

@@ -128,6 +128,18 @@ class DynamicSparqlComponentTest {
         assertEquals(2, tags.values.map { it.first() }.toSet().size, tags.toString())
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a failed component parameter inside sh not or sh node stays a failure`(provider: String) {
+        // Checked only for conformance, the component's failed evaluation must not count as "does not conform".
+        val inner = "[ sh:property [ sh:path ex:age ; ex:maxAge [ shnex:pathValues ex:none ] ] ]"
+        for (wrapper in listOf("sh:not", "sh:node")) {
+            val shapes = maxAgeAsk + "ex:S a sh:NodeShape ; sh:targetNode ex:a ; $wrapper $inner ."
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:age 1 .", shapes) }, wrapper)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "no nodes" in message, "$wrapper: $message")
+        }
+    }
+
     // --- output rules ----------------------------------------------------------------------------------------------------
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
