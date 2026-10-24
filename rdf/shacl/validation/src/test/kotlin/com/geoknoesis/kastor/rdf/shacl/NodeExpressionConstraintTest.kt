@@ -172,14 +172,15 @@ class NodeExpressionConstraintTest {
 
     /** The triples of [graph] reachable from [node] through blank-node objects (a deep copy's triples). */
     private fun deepCopyIn(graph: com.geoknoesis.kastor.rdf.RdfGraph, node: RdfTerm): List<com.geoknoesis.kastor.rdf.RdfTriple> {
-        val triples = graph.getTriples()
+        val bySubject = graph.getTriples().groupBy { it.subject }
         val out = ArrayList<com.geoknoesis.kastor.rdf.RdfTriple>()
         val seen = HashSet<RdfTerm>()
-        fun visit(n: RdfTerm) {
-            if (n !is BlankNode || !seen.add(n)) return
-            for (t in triples.filter { it.subject == n }) { out.add(t); visit(t.obj) }
+        val pending = ArrayDeque<RdfTerm>().apply { add(node) }
+        while (pending.isNotEmpty()) {
+            val n = pending.removeFirst()
+            if (n !is BlankNode || !seen.add(n)) continue
+            for (t in bySubject[n].orEmpty()) { out.add(t); pending.add(t.obj) }
         }
-        visit(node)
         return out
     }
 
@@ -214,9 +215,9 @@ class NodeExpressionConstraintTest {
     }
 
     @Test
-    fun `deep copies of many expressions that share a large structure are bounded for the whole run`() {
-        // 60 distinct expressions share _:count, whose list has 5,000 members (10,000 triples): each copy is under
-        // the per-copy limit, but together they would copy 600,000 triples from a shapes graph of about 11,000.
+    fun `deep copies of many expressions that share a large structure are written once`() {
+        // 60 distinct expressions share _:count, whose list has 5,000 members (10,000 triples). Copied per root, that
+        // would be 600,000 triples from a shapes graph of about 11,000; each blank node is described once instead.
         val members = (1..5_000).joinToString(" ")
         val shapes = buildString {
             append("_:count shnex:count ( $members ) .\n")
@@ -225,14 +226,22 @@ class NodeExpressionConstraintTest {
             append(" .\n")
         }
         val started = System.nanoTime()
-        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
-        assertTrue("sh:sourceConstraint" in error.message.orEmpty(), error.message)
+        // Validation copies nothing: the copies are written only by toShaclValidationReportRdf.
+        val report = validate("jena", "ex:a ex:p 1 .", shapes)
+        assertEquals(60, report.violations.size)
+        assertTrue(report.violations.none { v -> v.context.values.any { it is List<*> } }, "no triples are held per result")
+        val rdf = report.toShaclValidationReportRdf()
         assertTrue(System.nanoTime() - started < 60_000_000_000L)
-        // One such expression is copied in full.
-        val one = "_:count shnex:count ( $members ) .\nex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:expression [ sparql:equals ( _:count -1 ) ] ] ."
-        val rdf = validate("jena", "ex:a ex:p 1 .", one).toShaclValidationReportRdf()
-        val source = rdf.getTriples().single { it.predicate == SHACL.sourceConstraint }.obj
-        assertEquals(10_006, deepCopyIn(rdf, source).size)
+        val sources = rdf.getTriples().filter { it.predicate == SHACL.sourceConstraint }.map { it.obj }.toSet()
+        assertEquals(60, sources.size)
+        // Each copy is complete (the call, two list cells, _:count and its list), and the shared part is written once.
+        val written = HashSet<com.geoknoesis.kastor.rdf.RdfTriple>()
+        for (source in sources) {
+            val copy = deepCopyIn(rdf, source)
+            assertEquals(10_006, copy.size)
+            written.addAll(copy)
+        }
+        assertEquals(60 * 5 + 10_001, written.size)
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])

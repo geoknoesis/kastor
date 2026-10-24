@@ -178,34 +178,12 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     internal val sparqlFunctionDeclarations = java.util.concurrent.ConcurrentHashMap<RdfResource, Any>()
 
     /**
-     * The triples of the deep copy of [node] (SHACL 1.2 Core, "Deep Copy"): none for an IRI or a literal; for a blank
-     * node, its triples and, transitively, those of every blank node in the object position of a copied triple (RDF
-     * lists included). Each blank node is visited once, so a cycle terminates. [tick] is called per copied triple;
-     * more than [max] triples throw [com.geoknoesis.kastor.rdf.shacl.ShaclValidationException].
+     * The triples whose subject is the blank node [node], in index order: what a deep copy (SHACL 1.2 Core, "Deep
+     * Copy") takes of each blank node it reaches. The report writer follows the blank-node objects itself
+     * ([com.geoknoesis.kastor.rdf.shacl.SourceConstraintTriples]).
      */
-    fun deepCopyTriples(node: RdfTerm, max: Int, tick: () -> Unit): List<RdfTriple> {
-        if (node !is BlankNode) return emptyList()
-        val out = ArrayList<RdfTriple>()
-        val visited = HashSet<BlankNode>()
-        val pending = ArrayDeque<BlankNode>().apply { add(node) }
-        visited.add(node)
-        while (pending.isNotEmpty()) {
-            val subject = pending.removeFirst()
-            for ((predicate, objects) in bySubject[subject].orEmpty()) {
-                for (obj in objects) {
-                    tick()
-                    if (out.size >= max) {
-                        throw com.geoknoesis.kastor.rdf.shacl.ShaclValidationException(
-                            "The deep copy of $node for sh:sourceConstraint has more than $max triples",
-                        )
-                    }
-                    out.add(RdfTriple(subject, predicate, obj))
-                    if (obj is BlankNode && visited.add(obj)) pending.add(obj)
-                }
-            }
-        }
-        return out
-    }
+    fun ownTriples(node: BlankNode): List<RdfTriple> =
+        bySubject[node].orEmpty().flatMap { (predicate, objects) -> objects.map { RdfTriple(node, predicate, it) } }
 
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 

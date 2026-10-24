@@ -107,8 +107,9 @@ data class ValidationViolation(
     val resultMessages: List<Literal> = emptyList(),
     /**
      * `sh:sourceConstraint` (e.g. the SHACL-SPARQL constraint node), when applicable. For a blank-node expression of
-     * `sh:expression`, or a blank-node shape of `sh:nodeByExpression`, the native engine also puts the triples of its
-     * deep copy in [context] (key `"sourceConstraintTriples"`), and [toShaclValidationReportRdf] writes them.
+     * `sh:expression`, or a blank-node shape of `sh:nodeByExpression`, the native engine also puts a handle on the
+     * shapes graph in [context] (key `"sourceConstraintTriples"`), from which [toShaclValidationReportRdf] writes the
+     * node's deep copy; nothing is copied until then.
      */
     val sourceConstraint: RdfTerm? = null,
     /**
@@ -202,11 +203,40 @@ data class ValidationViolation(
 }
 
 /**
- * Key of the [ValidationViolation.context] entry that holds the triples (a `List<RdfTriple>`) of the deep copy of a
- * blank-node [ValidationViolation.sourceConstraint], which [toShaclValidationReportRdf] writes into the results graph
- * (SHACL 1.2 Node Expressions §7.1 and §7.2).
+ * Key of the [ValidationViolation.context] entry that holds the [SourceConstraintTriples] of the run, from which
+ * [toShaclValidationReportRdf] writes the deep copy of a blank-node [ValidationViolation.sourceConstraint] into the
+ * results graph (SHACL 1.2 Node Expressions §7.1 and §7.2). It is the only way from a result to its shapes graph
+ * that leaves the public API unchanged.
  */
 internal const val SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY: String = "sourceConstraintTriples"
+
+/**
+ * The blank nodes of one shapes graph with their own triples, for the deep copies of `sh:sourceConstraint` values.
+ * Nothing is computed until a report is written: [of] fetches the triples of a blank node from [describe] the first
+ * time it is asked, and keeps them, so all the reports and results of a run fetch each blank node once, and in total
+ * no more than the shapes graph [shapesTriples]. The writer follows the blank-node objects itself, one node at a time.
+ * Thread-safe (a report can be written from several threads). Two instances are equal when their shapes graphs are,
+ * so that results stay comparable across runs.
+ */
+internal class SourceConstraintTriples(
+    private val shapesTriples: List<RdfTriple>,
+    private val describe: (BlankNode) -> List<RdfTriple>,
+) {
+    private val described = HashMap<BlankNode, List<RdfTriple>>()
+
+    /** The most triples a deep copy, or all the deep copies of a report together, can hold: the shapes graph. */
+    val maxTriples: Int get() = shapesTriples.size
+
+    @Synchronized
+    fun of(node: BlankNode): List<RdfTriple> = described.getOrPut(node) { describe(node) }
+
+    override fun equals(other: Any?): Boolean =
+        other is SourceConstraintTriples && (other.shapesTriples === shapesTriples || other.shapesTriples == shapesTriples)
+
+    override fun hashCode(): Int = shapesTriples.size
+
+    override fun toString(): String = "SourceConstraintTriples(${shapesTriples.size} shapes graph triples)"
+}
 
 /**
  * SHACL validation warning.

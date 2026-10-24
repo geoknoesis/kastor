@@ -14,6 +14,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShapesGraphNotFoundException
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
 import com.geoknoesis.kastor.rdf.shacl.ShaclShape
+import com.geoknoesis.kastor.rdf.shacl.SourceConstraintTriples
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclOperationException
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
@@ -300,8 +301,8 @@ internal class NativeShaclValidator(
             var validatedConstraintSlots = 0L
             // Distinct focus nodes validated against at least one shape (ValidationStatistics.validatedResources).
             val validatedFocusNodes = HashSet<TermKey>()
-            // Deep copies of blank-node sh:sourceConstraint values, by node (shared by the results that name one).
-            val sourceConstraintCopies = SourceConstraintCopies(compiled.index.triples.size)
+            // The shapes graph that blank-node sh:sourceConstraint values are deep-copied from, when a report is written.
+            val sourceConstraintTriples = SourceConstraintTriples(compiled.index.triples) { compiled.index.ownTriples(it) }
             fun record(results: List<ValidationViolation>) {
                 // Strict mode: a constraint that undefined recursion leaves undecided fails the validation. The check
                 // is made on the results that are reported, not where they are built: the solver also builds results
@@ -311,7 +312,7 @@ internal class NativeShaclValidator(
                 blockingResults += results.count { blocking(it.severity, it.resultSeverityIri?.let { iri -> Iri(iri) }) }
                 for (result in results) {
                     if (violations.size >= config.maxViolations) break
-                    violations.add(withSourceConstraintCopy(result, ctx, sourceConstraintCopies))
+                    violations.add(withSourceConstraintCopy(result, sourceConstraintTriples))
                 }
             }
 

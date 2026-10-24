@@ -49,7 +49,7 @@ fun ValidationReport.toShaclValidationReportRdf(
         reportNode - RDF.type - SHACL.ValidationReport
         reportNode - SHACL.conforms - if (report.isValid) TrueLiteral else FalseLiteral
         // One copy of each source constraint blank node for the whole report (results share it, as they share the node).
-        val sourceConstraintCopies = HashMap<BlankNode, BlankNode>()
+        val sourceConstraintCopies = SourceConstraintCopies()
         report.violations.forEachIndexed { idx, v ->
             val row = bnode("resultV$idx")
             reportNode - SHACL.result - row
@@ -75,7 +75,7 @@ private fun GraphDsl.addValidationResult(
     row: BlankNode,
     v: ValidationViolation,
     bnodePrefix: String,
-    sourceConstraintCopies: MutableMap<BlankNode, BlankNode>,
+    sourceConstraintCopies: SourceConstraintCopies,
 ) {
     row - RDF.type - SHACL.ValidationResult
     row - SHACL.focusNode - v.focusNode
@@ -129,24 +129,43 @@ private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoes
     return copy(root, emptySet())
 }
 
+/** The copies of the source constraint blank nodes written in one report: their labels, by shapes graph and node. */
+private class SourceConstraintCopies {
+    val names = java.util.IdentityHashMap<SourceConstraintTriples, HashMap<BlankNode, BlankNode>>()
+    val written = java.util.IdentityHashMap<SourceConstraintTriples, IntArray>()
+    var labels = 0
+}
+
 /**
- * The `sh:sourceConstraint` value of [v] in the results graph: [source] itself, or, when [v] carries the triples of
- * its deep copy ([SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY]), the copy, written here. Its blank nodes get labels of their
- * own (`sourceConstraint<k>`), one per source blank node for the whole report ([copies]), so the copy cannot merge
- * with the report's own blank nodes; shared and cyclic structure stays as it is in the shapes graph.
+ * The `sh:sourceConstraint` value of [v] in the results graph: [source] itself, or, when [v] carries the shapes graph
+ * of its deep copy ([SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY]), the copy, written here. The copy is walked one blank node
+ * at a time, from [source] through the blank-node objects of the triples written ([SourceConstraintTriples.of]). Its
+ * blank nodes get labels of their own (`sourceConstraint<k>`), one per source blank node for the whole report
+ * ([copies]): each one is written once, so shared structure is written once, a cycle ends where it closes, and all the
+ * copies of a report hold at most the shapes graph. The copy cannot merge with the report's own blank nodes. A
+ * `sh:focusNode` or `sh:value` that is the same blank node as the source constraint is not relabelled, so it does
+ * not co-refer with the copy.
  */
-private fun GraphDsl.copySourceConstraint(source: RdfTerm, v: ValidationViolation, copies: MutableMap<BlankNode, BlankNode>): RdfTerm {
-    @Suppress("UNCHECKED_CAST")
-    val triples = v.context[SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY] as? List<com.geoknoesis.kastor.rdf.RdfTriple>
-    if (source !is BlankNode || triples.isNullOrEmpty()) return source
-    fun rename(term: RdfTerm): RdfTerm =
-        if (term is BlankNode) copies.getOrPut(term) { bnode("sourceConstraint${copies.size}") } else term
-    val known = source in copies
-    val root = rename(source)
-    if (!known) {
-        for (t in triples) {
-            // A blank node the copy shares with an earlier copy is already written with its triples.
-            triple(rename(t.subject) as RdfResource, t.predicate, rename(t.obj))
+private fun GraphDsl.copySourceConstraint(source: RdfTerm, v: ValidationViolation, copies: SourceConstraintCopies): RdfTerm {
+    val shapes = v.context[SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY] as? SourceConstraintTriples
+    if (source !is BlankNode || shapes == null) return source
+    val names = copies.names.getOrPut(shapes) { HashMap() }
+    names[source]?.let { return it }
+    val written = copies.written.getOrPut(shapes) { IntArray(1) }
+    val pending = ArrayDeque<BlankNode>()
+    fun name(node: BlankNode): BlankNode = names.getOrPut(node) {
+        pending.addLast(node)
+        bnode("sourceConstraint${copies.labels++}")
+    }
+    val root = name(source)
+    while (pending.isNotEmpty()) {
+        val node = pending.removeFirst()
+        val copy = names.getValue(node)
+        for (t in shapes.of(node)) {
+            // Each blank node is written once, so this bound is never reached; it guards the loop all the same.
+            check(++written[0] <= shapes.maxTriples) { "sh:sourceConstraint copies exceed their shapes graph" }
+            val obj = t.obj
+            triple(copy, t.predicate, if (obj is BlankNode) name(obj) else obj)
         }
     }
     return root
