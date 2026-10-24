@@ -78,6 +78,17 @@ and is kept as is; it was never published to Maven Central.
 - A computed `sh:closed` (with its computed `sh:ignoredProperties`) or `sh:reificationRequired` is now evaluated for
   literal focus nodes too, so a broken expression fails the run; a literal still has nothing to close or reify.
 
+### Changed (fail-closed node expressions)
+
+- `rdf-shacl`: a conformance check of a node expression that the engine cannot decide (a final undefined answer, an
+  ill-formed or unsupported candidate shape, a nested validation error) now stops validation even when a function that
+  absorbs SPARQL errors surrounds it: `sparql:coalesce`, the unselected branch of `sparql:if`, `sparql:logical-or` /
+  `sparql:logical-and`, `sparql:bound`, a custom function argument, or a SPARQL query calling a function body (also one
+  whose body absorbs the failure itself). `[ sparql:coalesce ( [ shnex:conformsToShape ( ... ) ] true ) ]` used to be
+  `true` in that case. This is a deliberate deviation from SHACL 1.2 Node Expressions §3.3 / §5, documented in
+  [SHACL validation](docs/kastor/features/shacl-validation.md#undecided-checks-fail-closed). Ordinary evaluation errors
+  and provisional answers of the recursion solver are unchanged.
+
 ### Fixed (Dynamic SHACL)
 
 - A language-tagged pre-bound value written into a plain query slot is followed by a space, so that the template text
