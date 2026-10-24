@@ -85,10 +85,12 @@ data class ValidationConfig(
      */
     val maxCombinedGraphTriples: Long = Long.MAX_VALUE,
     /**
-     * What the native engine does with SHACL features it recognises but cannot evaluate (SHACL-SPARQL constraint
-     * components, SHACL 1.2 node expressions such as `sh:values` / `sh:expression` / SPARQL expressions used as
-     * targets). [UnsupportedFeatureHandling.FAIL] (default) rejects the shapes graph so such constraints are never
-     * silently skipped.
+     * What the native engine does with SHACL features it recognises but cannot evaluate (SHACL 1.2 `shnex:` node
+     * expressions, `sh:expression`, non-constant `sh:deactivated`, SPARQL node expressions used as `sh:targetWhere`
+     * values, SHACL functions called from SPARQL, SPARQL-based targets). SHACL-SPARQL constraints, constraint
+     * components and SPARQL node expressions at `sh:targetNode` / `sh:values` / `sh:defaultValue` are supported.
+     * [UnsupportedFeatureHandling.FAIL] (default) rejects the shapes graph so such constraints are never silently
+     * skipped.
      */
     val unsupportedFeatures: UnsupportedFeatureHandling = UnsupportedFeatureHandling.FAIL,
     /**

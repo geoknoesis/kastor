@@ -196,8 +196,31 @@ Each failing reifier yields its own result; results that would be identical are 
 
 - run over the **data graph** (see [where queries run](#where-queries-run));
 - honour `sh:prefixes`/`sh:declare`, `$PATH`, `sh:deactivated` and message templates;
-- pre-bind `$this`, `$currentShape` and `$shapesGraph`;
-- produce one result per solution row.
+- pre-bind `$this`, `$currentShape` and `$shapesGraph` (the last two are a legacy Kastor extension, available to `sh:sparql` constraints only);
+- produce one result per solution row, with `sh:sourceConstraint`.
+
+A `sh:sparql` constraint may set `sh:severity`, which becomes the severity of its results, and `sh:resultAnnotation` (`sh:annotationProperty`, `sh:annotationVarName`, `sh:annotationValue`) to add annotation triples to them.
+
+#### Prefix declarations
+
+`sh:prefixes` / `sh:declare` are followed through `owl:imports`, including `owl:versionIRI` navigation. A node with no `sh:prefixes` uses the graph-level declarations of the SHACL instances of `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and `sh:RulesGraph`. Conflicting declarations, or declarations with the wrong datatype, make the shapes graph ill-formed.
+
+#### SPARQL-based constraint components
+
+A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated like a built-in component:
+
+- **Validators:** SELECT validators come from `sh:nodeValidator` / `sh:propertyValidator`, ASK validators from `sh:validator`. The validator is chosen as in spec section 4.2.3; a component with no validator that fits the shape kind is ignored.
+- **Parameters:** parameter values are pre-bound. A shape with several values for a parameter yields one constraint per combination, up to 1024 combinations per shape and component; more than that makes the shapes graph ill-formed.
+- **Results:** results report `sh:sourceConstraintComponent` as the component IRI. The message comes from the validator, else the component, else the shape, with `{$param}` substitution. `$currentShape` / `$shapesGraph` are not pre-bound for component validators.
+
+#### SPARQL node expressions
+
+`sh:select` and `sh:sparqlExpr` are supported:
+
+- at `sh:targetNode`, with `$this` bound to the shape node;
+- at `sh:values` and `sh:defaultValue`, with `$this` bound to the focus node.
+
+Constant IRI and literal values also work at `sh:values` and `sh:defaultValue`. The value nodes of a property shape are the path values plus the `sh:values` outputs, and `sh:defaultValue` applies when that set is empty. Both are allowed only on predicate paths. An IRI node that carries `sh:select` / `sh:sparqlExpr` and is used there is ill-formed.
 
 #### Where queries run
 
@@ -213,8 +236,12 @@ The engine pre-binds variables itself before the query reaches the provider, so 
 
 A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:
 - no `MINUS`, `SERVICE` or `VALUES`;
-- no `AS` that re-binds a pre-bound variable;
-- a query that uses `$this` must project `$this` from each sub-query.
+- no `AS` that re-binds `this`, a parameter, or (in ASK queries) `value`;
+- a query that uses `$this` must project `$this` from each sub-query. A blank-node value inside a sub-select that does not project it fails at run time.
+
+`$PATH` (either `$` or `?`) is substituted on property shapes and left unbound on node shapes.
+
+`VALUES` is rejected entirely, although the spec only forbids `VALUES` that mentions a pre-bound variable: the approved W3C test `unsupported-sparql-002` expects this. This is a Kastor-specific choice.
 
 Validation then throws `ShaclValidationException` ("SHACL compile failed: ..."), with a `SparqlPreBindingRestrictionException` as its cause.
 
@@ -224,14 +251,14 @@ The native engine recognises some SHACL constructs that it cannot evaluate. By d
 
 | `UnsupportedShaclFeature` | Constructs |
 |---------------------------|------------|
-| `SPARQL_CONSTRAINT_COMPONENT` | SHACL-SPARQL constraint components (`sh:validator`, `sh:nodeValidator`, `sh:propertyValidator`) used by a shape |
-| `NODE_EXPRESSION` | SHACL 1.2 node expressions: `sh:values`, `sh:expression`, computed `sh:targetNode` / `sh:nodeByExpression` values |
-| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`), including SPARQL expressions used as targets (`sh:targetWhere`, `sh:targetNode`) |
-| `SHACL_FUNCTION` | SHACL 1.2 functions (`sh:bodyExpression`) called from a SPARQL query |
+| `SPARQL_CONSTRAINT_COMPONENT` | None: SPARQL-based constraint components are supported (see above). The category is kept for compatibility |
+| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: `shnex:` expressions, `sh:expression`, non-constant `sh:deactivated`, computed `sh:targetNode` / `sh:nodeByExpression` values |
+| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are supported |
+| `SHACL_FUNCTION` | SHACL 1.2 functions (`sh:bodyExpression`, `sh:ListParameterExpressionFunction`) called from a SPARQL query (spec section 7) |
 | `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
 | `REIFIER_CONSTRAINT_ON_COMPLEX_PATH` | `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a predicate IRI (the engine only knows which triples a predicate path traverses) |
 
-Plain `sh:sparql` constraints (see above) are supported.
+`sh:sparql` constraints, SPARQL-based constraint components and SPARQL node expressions at `sh:targetNode`, `sh:values` and `sh:defaultValue` (see above) are supported.
 
 In the failure, `ShaclValidationException` wraps an `UnsupportedShaclFeatureException`. Its message names each offending construct, and its `features` property lists the categories:
 
@@ -271,8 +298,8 @@ python scripts/fetch-conformance-data.py --only shacl
 ```
 
 The task fails instead of skipping when the suite is missing, and every case is executed. The default `test` task runs the same harness against the bundled fixture when the checkout is missing; a missing manifest, a manifest without `sht:Validate` entries or one without an approved case fails the test rather than skipping it, unless `-PshaclW3cAllowMissingData=true` opts out. Manifest rows that are not approved are skipped unless `-PshaclW3cIncludeNonApproved=true`. The harness checks failures strictly:
-- The deviations are real feature gaps, kept visible on purpose: SHACL-SPARQL custom constraint components, SHACL 1.2 node expressions (`sh:expression`, `sh:select` / `sh:sparqlExpr` values) and SHACL functions each need an expression evaluator and a component-validator binding that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
-- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 11: 4 SPARQL constraint components, 1 node expression, 3 SPARQL node expressions and 3 SHACL functions.
+- The deviations are real feature gaps, kept visible on purpose: SHACL 1.2 node expression constraints (`sh:expression`) and SHACL functions called from SPARQL (spec section 7) need an expression evaluator and a function provider that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
+- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 4: 1 node expression and 3 SHACL functions.
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
 - `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.
 - Result graphs are compared after removing the `ksh:` triples, so an undecided result would look like a failure. A case therefore fails if the engine emits any result with a `ksh:resultStatus` (undefined recursion, pattern timeout, pattern too complex), unless the case is listed with a reason in `W3cKnownDeviations`. No case is listed: the engine decides every constraint of the suite.
@@ -285,7 +312,7 @@ With `providerId = "rdf4j"`, `isValid` comes from the engine's `sh:conforms`, re
 
 > **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. The DSL supports all SHACL 1.2 features including:
 > - **SHACL 1.2 Core**: `targetWhere` with node expressions, `shape` targets, `singleLine` constraint, `reifierShape` and `reificationRequired` for RDF-star
-> - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT queries (`sparqlAsk` was removed: SHACL-SPARQL constraints cannot use ASK)
+> - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT queries (`sparqlAsk` was removed: `sh:sparql` constraints cannot use ASK; ASK is available only as a constraint component `sh:validator`)
 >
 > See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples. For **bundled ontology-quality shapes**, the `onto-qa` CLI, and the optional embedding tier, see [How to Check Ontology Quality](../guides/how-to-ontology-quality.md).
 

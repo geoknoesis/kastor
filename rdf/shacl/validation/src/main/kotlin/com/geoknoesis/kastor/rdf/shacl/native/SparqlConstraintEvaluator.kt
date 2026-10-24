@@ -33,9 +33,11 @@ import org.slf4j.LoggerFactory
  * The copy is deliberately not reused across runs: [RdfGraph] exposes no modification stamp, so a cached copy could
  * silently serve stale data. Callers validating a large graph repeatedly should validate a repository in place.
  *
- * When a query references `$shapesGraph`, the shapes graph is loaded as the named graph [SHAPES_GRAPH_IRI] of the
- * private copy (the caller's dataset is never modified) and `$shapesGraph` is pre-bound to that IRI. Pre-binding
- * itself is performed by [SparqlQueryTemplate] before a query reaches the provider.
+ * The evaluator serves `sh:sparql` constraints, SPARQL-based constraint component validators and SPARQL node
+ * expressions. When a `sh:sparql` constraint query references `$shapesGraph` (a legacy Kastor extension, together
+ * with `$currentShape`; component validators get neither), the shapes graph is loaded as the named graph
+ * [SHAPES_GRAPH_IRI] of the private copy (the caller's dataset is never modified) and `$shapesGraph` is pre-bound to
+ * that IRI. Pre-binding itself is performed by [SparqlQueryTemplate] before a query reaches the provider.
  */
 internal object SparqlConstraintEvaluator {
 
