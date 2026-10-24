@@ -669,6 +669,30 @@ class DynamicShaclTest {
         assertEquals(4, cache.size)
     }
 
+    @Test
+    fun `the dynamic instance cache stops storing once its member budget is spent`() {
+        // Each entry holds its key and an instance built from it (an sh:in list, say): both count against the budget.
+        val cache = DynamicInstanceCache(max = 4096, maxMembers = 20)
+        val dynamic = PropertyConstraint.Dynamic(DynamicComponent.IN, emptyMap())
+        fun list(n: Int) = (0 until n).map { int(it) }
+        cache.getOrPut(dynamic, listOf(list(4))) { PropertyConstraint.In(list(4)) }
+        cache.getOrPut(dynamic, listOf(list(5))) { PropertyConstraint.In(list(5)) }
+        assertEquals(2, cache.size)
+        assertEquals(18L, cache.members)
+        // A list of two would need 4 more members, past the budget of 20: built, not stored.
+        var builds = 0
+        val a = cache.getOrPut(dynamic, listOf(list(2))) { builds++; PropertyConstraint.In(list(2)) }
+        val b = cache.getOrPut(dynamic, listOf(list(2))) { builds++; PropertyConstraint.In(list(2)) }
+        assertEquals(2, builds)
+        assertNotSame(a, b)
+        assertEquals(2, cache.size)
+        assertEquals(18L, cache.members)
+        // An entry that still fits (one member, 2 nodes) is stored, and stored entries are served unchanged.
+        val one = cache.getOrPut(dynamic, listOf(list(1))) { PropertyConstraint.In(list(1)) }
+        assertSame(one, cache.getOrPut(dynamic, listOf(list(1))) { PropertyConstraint.In(list(1)) })
+        assertEquals(20L, cache.members)
+    }
+
     // --- multi-parameter components: qualified value shapes ---------------------------------------------------------------
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])

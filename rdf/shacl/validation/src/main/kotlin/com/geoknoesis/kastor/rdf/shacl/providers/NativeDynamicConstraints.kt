@@ -22,10 +22,12 @@ internal const val DYNAMIC_INSTANCE_CACHE_MAX = 4096
 /**
  * The constant constraints a run instantiated from its [PropertyConstraint.Dynamic] constraints, per constraint (by
  * identity) and resolved parameter values, so that one instance, and what the run caches per instance (pattern
- * outcomes, say), serves every focus node with the same values. Past [max] entries, instances are built but not stored;
- * entries are never evicted.
+ * outcomes, say), serves every focus node with the same values. Past [max] entries, or once the stored members would
+ * pass [maxMembers], instances are built but not stored; entries are never evicted. Each entry counts the resolved
+ * values twice, once for its key and once for the instance built from them (an `sh:in` list, say), so the memory held
+ * stays bounded by [maxMembers] nodes, not only by the number of entries.
  */
-internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACHE_MAX) {
+internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACHE_MAX, private val maxMembers: Long = Long.MAX_VALUE) {
     private val instances = IdentityHashMap<PropertyConstraint.Dynamic, HashMap<List<List<RdfTerm>>, Instance>>()
 
     /** A cached instance; [constraint] is null for "no constraint". */
@@ -34,12 +36,18 @@ internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACH
     var size: Int = 0
         private set
 
+    /** The nodes the stored entries hold, keys and instances together. */
+    var members: Long = 0
+        private set
+
     fun getOrPut(constraint: PropertyConstraint.Dynamic, values: List<List<RdfTerm>>, build: () -> PropertyConstraint?): PropertyConstraint? {
         instances[constraint]?.get(values)?.let { return it.constraint }
         val built = build()
-        if (size < max) {
+        val cost = 2L * values.sumOf { it.size.toLong() }
+        if (size < max && cost <= maxMembers - members) {
             instances.getOrPut(constraint) { HashMap() }[values] = Instance(built)
             size++
+            members += cost
         }
         return built
     }
