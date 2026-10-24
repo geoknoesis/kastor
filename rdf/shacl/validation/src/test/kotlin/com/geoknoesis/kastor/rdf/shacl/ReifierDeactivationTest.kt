@@ -65,6 +65,9 @@ class ReifierDeactivationTest {
         ex:BadComponent a sh:ConstraintComponent ; sh:parameter [ sh:path ex:bad ] ;
           sh:nodeValidator [ a sh:SPARQLSelectValidator ;
             sh:select '''SELECT ${d}this WHERE { ${d}this <http://example.com/ns#p> ${d}bad }''' ] .
+        ex:BadPropertyComponent a sh:ConstraintComponent ; sh:parameter [ sh:path ex:badp ] ;
+          sh:propertyValidator [ a sh:SPARQLSelectValidator ;
+            sh:select '''SELECT ${d}this WHERE { ${d}this ${d}PATH ?v }''' ] .
     """
 
     private fun prop(body: String) = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property ex:P . ex:P sh:path ex:p ; $body .\n$helpers"
@@ -122,6 +125,7 @@ class ReifierDeactivationTest {
         Case("reificationRequired", prop("sh:reifierShape ex:Any ; sh:reificationRequired true {D}"), "{F} ex:p 1 ."),
         Case("reificationRequired alone", prop("sh:reificationRequired true {D}"), "{F} ex:p 1 ."),
         Case("reifierShape (failing reifier)", prop("sh:reifierShape ex:N {D}"), "{F} ex:p 1 {| ex:x 1 |} ."),
+        Case("SPARQL-based constraint component", prop("ex:badp 1 {D}"), "{F} ex:p 1 ."),
         // Node shapes.
         Case("node shape: node", node("sh:node ex:N {D}"), "{F} ex:p 1 ."),
         Case("node shape: nodeByExpression", node("sh:nodeByExpression ex:N {D}"), "{F} ex:p 1 ."),
@@ -375,6 +379,17 @@ class ReifierDeactivationTest {
                 "ex:Z sh:target [ a ex:CustomTarget ] ."
             val report = validate("jena", "ex:a ex:p 1 .", shapes)
             assertEquals(listOf(ex("a")), report.violations.map { it.focusNode }, expression)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a constraint a reifier deactivates per focus node is honoured when a value node is checked for conformance`(provider: String) {
+        // ex:a_v has ex:skip, so the sh:class of ex:G is deactivated for it; ex:b_v fails ex:G.
+        val shapeG = "ex:G a sh:NodeShape ; sh:class ex:C $perFocus ."
+        val data = "ex:a ex:p ex:a_v . ex:a_v ex:skip true . ex:b ex:p ex:b_v ."
+        for (link in listOf("sh:node ex:G", "sh:qualifiedValueShape ex:G ; sh:qualifiedMinCount 1")) {
+            val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property [ sh:path ex:p ; $link ] .\n$shapeG"
+            assertEquals(listOf(ex("b")), validate(provider, data, shapes).violations.map { it.focusNode }, link)
         }
     }
 }
