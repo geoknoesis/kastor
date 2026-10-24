@@ -213,7 +213,7 @@ class NodeExpressionEvaluationLibraryTest {
 
     @Test
     fun `functions of later tasks are reported unsupported`() {
-        val outcome = eval("ex:holder ex:expr [ <http://www.w3.org/ns/sparql#abs> -1 ] .")
+        val outcome = eval("ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] . ex:holder ex:expr [ ex:f ( 1 ) ] .")
         assertTrue(outcome is NodeExprOutcome.Failure && outcome.reason.startsWith("unsupported:"), "$outcome")
     }
 

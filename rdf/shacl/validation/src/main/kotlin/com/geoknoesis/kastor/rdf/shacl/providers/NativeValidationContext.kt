@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.shacl.providers
 
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlQueryable
 import java.time.Duration
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
@@ -85,6 +86,9 @@ internal class NativeValidationContext(
     }
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
         session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume)
+    /** As [select], with the function library [library] instead of the shapes graph's. */
+    fun <T> select(query: String, bindings: Map<String, RdfTerm>, library: SparqlFunctionLibrary, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
+        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume)
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
     fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */

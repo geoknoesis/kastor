@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.booleanValue
+import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.providers.NodeExprOutcome
@@ -14,6 +15,7 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import java.nio.file.Path
 import java.util.stream.Stream
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Assumptions
@@ -33,7 +35,7 @@ import org.junit.jupiter.api.TestFactory
  *
  * Cases in [W3cNodeExprPending] need functions that are not evaluated yet: they are executed and must produce an
  * evaluation failure whose reason starts with the listed prefix, so they never pass silently. Every other case must
- * pass. Tagged `w3c` like [Shacl12NativeConformanceTest]; with `shacl.w3c.requireSuite=true` the run must cover the
+ * pass, except the cases in [W3cNodeExprIllFormed], whose expression the native engine rejects as ill-formed. Tagged `w3c` like [Shacl12NativeConformanceTest]; with `shacl.w3c.requireSuite=true` the run must cover the
  * `shnex/` and `shnex-sparql/` manifests of the full suite.
  */
 @Tag("w3c")
@@ -74,6 +76,8 @@ class Shacl12NodeExprConformanceTest {
         val stale = DynamicTest.dynamicTest("pending entries name existing cases") {
             val unused = W3cNodeExprPending.entries.filter { key -> files.none { W3cNodeExprPending.matches(it, key) } }
             assertTrue(unused.isEmpty(), "W3cNodeExprPending entries without cases: $unused")
+            val unusedIllFormed = W3cNodeExprIllFormed.entries.filter { key -> files.none { it.endsWith("/$key") } }
+            assertTrue(unusedIllFormed.isEmpty(), "W3cNodeExprIllFormed entries without cases: $unusedIllFormed")
         }
         return (containers + stale).stream()
     }
@@ -90,8 +94,14 @@ class Shacl12NodeExprConformanceTest {
         val ignoreOrder = listOf(action, entry).any { (single(graph, it, SHT_IGNORE_ORDER) as? Literal)?.booleanValue() == true }
         val expected = rdfList(graph, single(graph, entry, MF_RESULT) ?: error("mf:result missing for ${case.entryUri}"))
 
-        val outcome = NativeShaclValidator(ValidationConfig.default()).evaluateNodeExpression(graph, expr, focus, variables)
         val label = case.displayName
+        W3cNodeExprIllFormed.reasonFor(case.manifestPath)?.let { why ->
+            assertThrows(ShapeCompileException::class.java, {
+                NativeShaclValidator(ValidationConfig.default()).evaluateNodeExpression(graph, expr, focus, variables)
+            }, "$label: the expression is ill-formed ($why)")
+            return
+        }
+        val outcome = NativeShaclValidator(ValidationConfig.default()).evaluateNodeExpression(graph, expr, focus, variables)
         W3cNodeExprPending.reasonFor(case.manifestPath)?.let { prefix ->
             assertTrue(
                 outcome is NodeExprOutcome.Failure && outcome.reason.startsWith(prefix),
@@ -142,12 +152,10 @@ private fun slashed(path: Path): String = path.toString().replace(java.io.File.s
 /**
  * The W3C `sht:EvalNodeExpr` cases whose functions the native evaluator does not evaluate yet, by case file, with
  * the prefix of the evaluation failure reason they must produce. A key ending in `/` names every file of that
- * directory. Exactly the cases that need SPARQL functions or custom functions are listed.
+ * directory. Exactly the cases that need custom functions are listed (none in the suite yet).
  */
 internal object W3cNodeExprPending {
     private val pending: Map<String, String> = linkedMapOf(
-        // SHACL SPARQL function expressions (§5): every case of the directory.
-        "node-expr/shnex-sparql/" to "unsupported: sparql:",
     )
 
     val entries: Set<String> get() = pending.keys
@@ -157,5 +165,23 @@ internal object W3cNodeExprPending {
     fun reasonFor(manifestPath: Path): String? {
         val file = slashed(manifestPath)
         return pending.entries.firstOrNull { (key, _) -> matches(file, key) }?.value
+    }
+}
+
+/**
+ * W3C `sht:EvalNodeExpr` cases whose expression is ill-formed under Node Expressions §5, by case file, with the reason.
+ * They must be rejected with [ShapeCompileException], so a fix of the test (or of the engine) does not go unnoticed.
+ */
+internal object W3cNodeExprIllFormed {
+    private val illFormed: Map<String, String> = linkedMapOf(
+        // The case passes two arguments ( "hello"@en "en" ); the §5 table example and SPARQL 1.2 HASLANG take one.
+        "node-expr/shnex-sparql/hasLang.ttl" to "sparql:hasLang takes one argument (§5 table, SPARQL 1.2 HASLANG)",
+    )
+
+    val entries: Set<String> get() = illFormed.keys
+
+    fun reasonFor(manifestPath: Path): String? {
+        val file = slashed(manifestPath)
+        return illFormed.entries.firstOrNull { (key, _) -> file.endsWith("/$key") }?.value
     }
 }

@@ -46,6 +46,8 @@ class NodeExpressionParserTest {
         val nodeExpr = Iri("http://www.w3.org/ns/shacl-test#nodeExpr")
         val failures = mutableListOf<String>()
         var cases = 0
+        // sparql:hasLang ( "hello"@en "en" ): the §5 table and SPARQL 1.2 HASLANG take one argument.
+        val illFormed = setOf("shnex-sparql/hasLang.ttl")
         for (dir in listOf("shnex", "shnex-sparql")) {
             val files = File(root, dir).listFiles { f -> f.name.endsWith(".ttl") && f.name != "manifest.ttl" }.orEmpty().sortedBy { it.name }
             for (file in files) {
@@ -54,7 +56,11 @@ class NodeExpressionParserTest {
                 for (t in triples.filter { it.predicate == nodeExpr }) {
                     cases++
                     val outcome = runCatching { NodeExpressions.compile(t.obj, index) }
-                    if (outcome.getOrNull() == null) failures += "$dir/${file.name}: ${outcome.exceptionOrNull() ?: "null"}"
+                    if ("$dir/${file.name}" in illFormed) {
+                        if (outcome.exceptionOrNull() !is ShapeCompileException) failures += "$dir/${file.name}: expected ill-formed, got $outcome"
+                    } else if (outcome.getOrNull() == null) {
+                        failures += "$dir/${file.name}: ${outcome.exceptionOrNull() ?: "null"}"
+                    }
                 }
             }
         }

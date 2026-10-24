@@ -4,8 +4,10 @@ import com.geoknoesis.kastor.rdf.FalseLiteral
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfProviderException
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
@@ -17,6 +19,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
+import com.geoknoesis.kastor.rdf.shacl.native.SparqlFunctionExpressions
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate
 import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
 import com.geoknoesis.kastor.rdf.vocab.XSD
@@ -50,9 +53,9 @@ internal class NodeExprScope(val focus: RdfTerm?, val variables: Map<String, Rdf
  *
  * Bounds: every output node ticks the run budget, every list larger than
  * [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes] is a failure, and so is evaluation nested
- * deeper than [MAX_NODE_EXPRESSION_DEPTH]. Run aborts (timeout, cancellation) and SPARQL errors of
- * [NodeExpression.Select] are exceptions, not failures. Functions that are not evaluated yet produce a failure whose
- * reason starts with `"unsupported:"`.
+ * deeper than [MAX_NODE_EXPRESSION_DEPTH]. Run aborts (timeout, cancellation) are exceptions, not failures; a SPARQL
+ * error of the provider ([NodeExpression.Select], [NodeExpression.SparqlCall], `shnex:sum`) is a failure. Functions
+ * that are not evaluated yet produce a failure whose reason starts with `"unsupported:"`.
  *
  * The shape-based functions validate against the compiled shapes of [ctx] (§3.4): conformance that the engine cannot
  * decide (undefined recursion, an undecided `sh:pattern`), a validation error, and a shape that is not compiled are
@@ -212,7 +215,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
                 }
             }
             // SPARQL functions (§5) and custom functions (§6).
-            is NodeExpression.SparqlCall -> unsupported("sparql:${expr.name}")
+            is NodeExpression.SparqlCall -> sparqlCall(expr, inner)
             is NodeExpression.CustomNamed -> unsupported("custom function <${expr.function.value}>")
             is NodeExpression.CustomList -> unsupported("custom function <${expr.function.value}>")
             is NodeExpression.Arg -> unsupported("shnex:arg ${expr.index}")
@@ -316,8 +319,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         val result = try {
             ctx.select(query, emptyMap()) { rows -> rows.firstOrNull()?.get("r") }
         } catch (e: ShaclValidationException) {
-            ctx.checkDeadline() // A timeout is a run abort, not a failure of the sum.
-            fail("shnex:sum failed: ${e.message}")
+            sparqlError("shnex:sum", e)
         }
         return result ?: fail("shnex:sum of ${nodes.size} nodes has no value (a SPARQL SUM error)")
     }
@@ -340,7 +342,17 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      */
     private fun select(expr: NodeExpression.Select, focus: RdfTerm?): List<RdfTerm> {
         val (query, bindings) = expr.template.bind(if (focus == null) emptyMap() else mapOf("this" to focus))
-        val nodes = ctx.select(query, bindings) { rows ->
+        val nodes = try {
+            selectNodes(expr, query, bindings)
+        } catch (e: ShaclValidationException) {
+            sparqlError("the SPARQL node expression", e)
+        }
+        return nodes ?: fail(sizeMessage(ctx, "node expression evaluation"))
+    }
+
+    /** The distinct values of the expression variable of [expr] over the solutions of [query], or null beyond the size cap. */
+    private fun selectNodes(expr: NodeExpression.Select, query: String, bindings: Map<String, RdfTerm>): List<RdfTerm>? =
+        ctx.select(query, bindings) { rows ->
             // Distinct under the same equality as distinctShaclTerms, capped while streaming.
             val out = LinkedHashMap<String, RdfTerm>()
             for (row in rows) {
@@ -352,6 +364,79 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             }
             out.values.toList()
         }
-        return nodes ?: fail(sizeMessage(ctx, "node expression evaluation"))
+
+    /**
+     * A SHACL SPARQL function expression (§5, §3.2.2). Every argument is evaluated; one that fails or produces more
+     * than one node is a SPARQL error, and one without output nodes is unbound. Without errors, an unbound argument
+     * means no output nodes unless the function handles unbound values
+     * ([SparqlFunctionExpressions.handlesUnbound]). The function itself is evaluated by the provider, as
+     * `SELECT (<call> AS ?r) WHERE {}` with the argument values pre-bound ([SparqlQueryTemplate]: IRIs and
+     * literals in the text, other terms as initial bindings), so that its semantics, unbound and error handling
+     * included, are SPARQL's.
+     *
+     * An argument in error must reach the function as an error, not as an unbound value (`COALESCE` skips both, but
+     * `BOUND` is false only for unbound and `IF` fails on a selected error): its variable is replaced by
+     * [SPARQL_ERROR], an expression that is an error on every provider. `BOUND` only takes a variable, so `BOUND` of an
+     * error is a failure without a query. No `?r` (a SPARQL error) or a query error is a failure; a timeout or
+     * cancellation stays a run abort.
+     */
+    private fun sparqlCall(expr: NodeExpression.SparqlCall, scope: NodeExprScope): List<RdfTerm> {
+        val function = "sparql:${expr.name}"
+        val values = arrayOfNulls<RdfTerm>(expr.args.size)
+        val errors = BooleanArray(expr.args.size)
+        var unbound = false
+        expr.args.forEachIndexed { i, arg ->
+            val out = try {
+                eval(arg, scope)
+            } catch (f: NodeExprFailure) {
+                null
+            }
+            when {
+                out == null || out.size > 1 -> errors[i] = true
+                out.isEmpty() -> unbound = true
+                else -> values[i] = out.single()
+            }
+        }
+        val errored = errors.any { it }
+        if (!errored && unbound && expr.name !in SparqlFunctionExpressions.handlesUnbound) return emptyList()
+        if (errored && expr.name == "bound") fail("$function: its argument is a SPARQL error")
+        val call = SparqlFunctionExpressions.render(expr.name, List(expr.args.size) { if (errors[it]) SPARQL_ERROR else "?a$it" })
+            ?: fail("$function cannot take ${expr.args.size} argument(s)") // Rejected by the parser already.
+        val bound = LinkedHashMap<String, RdfTerm>()
+        values.forEachIndexed { i, value -> if (value != null) bound["a$i"] = value }
+        val (query, bindings) = SparqlQueryTemplate.compile("SELECT ($call AS ?r) WHERE {}", bound.keys).bind(bound)
+        val result = try {
+            ctx.select(query, bindings, SparqlFunctionLibrary.EMPTY) { rows -> rows.firstOrNull()?.get("r") }
+        } catch (e: ShaclValidationException) {
+            sparqlError(function, e)
+        }
+        return output(listOf(result ?: fail("$function produced a SPARQL error")))
+    }
+
+    /**
+     * Turns the SPARQL error [e] of [function] into a failure, unless it is a run abort: the run budget is used up, the
+     * provider cancelled or interrupted the query, or no SPARQL engine is available; [e] is then rethrown.
+     */
+    private fun sparqlError(function: String, e: ShaclValidationException): Nothing {
+        ctx.checkDeadline()
+        // A missing SPARQL engine is a configuration error of the run, not a SPARQL error.
+        if (isCancellation(e) || e.cause is RdfProviderException) throw e
+        fail("$function failed: ${e.message}")
+    }
+
+    private companion object {
+        /** A SPARQL expression that is an error on every provider (integer division by zero). */
+        const val SPARQL_ERROR = "(1/0)"
+
+        /** Provider exceptions of a cancelled or timed-out query, matched by name: the providers are runtime dependencies. */
+        val CANCELLATIONS = setOf(
+            "org.apache.jena.query.QueryCancelledException",
+            "org.eclipse.rdf4j.query.QueryInterruptedException",
+        )
+
+        fun isCancellation(e: Throwable): Boolean =
+            generateSequence(e) { it.cause.takeIf { cause -> cause !== it } }
+                .take(32)
+                .any { t -> t is InterruptedException || generateSequence<Class<*>>(t.javaClass) { it.superclass }.any { it.name in CANCELLATIONS } }
     }
 }

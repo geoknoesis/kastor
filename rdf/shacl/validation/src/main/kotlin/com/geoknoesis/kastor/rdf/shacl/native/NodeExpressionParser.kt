@@ -33,7 +33,8 @@ internal const val MAX_NODE_EXPRESSION_NESTING = 128
  * budget, a node shared by several expressions is parsed once, and cycles or nesting beyond
  * [MAX_NODE_EXPRESSION_NESTING] are rejected, so a hostile shapes graph stays bounded.
  *
- * `sparql:` names are not checked against the §5 table here; an unknown name parses as a [NodeExpression.SparqlCall].
+ * `sparql:` names are checked against the §5 table ([SparqlFunctionExpressions]): an unknown name, or an argument count
+ * SPARQL does not accept for the function, is ill-formed.
  */
 internal class NodeExpressionParser(private val index: ShapeGraphIndex, private val preBound: Set<String>) {
     private val parsed = HashMap<BlankNode, NodeExpression?>()
@@ -235,8 +236,15 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
                 }
                 NodeExpression.ConformsToShape(args[0], args[1])
             }
-            function.value.startsWith(ShaclSparqlTerms.SPARQL_NAMESPACE) ->
-                NodeExpression.SparqlCall(function.value.removePrefix(ShaclSparqlTerms.SPARQL_NAMESPACE), args)
+            function.value.startsWith(ShaclSparqlTerms.SPARQL_NAMESPACE) -> {
+                val sparqlName = function.value.removePrefix(ShaclSparqlTerms.SPARQL_NAMESPACE)
+                // §5: only the functions of the table, with an argument count SPARQL accepts.
+                if (SparqlFunctionExpressions.render(sparqlName, args.size) == null) {
+                    val reason = if (sparqlName in SparqlFunctionExpressions.names) "cannot take ${args.size} argument(s)" else "is not a SPARQL function of Node Expressions §5"
+                    throw ShapeCompileException("sparql:$sparqlName of node expression $node $reason")
+                }
+                NodeExpression.SparqlCall(sparqlName, args)
+            }
             else -> NodeExpression.CustomList(function, args)
         }
     }

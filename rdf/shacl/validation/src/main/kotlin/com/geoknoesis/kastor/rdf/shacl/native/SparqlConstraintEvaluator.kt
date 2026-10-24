@@ -124,10 +124,24 @@ internal object SparqlConstraintEvaluator {
          * Runs [query] and hands its solutions to [consume], which may stop reading them at any point: the result is
          * closed when [consume] returns or throws, so solutions it does not read are never computed or kept.
          */
-        fun <T> select(query: String, bindings: Map<String, RdfTerm>, timeout: Duration, consume: (Sequence<BindingSet>) -> T): T {
+        fun <T> select(
+            query: String,
+            bindings: Map<String, RdfTerm>,
+            timeout: Duration,
+            consume: (Sequence<BindingSet>) -> T,
+        ): T = select(query, bindings, timeout, functions, consume)
+
+        /** As [select], with the function library [library] instead of the shapes graph's (e.g. empty for built-ins only). */
+        fun <T> select(
+            query: String,
+            bindings: Map<String, RdfTerm>,
+            timeout: Duration,
+            library: SparqlFunctionLibrary,
+            consume: (Sequence<BindingSet>) -> T,
+        ): T {
             inPlace?.let { dataset ->
                 try {
-                    return run(dataset, query, bindings, timeout, consume)
+                    return run(dataset, query, bindings, timeout, library, consume)
                 } catch (_: UnsupportedOperationException) {
                     logOnce("unsupported-bound-queries", dataset, warn = true) {
                         "${dataset.javaClass.simpleName} does not support bound, timed, sandboxed SPARQL queries: SHACL-SPARQL " +
@@ -136,7 +150,7 @@ internal object SparqlConstraintEvaluator {
                     inPlace = null
                 }
             }
-            return run(copied(), query, bindings, timeout, consume)
+            return run(copied(), query, bindings, timeout, library, consume)
         }
 
         private fun <T> run(
@@ -144,11 +158,12 @@ internal object SparqlConstraintEvaluator {
             query: String,
             bindings: Map<String, RdfTerm>,
             timeout: Duration,
+            library: SparqlFunctionLibrary,
             consume: (Sequence<BindingSet>) -> T,
         ): T =
             try {
                 // Queries come from the shapes graph: the provider refuses SERVICE and code loading on its own parse of them.
-                target.withSelectRows(SandboxedSelectQuery(query, functions), bindings, timeout, consume)
+                target.withSelectRows(SandboxedSelectQuery(query, library), bindings, timeout, consume)
             } catch (e: ShaclValidationException) {
                 throw e
             } catch (e: UnsupportedOperationException) {
