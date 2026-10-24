@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.rdf.shacl
 
-import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
@@ -89,12 +88,13 @@ class SparqlConstraintComponentTest {
     fun `ASK validator flags a blank-node value node on both providers`(provider: String) {
         val shapes = """
             ex:C a sh:ConstraintComponent ; sh:parameter [ sh:path ex:flag ] ;
-              sh:validator [ a sh:SPARQLAskValidator ; sh:ask '''ASK { FILTER (!isBlank(${d}value)) }''' ] .
+              sh:validator [ a sh:SPARQLAskValidator ; sh:ask '''ASK { FILTER (isBlank(${d}value)) }''' ] .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:property [ sh:path ex:p ; ex:flag true ] .
         """
+        // The ASK is true only for a bound blank node: an unbound $value would flag both value nodes.
         val v = validate(provider, "ex:a ex:p [] , ex:b .", shapes).violations.single()
-        assertTrue(v.value is BlankNode)
+        assertEquals(ex("b"), v.value)
         assertEquals(ex("a"), v.focusNode)
     }
 
