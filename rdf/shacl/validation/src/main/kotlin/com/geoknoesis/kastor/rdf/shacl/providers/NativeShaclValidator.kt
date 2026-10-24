@@ -30,6 +30,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.NativeCompileCache
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
+import com.geoknoesis.kastor.rdf.shacl.native.ShapeGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesStructuralDigest
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 
@@ -428,12 +429,17 @@ internal class NativeShaclValidator(
 
     /**
      * Runs [body] in a context over [graph] as data graph and as shapes graph (compiled from its triples alone, without
-     * `owl:imports`), as node expression evaluation outside validation needs it (Node Expressions §3.4). Ill-formed
+     * `owl:imports`), as node expression evaluation outside validation needs it (Node Expressions §3.4). The shapes
+     * [expressionShapes] names over the shapes index are compiled as well (see [ShapesCompiler.compile]). Ill-formed
      * shapes throw [ShapeCompileException].
      */
-    internal fun <T> withNodeExpressionContext(graph: RdfGraph, body: (NativeValidationContext) -> T): T {
+    internal fun <T> withNodeExpressionContext(
+        graph: RdfGraph,
+        expressionShapes: (ShapeGraphIndex) -> Collection<RdfResource> = { emptyList() },
+        body: (NativeValidationContext) -> T,
+    ): T {
         val budget = ValidationBudget(config.timeout, instrumentation.budgetClock)
-        val compiled = ShapesCompiler.compile(graph.getTriples(), config, budget)
+        val compiled = ShapesCompiler.compile(graph.getTriples(), config, budget, expressionShapes)
         return newContext(compiled, graph, budget).use(body)
     }
 

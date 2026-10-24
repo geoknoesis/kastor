@@ -1,11 +1,13 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.FalseLiteral
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
@@ -211,14 +213,152 @@ class NodeExpressionEvaluationLibraryTest {
 
     @Test
     fun `functions of later tasks are reported unsupported`() {
-        for (body in listOf(
-            "[ shnex:filterShape ex:S ; shnex:nodes ( 1 ) ]",
-            "[ shnex:nodesMatching ex:S ]",
-            "[ shnex:conformsToShape ( 1 ex:S ) ]",
-            "[ <http://www.w3.org/ns/sparql#abs> -1 ]",
-        )) {
-            val outcome = eval("ex:holder ex:expr $body . ex:S a sh:NodeShape .")
-            assertTrue(outcome is NodeExprOutcome.Failure && outcome.reason.startsWith("unsupported:"), "$body: $outcome")
+        val outcome = eval("ex:holder ex:expr [ <http://www.w3.org/ns/sparql#abs> -1 ] .")
+        assertTrue(outcome is NodeExprOutcome.Failure && outcome.reason.startsWith("unsupported:"), "$outcome")
+    }
+
+    @Test
+    fun `if compares the condition by term equality with true`() {
+        // R5: "1"^^xsd:boolean has the value true but is not the term "true"^^xsd:boolean, so the else branch is taken.
+        assertEquals(listOf(int(2)), nodes(eval("""ex:holder ex:expr [ shnex:if "1"^^xsd:boolean ; shnex:then 1 ; shnex:else 2 ] .""")))
+        assertEquals(listOf(int(1)), nodes(eval("""ex:holder ex:expr [ shnex:if "true"^^xsd:boolean ; shnex:then 1 ; shnex:else 2 ] .""")))
+    }
+
+    @Test
+    fun `depth cap allows exactly 128 levels`() {
+        fun nested(wrappers: Int): NodeExpression {
+            var e: NodeExpression = NodeExpression.Constant(int(1))
+            repeat(wrappers) { e = NodeExpression.Distinct(e) }
+            return e
         }
+        val graph = Rdf.graph { }
+        val validator = NativeShaclValidator(ValidationConfig.default())
+        // 127 wrappers and the constant: 128 levels.
+        assertEquals(listOf(int(1)), nodes(validator.evaluateNodeExpression(graph, nested(127), null, emptyMap())))
+        assertFailure(validator.evaluateNodeExpression(graph, nested(128), null, emptyMap()), "128")
+    }
+
+    @Test
+    fun `list expressions are capped`() {
+        val config = ValidationConfig.default().copy(maxPathValueNodes = 2)
+        assertFailure(eval("ex:holder ex:expr ( 1 2 3 ) .", config = config), "maxPathValueNodes=2")
+        assertEquals(listOf(int(1), int(2)), nodes(eval("ex:holder ex:expr ( 1 2 ) .", config = config)))
+    }
+
+    // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
+
+    @Test
+    fun `filterShape keeps conforming nodes in order`() {
+        // §4.2.5, Example 14: the male children.
+        val data = """
+            ex:holder ex:expr [
+                shnex:nodes ( ex:C3 ex:C1 ex:C2 ex:C3 ) ;
+                shnex:filterShape [ sh:property [ sh:path ex:gender ; sh:hasValue "male" ] ] ] .
+            ex:C1 ex:gender "male" . ex:C2 ex:gender "female" . ex:C3 ex:gender "male" .
+        """
+        assertEquals(listOf(ex("C3"), ex("C1"), ex("C3")), nodes(eval(data)))
+        val byPath = """
+            ex:holder ex:expr [
+                shnex:nodes [ shnex:pathValues ex:child ] ;
+                shnex:filterShape [ sh:property [ sh:path ex:gender ; sh:hasValue "male" ] ] ] .
+            ex:Mom ex:child ex:C1, ex:C2 .
+            ex:C1 ex:gender "male" . ex:C2 ex:gender "female" .
+        """
+        assertEquals(listOf(ex("C1")), nodes(eval(byPath, focus = ex("Mom"))))
+    }
+
+    @Test
+    fun `findFirst returns the first conforming node`() {
+        // §4.3.2, Example 18: the first senior employee.
+        val data = """
+            ex:holder ex:expr [ shnex:nodes ( ex:E1 ex:E2 ex:E3 ) ; shnex:findFirst ex:SeniorEmployeeShape ] .
+            ex:SeniorEmployeeShape a sh:NodeShape ;
+                sh:property [ sh:path ex:yearsOfService ; sh:datatype xsd:integer ; sh:minInclusive 5 ] .
+            ex:E1 ex:yearsOfService 3 . ex:E2 ex:yearsOfService 7 . ex:E3 ex:yearsOfService 10 .
+        """
+        assertEquals(listOf(ex("E2")), nodes(eval(data)))
+        // Without shnex:nodes, N is the focus node, or nothing without one.
+        val atFocus = "ex:holder ex:expr [ shnex:findFirst [ sh:minInclusive 3 ] ] ."
+        assertEquals(listOf(int(4)), nodes(eval(atFocus, focus = int(4))))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval(atFocus, focus = int(2))))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval(atFocus)))
+    }
+
+    @Test
+    fun `matchAll is true when every node conforms`() {
+        // §4.3.3, Example 19: are all employees active?
+        val shapes = """
+            ex:ActiveEmployeeShape a sh:NodeShape ; sh:property [ sh:path ex:isActive ; sh:hasValue true ] .
+            ex:Co1 ex:employee ex:E1, ex:E2 . ex:Co2 ex:employee ex:E1, ex:E3 .
+            ex:E1 ex:isActive true . ex:E2 ex:isActive true . ex:E3 ex:isActive false .
+        """
+        val expr = "ex:holder ex:expr [ shnex:nodes [ shnex:pathValues ex:employee ] ; shnex:matchAll ex:ActiveEmployeeShape ] ."
+        assertEquals(listOf(TrueLiteral), nodes(eval(expr + shapes, focus = ex("Co1"))))
+        assertEquals(listOf(FalseLiteral), nodes(eval(expr + shapes, focus = ex("Co2"))))
+        // Every node of the empty list conforms.
+        assertEquals(listOf(TrueLiteral), nodes(eval("ex:holder ex:expr [ shnex:nodes [] ; shnex:matchAll ex:ActiveEmployeeShape ] .$shapes")))
+    }
+
+    @Test
+    fun `nodesMatching returns the matching nodes of the focus graph in SPARQL order`() {
+        // §4.5.2, Example 23, with a smaller minimum.
+        val data = """
+            ex:holder ex:expr [ shnex:nodesMatching [ sh:class ex:Company ; sh:property [ sh:path ex:employee ; sh:minCount 2 ] ] ] .
+            ex:Zeta a ex:Company ; ex:employee ex:E1, ex:E2 .
+            ex:Alpha a ex:Company ; ex:employee ex:E1, ex:E2, ex:E3 .
+            ex:Small a ex:Company ; ex:employee ex:E1 .
+            ex:NotACompany ex:employee ex:E1, ex:E2 .
+        """
+        assertEquals(listOf(ex("Alpha"), ex("Zeta")), nodes(eval(data)))
+        assertFailure(eval(data, config = ValidationConfig.default().copy(maxPathValueNodes = 1)), "maxPathValueNodes=1")
+    }
+
+    @Test
+    fun `conformsToShape produces true or false, nothing for an empty argument`() {
+        // §4.5.3, Example 24: has director.
+        val shape = "ex:HasDirectorShape a sh:NodeShape ; sh:property [ sh:path ex:director ; sh:minCount 1 ] . ex:Co1 ex:director ex:Alice ."
+        val data = """ex:holder ex:expr [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:HasDirectorShape ) ] . $shape"""
+        assertEquals(listOf(TrueLiteral), nodes(eval(data, focus = ex("Co1"))))
+        assertEquals(listOf(FalseLiteral), nodes(eval(data, focus = ex("Co2"))))
+        // No focus node: the node argument has no value, so the function is not applied (§3.2.2).
+        assertEquals(emptyList<RdfTerm>(), nodes(eval(data)))
+        fun call(args: String, variables: Map<String, RdfTerm> = emptyMap()) =
+            eval("ex:holder ex:expr [ shnex:conformsToShape ( $args ) ] . $shape", variables = variables)
+        // The shape argument may be computed.
+        assertEquals(listOf(TrueLiteral), nodes(call("""ex:Co1 [ shnex:var "s" ]""", mapOf("s" to ex("HasDirectorShape")))))
+        assertEquals(emptyList<RdfTerm>(), nodes(call("""ex:Co1 [ shnex:var "s" ]""")))
+        // More than one node is a failure, and a failure takes precedence over an empty argument.
+        assertFailure(call("( ex:Co1 ex:Co2 ) ex:HasDirectorShape"), "more than one")
+        assertFailure(call("""[ shnex:var "unbound" ] $failing"""), "more than one")
+        // The shape must be the IRI of a shape of the shapes graph.
+        assertFailure(call("ex:Co1 1"), "IRI")
+        assertFailure(call("""ex:Co1 [ shnex:var "s" ]""", mapOf("s" to ex("Unknown"))), "not a shape")
+    }
+
+    @Test
+    fun `shape reachable only from an expression is compiled`() {
+        // ex:S has no type and no target, and nothing else references it.
+        val data = """
+            ex:holder ex:expr [ shnex:filterShape ex:S ; shnex:nodes ( 1 2.5 3 ) ] .
+            ex:S sh:datatype xsd:integer .
+        """
+        assertEquals(listOf(int(1), int(3)), nodes(eval(data)))
+        // Nested in another expression, and the shapes it references in turn.
+        val nested = """
+            ex:holder ex:expr [ shnex:count [ shnex:filterShape ex:S ; shnex:nodes ( 1 2.5 3 ) ] ] .
+            ex:S sh:node ex:T . ex:T sh:datatype xsd:integer .
+        """
+        assertEquals(listOf(int(2)), nodes(eval(nested)))
+        // A constant shape argument of conformsToShape.
+        assertEquals(listOf(FalseLiteral), nodes(eval("ex:holder ex:expr [ shnex:conformsToShape ( 2.5 ex:S ) ] . ex:S sh:datatype xsd:integer .")))
+    }
+
+    @Test
+    fun `undecided conformance is a failure`() {
+        // ex:S conforms iff it does not conform: the recursion has no defined answer.
+        val shapes = "ex:S sh:not ex:S ."
+        assertFailure(eval("ex:holder ex:expr [ shnex:filterShape ex:S ; shnex:nodes ( ex:a ) ] . $shapes"), "undefined")
+        assertFailure(eval("ex:holder ex:expr [ shnex:conformsToShape ( ex:a ex:S ) ] . $shapes"), "undefined")
+        assertFailure(eval("ex:holder ex:expr [ shnex:matchAll ex:S ; shnex:nodes ( ex:a ) ] . $shapes"), "undefined")
     }
 }

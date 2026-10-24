@@ -120,6 +120,36 @@ internal sealed class NodeExpression {
      * The result nodes are the values of [variable].
      */
     class Select(val node: BlankNode, val template: SparqlQueryTemplate, val variable: String) : NodeExpression()
+
+    /** The node expressions this one is built from (its arguments), in syntax order. */
+    fun children(): List<NodeExpression> =
+        when (this) {
+            is Constant, Empty, is Var, is Arg, is NamedArg, is Select, is NodesMatching -> emptyList()
+            is ListExpr -> members
+            is PathValues -> listOfNotNull(focusNode)
+            is Exists -> listOf(e)
+            is If -> listOfNotNull(cond, then, otherwise)
+            is Distinct -> listOf(e)
+            is Intersection -> members
+            is Concat -> members
+            is Remove -> listOf(remove, nodes)
+            is FilterShape -> listOf(nodes)
+            is Limit -> listOf(nodes)
+            is Offset -> listOf(nodes)
+            is OrderBy -> listOf(key, nodes)
+            is FlatMap -> listOfNotNull(e, nodes)
+            is FindFirst -> listOfNotNull(nodes)
+            is MatchAll -> listOfNotNull(nodes)
+            is Count -> listOf(e)
+            is Min -> listOf(e)
+            is Max -> listOf(e)
+            is Sum -> listOf(e)
+            is InstancesOf -> listOf(e)
+            is ConformsToShape -> listOf(node, shape)
+            is SparqlCall -> args
+            is CustomNamed -> args.values.toList()
+            is CustomList -> args
+        }
 }
 
 /** Compiles node expressions (SHACL 1.2 Node Expressions, and the SPARQL expressions of SHACL 1.2 SPARQL §6); evaluation is separate. */
@@ -139,6 +169,36 @@ internal object NodeExpressions {
      */
     fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? =
         NodeExpressionParser(index, preBound).parse(term)
+
+    /**
+     * The shapes that [expr] validates against, anywhere in its tree: the shapes of `shnex:filterShape`,
+     * `shnex:findFirst`, `shnex:matchAll` and `shnex:nodesMatching`, and the constant IRI shape arguments of
+     * `shnex:conformsToShape`. The shapes compiler compiles them, so that evaluation finds them (§3.4). A computed
+     * `shnex:conformsToShape` shape cannot be known before evaluation: it is evaluated only when it is a shape of
+     * the compiled shapes graph. Iterative and visiting a shared subexpression once, so any tree is walked in
+     * linear time and constant stack.
+     */
+    fun shapeRefs(expr: NodeExpression): Set<RdfResource> {
+        val out = LinkedHashSet<RdfResource>()
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<NodeExpression, Boolean>())
+        val pending = ArrayDeque<NodeExpression>()
+        pending.add(expr)
+        while (pending.isNotEmpty()) {
+            val e = pending.removeLast()
+            if (!seen.add(e)) continue
+            when (e) {
+                is NodeExpression.FilterShape -> out.add(e.shape)
+                is NodeExpression.FindFirst -> out.add(e.shape)
+                is NodeExpression.MatchAll -> out.add(e.shape)
+                is NodeExpression.NodesMatching -> out.add(e.shape)
+                is NodeExpression.ConformsToShape -> ((e.shape as? NodeExpression.Constant)?.term as? Iri)?.let { out.add(it) }
+                else -> Unit
+            }
+            // Reversed, so that children are visited (and refs collected) in syntax order.
+            e.children().asReversed().forEach { pending.addLast(it) }
+        }
+        return out
+    }
 
     /**
      * The expression of [term] at a validation position when validation evaluates it

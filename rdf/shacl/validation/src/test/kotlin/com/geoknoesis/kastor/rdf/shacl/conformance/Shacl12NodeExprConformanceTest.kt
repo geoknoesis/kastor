@@ -142,16 +142,10 @@ private fun slashed(path: Path): String = path.toString().replace(java.io.File.s
 /**
  * The W3C `sht:EvalNodeExpr` cases whose functions the native evaluator does not evaluate yet, by case file, with
  * the prefix of the evaluation failure reason they must produce. A key ending in `/` names every file of that
- * directory. Exactly the cases that need shape-based functions, SPARQL functions or custom functions are listed.
+ * directory. Exactly the cases that need SPARQL functions or custom functions are listed.
  */
 internal object W3cNodeExprPending {
     private val pending: Map<String, String> = linkedMapOf(
-        // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
-        "node-expr/shnex/conformsToShape.ttl" to "unsupported: shnex:conformsToShape",
-        "node-expr/shnex/filterShape.ttl" to "unsupported: shnex:filterShape",
-        "node-expr/shnex/findFirst.ttl" to "unsupported: shnex:findFirst",
-        "node-expr/shnex/matchAll.ttl" to "unsupported: shnex:matchAll",
-        "node-expr/shnex/nodesMatching.ttl" to "unsupported: shnex:nodesMatching",
         // SHACL SPARQL function expressions (§5): every case of the directory.
         "node-expr/shnex-sparql/" to "unsupported: sparql:",
     )
