@@ -107,8 +107,12 @@ internal class SparqlComponentCatalog private constructor(
                 values.map { value -> index.tick("SPARQL constraint components"); partial + (parameter.name to value) }
             }
         }
-        return combinations.map {
-            PropertyConstraint.SparqlComponent(component.iri, validator.node, validator.ask, template, it, messages, validator.annotations)
+        val paths = parameters.associate { it.name to it.path }
+        return combinations.map { values ->
+            PropertyConstraint.SparqlComponent(
+                component.iri, validator.node, validator.ask, template, values, messages, validator.annotations,
+                values.map { (name, value) -> paths.getValue(name) to value },
+            )
         }
     }
 

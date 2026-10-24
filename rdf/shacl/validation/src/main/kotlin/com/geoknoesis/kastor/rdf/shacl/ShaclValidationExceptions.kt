@@ -38,8 +38,8 @@ enum class UnsupportedShaclFeature {
     SPARQL_CONSTRAINT_COMPONENT,
 
     /**
-     * SHACL 1.2 node expressions the engine cannot evaluate: a non-constant `sh:deactivated` on a reifier, and a blank
-     * node at a node expression position (`sh:values`, `sh:defaultValue`, `sh:targetNode`, `sh:deactivated`,
+     * SHACL 1.2 node expressions the engine cannot evaluate: a blank node at a node expression position (`sh:values`,
+     * `sh:defaultValue`, `sh:targetNode`, `sh:deactivated` of a shape, a SPARQL-based constraint or a reifier,
      * `sh:expression`, `sh:nodeByExpression`) that is no node expression of the library, such as a call of a function the shapes graph
      * does not declare. Every well-formed node expression of SHACL 1.2 Node Expressions is evaluated at these
      * positions.

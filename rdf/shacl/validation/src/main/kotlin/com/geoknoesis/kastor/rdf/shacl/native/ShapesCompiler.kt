@@ -44,10 +44,16 @@ internal data class Targets(
 )
 
 internal sealed class NodeLogicalPart {
-    data class And(val operands: List<RdfResource>) : NodeLogicalPart()
-    data class Or(val operands: List<RdfResource>) : NodeLogicalPart()
-    data class Xone(val operands: List<RdfResource>) : NodeLogicalPart()
-    data class Not(val operand: RdfResource) : NodeLogicalPart()
+    /**
+     * The non-constant `sh:deactivated` values of the reifiers of the part's parameter triple (SHACL 1.2 Core §3.1.6):
+     * the part is deactivated for a focus node when one of them produces exactly `true`.
+     */
+    abstract val deactivatedWhen: List<NodeExpression>
+
+    data class And(val operands: List<RdfResource>, override val deactivatedWhen: List<NodeExpression> = emptyList()) : NodeLogicalPart()
+    data class Or(val operands: List<RdfResource>, override val deactivatedWhen: List<NodeExpression> = emptyList()) : NodeLogicalPart()
+    data class Xone(val operands: List<RdfResource>, override val deactivatedWhen: List<NodeExpression> = emptyList()) : NodeLogicalPart()
+    data class Not(val operand: RdfResource, override val deactivatedWhen: List<NodeExpression> = emptyList()) : NodeLogicalPart()
 
     fun operandRefs(): List<RdfResource> =
         when (this) {
@@ -164,11 +170,30 @@ internal sealed class PropertyConstraint {
         /** The validator's `sh:message` values, else the component's. */
         val messages: List<Literal>,
         val annotations: List<SparqlResultAnnotation>,
+        /** The shape's parameter triples (parameter path, value) this combination uses, for reifier deactivation. */
+        val parameterTriples: List<Pair<Iri, RdfTerm>> = emptyList(),
     ) : PropertyConstraint()
-    /** SHACL 1.2: validate resources that reify triples matching this property shape. */
-    data class ReifierShape(val nestedShape: RdfResource) : PropertyConstraint()
-    /** SHACL 1.2: asserted triples matching the path must have at least one `rdf:reifies` reifier. */
+    /**
+     * SHACL 1.2: validate resources that reify triples matching this property shape. [required] is the shape's
+     * `sh:reificationRequired`, an optional parameter of the same component (Core §7.8.5): one constraint per
+     * `sh:reifierShape` value, each with the requirement.
+     */
+    data class ReifierShape(val nestedShape: RdfResource, val required: Boolean = false) : PropertyConstraint()
+    /**
+     * SHACL 1.2: asserted triples matching the path must have at least one `rdf:reifies` reifier. Only for a shape
+     * without `sh:reifierShape`; otherwise the requirement is part of each [ReifierShape].
+     */
     data class ReificationRequired(val required: Boolean) : PropertyConstraint()
+    /**
+     * [constraint], which a reifier of one of its parameter triples deactivates per focus node (SHACL 1.2 Core §3.1.6):
+     * it is ignored for a focus node for which one of [deactivatedWhen], evaluated with that focus node and an empty
+     * scope, produces exactly `true`. Optimisations that read constraints (such as `sh:targetWhere` narrowing) do not
+     * see through it, since the constraint does not hold for every node.
+     */
+    data class Deactivatable(val constraint: PropertyConstraint, val deactivatedWhen: List<NodeExpression>) : PropertyConstraint()
+
+    /** The constraint this one guards, if it is [Deactivatable], else itself. */
+    fun unwrapped(): PropertyConstraint = if (this is Deactivatable) constraint else this
 }
 
 internal data class CompiledPropertyShape(
@@ -196,7 +221,31 @@ internal data class CompiledPropertyShape(
     val values: NodeExpression? = null,
     /** `sh:defaultValue` node expression (predicate paths only); null when absent or [deactivated]. */
     val defaultValue: NodeExpression? = null,
+    /** Per focus node deactivation of the shape's `sh:property` triples by reifiers: see [ReifierConditions]. */
+    val reifierConditions: ReifierConditions = ReifierConditions.NONE,
 )
+
+/**
+ * The non-constant `sh:deactivated` values of the reifiers of a shape's parameter triples that are no
+ * [PropertyConstraint] (SHACL 1.2 Core §3.1.6): the constraint is deactivated for a focus node, of the shape, when one
+ * of its expressions produces exactly `true`. [links] are keyed by the triple's (predicate, object): `sh:property`,
+ * `sh:node` and `sh:nodeByExpression` (an IRI) on a node shape, `sh:property` on a property shape. [closed] deactivates
+ * `sh:closed` (its `sh:closed` and `sh:ignoredProperties` triples), [uniqueValuesFor] `sh:uniqueValuesFor`.
+ */
+internal data class ReifierConditions(
+    val links: Map<Pair<Iri, RdfResource>, List<NodeExpression>> = emptyMap(),
+    val closed: List<NodeExpression> = emptyList(),
+    val uniqueValuesFor: List<NodeExpression> = emptyList(),
+) {
+    fun link(predicate: Iri, target: RdfResource): List<NodeExpression> = links[predicate to target].orEmpty()
+
+    /** Every expression, for the shape closure and the recursion analysis. */
+    fun expressions(): List<NodeExpression> = links.values.flatten() + closed + uniqueValuesFor
+
+    companion object {
+        val NONE = ReifierConditions()
+    }
+}
 
 internal data class CompiledNodeShape(
     val shapeNode: RdfResource,
@@ -227,6 +276,8 @@ internal data class CompiledNodeShape(
      * values, including deactivated property shapes.
      */
     val closedAllowedPredicates: Set<Iri> = emptySet(),
+    /** Per focus node deactivation of parameter triples by reifiers, other than [nodeConstraints]: see [ReifierConditions]. */
+    val reifierConditions: ReifierConditions = ReifierConditions.NONE,
 )
 
 /**
@@ -442,8 +493,8 @@ internal object ShapesCompiler {
 
         private fun addConstraint(c: PropertyConstraint) {
             pending.addAll(constraintRefs(c))
-            constraintExpression(c)?.let { addExpression(it) }
-            if (c is PropertyConstraint.NodeByExpressionComputed) candidates.wantAll()
+            constraintExpressions(c).forEach { addExpression(it) }
+            if (c.unwrapped() is PropertyConstraint.NodeByExpressionComputed) candidates.wantAll()
         }
 
         fun visitProperty(ps: CompiledPropertyShape) {
@@ -452,7 +503,7 @@ internal object ShapesCompiler {
             props[ps.shapeNode] = ps
             ps.constraints.forEach { addConstraint(it) }
             ps.logicalParts.forEach { pending.addAll(it.operandRefs()) }
-            listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen).forEach { addExpression(it) }
+            shapeExpressions(ps).forEach { addExpression(it) }
             ps.nestedPropertyShapes.forEach { visitProperty(it) }
         }
 
@@ -463,7 +514,7 @@ internal object ShapesCompiler {
             cn.logicalParts.forEach { pending.addAll(it.operandRefs()) }
             cn.nodeConstraints.forEach { addConstraint(it) }
             cn.targets.targetNodeExpressions.forEach { addExpression(it) }
-            cn.deactivatedWhen?.let { addExpression(it) }
+            shapeExpressions(cn).forEach { addExpression(it) }
             cn.propertyShapes.forEach { visitProperty(it) }
         }
 
@@ -505,11 +556,23 @@ internal object ShapesCompiler {
 
         /**
          * The shapes of the node expressions [ps] evaluates: `sh:values`, `sh:defaultValue`, a non-constant
-         * `sh:deactivated` and its constraints'.
+         * `sh:deactivated`, the reifier conditions of its parameter triples and its constraints'.
          */
         fun of(ps: CompiledPropertyShape): List<RdfResource> =
-            (listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen) + ps.constraints.mapNotNull { constraintExpression(it) }).flatMap { of(it) }
+            (shapeExpressions(ps) + ps.constraints.flatMap { constraintExpressions(it) }).flatMap { of(it) }
     }
+
+    /**
+     * The node expressions [ps] evaluates apart from its constraints': `sh:values`, `sh:defaultValue`, a non-constant
+     * `sh:deactivated`, and the non-constant `sh:deactivated` of the reifiers of its logical and `sh:property` triples.
+     */
+    private fun shapeExpressions(ps: CompiledPropertyShape): List<NodeExpression> =
+        listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen) + ps.logicalParts.flatMap { it.deactivatedWhen } +
+            ps.reifierConditions.expressions()
+
+    /** The node expressions [cn] evaluates apart from its constraints' and its targets' (see the other overload). */
+    private fun shapeExpressions(cn: CompiledNodeShape): List<NodeExpression> =
+        listOfNotNull(cn.deactivatedWhen) + cn.logicalParts.flatMap { it.deactivatedWhen } + cn.reifierConditions.expressions()
 
     /** The shapes [expr] of [index] can validate against ([ExpressionShapes]), for expressions evaluated outside validation. */
     fun expressionShapes(expr: NodeExpression, index: ShapeGraphIndex): Set<RdfResource> = ExpressionShapes(index).of(expr)
@@ -553,14 +616,14 @@ internal object ShapesCompiler {
         val sparqlBodyShapes: List<RdfResource> = functions.expressionBodies.flatMap { budget.tick("recursion analysis"); exprShapes.of(it) }.distinct()
         fun runsSparql(constraints: List<PropertyConstraint>, expressions: List<NodeExpression>) =
             sparqlBodyShapes.isNotEmpty() &&
-                (constraints.any { it is PropertyConstraint.Sparql || it is PropertyConstraint.SparqlComponent } ||
+                (constraints.any { it.unwrapped().let { c -> c is PropertyConstraint.Sparql || c is PropertyConstraint.SparqlComponent } } ||
                     expressions.any { NodeExpressions.runsSparql(it, exprShapes.index) })
         val successors = HashMap<RdfResource, List<RdfResource>>()
         for ((node, ps) in refProps) {
             // The node expressions of sh:values / sh:defaultValue / sh:expression / sh:nodeByExpression are evaluated
             // while checking the shape, so their shapes are dependencies; so are the candidates of a computed
             // sh:nodeByExpression, any of which it can produce.
-            val expressions = listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen) + ps.constraints.mapNotNull { constraintExpression(it) }
+            val expressions = shapeExpressions(ps) + ps.constraints.flatMap { constraintExpressions(it) }
             successors[node] = ps.constraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } +
                 ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps) +
                 (if (runsSparql(ps.constraints, expressions)) sparqlBodyShapes else emptyList())
@@ -569,8 +632,8 @@ internal object ShapesCompiler {
         for ((node, cn) in refNodes) {
             if (node in refProps) continue
             // A non-constant sh:deactivated is evaluated before anything else of the shape: its shapes are
-            // dependencies too.
-            val expressions = cn.nodeConstraints.mapNotNull { constraintExpression(it) } + listOfNotNull(cn.deactivatedWhen)
+            // dependencies too, and so are those of the reifiers' sh:deactivated of its parameter triples.
+            val expressions = cn.nodeConstraints.flatMap { constraintExpressions(it) } + shapeExpressions(cn)
             successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
                 cn.nodeConstraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } + cn.propertyShapes.map { it.shapeNode } +
                 expressions.flatMap { exprShapes.of(it) } +
@@ -717,6 +780,13 @@ internal object ShapesCompiler {
             for (c in index.objects(shape, SHACL.sparql)) {
                 if (c is RdfResource) index.objects(c, SHACL.deactivated).forEach { expression(it, computedShape = false) }
             }
+            // So is the sh:deactivated of a reifier of one of the shape's triples (Core §3.1.6).
+            for (p in index.predicates(shape)) {
+                for (o in index.objects(shape, p)) {
+                    budget.tick("feature detection")
+                    for (r in index.reifiersForClaim(RdfTriple(shape, p, o))) index.objects(r, SHACL.deactivated).forEach { expression(it, computedShape = false) }
+                }
+            }
             // An IRI is a constant shape reference; any other value computes its shapes.
             index.objects(shape, SHACL.nodeByExpression).forEach { if (it is Iri) visit(it) else expression(it, computedShape = true) }
         }
@@ -736,7 +806,7 @@ internal object ShapesCompiler {
     /**
      * Recognised SHACL constructs the native engine cannot evaluate. They are reported instead of silently
      * compiling to something that always conforms (or targets every node): blank nodes at node expression positions
-     * that are no node expression, non-constant `sh:deactivated` on a reifier, SPARQL expressions as `sh:targetWhere` values,
+     * that are no node expression (at `sh:deactivated` of a shape or a reifier too), SPARQL expressions as `sh:targetWhere` values,
      * and `sh:target`. Node-expression positions are only inspected on shape-reachable nodes, so data triples that
      * share the shapes graph (`validate(g, g)`, discovered shapes graphs) are never mistaken for expressions. The
      * shapes only the candidates of computed shape references reach do not fail the run: their constructs are
@@ -819,10 +889,8 @@ internal object ShapesCompiler {
                 "sh:targetNode with a node expression on ${t.subject}" to expression(t.obj)
             t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
-            // SHACL 1.2 Core §3.1.6: a shape's sh:deactivated may be any node expression; a reifier's (one constraint)
-            // only the constants true and false.
-            t.predicate == SHACL.deactivated && t.obj is BlankNode && index.objects(t.subject, RDF.reifies).any { it is TripleTerm } ->
-                "non-constant sh:deactivated (a node expression) on the reifier ${t.subject}" to UnsupportedShaclFeature.NODE_EXPRESSION
+            // SHACL 1.2 Core §3.1.6: the sh:deactivated of a shape, or of a reifier of a parameter triple (one
+            // constraint), may be any node expression.
             t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:deactivated node expression on ${t.subject}" to expression(t.obj)
             (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && isLexicallyTrue(t.obj))) &&
@@ -847,6 +915,7 @@ internal object ShapesCompiler {
 
     internal fun constraintRefs(c: PropertyConstraint): List<RdfResource> =
         when (c) {
+            is PropertyConstraint.Deactivatable -> constraintRefs(c.constraint)
             is PropertyConstraint.Node -> listOf(c.nestedShape)
             is PropertyConstraint.NodeByExpression -> listOf(c.nestedShape)
             is PropertyConstraint.Qualified -> listOf(c.shape) + c.siblings
@@ -859,18 +928,20 @@ internal object ShapesCompiler {
 
     /** The shapes a computed `sh:nodeByExpression` [c] can validate against: every candidate ([ExpressionShapes.allCandidates]). */
     private fun computedRefs(c: PropertyConstraint, exprShapes: ExpressionShapes): Collection<RdfResource> =
-        if (c is PropertyConstraint.NodeByExpressionComputed) exprShapes.allCandidates else emptyList()
+        if (c.unwrapped() is PropertyConstraint.NodeByExpressionComputed) exprShapes.allCandidates else emptyList()
 
     /**
-     * The node expression [c] evaluates (`sh:expression`, a computed `sh:nodeByExpression`, the non-constant
-     * `sh:deactivated` of a SPARQL-based constraint), if any.
+     * The node expressions [c] evaluates: `sh:expression`, a computed `sh:nodeByExpression`, the non-constant
+     * `sh:deactivated` of a SPARQL-based constraint, and the non-constant `sh:deactivated` of the reifiers of its
+     * parameter triples ([PropertyConstraint.Deactivatable]).
      */
-    internal fun constraintExpression(c: PropertyConstraint): NodeExpression? =
+    internal fun constraintExpressions(c: PropertyConstraint): List<NodeExpression> =
         when (c) {
-            is PropertyConstraint.Expression -> c.expr
-            is PropertyConstraint.NodeByExpressionComputed -> c.expr
-            is PropertyConstraint.Sparql -> c.deactivatedWhen
-            else -> null
+            is PropertyConstraint.Expression -> listOf(c.expr)
+            is PropertyConstraint.NodeByExpressionComputed -> listOf(c.expr)
+            is PropertyConstraint.Sparql -> listOfNotNull(c.deactivatedWhen)
+            is PropertyConstraint.Deactivatable -> c.deactivatedWhen + constraintExpressions(c.constraint)
+            else -> emptyList()
         }
 
     internal val resourceOrdering: Comparator<RdfResource> = Comparator { a, b ->
@@ -1006,13 +1077,14 @@ internal object ShapesCompiler {
             }
         }
 
+        val links = LinkedHashMap<Pair<Iri, RdfResource>, List<NodeExpression>>()
         // Property shapes have their own severity (default sh:Violation); they never inherit the node shape's.
         val linkedPropShapes =
             index.objects(subject, SHACL.`property`)
                 .mapNotNull { ps ->
                     val node = ps as? RdfResource ?: return@mapNotNull null
                     if (isDeactivated(node, index)) return@mapNotNull null
-                    if (isParameterTripleDeactivated(subject, SHACL.`property`, ps, index)) return@mapNotNull null
+                    if (!activeLink(subject, SHACL.`property`, node, index, links)) return@mapNotNull null
                     compilePropertyShape(node, index, config)
                 }
 
@@ -1021,13 +1093,20 @@ internal object ShapesCompiler {
                 .flatMap { index.objects(it, SHACL.path) }.filterIsInstance<Iri>().toSet()
 
         val closedTerms = index.objects(subject, SHACL.closed)
+        val ignoredTerms = index.objects(subject, SHACL.ignoredProperties)
+        // sh:ignoredProperties is an optional parameter of sh:ClosedConstraintComponent: a reifier of either triple
+        // deactivates the constraint.
+        val closedConditions = reifierDeactivation(
+            subject, closedTerms.map { SHACL.closed to it } + ignoredTerms.map { SHACL.ignoredProperties to it }, index,
+        )
         val closedMode =
             when {
+                closedConditions == null -> ClosedMode.NONE
                 closedTerms.contains(SHACL.ByTypes) -> ClosedMode.BY_TYPES
                 closedTerms.any { isLexicallyTrue(it) } -> ClosedMode.TRUE
                 else -> ClosedMode.NONE
             }
-        val ignored = index.objects(subject, SHACL.ignoredProperties).flatMap { term ->
+        val ignored = ignoredTerms.flatMap { term ->
             when (term) {
                 is Iri -> listOf(term)
                 is BlankNode -> index.parseRdfList(term).filterIsInstance<Iri>()
@@ -1037,10 +1116,14 @@ internal object ShapesCompiler {
 
         val logicalParts = compileLogicalParts(subject, index)
         val nodeRefsOnShape = index.objects(subject, SHACL.node).filterIsInstance<RdfResource>()
+            .filter { activeLink(subject, SHACL.node, it, index, links) }
         // IRIs are constant shape references; other values are computed (PropertyConstraint.NodeByExpressionComputed).
         val nodeByExpressionRefs = index.objects(subject, SHACL.nodeByExpression).filterIsInstance<Iri>()
+            .filter { activeLink(subject, SHACL.nodeByExpression, it, index, links) }
         val nodeConstraints = compileConstraints(subject, index, config, ConstraintFlavor.NODE_SCALAR, null)
-        val uniqueValuesForProps = parseUniqueValuesFor(subject, index)
+        val uniqueValuesForConditions =
+            reifierDeactivation(subject, index.objects(subject, SHACL.uniqueValuesFor).map { SHACL.uniqueValuesFor to it }, index)
+        val uniqueValuesForProps = parseUniqueValuesFor(subject, index).takeIf { uniqueValuesForConditions != null }.orEmpty()
 
         return CompiledNodeShape(
             deactivatedWhen = deactivationExpression(subject, index),
@@ -1059,17 +1142,50 @@ internal object ShapesCompiler {
             nodeConstraints = nodeConstraints,
             uniqueValuesForProps = uniqueValuesForProps,
             closedAllowedPredicates = closedAllowedPredicates,
+            reifierConditions = ReifierConditions(
+                links = links,
+                closed = closedConditions.orEmpty().takeIf { closedMode != ClosedMode.NONE }.orEmpty(),
+                uniqueValuesFor = uniqueValuesForConditions.orEmpty().takeIf { uniqueValuesForProps.isNotEmpty() }.orEmpty(),
+            ),
         )
     }
 
+    /**
+     * Whether the `sh:property`, `sh:node` or `sh:nodeByExpression` triple ([subject] [predicate] [target]) declares a
+     * constraint, that is, is not deactivated by the constant `true` at one of its reifiers (SHACL 1.2 Core §3.1.6). A
+     * non-constant deactivation is recorded in [links].
+     */
+    private fun activeLink(
+        subject: RdfResource,
+        predicate: Iri,
+        target: RdfResource,
+        index: ShapeGraphIndex,
+        links: MutableMap<Pair<Iri, RdfResource>, List<NodeExpression>>,
+    ): Boolean {
+        val conditions = reifierDeactivation(subject, listOf(predicate to target), index) ?: return false
+        if (conditions.isNotEmpty()) links[predicate to target] = conditions
+        return true
+    }
+
+    /**
+     * The `sh:and`, `sh:or`, `sh:xone` and `sh:not` constraints of [subject], without those a reifier of their triple
+     * deactivates with the constant `true`, and with the non-constant deactivations (SHACL 1.2 Core §3.1.6).
+     */
     private fun compileLogicalParts(subject: RdfResource, index: ShapeGraphIndex): MutableList<NodeLogicalPart> {
         val logicalParts = mutableListOf<NodeLogicalPart>()
-        index.objects(subject, SHACL.`and`).forEach { head -> logicalParts.add(NodeLogicalPart.And(parseShapeRefList(head, index))) }
-        index.objects(subject, SHACL.`or`).forEach { head -> logicalParts.add(NodeLogicalPart.Or(parseShapeRefList(head, index))) }
-        index.objects(subject, SHACL.xone).forEach { head -> logicalParts.add(NodeLogicalPart.Xone(parseShapeRefList(head, index))) }
-        index.objects(subject, SHACL.`not`).forEach { n ->
+        fun each(predicate: Iri, build: (RdfTerm, List<NodeExpression>) -> NodeLogicalPart) {
+            for (value in index.objects(subject, predicate)) {
+                val part = build(value, emptyList())
+                val conditions = reifierDeactivation(subject, listOf(predicate to value), index) ?: continue
+                logicalParts.add(if (conditions.isEmpty()) part else build(value, conditions))
+            }
+        }
+        each(SHACL.`and`) { head, d -> NodeLogicalPart.And(parseShapeRefList(head, index), d) }
+        each(SHACL.`or`) { head, d -> NodeLogicalPart.Or(parseShapeRefList(head, index), d) }
+        each(SHACL.xone) { head, d -> NodeLogicalPart.Xone(parseShapeRefList(head, index), d) }
+        each(SHACL.`not`) { n, d ->
             val ref = n as? RdfResource ?: throw ShapeCompileException("sh:not expects a shape reference, got $n")
-            logicalParts.add(NodeLogicalPart.Not(ref))
+            NodeLogicalPart.Not(ref, d)
         }
         return logicalParts
     }
@@ -1099,12 +1215,17 @@ internal object ShapesCompiler {
             }
             return values.firstOrNull()
         }
+        // SHACL 1.2 Core §3.1.6: a reifier of one of the parameter triples a constraint uses deactivates it, for every
+        // focus node (the constant true: the constraint is left out) or per focus node (Deactivatable).
+        fun add(c: PropertyConstraint, vararg triples: Pair<Iri, RdfTerm?>) {
+            val conditions = reifierDeactivation(subject, triples.mapNotNull { (p, o) -> o?.let { p to it } }, index) ?: return
+            constraints.add(if (conditions.isEmpty()) c else PropertyConstraint.Deactivatable(c, conditions))
+        }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
-            atMostOne(SHACL.minCount)?.let { constraints.add(PropertyConstraint.MinCount(parseNonNegativeInt(it, "sh:minCount"))) }
-            atMostOne(SHACL.maxCount)?.let { constraints.add(PropertyConstraint.MaxCount(parseNonNegativeInt(it, "sh:maxCount"))) }
+            atMostOne(SHACL.minCount)?.let { add(PropertyConstraint.MinCount(parseNonNegativeInt(it, "sh:minCount")), SHACL.minCount to it) }
+            atMostOne(SHACL.maxCount)?.let { add(PropertyConstraint.MaxCount(parseNonNegativeInt(it, "sh:maxCount")), SHACL.maxCount to it) }
         }
         for (dtObj in index.objects(subject, SHACL.datatype)) {
-            if (isParameterTripleDeactivated(subject, SHACL.datatype, dtObj, index)) continue
             val override = annotatedConstraintSeverity(subject, SHACL.datatype, dtObj, index)
             val allowed =
                 when (dtObj) {
@@ -1116,12 +1237,12 @@ internal object ShapesCompiler {
                     else -> throw ShapeCompileException("sh:datatype expects an IRI or RDF list, got $dtObj")
                 }
             if (allowed.isNotEmpty()) {
-                constraints.add(PropertyConstraint.Datatype(allowed, override, annotatedConstraintMessages(subject, SHACL.datatype, dtObj, index)))
+                add(PropertyConstraint.Datatype(allowed, override, annotatedConstraintMessages(subject, SHACL.datatype, dtObj, index)), SHACL.datatype to dtObj)
             }
         }
         for (co in index.objects(subject, SHACL.`class`)) {
             when (co) {
-                is Iri -> constraints.add(PropertyConstraint.Class(co))
+                is Iri -> add(PropertyConstraint.Class(co), SHACL.`class` to co)
                 is BlankNode -> {
                     val opts =
                         index.parseRdfList(co).map {
@@ -1129,8 +1250,8 @@ internal object ShapesCompiler {
                         }
                     when (opts.size) {
                         0 -> Unit
-                        1 -> constraints.add(PropertyConstraint.Class(opts.first()))
-                        else -> constraints.add(PropertyConstraint.ClassAnyOf(opts))
+                        1 -> add(PropertyConstraint.Class(opts.first()), SHACL.`class` to co)
+                        else -> add(PropertyConstraint.ClassAnyOf(opts), SHACL.`class` to co)
                     }
                 }
                 // A literal (or triple term) is not a class: the shapes graph is ill-formed. Dropping the constraint
@@ -1152,38 +1273,40 @@ internal object ShapesCompiler {
                             "sh:Literal, ...) or an RDF list of them, got $nk",
                     )
                 }
-            if (kinds.isNotEmpty()) constraints.add(PropertyConstraint.NodeKind(kinds.distinct()))
+            if (kinds.isNotEmpty()) add(PropertyConstraint.NodeKind(kinds.distinct()), SHACL.nodeKind to nk)
         }
-        val flags = atMostOne(SHACL.flags)?.let { literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
+        val flagsTerm = atMostOne(SHACL.flags)
+        val flags = flagsTerm?.let { literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
         for (p in index.objects(subject, SHACL.pattern)) {
             val pat = literalString(p) ?: throw ShapeCompileException("sh:pattern must be a string literal")
-            constraints.add(PropertyConstraint.Pattern(pat, flags, compileShaclPattern(pat, flags)))
+            // sh:flags is a parameter of each pattern constraint, so its reifier deactivates all of them.
+            add(PropertyConstraint.Pattern(pat, flags, compileShaclPattern(pat, flags)), SHACL.pattern to p, SHACL.flags to flagsTerm)
         }
-        atMostOne(SHACL.minLength)?.let { constraints.add(PropertyConstraint.MinLength(parseNonNegativeInt(it, "sh:minLength"))) }
-        atMostOne(SHACL.maxLength)?.let { constraints.add(PropertyConstraint.MaxLength(parseNonNegativeInt(it, "sh:maxLength"))) }
+        atMostOne(SHACL.minLength)?.let { add(PropertyConstraint.MinLength(parseNonNegativeInt(it, "sh:minLength")), SHACL.minLength to it) }
+        atMostOne(SHACL.maxLength)?.let { add(PropertyConstraint.MaxLength(parseNonNegativeInt(it, "sh:maxLength")), SHACL.maxLength to it) }
         atMostOne(SHACL.`in`)?.let { head ->
             val terms = index.parseRdfList(head)
             terms.forEach { ensureShapeTermAllowed(it, config) }
-            constraints.add(PropertyConstraint.In(terms))
+            add(PropertyConstraint.In(terms), SHACL.`in` to head)
         }
         for (hv in index.objects(subject, SHACL.hasValue)) {
             ensureShapeTermAllowed(hv, config)
-            constraints.add(PropertyConstraint.HasValue(hv))
+            add(PropertyConstraint.HasValue(hv), SHACL.hasValue to hv)
         }
         atMostOne(SHACL.languageIn)?.let { head ->
             val langs = index.parseRdfList(head).map {
                 literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals")
             }
-            constraints.add(PropertyConstraint.LanguageIn(langs))
+            add(PropertyConstraint.LanguageIn(langs), SHACL.languageIn to head)
         }
-        atMostOne(SHACL.uniqueLang)?.let { constraints.add(PropertyConstraint.UniqueLang(isLexicallyTrue(it))) }
-        atMostOne(SHACL.minListLength)?.let { constraints.add(PropertyConstraint.MinListLength(parseNonNegativeInt(it, "sh:minListLength"))) }
-        atMostOne(SHACL.maxListLength)?.let { constraints.add(PropertyConstraint.MaxListLength(parseNonNegativeInt(it, "sh:maxListLength"))) }
+        atMostOne(SHACL.uniqueLang)?.let { add(PropertyConstraint.UniqueLang(isLexicallyTrue(it)), SHACL.uniqueLang to it) }
+        atMostOne(SHACL.minListLength)?.let { add(PropertyConstraint.MinListLength(parseNonNegativeInt(it, "sh:minListLength")), SHACL.minListLength to it) }
+        atMostOne(SHACL.maxListLength)?.let { add(PropertyConstraint.MaxListLength(parseNonNegativeInt(it, "sh:maxListLength")), SHACL.maxListLength to it) }
         index.objects(subject, SHACL.memberShape).filterIsInstance<RdfResource>().forEach {
-            constraints.add(PropertyConstraint.MemberShape(it))
+            add(PropertyConstraint.MemberShape(it), SHACL.memberShape to it)
         }
-        atMostOne(SHACL.uniqueMembers)?.let { constraints.add(PropertyConstraint.UniqueMembers(isLexicallyTrue(it))) }
-        atMostOne(SHACL.singleLine)?.let { constraints.add(PropertyConstraint.SingleLine(isLexicallyTrue(it))) }
+        atMostOne(SHACL.uniqueMembers)?.let { add(PropertyConstraint.UniqueMembers(isLexicallyTrue(it)), SHACL.uniqueMembers to it) }
+        atMostOne(SHACL.singleLine)?.let { add(PropertyConstraint.SingleLine(isLexicallyTrue(it)), SHACL.singleLine to it) }
         for (rc in index.objects(subject, SHACL.rootClass)) {
             val roots =
                 when (rc) {
@@ -1194,55 +1317,58 @@ internal object ShapesCompiler {
                         }
                     else -> throw ShapeCompileException("sh:rootClass expects an IRI or RDF list")
                 }
-            constraints.add(PropertyConstraint.RootClass(roots))
+            add(PropertyConstraint.RootClass(roots), SHACL.rootClass to rc)
         }
         index.objects(subject, SHACL.subsetOf).forEach {
-            constraints.add(PropertyConstraint.SubsetOfPath(ShaclPathParser.parse(it, index)))
+            add(PropertyConstraint.SubsetOfPath(ShaclPathParser.parse(it, index)), SHACL.subsetOf to it)
         }
         index.objects(subject, SHACL.someValue).filterIsInstance<RdfResource>().forEach {
-            constraints.add(PropertyConstraint.SomeValue(it))
+            add(PropertyConstraint.SomeValue(it), SHACL.someValue to it)
         }
         index.objects(subject, SHACL.shape).filterIsInstance<RdfResource>().forEach {
-            constraints.add(PropertyConstraint.Shape(it))
+            add(PropertyConstraint.Shape(it), SHACL.shape to it)
         }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
             index.objects(subject, SHACL.node).filterIsInstance<RdfResource>().forEach {
-                constraints.add(PropertyConstraint.Node(it))
+                add(PropertyConstraint.Node(it), SHACL.node to it)
             }
             index.objects(subject, SHACL.nodeByExpression).filterIsInstance<Iri>().forEach {
-                constraints.add(PropertyConstraint.NodeByExpression(it))
+                add(PropertyConstraint.NodeByExpression(it), SHACL.nodeByExpression to it)
             }
             index.objects(subject, SHACL.lessThan).forEach {
-                constraints.add(PropertyConstraint.LessThanPath(ShaclPathParser.parse(it, index)))
+                add(PropertyConstraint.LessThanPath(ShaclPathParser.parse(it, index)), SHACL.lessThan to it)
             }
             index.objects(subject, SHACL.lessThanOrEquals).forEach {
-                constraints.add(PropertyConstraint.LessThanOrEqualsPath(ShaclPathParser.parse(it, index)))
+                add(PropertyConstraint.LessThanOrEqualsPath(ShaclPathParser.parse(it, index)), SHACL.lessThanOrEquals to it)
             }
         }
         // SHACL 1.2 Node Expressions §7: any shape. A value that is no node expression at all is reported as an
         // unsupported feature (see detectUnsupportedFeatures) and has no constraint.
         for (term in index.objects(subject, shExpression)) {
-            NodeExpressions.compile(term, index)?.let { constraints.add(PropertyConstraint.Expression(term, it)) }
+            NodeExpressions.compile(term, index)?.let { add(PropertyConstraint.Expression(term, it), shExpression to term) }
         }
         for (term in index.objects(subject, SHACL.nodeByExpression)) {
             if (term is Iri) continue // A constant shape reference: PropertyConstraint.NodeByExpression / nodeByExpressionRefs.
-            NodeExpressions.compile(term, index)?.let { constraints.add(PropertyConstraint.NodeByExpressionComputed(term, it)) }
+            NodeExpressions.compile(term, index)?.let { add(PropertyConstraint.NodeByExpressionComputed(term, it), SHACL.nodeByExpression to term) }
         }
         index.objects(subject, SHACL.equals).forEach {
-            constraints.add(PropertyConstraint.EqualsPath(ShaclPathParser.parse(it, index)))
+            add(PropertyConstraint.EqualsPath(ShaclPathParser.parse(it, index)), SHACL.equals to it)
         }
         index.objects(subject, SHACL.disjoint).forEach {
-            constraints.add(PropertyConstraint.DisjointPath(ShaclPathParser.parse(it, index)))
+            add(PropertyConstraint.DisjointPath(ShaclPathParser.parse(it, index)), SHACL.disjoint to it)
         }
-        index.objects(subject, SHACL.minInclusive).forEach { constraints.add(PropertyConstraint.MinInclusive(it)) }
-        index.objects(subject, SHACL.maxInclusive).forEach { constraints.add(PropertyConstraint.MaxInclusive(it)) }
-        index.objects(subject, SHACL.minExclusive).forEach { constraints.add(PropertyConstraint.MinExclusive(it)) }
-        index.objects(subject, SHACL.maxExclusive).forEach { constraints.add(PropertyConstraint.MaxExclusive(it)) }
+        index.objects(subject, SHACL.minInclusive).forEach { add(PropertyConstraint.MinInclusive(it), SHACL.minInclusive to it) }
+        index.objects(subject, SHACL.maxInclusive).forEach { add(PropertyConstraint.MaxInclusive(it), SHACL.maxInclusive to it) }
+        index.objects(subject, SHACL.minExclusive).forEach { add(PropertyConstraint.MinExclusive(it), SHACL.minExclusive to it) }
+        index.objects(subject, SHACL.maxExclusive).forEach { add(PropertyConstraint.MaxExclusive(it), SHACL.maxExclusive to it) }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
             val qualifiedShapes = index.objects(subject, SHACL.qualifiedValueShape).filterIsInstance<RdfResource>()
-            val min = atMostOne(SHACL.qualifiedMinCount)?.let { parseNonNegativeInt(it, "sh:qualifiedMinCount") }
-            val max = atMostOne(SHACL.qualifiedMaxCount)?.let { parseNonNegativeInt(it, "sh:qualifiedMaxCount") }
-            val disjoint = atMostOne(SHACL.qualifiedValueShapesDisjoint)?.let { isLexicallyTrue(it) } ?: false
+            val minTerm = atMostOne(SHACL.qualifiedMinCount)
+            val maxTerm = atMostOne(SHACL.qualifiedMaxCount)
+            val disjointTerm = atMostOne(SHACL.qualifiedValueShapesDisjoint)
+            val min = minTerm?.let { parseNonNegativeInt(it, "sh:qualifiedMinCount") }
+            val max = maxTerm?.let { parseNonNegativeInt(it, "sh:qualifiedMaxCount") }
+            val disjoint = disjointTerm?.let { isLexicallyTrue(it) } ?: false
             for (qvs in qualifiedShapes) {
                 val siblings =
                     if (!disjoint) {
@@ -1256,19 +1382,38 @@ internal object ShapesCompiler {
                             .distinct()
                             .filter { it != qvs }
                     }
-                constraints.add(PropertyConstraint.Qualified(qvs, min, max, disjoint, siblings))
+                // sh:QualifiedMinCountConstraintComponent and sh:QualifiedMaxCountConstraintComponent share
+                // sh:qualifiedValueShape and sh:qualifiedValueShapesDisjoint: a reifier of either deactivates both.
+                // The two stay one constraint unless the reifiers of sh:qualifiedMinCount and sh:qualifiedMaxCount
+                // deactivate them differently.
+                val shared = arrayOf(SHACL.qualifiedValueShape to qvs, SHACL.qualifiedValueShapesDisjoint to disjointTerm)
+                val minOnly = minTerm?.let { reifierDeactivation(subject, listOf(SHACL.qualifiedMinCount to it), index) }
+                val maxOnly = maxTerm?.let { reifierDeactivation(subject, listOf(SHACL.qualifiedMaxCount to it), index) }
+                if (min == null || max == null || minOnly == maxOnly) {
+                    add(PropertyConstraint.Qualified(qvs, min, max, disjoint, siblings), *shared, SHACL.qualifiedMinCount to minTerm, SHACL.qualifiedMaxCount to maxTerm)
+                } else {
+                    add(PropertyConstraint.Qualified(qvs, min, null, disjoint, siblings), *shared, SHACL.qualifiedMinCount to minTerm)
+                    add(PropertyConstraint.Qualified(qvs, null, max, disjoint, siblings), *shared, SHACL.qualifiedMaxCount to maxTerm)
+                }
             }
-            index.objects(subject, SHACL.reifierShape).filterIsInstance<RdfResource>().forEach {
-                constraints.add(PropertyConstraint.ReifierShape(it))
+            // sh:reificationRequired is an optional parameter of sh:ReifierShapeConstraintComponent (Core §7.8.5): it is
+            // part of the constraint of each sh:reifierShape value, and a constraint of its own only without one.
+            val reifierShapes = index.objects(subject, SHACL.reifierShape).filterIsInstance<RdfResource>()
+            val requiredTerm = atMostOne(SHACL.reificationRequired)
+            val required = requiredTerm?.let { isLexicallyTrue(it) } ?: false
+            if (reifierShapes.isEmpty()) {
+                requiredTerm?.let { add(PropertyConstraint.ReificationRequired(required), SHACL.reificationRequired to it) }
             }
-            atMostOne(SHACL.reificationRequired)?.let {
-                constraints.add(PropertyConstraint.ReificationRequired(isLexicallyTrue(it)))
+            reifierShapes.forEach {
+                add(PropertyConstraint.ReifierShape(it, required), SHACL.reifierShape to it, SHACL.reificationRequired to requiredTerm)
             }
         }
-        index.objects(subject, SHACL.sparql).filterIsInstance<RdfResource>().forEach {
-            compileSparqlConstraint(it, index, path)?.let { c -> constraints.add(c) }
+        index.objects(subject, SHACL.sparql).filterIsInstance<RdfResource>().forEach { node ->
+            compileSparqlConstraint(node, index, path)?.let { c -> add(c, SHACL.sparql to node) }
         }
-        constraints.addAll(index.sparqlComponents.constraintsFor(subject, flavor == ConstraintFlavor.PROPERTY_SHAPE, path))
+        for (c in index.sparqlComponents.constraintsFor(subject, flavor == ConstraintFlavor.PROPERTY_SHAPE, path)) {
+            add(c, *c.parameterTriples.toTypedArray())
+        }
         return constraints
     }
 
@@ -1309,12 +1454,13 @@ internal object ShapesCompiler {
         val constraints = compileConstraints(ps, index, config, ConstraintFlavor.PROPERTY_SHAPE, path)
         val logicalParts = compileLogicalParts(ps, index)
 
+        val links = LinkedHashMap<Pair<Iri, RdfResource>, List<NodeExpression>>()
         val nestedPropertyShapes =
             index.objects(ps, SHACL.`property`)
                 .mapNotNull { child ->
                     val node = child as? RdfResource ?: return@mapNotNull null
                     if (isDeactivated(node, index)) return@mapNotNull null
-                    if (isParameterTripleDeactivated(ps, SHACL.`property`, child, index)) return@mapNotNull null
+                    if (!activeLink(ps, SHACL.`property`, node, index, links)) return@mapNotNull null
                     compilePropertyShape(node, index, config, ancestors + ps)
                 }
 
@@ -1334,6 +1480,7 @@ internal object ShapesCompiler {
             values = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.values, path, index),
             defaultValue = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.defaultValue, path, index),
             deactivatedWhen = deactivationExpression(ps, index),
+            reifierConditions = ReifierConditions(links = links),
         )
     }
 
@@ -1382,11 +1529,28 @@ internal object ShapesCompiler {
 
     // --- helpers --------------------------------------------------------------------------------------------------
 
-    private fun isParameterTripleDeactivated(subject: RdfResource, pred: Iri, obj: RdfTerm, index: ShapeGraphIndex): Boolean {
-        val claim = RdfTriple(subject, pred, obj)
-        return index.reifiersForClaim(claim).any { r ->
-            index.objects(r, SHACL.deactivated).any { isLexicallyTrue(it) }
+    /**
+     * How the reifiers of the parameter triples [triples] (predicate, object) of [subject] deactivate the constraint
+     * that uses them (SHACL 1.2 Core §3.1.6): null when the `sh:deactivated` of one of them is the constant `true` (the
+     * constraint is deactivated for every focus node), else the node expressions of the non-constant ones, which
+     * deactivate it for the focus nodes one of them produces exactly `true` for (none: the constraint is active). A
+     * triple has at most one reifier with a value for `sh:deactivated`, and that reifier at most one value: more is a
+     * compile error. A blank node that is no node expression is reported by feature detection and deactivates nothing.
+     */
+    private fun reifierDeactivation(subject: RdfResource, triples: List<Pair<Iri, RdfTerm>>, index: ShapeGraphIndex): List<NodeExpression>? {
+        val out = ArrayList<NodeExpression>()
+        for ((predicate, obj) in triples) {
+            val reifiers = index.reifiersForClaim(RdfTriple(subject, predicate, obj)).filter { index.objects(it, SHACL.deactivated).isNotEmpty() }
+            if (reifiers.size > 1) {
+                throw ShapeCompileException(
+                    "The triple $subject $predicate $obj has ${reifiers.size} reifiers with sh:deactivated; it can have at most one reifier with a value for sh:deactivated",
+                )
+            }
+            val reifier = reifiers.singleOrNull() ?: continue
+            if (isDeactivated(reifier, index)) return null
+            deactivationExpression(reifier, index)?.let { out.add(it) }
         }
+        return out
     }
 
     private fun annotatedConstraintSeverity(
@@ -1420,8 +1584,8 @@ internal object ShapesCompiler {
     }
 
     /**
-     * The node expression of a non-constant `sh:deactivated` of [subject], a shape or a SPARQL-based constraint
-     * (SHACL 1.2 Core §3.1.6 and SHACL 1.2 SPARQL: at most one value), or null for none or a constant (the constant
+     * The node expression of a non-constant `sh:deactivated` of [subject], a shape, a SPARQL-based constraint or a
+     * reifier (SHACL 1.2 Core §3.1.6 and SHACL 1.2 SPARQL: at most one value), or null for none or a constant (the constant
      * `true` makes it [isDeactivated]; any other constant never produces `true`). A blank node that is no node
      * expression is reported by feature detection and gives null; an ill-formed one is a compile error, and so is a
      * second value ([deactivatedValues]).
@@ -1431,7 +1595,7 @@ internal object ShapesCompiler {
         return NodeExpressions.compile(expression, index)
     }
 
-    /** True for a shape or SPARQL-based constraint whose `sh:deactivated` is the constant `true`. */
+    /** True for a shape, SPARQL-based constraint or reifier whose `sh:deactivated` is the constant `true`. */
     private fun isDeactivated(subject: RdfResource, index: ShapeGraphIndex): Boolean =
         deactivatedValues(subject, index).any { isLexicallyTrue(it) }
 

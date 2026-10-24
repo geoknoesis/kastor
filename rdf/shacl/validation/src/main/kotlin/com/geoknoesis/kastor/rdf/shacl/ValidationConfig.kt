@@ -85,8 +85,8 @@ data class ValidationConfig(
      */
     val maxCombinedGraphTriples: Long = Long.MAX_VALUE,
     /**
-     * What the native engine does with SHACL features it recognises but cannot evaluate (non-constant
-     * `sh:deactivated` on a reifier, blank nodes at node expression positions that are no node expression, SPARQL node expressions
+     * What the native engine does with SHACL features it recognises but cannot evaluate (blank nodes at node
+     * expression positions that are no node expression, SPARQL node expressions
      * used as `sh:targetWhere` values, SHACL functions called from SPARQL that have no node expression body,
      * SPARQL-based targets). SHACL-SPARQL constraints, constraint components, the SHACL 1.2 node expressions at
      * `sh:targetNode` / `sh:values` / `sh:defaultValue`, the `sh:expression` and `sh:nodeByExpression` constraints, and

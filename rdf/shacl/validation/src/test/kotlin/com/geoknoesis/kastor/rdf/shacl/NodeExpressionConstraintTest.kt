@@ -739,12 +739,10 @@ class NodeExpressionConstraintTest {
     }
 
     @Test
-    fun `non-constant sh deactivated on a reifier stays unsupported`() {
-        // A reifier deactivating one constraint (SHACL 1.2 Core §3.1.6) with a node expression is not evaluated.
-        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:class ex:C {| sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] |} ."
-        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
-        val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
-        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features)
+    fun `non-constant sh deactivated on a reifier is evaluated per focus node`() {
+        // A reifier deactivating one constraint (SHACL 1.2 Core §3.1.6) with a node expression: see ReifierDeactivationTest.
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:class ex:C {| sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] |} ."
+        assertEquals(listOf(ex("b")), validate("jena", "ex:a ex:p 1 . ex:b ex:q 1 .", shapes).violations.map { it.focusNode })
     }
 
     @Test

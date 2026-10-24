@@ -93,8 +93,9 @@ private fun collectClosedByTypesProperties(focus: RdfResource, ctx: NativeValida
  * (W3C `uniqueValuesFor-001` … `-005`). The total is counted per group and at most [capacity] result rows are
  * materialized, so large duplicate groups stay linear.
  *
- * A focus node for which the shape is deactivated by a non-constant `sh:deactivated` has no result (SHACL 1.2 Core
- * §3.1.6: deactivated shapes are ignored), but it stays one of the targets the keys are compared with: the
+ * A focus node for which the shape, or the constraint, is deactivated by a non-constant `sh:deactivated` of the shape
+ * or of a reifier of its `sh:uniqueValuesFor` triple has no result (SHACL 1.2 Core §3.1.6: deactivated shapes and
+ * constraints are ignored), but it stays one of the targets the keys are compared with: the
  * constraint is about the target set, which deactivation does not change.
  */
 internal fun NativeShaclValidator.validateUniqueValuesForShape(
@@ -120,9 +121,10 @@ internal fun NativeShaclValidator.validateUniqueValuesForShape(
     for (nodes in groups.values) {
         if (nodes.size < 2) continue
         val candidates = if (focusOnly == null) nodes else nodes.filter { it == focusOnly }
-        val deactivatedWhen = shape.deactivatedWhen
+        // The shape's own deactivation, and that of a reifier of its sh:uniqueValuesFor triple (Core §3.1.6).
+        val conditions = listOfNotNull(shape.deactivatedWhen) + shape.reifierConditions.uniqueValuesFor
         val duplicates =
-            if (deactivatedWhen == null) candidates else candidates.filterNot { deactivates(deactivatedWhen, it, ctx, 0) }
+            if (conditions.isEmpty()) candidates else candidates.filterNot { node -> conditions.any { deactivates(it, node, ctx, 0) } }
         count += duplicates.size
         for (node in duplicates) {
             ctx.budget.tick("uniqueValuesFor")
