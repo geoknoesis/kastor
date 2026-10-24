@@ -10,7 +10,8 @@ import com.geoknoesis.kastor.rdf.shacl.native.isLexicallyTrue
  * SHACL 1.2 SPARQL 4.3: validation with one use of a SPARQL-based constraint component.
  *
  * `$this` and the component's parameter values are pre-bound by the engine (textually, so results do not depend on
- * the SPARQL provider); `$currentShape` and `$shapesGraph` are not (they were removed from the specification).
+ * the SPARQL provider); `$currentShape` and `$shapesGraph` are not (they were removed from the specification). The
+ * [computed] parameter values of the focus node (`resolveComponentParameters`) are pre-bound with the constant ones.
  *
  * - An ASK validator is evaluated once per value node `v` with `$value` pre-bound to `v`; `false` is a result for `v`.
  * - A SELECT validator is evaluated once (its query reads the value nodes itself); every solution is a result, and a
@@ -28,10 +29,14 @@ internal fun evaluateSparqlComponent(
     ctx: NativeValidationContext,
     hasPath: Boolean,
     firstOnly: Boolean,
+    computed: Map<String, RdfTerm> = emptyMap(),
 ): List<ValidationViolation> {
     val preBound = LinkedHashMap<String, RdfTerm>()
     preBound["this"] = focus
     preBound.putAll(c.parameters)
+    // The computed parameters (SHACL 1.2 Node Expressions §8), evaluated once for the focus node: pre-bound, and shown
+    // by {$param} in messages, like constant values.
+    preBound.putAll(computed)
     val source = SparqlResultSource(
         constraintNode = null,
         component = c.component,

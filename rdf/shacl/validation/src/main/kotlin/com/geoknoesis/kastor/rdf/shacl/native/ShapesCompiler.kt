@@ -171,6 +171,11 @@ internal sealed class PropertyConstraint {
         val annotations: List<SparqlResultAnnotation>,
         /** The shape's parameter triples (parameter path, value) this combination uses, for reifier deactivation. */
         val parameterTriples: List<Pair<Iri, RdfTerm>> = emptyList(),
+        /**
+         * The parameters whose value is a node expression (SHACL 1.2 Node Expressions §8), by name, evaluated per focus
+         * node and pre-bound with the constant [parameters]; a computed parameter is not a key of [parameters].
+         */
+        val computed: Map<String, ComputedComponentParameter> = emptyMap(),
     ) : PropertyConstraint()
     /**
      * SHACL 1.2: validate resources that reify triples matching this property shape. [required] is the shape's
@@ -871,6 +876,8 @@ internal object ShapesCompiler {
                 index.objects(shape, p).forEach { head -> runCatching { index.parseRdfList(head) }.getOrDefault(emptyList()).forEach(::visit) }
             }
             for (p in expressionPositions) index.objects(shape, p).forEach { expression(it, computedShape = false) }
+            // So are the parameters of SPARQL-based constraint components whose declaration rules out blank nodes.
+            for (p in index.sparqlComponents.dynamicParameterPaths()) index.objects(shape, p).forEach { expression(it, computedShape = false) }
             // The sh:deactivated of a SPARQL-based constraint is a node expression too.
             for (c in index.objects(shape, SHACL.sparql)) {
                 if (c is RdfResource) index.objects(c, SHACL.deactivated).forEach { expression(it, computedShape = false) }
@@ -993,6 +1000,8 @@ internal object ShapesCompiler {
             t.predicate in DynamicParameters.predicates && isUnsupportedParameterExpression(t.predicate, t.obj, index) ->
                 "${DynamicParameters.displayName(t.predicate)} node expression on ${t.subject} (the constraints that use it are left out)" to
                     expression(t.obj)
+            t.predicate in index.sparqlComponents.dynamicParameterPaths() && isUnsupportedParameterExpression(t.predicate, t.obj, index) ->
+                "<${t.predicate.value}> node expression on ${t.subject} (the constraints that use it are left out)" to expression(t.obj)
             // SHACL 1.2 Core §3.1.6: the sh:deactivated of a shape, or of a reifier of a parameter triple (one
             // constraint), may be any node expression.
             t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
@@ -1046,7 +1055,7 @@ internal object ShapesCompiler {
 
     /**
      * The node expressions [c] evaluates: `sh:expression`, a computed `sh:nodeByExpression`, the computed parameters of
-     * a [PropertyConstraint.Dynamic] (SHACL 1.2 Node Expressions §8), the non-constant `sh:deactivated` of a
+     * a [PropertyConstraint.Dynamic] and of a [PropertyConstraint.SparqlComponent] (SHACL 1.2 Node Expressions §8), the non-constant `sh:deactivated` of a
      * SPARQL-based constraint, and the non-constant `sh:deactivated` of the reifiers of its parameter triples
      * ([PropertyConstraint.Deactivatable]).
      */
@@ -1055,6 +1064,7 @@ internal object ShapesCompiler {
             is PropertyConstraint.Expression -> listOf(c.expr)
             is PropertyConstraint.NodeByExpressionComputed -> listOf(c.expr)
             is PropertyConstraint.Dynamic -> c.expressions
+            is PropertyConstraint.SparqlComponent -> c.computed.values.map { it.expr }
             is PropertyConstraint.Sparql -> listOfNotNull(c.deactivatedWhen)
             is PropertyConstraint.Deactivatable -> c.deactivatedWhen + constraintExpressions(c.constraint)
             else -> emptyList()
@@ -1581,7 +1591,10 @@ internal object ShapesCompiler {
         index.objects(subject, SHACL.sparql).filterIsInstance<RdfResource>().forEach { node ->
             compileSparqlConstraint(node, index, path)?.let { c -> add(c, SHACL.sparql to node) }
         }
-        for (c in index.sparqlComponents.constraintsFor(subject, flavor == ConstraintFlavor.PROPERTY_SHAPE, path)) {
+        val ignoredComponentValue = { pred: Iri, term: RdfTerm ->
+            config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)
+        }
+        for (c in index.sparqlComponents.constraintsFor(subject, flavor == ConstraintFlavor.PROPERTY_SHAPE, path, ignoredComponentValue)) {
             add(c, *c.parameterTriples.toTypedArray())
         }
         return constraints

@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
@@ -9,6 +10,21 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
+
+/**
+ * A parameter of a SPARQL-based constraint component whose value [node] is the node expression [expr] (SHACL 1.2 Node
+ * Expressions §8), allowed because the parameter's [declaration] rules out blank nodes. The one output node per focus
+ * node must not be a blank node and must match every constant `sh:nodeKind` ([nodeKinds]: the alternatives of each)
+ * and `sh:datatype` ([datatypes]: the alternatives of each) of the declaration.
+ */
+internal data class ComputedComponentParameter(
+    val node: BlankNode,
+    val expr: NodeExpression,
+    val path: Iri,
+    val declaration: RdfResource,
+    val nodeKinds: List<List<Iri>>,
+    val datatypes: List<List<Iri>>,
+)
 
 /**
  * The SPARQL-based constraint components of a shapes graph (SHACL 1.2 SPARQL §4.2): IRIs outside the `sh:`
@@ -26,7 +42,19 @@ internal class SparqlComponentCatalog private constructor(
     /** Lenient view of a parameter declaration, enough to decide whether a shape uses the component. */
     private class LenientParameter(val node: RdfResource, val paths: List<Iri>, val optional: Boolean)
 
-    private class Parameter(val name: String, val path: Iri, val optional: Boolean)
+    /**
+     * A checked parameter declaration [node]. [types] tells whether its constant Core constraints rule out blank nodes,
+     * so that a blank-node value is a node expression (SHACL 1.2 Node Expressions §8), and how to check a computed value.
+     */
+    private class Parameter(val name: String, val path: Iri, val optional: Boolean, val node: RdfResource, val types: DeclaredTypes)
+
+    /**
+     * What the constant Core constraints of a parameter declaration say about its values (SHACL 1.2 SPARQL §4.2.1: a
+     * parameter is a property shape, and shapes whose values break it are ill-formed). [blankExcluding] when every
+     * blank node breaks one of them, so a blank-node value cannot be a constant. [nodeKinds] and [datatypes] are the
+     * alternatives of each constant `sh:nodeKind` and `sh:datatype`, which a computed value must match.
+     */
+    private class DeclaredTypes(val blankExcluding: Boolean, val nodeKinds: List<List<Iri>>, val datatypes: List<List<Iri>>)
 
     /** A selected, well-formed validator; [text] has no `$PATH` substitution yet. */
     private inner class Validator(val node: RdfResource, val ask: Boolean, val text: String) {
@@ -53,7 +81,62 @@ internal class SparqlComponentCatalog private constructor(
     /** Whether [predicate] is the path of a parameter of one of the components. */
     fun isParameterPath(predicate: Iri): Boolean = predicate in byPath
 
-    fun constraintsFor(shape: RdfResource, propertyShape: Boolean, path: ShaclPath?): List<PropertyConstraint.SparqlComponent> {
+    private val dynamicPaths: Set<Iri> by lazy {
+        byPath.values.flatten().distinct().flatMap { it.declared }
+            .filter { declaredTypes(it.node).blankExcluding }
+            .flatMapTo(LinkedHashSet()) { it.paths }
+    }
+
+    /**
+     * The paths of the parameters of every component whose declaration rules out blank nodes ([DeclaredTypes.blankExcluding]):
+     * a blank-node value there is a node expression (SHACL 1.2 Node Expressions §8).
+     */
+    fun dynamicParameterPaths(): Set<Iri> = dynamicPaths
+
+    private val declaredTypesByNode = HashMap<RdfResource, DeclaredTypes>()
+
+    private fun declaredTypes(node: RdfResource): DeclaredTypes = declaredTypesByNode.getOrPut(node) { readDeclaredTypes(node) }
+
+    /**
+     * The [DeclaredTypes] of the parameter declaration [node], from its constant values (D10): an IRI or a literal, or a
+     * blank node that is an RDF list. A value that is itself a node expression, or an ill-formed list, says nothing.
+     * Blank nodes are ruled out, by Core 1.2's definitions, by `sh:nodeKind` without a blank-node kind (§7.1.3),
+     * `sh:datatype` (§7.1.2), `sh:in` without a blank-node member (§7.9.3), `sh:pattern` (§7.4.3), `sh:minLength`
+     * and `sh:maxLength` (§7.4.1, §7.4.2), the bounds (§7.3), `sh:languageIn` (§7.4.5) and `sh:rootClass` (§7.9.4).
+     * Not by `sh:class`: a SHACL instance may be a blank node (§7.1.1).
+     */
+    private fun readDeclaredTypes(node: RdfResource): DeclaredTypes {
+        fun isList(term: BlankNode) = index.objects(term, RDF.first).isNotEmpty() || index.objects(term, RDF.rest).isNotEmpty()
+        fun constants(p: Iri) = index.objects(node, p).filter { it !is BlankNode || isList(it) }
+        fun members(v: RdfTerm): List<RdfTerm>? = when {
+            v == RDF.nil -> emptyList()
+            v is BlankNode -> try { index.parseRdfList(v) } catch (_: ShapeCompileException) { null }
+            else -> null
+        }
+        fun iris(v: RdfTerm): List<Iri>? =
+            if (v is Iri && v != RDF.nil) listOf(v) else members(v)?.takeIf { m -> m.all { it is Iri } }?.map { it as Iri }
+        val nodeKinds = constants(SHACL.nodeKind).mapNotNull(::iris)
+        val datatypes = constants(SHACL.datatype).mapNotNull(::iris)
+        val blankExcluding =
+            nodeKinds.any { kinds -> kinds.all { it in NON_BLANK_KINDS } } ||
+                datatypes.isNotEmpty() ||
+                constants(SHACL.`in`).any { v -> members(v)?.none { it is BlankNode } == true } ||
+                LITERAL_ONLY.any { p -> constants(p).any { it is Literal } } ||
+                constants(SHACL.languageIn).any { members(it) != null } ||
+                constants(SHACL.rootClass).any { iris(it) != null }
+        return DeclaredTypes(blankExcluding, nodeKinds, datatypes)
+    }
+
+    /**
+     * The uses of components by [shape]. A value for which [ignored] is true (an unsupported node expression ignored with
+     * a warning) leaves out the constraints that take it.
+     */
+    fun constraintsFor(
+        shape: RdfResource,
+        propertyShape: Boolean,
+        path: ShaclPath?,
+        ignored: (Iri, RdfTerm) -> Boolean = { _, _ -> false },
+    ): List<PropertyConstraint.SparqlComponent> {
         val candidates = index.predicates(shape).flatMapTo(LinkedHashSet()) { byPath[it].orEmpty() }
         if (candidates.isEmpty()) return emptyList()
         val out = ArrayList<PropertyConstraint.SparqlComponent>()
@@ -62,7 +145,7 @@ internal class SparqlComponentCatalog private constructor(
             if (!component.usedBy(shape)) continue
             val parameters = component.parameters
             val validator = component.validator(propertyShape) ?: continue
-            out.addAll(compile(component, parameters, validator, shape, path))
+            out.addAll(compile(component, parameters, validator, shape, path, ignored))
         }
         return out
     }
@@ -73,6 +156,7 @@ internal class SparqlComponentCatalog private constructor(
         validator: Validator,
         shape: RdfResource,
         path: ShaclPath?,
+        ignored: (Iri, RdfTerm) -> Boolean,
     ): List<PropertyConstraint.SparqlComponent> {
         val preBound = LinkedHashSet<String>().apply {
             add("this")
@@ -102,21 +186,56 @@ internal class SparqlComponentCatalog private constructor(
                     "at most $MAX_CONSTRAINTS_PER_COMPONENT_USE are supported",
             )
         }
-        var combinations = listOf(emptyMap<String, RdfTerm>())
+        var combinations = listOf(emptyMap<String, ComponentValue>())
         for (parameter in parameters) {
             val values = index.objects(shape, parameter.path)
             if (values.isEmpty()) continue
+            val classified = values.map { componentValue(component, parameter, shape, it, ignored) }
             combinations = combinations.flatMap { partial ->
-                values.map { value -> index.tick("SPARQL constraint components"); partial + (parameter.name to value) }
+                classified.map { value -> index.tick("SPARQL constraint components"); partial + (parameter.name to value) }
             }
         }
         val paths = parameters.associate { it.name to it.path }
-        return combinations.map { values ->
+        // The constraints that use an ignored value are left out.
+        return combinations.filter { values -> values.values.none { it is ComponentValue.Ignored } }.map { values ->
             PropertyConstraint.SparqlComponent(
-                component.iri, validator.node, validator.ask, template, values, messages, validator.annotations,
-                values.map { (name, value) -> paths.getValue(name) to value },
+                component.iri, validator.node, validator.ask, template,
+                values.mapNotNull { (name, value) -> (value as? ComponentValue.Constant)?.let { name to it.term } }.toMap(),
+                messages, validator.annotations,
+                values.map { (name, value) -> paths.getValue(name) to value.term },
+                values.mapNotNull { (name, value) -> (value as? ComponentValue.Computed)?.let { name to it.parameter } }.toMap(),
             )
         }
+    }
+
+    /** The value [term] of a parameter in a use of a component: a constant, a node expression, or an ignored unsupported one. */
+    private sealed class ComponentValue(val term: RdfTerm) {
+        class Constant(term: RdfTerm) : ComponentValue(term)
+        class Computed(val parameter: ComputedComponentParameter) : ComponentValue(parameter.node)
+        class Ignored(term: RdfTerm) : ComponentValue(term)
+    }
+
+    /**
+     * The [value] of [parameter] for [shape]: a blank node is a node expression when the declaration rules out blank
+     * nodes (SHACL 1.2 Node Expressions §8; D10), and a constant otherwise, as is any other term.
+     */
+    private fun componentValue(
+        component: Component,
+        parameter: Parameter,
+        shape: RdfResource,
+        value: RdfTerm,
+        ignored: (Iri, RdfTerm) -> Boolean,
+    ): ComponentValue {
+        if (value !is BlankNode || !parameter.types.blankExcluding) return ComponentValue.Constant(value)
+        if (ignored(parameter.path, value)) return ComponentValue.Ignored(value)
+        val expr = NodeExpressions.compile(value, index)
+            ?: throw ShapeCompileException(
+                "<${parameter.path.value}> value $value of shape $shape is neither a constant nor a node expression; parameter " +
+                    "${parameter.node} of constraint component ${component.iri} rules out blank nodes (SHACL 1.2 SPARQL §4.2.1)",
+            )
+        return ComponentValue.Computed(
+            ComputedComponentParameter(value, expr, parameter.path, parameter.node, parameter.types.nodeKinds, parameter.types.datatypes),
+        )
     }
 
     private fun checkedParameters(component: Component): List<Parameter> {
@@ -132,7 +251,7 @@ internal class SparqlComponentCatalog private constructor(
             if (!SparqlQueryTemplate.isVarName(name) || name in RESERVED) {
                 throw ShapeCompileException("Parameter <${path.value}> of constraint component ${component.iri} has the unusable name '$name'")
             }
-            Parameter(name, path, optional.any { isLexicallyTrue(it) })
+            Parameter(name, path, optional.any { isLexicallyTrue(it) }, node, declaredTypes(node))
         }
         parameters.groupBy { it.name }.forEach { (name, same) ->
             if (same.size > 1) throw ShapeCompileException("Constraint component ${component.iri} has several parameters named '$name'")
@@ -187,6 +306,15 @@ internal class SparqlComponentCatalog private constructor(
 
         /** SPARQL query-form keywords; the first one in an `sh:ask` text must be `ASK`. */
         private val QUERY_FORMS = listOf("SELECT", "CONSTRUCT", "DESCRIBE", "ASK")
+
+        /** The node kinds no blank node has (Core 1.2 §7.1.3). */
+        private val NON_BLANK_KINDS = setOf(SHACL.IRI, SHACL.Literal, SHACL.IRIOrLiteral, SHACL.TripleTerm)
+
+        /** Declaration constraints whose literal value every blank node breaks (Core 1.2 §7.3, §7.4.1–§7.4.3). */
+        private val LITERAL_ONLY = listOf(
+            SHACL.pattern, SHACL.minLength, SHACL.maxLength,
+            SHACL.minInclusive, SHACL.maxInclusive, SHACL.minExclusive, SHACL.maxExclusive,
+        )
 
         /**
          * Upper bound on the constraints one shape gets from one component: the product of the numbers of values of

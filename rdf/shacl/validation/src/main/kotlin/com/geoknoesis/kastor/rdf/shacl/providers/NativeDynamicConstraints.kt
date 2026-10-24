@@ -1,8 +1,10 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.native.ConstraintInstantiation
@@ -102,4 +104,46 @@ internal fun checkedOutputs(parameter: Iri, outputs: List<RdfTerm>, focus: RdfTe
         ConstraintInstantiation.outputError(parameter, node, outputs.size)?.let { fail("produced the invalid value $node: $it") }
     }
     return outputs
+}
+
+/**
+ * The values of the computed parameters of the SPARQL-based constraint component use [c] at [focus], of [shape], by
+ * name (SHACL 1.2 Node Expressions §8): each expression is evaluated once ([evaluateComputed]) and must produce exactly
+ * one node (D6), which is no blank node (the declaration rules them out, D10), is allowed by the triple-term setting,
+ * and matches the declaration's constant `sh:nodeKind` and `sh:datatype`. Anything else is a validation failure. The
+ * values are then pre-bound, rendered into the query text like those of `$this` and `$value`.
+ */
+internal fun NativeShaclValidator.resolveComponentParameters(
+    c: PropertyConstraint.SparqlComponent,
+    focus: RdfTerm,
+    ctx: NativeValidationContext,
+    depth: Int,
+    shape: RdfResource,
+): Map<String, RdfTerm> {
+    if (c.computed.isEmpty()) return emptyMap()
+    val out = LinkedHashMap<String, RdfTerm>()
+    for ((name, parameter) in c.computed) {
+        fun fail(problem: String): Nothing = dynamicParameterFailure(parameter.path, shape, focus, problem)
+        val outputs = evaluateComputed(parameter.expr, focus, ctx, depth)
+        when (outputs.size) {
+            1 -> Unit
+            0 -> fail("produced no nodes; exactly one is required")
+            else -> fail("produced ${outputs.size} nodes; exactly one is required")
+        }
+        val value = outputs.single()
+        val problem = when {
+            value is BlankNode -> "a blank node, which the declaration ${parameter.declaration} rules out"
+            value is TripleTerm && !config.allowTripleTermsInShapeParameters ->
+                "a triple term, which requires ValidationConfig.allowTripleTermsInShapeParameters=true"
+            else ->
+                parameter.nodeKinds.firstOrNull { kinds -> kinds.none { matchesNodeKind(value, it) } }
+                    ?.let { kinds -> "not of node kind ${kinds.joinToString { it.value }}, as the declaration ${parameter.declaration} requires" }
+                    ?: parameter.datatypes.firstOrNull { !literalMatchesShaclDatatypes(value, it) }
+                        ?.let { types -> "not of datatype ${types.joinToString { it.value }}, as the declaration ${parameter.declaration} requires" }
+        }
+        if (problem != null) fail("produced the invalid value $value: $problem")
+        out[name] = value
+    }
+    ctx.budget.tick("dynamic constraint")
+    return out
 }

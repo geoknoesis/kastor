@@ -105,8 +105,11 @@ internal fun NativeShaclValidator.evaluateConstraint(
                     evaluateConstraint(focus, tpl, values, c.constraint, ctx, state, currentShape, path, sink)
                 }
             }
-        is PropertyConstraint.SparqlComponent ->
-            sink.failAll(evaluateSparqlComponent(focus, tpl, values, c, ctx, path != null, firstOnly = !sink.reports))
+        is PropertyConstraint.SparqlComponent -> {
+            // SHACL 1.2 Node Expressions §8: computed parameters are evaluated once per focus node, before any value node.
+            val computed = resolveComponentParameters(c, focus, ctx, state.depth, currentShape)
+            sink.failAll(evaluateSparqlComponent(focus, tpl, values, c, ctx, path != null, firstOnly = !sink.reports, computed = computed))
+        }
         // SHACL 1.2 Node Expressions §8: the constant constraint the computed parameters make for the focus node. A
         // computed sh:reificationRequired is resolved by validatePropertyShape, with the triples it constrains.
         is PropertyConstraint.Dynamic ->
