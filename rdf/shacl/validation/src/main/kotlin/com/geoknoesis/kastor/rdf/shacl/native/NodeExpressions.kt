@@ -13,10 +13,106 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
 
-/** A compiled SHACL 1.2 node expression: a constant, or a SPARQL `SELECT` whose [Select.variable] column holds the result nodes. */
+/**
+ * A compiled SHACL 1.2 node expression (Node Expressions §3–§6, and the SPARQL expressions of SHACL 1.2 SPARQL §6),
+ * as parsed by [NodeExpressions.compile]. Children are node expressions themselves; evaluation is separate.
+ */
 internal sealed class NodeExpression {
-    /** An IRI, literal or triple term; evaluates to itself. */
+    /**
+     * Whether validation positions (`sh:values`, `sh:defaultValue`, `sh:targetNode`, function bodies) evaluate this
+     * kind of expression yet: only [Constant] and [Select]. The others parse but stay reported as unsupported.
+     */
+    val supportedInValidation: Boolean get() = this is Constant || this is Select
+
+    /** An IRI, literal or triple term; evaluates to itself (§3.1). */
     data class Constant(val term: RdfTerm) : NodeExpression()
+
+    /** `[]`: a blank node that is the subject of no triple (§4.1.1). */
+    data object Empty : NodeExpression()
+
+    /** `shnex:var` (§4.1.2). */
+    data class Var(val name: String) : NodeExpression()
+
+    /** A non-empty SHACL list of constants used as an expression (§4.1.3). */
+    data class ListExpr(val members: List<NodeExpression>) : NodeExpression()
+
+    /** `shnex:pathValues` with optional `shnex:focusNode` (§4.1.4). */
+    data class PathValues(val path: ShaclPath, val focusNode: NodeExpression?) : NodeExpression()
+
+    /** `shnex:exists` (§4.1.5). */
+    data class Exists(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:if` / `shnex:then` / `shnex:else` (§4.1.6); at least one of the branches is present. */
+    data class If(val cond: NodeExpression, val then: NodeExpression?, val otherwise: NodeExpression?) : NodeExpression()
+
+    /** `shnex:distinct` (§4.2.1). */
+    data class Distinct(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:intersection` (§4.2.2). */
+    data class Intersection(val members: List<NodeExpression>) : NodeExpression()
+
+    /** `shnex:concat` (§4.2.3). */
+    data class Concat(val members: List<NodeExpression>) : NodeExpression()
+
+    /** `shnex:remove` / `shnex:nodes` (§4.2.4). */
+    data class Remove(val remove: NodeExpression, val nodes: NodeExpression) : NodeExpression()
+
+    /** `shnex:filterShape` / `shnex:nodes` (§4.2.5). */
+    data class FilterShape(val shape: RdfResource, val nodes: NodeExpression) : NodeExpression()
+
+    /** `shnex:limit` / `shnex:nodes` (§4.2.6); a limit beyond [Int.MAX_VALUE] is clamped to it. */
+    data class Limit(val n: Int, val nodes: NodeExpression) : NodeExpression()
+
+    /** `shnex:offset` / `shnex:nodes` (§4.2.7); an offset beyond [Int.MAX_VALUE] is clamped to it. */
+    data class Offset(val n: Int, val nodes: NodeExpression) : NodeExpression()
+
+    /** `shnex:orderBy` / `shnex:nodes` / `shnex:desc` (§4.2.8). */
+    data class OrderBy(val key: NodeExpression, val nodes: NodeExpression, val desc: Boolean) : NodeExpression()
+
+    /** `shnex:flatMap` with optional `shnex:nodes` (§4.3.1; null stands for the focus node). */
+    data class FlatMap(val e: NodeExpression, val nodes: NodeExpression?) : NodeExpression()
+
+    /** `shnex:findFirst` with optional `shnex:nodes` (§4.3.2; null stands for the focus node). */
+    data class FindFirst(val shape: RdfResource, val nodes: NodeExpression?) : NodeExpression()
+
+    /** `shnex:matchAll` with optional `shnex:nodes` (§4.3.3; null stands for the focus node). */
+    data class MatchAll(val shape: RdfResource, val nodes: NodeExpression?) : NodeExpression()
+
+    /** `shnex:count` (§4.4.1). */
+    data class Count(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:min` (§4.4.2). */
+    data class Min(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:max` (§4.4.3). */
+    data class Max(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:sum` (§4.4.4). */
+    data class Sum(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:instancesOf` (§4.5.1). */
+    data class InstancesOf(val e: NodeExpression) : NodeExpression()
+
+    /** `shnex:nodesMatching` (§4.5.2). */
+    data class NodesMatching(val shape: RdfResource) : NodeExpression()
+
+    /** `shnex:conformsToShape ( node shape )` (§4.5.3), a list parameter function. */
+    data class ConformsToShape(val node: NodeExpression, val shape: NodeExpression) : NodeExpression()
+
+    /** A SHACL SPARQL function expression `[ sparql:<name> ( args ) ]` (§5); [name] is the local name of the IRI. */
+    data class SparqlCall(val name: String, val args: List<NodeExpression>) : NodeExpression()
+
+    /** A custom named parameter expression (§6.1): [args] maps the `sh:path` of each given parameter to its expression. */
+    data class CustomNamed(val function: Iri, val args: Map<Iri, NodeExpression>) : NodeExpression()
+
+    /** A custom list parameter expression `[ fn ( args ) ]` (§6.2). */
+    data class CustomList(val function: Iri, val args: List<NodeExpression>) : NodeExpression()
+
+    /** `[ shnex:arg n ]` (§6.3): argument [index] of a custom list parameter function (clamped to the [Int] range). */
+    data class Arg(val index: Int) : NodeExpression()
+
+    /** `[ shnex:arg ex:param ]` (§6.3): the argument of a custom named parameter function whose `sh:path` is [parameter]. */
+    data class NamedArg(val parameter: Iri) : NodeExpression()
 
     /**
      * A SPARQL node expression (SHACL 1.2 SPARQL §6): `sh:select`, or `sh:sparqlExpr` rewritten to
@@ -26,7 +122,7 @@ internal sealed class NodeExpression {
     class Select(val node: BlankNode, val template: SparqlQueryTemplate, val variable: String) : NodeExpression()
 }
 
-/** Compiles the SPARQL-based node expressions of SHACL 1.2 SPARQL §6; evaluation is separate. */
+/** Compiles node expressions (SHACL 1.2 Node Expressions, and the SPARQL expressions of SHACL 1.2 SPARQL §6); evaluation is separate. */
 internal object NodeExpressions {
     /** The variable `sh:sparqlExpr` results are projected as. */
     const val RESULT_VARIABLE = "result"
@@ -34,12 +130,31 @@ internal object NodeExpressions {
     private val PRE_BOUND = setOf("this")
 
     /**
-     * Compiles [term], or returns null when it is not a supported expression: a blank node with neither `sh:select`
-     * nor `sh:sparqlExpr` (a `shnex:` or other expression). Ill-formed SPARQL expressions throw
+     * Compiles [term] into a [NodeExpression] tree: constants, SPARQL expressions (`sh:select`, `sh:sparqlExpr`),
+     * and every `shnex:`, `sparql:` and custom function of the shapes graph ([NodeExpressionParser]). Returns null only
+     * for a blank node that is no node expression at all (such as a data node). Ill-formed expressions throw
      * [ShapeCompileException], pre-binding violations [SparqlPreBindingRestrictionException]. [preBound] are the
-     * scope variables the restriction check treats as potentially pre-bound (`this`, and the `arg<i>` of a function).
+     * scope variables the restriction check of SPARQL expressions treats as potentially pre-bound (`this`, and the
+     * `arg<i>` of a function).
      */
-    fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? {
+    fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? =
+        NodeExpressionParser(index, preBound).parse(term)
+
+    /**
+     * The expression of [term] at a validation position when validation evaluates it
+     * ([NodeExpression.supportedInValidation]), else null so that the position stays reported as unsupported.
+     * Kinds validation does not evaluate are not parsed at all: an ill-formed one is reported as unsupported as
+     * well, not as a compile error, and costs no preparation budget.
+     */
+    fun compileForValidation(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? =
+        compileSparqlOrConstant(term, index, preBound)?.takeIf { it.supportedInValidation }
+
+    /**
+     * Compiles [term] when it is a constant or a SPARQL expression, or returns null for any other blank node.
+     * Ill-formed SPARQL expressions throw [ShapeCompileException], pre-binding violations
+     * [SparqlPreBindingRestrictionException].
+     */
+    fun compileSparqlOrConstant(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String>): NodeExpression? {
         index.tick("node expression compilation")
         if (term is Iri && (index.objects(term, SHACL.select).isNotEmpty() || index.objects(term, ShaclSparqlTerms.sparqlExpr).isNotEmpty())) {
             throw ShapeCompileException("SPARQL node expression $term must be a blank node")
@@ -78,7 +193,8 @@ internal object NodeExpressions {
 
     /**
      * The expression of the optional `sh:values` / `sh:defaultValue` [predicate] of property shape [shape]: at most
-     * one value (SHACL 1.2 Core §3.3), and only on a predicate [path]. Null when absent or not a supported expression.
+     * one value (SHACL 1.2 Core §3.3), and only on a predicate [path]. Null when absent or not an expression
+     * validation evaluates ([compileForValidation]).
      */
     fun compileParameter(shape: RdfResource, predicate: Iri, path: ShaclPath, index: ShapeGraphIndex): NodeExpression? {
         val values = index.objects(shape, predicate)
@@ -88,7 +204,7 @@ internal object NodeExpressions {
         if (path !is ShaclPath.Predicate) {
             throw ShapeCompileException("Property shape $shape has sh:$name, which needs a predicate path as sh:path")
         }
-        return compile(values.single(), index)
+        return compileForValidation(values.single(), index)
     }
 
     private fun singleString(node: RdfResource, predicate: Iri, index: ShapeGraphIndex): String {

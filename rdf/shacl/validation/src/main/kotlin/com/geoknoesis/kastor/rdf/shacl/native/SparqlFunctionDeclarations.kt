@@ -86,7 +86,7 @@ internal object SparqlFunctionDeclarations {
             add("this")
             optional.indices.forEach { add("arg$it") }
         }
-        val body = NodeExpressions.compile(bodies.single(), index, preBound) as? NodeExpression.Select ?: return null
+        val body = NodeExpressions.compileForValidation(bodies.single(), index, preBound) as? NodeExpression.Select ?: return null
         return Declaration(iri, optional, body)
     }
 

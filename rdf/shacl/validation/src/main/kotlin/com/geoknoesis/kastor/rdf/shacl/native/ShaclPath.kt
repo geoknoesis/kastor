@@ -52,6 +52,9 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** SPARQL-based constraint components of this shapes graph, collected once per index. */
     val sparqlComponents: SparqlComponentCatalog by lazy { SparqlComponentCatalog.build(this) }
 
+    /** Custom named parameter node expression functions of this shapes graph, collected once per index. */
+    val nodeExpressionFunctions: NodeExpressionFunctions by lazy { NodeExpressionFunctions.build(this) }
+
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 
     fun hasSubject(sub: RdfResource): Boolean = bySubject.containsKey(sub)

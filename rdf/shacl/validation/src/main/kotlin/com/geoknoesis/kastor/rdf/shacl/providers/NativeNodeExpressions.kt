@@ -29,6 +29,8 @@ internal fun evalNodeExpression(expr: NodeExpression, ctx: NativeValidationConte
                 out.values.toList()
             }
         }
+        // Compilation keeps only supportedInValidation expressions at validation positions.
+        else -> throw IllegalStateException("Node expression ${expr::class.simpleName} is not evaluated by validation")
     }
 
 /** Fails when [size] output nodes exceed [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes], as path evaluation does. */

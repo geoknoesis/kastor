@@ -327,11 +327,6 @@ internal object ShapesCompiler {
 
     // --- unsupported features -------------------------------------------------------------------------------------
 
-    /** SHACL 1.2 node expression vocabulary namespace (`shnex:`). */
-    private const val SHNEX_NAMESPACE = "http://www.w3.org/ns/shacl-node-expr#"
-
-    /** SPARQL function namespace used by SHACL 1.2 node expressions (`sparql:concat ( … )`). */
-    private const val SPARQL_NAMESPACE = "http://www.w3.org/ns/sparql#"
     private val shExpression = Iri(SHACL.namespace + "expression")
     private val shTarget = Iri(SHACL.namespace + "target")
 
@@ -368,7 +363,7 @@ internal object ShapesCompiler {
         val predicates = index.predicates(term)
         if (predicates.isEmpty()) return false
         if (isNodeExpression(term, index)) return true
-        fun expressionVocabulary(t: RdfTerm) = t is Iri && (t.value.startsWith(SHNEX_NAMESPACE) || t.value.startsWith(SPARQL_NAMESPACE))
+        fun expressionVocabulary(t: RdfTerm) = t is Iri && (t.value.startsWith(ShaclSparqlTerms.SHNEX_NAMESPACE) || t.value.startsWith(ShaclSparqlTerms.SPARQL_NAMESPACE))
         if (predicates.any { expressionVocabulary(it) }) return true
         if (index.objects(term, RDF.type).any { expressionVocabulary(it) }) return true
         val call = callPredicate(term, index) ?: return false
@@ -390,12 +385,13 @@ internal object ShapesCompiler {
     }
 
     /**
-     * True when [term] compiles as a node expression. An ill-formed one counts as supported: the compiler reports it
-     * with its own error where the expression is used (a deactivated shape never compiles its expressions).
+     * True when [term] compiles as a node expression that validation evaluates
+     * ([NodeExpressions.compileForValidation]). An ill-formed one counts as supported: the compiler reports it with its
+     * own error where the expression is used (a deactivated shape never compiles its expressions).
      */
     private fun isSupportedExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
         try {
-            NodeExpressions.compile(term, index) != null
+            NodeExpressions.compileForValidation(term, index) != null
         } catch (_: ShapeCompileException) {
             true
         }
@@ -599,7 +595,7 @@ internal object ShapesCompiler {
         val targetNodeValues = index.objects(subject, SHACL.targetNode)
         val targetNodeExpressions = targetNodeValues
             .filter { isTargetNodeExpression(it, index) }
-            .mapNotNull { NodeExpressions.compile(it, index) as? NodeExpression.Select }
+            .mapNotNull { NodeExpressions.compileForValidation(it, index) as? NodeExpression.Select }
         val targetNodes = targetNodeValues
             .filterNot { isTargetNodeExpression(it, index) }
             .onEach { ensureShapeTermAllowed(it, config) }

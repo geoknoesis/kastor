@@ -106,7 +106,8 @@ class NodeExpressionCompileTest {
 
     @Test
     fun `shnex expressions stay unsupported`() {
-        assertNull(expression("ex:holder ex:expr [ shnex:count [ shnex:pathValues ex:q ] ] ."))
+        val index = ShapeGraphIndex(triples("ex:holder ex:expr [ shnex:count [ shnex:pathValues ex:q ] ] ."))
+        assertNull(NodeExpressions.compileForValidation(index.objects(ex("holder"), ex("expr")).single(), index))
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ shnex:count [ shnex:pathValues ex:q ] ] ] ."
         val e = assertThrows(UnsupportedShaclFeatureException::class.java) { compile(shapes) }
         assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features)
