@@ -95,6 +95,29 @@ internal class NativeValidationContext(
     var nodeExpressionDepth = 0
 
     /**
+     * The shape nesting depth ([DepthState.depth]) of the shape evaluation whose node expression is being evaluated:
+     * the shape-based functions validate one level deeper ([evalNodeExpression]), so nesting through node
+     * expressions is bounded by [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxRecursionDepth] like any other.
+     */
+    var expressionShapeDepth = 0
+
+    /** A provisional answer read by a function body during the query under way, rethrown when the query returns. */
+    private var provisionalInQuery: ProvisionalUndefined? = null
+
+    /**
+     * Whether "undefined" is only a provisional answer to "does [node] conform to [shape]": the recursion solver of
+     * the shape's component is under way and has not settled the question (or restarts). Its final answer may be
+     * definite, so a reader must report it as undefined ([Sink.undefinedAnswer]) and let the solver evaluate it
+     * again, not fail.
+     */
+    fun isProvisional(node: RdfTerm, shape: RdfResource): Boolean {
+        val active = solver ?: return false
+        if (compiled.recursiveComponents[shape] != active.component) return false
+        if (active.restart) return true
+        return active.atoms[AtomKey(TermKey(node), shape)]?.resolved != true
+    }
+
+    /**
      * Evaluates the node expression [body] of the SHACL SPARQL function [function] called with [arguments] (SHACL 1.2
      * SPARQL §7.3, Node Expressions §6.2): the focus node is the function IRI and the arguments are `shnex:arg 0`,
      * `shnex:arg 1`, ...; the result is the single output node, or null (an error) for none, several or an
@@ -102,17 +125,30 @@ internal class NativeValidationContext(
      * number of nested function calls is limited by the library ([SparqlFunctionDeclarationSet.library]).
      */
     private fun runFunctionBody(body: NodeExpression, function: Iri, arguments: List<RdfTerm?>): RdfTerm? {
-        val outcome = validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
+        val outcome = try {
+            validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
+        } catch (e: ProvisionalUndefined) {
+            // The query cannot carry it: the whole query's answer is provisional ([select] rethrows it).
+            if (provisionalInQuery == null) provisionalInQuery = e
+            return null
+        }
         return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
     }
     fun checkDeadline() {
         budget.check()
     }
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume)
+        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume).also { rethrowProvisional() }
     /** As [select], with the function library [library] instead of the shapes graph's. */
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, library: SparqlFunctionLibrary, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume)
+        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume).also { rethrowProvisional() }
+
+    private fun rethrowProvisional() {
+        provisionalInQuery?.let {
+            provisionalInQuery = null
+            throw it
+        }
+    }
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
     fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */

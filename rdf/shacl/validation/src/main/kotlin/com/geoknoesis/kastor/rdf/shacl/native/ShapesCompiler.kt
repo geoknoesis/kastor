@@ -98,7 +98,8 @@ internal sealed class PropertyConstraint {
     /**
      * SHACL 1.2 `sh:expression` (Node Expressions §7.1): [expr] must produce exactly `( true )` for each value node,
      * evaluated with the focus node and the scope variable `value`. [node] is the `sh:expression` value, reported as
-     * `sh:sourceConstraint`.
+     * `sh:sourceConstraint`. Known deviation (ruling R15): §7.1 and §7.2 ask for a deep copy of the expression (or
+     * shape) in the results graph; the report names the node itself, as for SHACL-SPARQL constraints.
      */
     data class Expression(val node: RdfTerm, val expr: NodeExpression) : PropertyConstraint()
     data class EqualsPath(val otherPath: ShaclPath) : PropertyConstraint()
@@ -305,11 +306,12 @@ internal object ShapesCompiler {
         // The shapes of the node expression bodies of the functions SPARQL queries may call.
         functions.expressionBodies.forEach { referenced.addExpression(it) }
         referenced.run()
-        val candidateErrors = compileCandidates(index, config, budget, exprShapes, candidates, refNodes, refProps, detected.candidateOnly)
+        val ignoredInCandidates = ArrayList<String>()
+        val candidateErrors = compileCandidates(index, config, budget, exprShapes, candidates, refNodes, refProps, detected.candidateOnly, ignoredInCandidates)
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, exprShapes, budget),
-            unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
+            (unsupported.keys + ignoredInCandidates).map { "Unsupported SHACL feature ignored: $it" },
             functions,
             candidateErrors,
         )
@@ -320,7 +322,8 @@ internal object ShapesCompiler {
      * (R8): a candidate whose closure (the shapes it references) does not compile, or uses an unsupported feature
      * ([candidateOnly], under [UnsupportedFeatureHandling.FAIL]), is left out and mapped to the reason, so that an
      * unrelated ill-formed shape fails only an expression that validates against it. A candidate that compiles is
-     * added to [refNodes] / [refProps] with its closure.
+     * added to [refNodes] / [refProps] with its closure; under [UnsupportedFeatureHandling.IGNORE_WITH_WARNING] the
+     * unsupported constructs of the shapes added that way are appended to [ignored].
      */
     private fun compileCandidates(
         index: ShapeGraphIndex,
@@ -331,6 +334,7 @@ internal object ShapesCompiler {
         refNodes: MutableMap<RdfResource, CompiledNodeShape>,
         refProps: MutableMap<RdfResource, CompiledPropertyShape>,
         candidateOnly: Map<RdfResource, String>,
+        ignored: MutableList<String>,
     ): Map<RdfResource, String> {
         val errors = LinkedHashMap<RdfResource, String>()
         val failOnUnsupported = config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL
@@ -352,6 +356,9 @@ internal object ShapesCompiler {
             } catch (e: ShapeCompileException) {
                 errors[candidate] = "shape $candidate cannot be validated against: ${e.message}"
                 continue
+            }
+            if (!failOnUnsupported) {
+                (closure.nodes.keys + closure.props.keys).forEach { shape -> candidateOnly[shape]?.let { ignored.add(it) } }
             }
             closure.nodes.forEach { (k, v) -> refNodes.putIfAbsent(k, v) }
             closure.props.forEach { (k, v) -> refProps.putIfAbsent(k, v) }
@@ -517,16 +524,16 @@ internal object ShapesCompiler {
         val successors = HashMap<RdfResource, List<RdfResource>>()
         for ((node, ps) in refProps) {
             // The node expressions of sh:values / sh:defaultValue / sh:expression / sh:nodeByExpression are evaluated
-            // while checking the shape, so their shapes are dependencies. The outputs of a computed sh:nodeByExpression
-            // are not known statically: those checks are nested ones, bounded by ValidationConfig.maxRecursionDepth.
-            successors[node] = ps.constraints.flatMap { constraintRefs(it) } +
+            // while checking the shape, so their shapes are dependencies; so are the candidates of a computed
+            // sh:nodeByExpression, any of which it can produce.
+            successors[node] = ps.constraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } +
                 ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps)
         }
         // A shape node that is also a property shape is always checked as a property shape (see conformance checks).
         for ((node, cn) in refNodes) {
             if (node in refProps) continue
             successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
-                cn.nodeConstraints.flatMap { constraintRefs(it) } + cn.propertyShapes.map { it.shapeNode } +
+                cn.nodeConstraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } + cn.propertyShapes.map { it.shapeNode } +
                 cn.nodeConstraints.mapNotNull { constraintExpression(it) }.flatMap { exprShapes.of(it) }
         }
         val components = stronglyConnectedComponents(successors.keys.toList(), budget) { v -> successors[v].orEmpty().filter { it in successors } }
@@ -790,6 +797,10 @@ internal object ShapesCompiler {
             is PropertyConstraint.ReifierShape -> listOf(c.nestedShape)
             else -> emptyList()
         }
+
+    /** The shapes a computed `sh:nodeByExpression` [c] can validate against: every candidate ([ExpressionShapes.allCandidates]). */
+    private fun computedRefs(c: PropertyConstraint, exprShapes: ExpressionShapes): Collection<RdfResource> =
+        if (c is PropertyConstraint.NodeByExpressionComputed) exprShapes.allCandidates else emptyList()
 
     /** The node expression [c] evaluates (`sh:expression`, a computed `sh:nodeByExpression`), if any. */
     internal fun constraintExpression(c: PropertyConstraint): NodeExpression? =

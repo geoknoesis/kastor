@@ -57,11 +57,19 @@ internal fun NativeShaclValidator.evaluateConformance(value: RdfTerm, ref: RdfRe
 }
 
 internal fun NativeShaclValidator.evaluateInto(value: RdfTerm, ref: RdfResource, ctx: NativeValidationContext, state: DepthState, sink: Sink) {
-    val propertyShape = ctx.compiled.referencedPropertyShapes[ref]
-    if (propertyShape != null) {
-        validatePropertyShape(value, propertyShape, ctx, state, sink)
-    } else {
-        ctx.compiled.referencedNodeShapes[ref]?.let { validateNodeShape(value, it, ctx, state, sink) }
+    // The node expressions this evaluation reaches (also the function bodies its SPARQL queries call) validate
+    // deeper than [state] (NativeValidationContext.expressionShapeDepth).
+    val savedDepth = ctx.expressionShapeDepth
+    ctx.expressionShapeDepth = state.depth
+    try {
+        val propertyShape = ctx.compiled.referencedPropertyShapes[ref]
+        if (propertyShape != null) {
+            validatePropertyShape(value, propertyShape, ctx, state, sink)
+        } else {
+            ctx.compiled.referencedNodeShapes[ref]?.let { validateNodeShape(value, it, ctx, state, sink) }
+        }
+    } finally {
+        ctx.expressionShapeDepth = savedDepth
     }
 }
 
@@ -105,8 +113,8 @@ internal fun NativeShaclValidator.evaluateQuestion(key: AtomKey, node: RdfTerm, 
  * ones contributes its recorded results; any other unit is evaluated again, now that every answer is final —
  * that is one constraint on the value nodes already computed, not the shape. An undefined answer always replays
  * its unit, because the result of an undefined answer states its cause, which is only known in the end. A read
- * outside every unit (there is none in the engine) cannot be replayed: null, and the caller evaluates the focus
- * node again.
+ * outside every unit (the shape-based node expressions of `sh:values` / `sh:defaultValue`, which are evaluated before
+ * the constraints of a property shape) cannot be replayed: null, and the caller evaluates the focus node again.
  */
 internal fun NativeShaclValidator.recordedResults(recording: Recording, ctx: NativeValidationContext): List<ValidationViolation>? {
     val reads = recording.reads

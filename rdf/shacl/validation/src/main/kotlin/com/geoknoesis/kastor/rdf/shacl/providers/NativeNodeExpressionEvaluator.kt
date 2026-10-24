@@ -31,6 +31,14 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
  */
 internal const val MAX_NODE_EXPRESSION_DEPTH = 128
 
+/**
+ * A shape-based function read a provisional "undefined" answer of the recursion solver
+ * ([NativeValidationContext.isProvisional]): the expression has no value yet. It propagates out of the evaluation (it
+ * is no failure) to the constraint that evaluates the expression, which reports it as undefined
+ * ([Sink.undefinedAnswer]) so that the solver evaluates the question again.
+ */
+internal class ProvisionalUndefined(val node: RdfTerm, val shape: RdfResource) : RuntimeException(null, null, false, false)
+
 /** The outcome of `evalExpr` (Node Expressions §3): a list of output nodes, or an evaluation failure (§3.3). */
 internal sealed interface NodeExprOutcome {
     data class Nodes(val nodes: List<RdfTerm>) : NodeExprOutcome
@@ -86,7 +94,9 @@ internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeVali
 /**
  * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`; Node
  * Expressions §7: `sh:expression`, `sh:nodeByExpression`) for [focus] with the scope [variables]. An evaluation
- * failure is a validation failure ([ShaclValidationException], caused by the failure's cause). For a
+ * failure is a validation failure ([ShaclValidationException], caused by the failure's cause); a provisional
+ * conformance answer is a [ProvisionalUndefined]. [shapeDepth] is the nesting depth of the shape evaluation the
+ * expression belongs to ([NativeValidationContext.expressionShapeDepth]). For a
  * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
  * variable is unbound are skipped, and the output nodes are distinct, in solution order.
  */
@@ -95,11 +105,20 @@ internal fun NativeShaclValidator.evalNodeExpression(
     ctx: NativeValidationContext,
     focus: RdfTerm?,
     variables: Map<String, RdfTerm> = emptyMap(),
-): List<RdfTerm> =
-    when (val outcome = evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0))) {
+    shapeDepth: Int = ctx.expressionShapeDepth,
+): List<RdfTerm> {
+    val saved = ctx.expressionShapeDepth
+    ctx.expressionShapeDepth = shapeDepth
+    val outcome = try {
+        evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0))
+    } finally {
+        ctx.expressionShapeDepth = saved
+    }
+    return when (outcome) {
         is NodeExprOutcome.Nodes -> outcome.nodes
         is NodeExprOutcome.Failure -> throw ShaclValidationException(outcome.reason, outcome.cause)
     }
+}
 
 /**
  * Evaluates the node expression [exprNode] of [graph], which is both the focus graph and the shapes graph (§3.4), with
@@ -306,8 +325,14 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     /**
      * Whether [node] conforms to [shape] (§3.4), which must be a compiled shape. The compiler compiles every shape an
      * expression can name, deactivated ones included (to which every node conforms), see
-     * [ShapesCompiler.ExpressionShapes]; any other node is not a shape and a failure. Conformance the engine cannot decide
-     * and a validation error are failures of [function]; a timeout or cancellation stays a run abort.
+     * [ShapesCompiler.ExpressionShapes]; any other node is not a shape and a failure. A final answer the engine cannot
+     * decide and a validation error are failures of [function]; a provisional answer of the recursion solver is a
+     * [ProvisionalUndefined]; a timeout or cancellation stays a run abort.
+     *
+     * The check is one shape level deeper than the shape evaluation of the expression
+     * ([NativeValidationContext.expressionShapeDepth]), so that recursion through expressions stays bounded. It is a
+     * negative read for the recursion solver: an expression need not be monotone in the answer
+     * (`sparql:logical-not ( [ shnex:conformsToShape ... ] )`).
      */
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
@@ -317,7 +342,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             fail("$function: $shape is not a shape of the shapes graph")
         }
         val answer = try {
-            startedAt(depth) { validator.conformance(node, shape, ctx, DepthState(0, Mode.CONFORMS)) }
+            startedAt(depth) { validator.conformance(node, shape, ctx, DepthState(ctx.expressionShapeDepth, Mode.CONFORMS), negative = true) }
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
             if (isRunAbort(e)) throw e
@@ -326,7 +351,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         return when (answer) {
             Conformance.CONFORMS -> true
             Conformance.FAILS -> false
-            Conformance.UNDEFINED -> fail("$function: the conformance of $node to $shape is undefined")
+            Conformance.UNDEFINED ->
+                if (ctx.isProvisional(node, shape)) throw ProvisionalUndefined(node, shape) else fail("$function: the conformance of $node to $shape is undefined")
         }
     }
 

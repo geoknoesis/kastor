@@ -81,7 +81,7 @@ internal fun NativeShaclValidator.evaluateConstraint(
         is PropertyConstraint.Qualified ->
             evaluateQualified(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Expression ->
-            evaluateExpression(focus, tpl, values, c, ctx, sink)
+            evaluateExpression(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.NodeByExpressionComputed ->
             evaluateComputedNodeByExpression(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
@@ -459,7 +459,8 @@ private fun NativeShaclValidator.evaluateQualified(
 /**
  * `sh:expression` (Node Expressions §7.1): one result per value node `v` for which the expression, evaluated with the
  * focus node and the scope `{ "value": v }`, does not produce exactly the term `"true"^^xsd:boolean` (R5: not `"1"`,
- * and not several nodes). An evaluation failure is a validation failure ([evalNodeExpression]).
+ * and not several nodes). An evaluation failure is a validation failure ([evalNodeExpression]); a provisional answer
+ * of the recursion solver ([ProvisionalUndefined]) is reported as undefined by [evaluateConstraintsForValues].
  */
 private fun NativeShaclValidator.evaluateExpression(
     focus: RdfTerm,
@@ -467,10 +468,11 @@ private fun NativeShaclValidator.evaluateExpression(
     values: List<RdfTerm>,
     c: PropertyConstraint.Expression,
     ctx: NativeValidationContext,
+    state: DepthState,
     sink: Sink,
 ) {
     eachValue(values, sink) { v ->
-        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v))
+        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v), shapeDepth = state.depth)
         if (out.size != 1 || TrueLiteral != out.single()) {
             val produced = if (out.size > 3) "${out.size} nodes" else out.joinToString(prefix = "( ", postfix = " )")
             tpl.add(focus, sink, ConstraintType.EXPRESSION, "sh:expression produced $produced instead of ( true ) for value $v", v, sourceConstraint = c.node)
@@ -483,8 +485,9 @@ private fun NativeShaclValidator.evaluateExpression(
  * the expression evaluated with `v` as focus node. An output that is not a shape of the shapes graph, a candidate
  * shape that does not compile (R8), an evaluation failure, and a conformance check that fails or stays undefined are
  * validation failures ("A failure MUST be produced"); a non-conforming value node is a result whose
- * `sh:sourceConstraint` is the shape. Inside the recursion solver of the shape's own component an undefined answer is
- * a provisional one, which the solver settles ([Sink.undefinedAnswer]).
+ * `sh:sourceConstraint` is the shape. Only a final undefined answer is a failure: a provisional one of the recursion
+ * solver ([NativeValidationContext.isProvisional]) is reported as undefined ([Sink.undefinedAnswer]), and the solver
+ * evaluates the question again.
  */
 private fun NativeShaclValidator.evaluateComputedNodeByExpression(
     focus: RdfTerm,
@@ -496,15 +499,14 @@ private fun NativeShaclValidator.evaluateComputedNodeByExpression(
     sink: Sink,
 ) {
     eachValue(values, sink) { v ->
-        for (output in evalNodeExpression(c.expr, ctx, v)) {
+        for (output in evalNodeExpression(c.expr, ctx, v, shapeDepth = state.depth)) {
             if (sink.stop) return
             val shape = computedShape(output, ctx)
             when (conformance(v, shape, ctx, state)) {
                 Conformance.FAILS ->
                     tpl.add(focus, sink, ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${shape.displayId()}", v, sourceConstraint = shape)
                 Conformance.UNDEFINED -> {
-                    val solver = ctx.solver
-                    if (solver == null || ctx.compiled.recursiveComponents[shape] != solver.component) {
+                    if (!ctx.isProvisional(v, shape)) {
                         throw ShaclValidationException("sh:nodeByExpression: whether ${displayTerm(v)} conforms to ${shape.displayId()} cannot be decided")
                     }
                     sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, shape)

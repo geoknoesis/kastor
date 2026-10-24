@@ -324,8 +324,11 @@ class NodeExpressionConstraintTest {
         assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c . ex:c ex:name 3 .", shapes).isValid)
         val report = validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c .", shapes)
         assertEquals(listOf<RdfTerm?>(ex("b")), report.violations.map { it.value })
-        // A cycle in the data: every node conforms (greatest fixpoint).
-        assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", shapes).isValid)
+        // A cycle in the data: an expression is not known to be monotone, so its shape reads are negative ones and
+        // a cycle through them is undefined recursion, which is a validation failure for an expression.
+        assertThrows(ShaclValidationException::class.java) {
+            validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", shapes)
+        }
     }
 
     // --- R8: candidate shapes of computed shape references ----------------------------------------------------------
@@ -353,6 +356,86 @@ class NodeExpressionConstraintTest {
                 val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:shape ex:$bad .", shapes) }, "$bad: $shapes")
                 assertTrue(error.message.orEmpty().contains(bad), "$bad: ${error.message}")
             }
+        }
+    }
+
+    @Test
+    fun `an unsupported construct of a used candidate shape is a warning under IGNORE_WITH_WARNING`() {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression [ shnex:pathValues ex:shape ] .\n$unrelatedBadShapes"
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:a ex:shape ex:Unsupported .", shapes, ignore)
+        assertTrue(report.isValid, report.violations.toString())
+        val warning = report.warnings.map { it.message }.single { "Unsupported SHACL feature ignored" in it }
+        assertTrue("sh:expression constraint on" in warning && "Unsupported" in warning, warning)
+    }
+
+    // --- recursion through node expressions (fix round 1) -----------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a provisional undefined answer read by an expression is settled by the solver whatever the order`(provider: String) {
+        // (a,S) reads (b,S) through sh:expression; (b,S) reads (a,S) through sh:not and fails its own sh:minCount.
+        for (targets in listOf("ex:a , ex:b", "ex:b , ex:a")) {
+            for (order in listOf(0, 1)) {
+                val expression = "sh:property [ sh:path ex:next ; sh:expression [ shnex:conformsToShape ( [ shnex:var \"value\" ] ex:S ) ] ]"
+                val not = "sh:property [ sh:path ex:prev ; sh:not ex:S ]"
+                val parts = if (order == 0) "$expression ; $not" else "$not ; $expression"
+                val shapes = "ex:S a sh:NodeShape ; sh:targetNode $targets ; sh:property [ sh:path ex:name ; sh:minCount 1 ] ; $parts ."
+                val report = validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:prev ex:a .", shapes)
+                val found = report.violations.map { Triple(it.focusNode, it.constraint.constraintType, it.value) }.toSet()
+                assertEquals(setOf(Triple(ex("a"), ConstraintType.EXPRESSION, ex("b")), Triple(ex("b"), ConstraintType.MIN_COUNT, null)), found, "$targets / $order")
+            }
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a shape read by an expression is a negative dependency`(provider: String) {
+        // X conforms: Y fails its sh:minCount whatever X is, so not(conformsToShape(x, Y)) is true.
+        val shapes = """
+            ex:X a sh:NodeShape ; sh:targetNode ex:x ;
+              sh:expression [ sparql:logical-not ( [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Y ) ] ) ] .
+            ex:Y a sh:NodeShape ; sh:node ex:X ; sh:property [ sh:path ex:missing ; sh:minCount 1 ] .
+        """
+        val report = validate(provider, "ex:x ex:p 1 .", shapes)
+        assertTrue(report.isValid, report.violations.toString())
+        // With the sh:minCount satisfied, X conforms iff it does not: undefined recursion, a validation failure.
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:x ex:missing 1 .", shapes) }
+    }
+
+    @Test
+    fun `recursion through a computed nodeByExpression and an expression stays bounded`() {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression ( ex:T ) .
+            ex:T sh:property [ sh:path ex:p ; sh:expression [ shnex:exists [ shnex:filterShape ex:S ; shnex:nodes [ shnex:var "value" ] ] ] ] .
+        """
+        // A data cycle: (a,S) needs (a,T), which needs (a,S) negatively: undefined, a validation failure.
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p ex:a .", shapes) }
+        assertTrue("cannot be decided" in error.message.orEmpty() || "undefined" in error.message.orEmpty(), error.message)
+        // A chain ends: b has no ex:p, so it conforms to T and S, and so does a.
+        assertTrue(validate("jena", "ex:a ex:p ex:b .", shapes).isValid)
+        // A long chain is bounded by the nesting limit, or decided: never a stack overflow.
+        val chain = (0 until 300).joinToString(" ") { "ex:n$it ex:p ex:n${it + 1} ." } + " ex:a ex:p ex:n0 ."
+        try {
+            validate("jena", chain, shapes)
+        } catch (_: ShaclValidationException) {
+            // Bounded: a proper validation failure.
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `recursion through a SPARQL function body stays bounded`(provider: String) {
+        // The function body validates against ex:S, whose SPARQL constraint calls the function: no static dependency
+        // records it, so only the nesting depth carried through the evaluator bounds it.
+        val shapes = """
+            ex:f a sh:ListParameterExpressionFunction ;
+              sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ shnex:exists [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:p ; shnex:focusNode [ shnex:arg 0 ] ] ] ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
+        """
+        try {
+            validate(provider, "ex:a ex:p ex:a .", shapes)
+        } catch (_: ShaclValidationException) {
+            // Bounded: a proper validation failure.
         }
     }
 

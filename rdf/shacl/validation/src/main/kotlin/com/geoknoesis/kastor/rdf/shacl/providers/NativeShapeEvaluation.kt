@@ -180,9 +180,27 @@ private fun NativeShaclValidator.evaluateConstraintsForValues(
 ) {
     for (c in constraints) {
         if (sink.stop) return
-        sink.unit { s -> evaluateConstraint(focus, tpl, values, c, ctx, state, currentShape, path, s) }
+        sink.unit { s ->
+            try {
+                evaluateConstraint(focus, tpl, values, c, ctx, state, currentShape, path, s)
+            } catch (e: ProvisionalUndefined) {
+                // A node expression of the constraint (or a function body its SPARQL query calls) read a provisional
+                // answer of the recursion solver: the constraint is undefined for now.
+                s.undefinedAnswer(ctx, focus, tpl, provisionalType(c), null, e.node, e.shape)
+            }
+        }
     }
 }
+
+/** The constraint type an undefined [ProvisionalUndefined] answer of [c] is reported with. */
+private fun provisionalType(c: PropertyConstraint): ConstraintType =
+    when (c) {
+        is PropertyConstraint.Expression -> ConstraintType.EXPRESSION
+        is PropertyConstraint.NodeByExpressionComputed -> ConstraintType.NODE_BY_EXPRESSION
+        is PropertyConstraint.Sparql -> ConstraintType.SPARQL_CONSTRAINT
+        is PropertyConstraint.SparqlComponent -> ConstraintType.SPARQL_CONSTRAINT_COMPONENT
+        else -> ConstraintType.PROPERTY_SHAPE
+    }
 
 private fun reportPath(ps: CompiledPropertyShape, ctx: NativeValidationContext): ReportPath =
     ctx.reportPaths.getOrPut(ps.shapeNode) {
@@ -198,8 +216,15 @@ internal fun NativeShaclValidator.validatePropertyShape(
 ) {
     if (ps.deactivated) return
     ctx.counters.shapeEvaluations++
-    val values = propertyValueNodes(focus, ps, ctx)
     val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
+    val values = try {
+        propertyValueNodes(focus, ps, ctx, state)
+    } catch (e: ProvisionalUndefined) {
+        // sh:values / sh:defaultValue read a provisional answer of the recursion solver: the value nodes, and so
+        // the whole property shape, are undefined for now.
+        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.PROPERTY_SHAPE, null, e.node, e.shape)
+        return
+    }
     evaluateConstraintsForValues(focus, tpl, values, ps.constraints, ctx, state, ps.shapeNode, ps.path, sink)
     if (sink.stop) return
     for (part in ps.logicalParts) {
@@ -307,12 +332,12 @@ private fun NativeShaclValidator.validateReifierPropertyConstraints(
  * `sh:values`, and, only if that set is still empty, the outputs of `sh:defaultValue`. Value nodes are a set
  * (SHACL §2.3.2), so the result is distinct, path values first.
  */
-private fun NativeShaclValidator.propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: NativeValidationContext): List<RdfTerm> {
+private fun NativeShaclValidator.propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: NativeValidationContext, state: DepthState): List<RdfTerm> {
     val pathValues = PathEvaluator.evaluate(focus, ps.path, ctx.data)
     val valuesExpr = ps.values
-    var values = if (valuesExpr == null) pathValues else distinctShaclTerms(pathValues + evalNodeExpression(valuesExpr, ctx, focus))
+    var values = if (valuesExpr == null) pathValues else distinctShaclTerms(pathValues + evalNodeExpression(valuesExpr, ctx, focus, shapeDepth = state.depth))
     checkNodeExpressionSize(values.size, ctx, "value node computation")
     val defaultExpr = ps.defaultValue
-    if (values.isEmpty() && defaultExpr != null) values = evalNodeExpression(defaultExpr, ctx, focus)
+    if (values.isEmpty() && defaultExpr != null) values = evalNodeExpression(defaultExpr, ctx, focus, shapeDepth = state.depth)
     return values
 }
