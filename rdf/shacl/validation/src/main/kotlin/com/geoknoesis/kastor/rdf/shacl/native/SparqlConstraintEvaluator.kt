@@ -12,6 +12,7 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SparqlQueryable
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
@@ -84,15 +85,21 @@ internal object SparqlConstraintEvaluator {
     /**
      * SPARQL access for one validation run, initialized only if a SPARQL constraint is evaluated.
      * [repositoryFactory] is an internal seam (tests simulate a classpath without a SPARQL provider).
+     * Every query carries [functions], the SHACL 1.2 SPARQL functions of the shapes graph.
      */
     class Session(
         private val dataGraph: RdfGraph,
         private val repositoryFactory: () -> RdfRepository = defaultRepositoryFactory,
         inPlace: SparqlQueryable? = null,
+        private val functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY,
     ) : AutoCloseable {
-        /** Caller-owned view of the data graph, used while it supports bound, timed queries. */
+        /**
+         * Caller-owned view of the data graph, used while it supports bound, timed queries. Never used when the
+         * shapes graph declares functions: a caller's dataset may be a store the provider cannot evaluate custom
+         * functions on (an RDF4J repository over a store Kastor did not create), so queries run on the private copy.
+         */
         private var inPlace: SparqlQueryable? =
-            if (inPlace != null && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
+            if (inPlace != null && functions === SparqlFunctionLibrary.EMPTY && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
         private var copy: RdfRepository? = null
 
         private fun copied(): RdfRepository {
@@ -141,7 +148,7 @@ internal object SparqlConstraintEvaluator {
         ): T =
             try {
                 // Queries come from the shapes graph: the provider refuses SERVICE and code loading on its own parse of them.
-                target.withSelectRows(SandboxedSelectQuery(query), bindings, timeout, consume)
+                target.withSelectRows(SandboxedSelectQuery(query, functions), bindings, timeout, consume)
             } catch (e: ShaclValidationException) {
                 throw e
             } catch (e: UnsupportedOperationException) {

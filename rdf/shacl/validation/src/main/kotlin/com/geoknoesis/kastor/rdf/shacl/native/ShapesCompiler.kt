@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.OWL
@@ -225,6 +226,8 @@ internal data class CompiledShapeGraph(
     val recursiveComponents: Map<RdfResource, Int> = emptyMap(),
     /** Descriptions of unsupported constructs that were ignored ([UnsupportedFeatureHandling.IGNORE_WITH_WARNING]). */
     val unsupportedFeatureWarnings: List<String> = emptyList(),
+    /** SHACL 1.2 SPARQL functions declared in the shapes graph ([SparqlFunctionDeclarations]), sent with every SHACL query. */
+    val functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY,
 )
 
 internal object ShapesCompiler {
@@ -289,6 +292,7 @@ internal object ShapesCompiler {
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, budget),
             unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
+            SparqlFunctionDeclarations.compile(index),
         )
     }
 
@@ -330,7 +334,6 @@ internal object ShapesCompiler {
     private const val SPARQL_NAMESPACE = "http://www.w3.org/ns/sparql#"
     private val shExpression = Iri(SHACL.namespace + "expression")
     private val shTarget = Iri(SHACL.namespace + "target")
-    private val shBodyExpression = Iri(SHACL.namespace + "bodyExpression")
 
     /** True for SHACL 1.2 SPARQL node expressions (`sh:SelectExpression`, `sh:SPARQLExprExpression`, `sh:select`, `sh:sparqlExpr`). */
     private fun isNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean {
@@ -446,7 +449,7 @@ internal object ShapesCompiler {
         for (t in index.triples) {
             budget.tick("feature detection")
             when {
-                t.predicate == shBodyExpression && t.subject is Iri -> functions.add(t.subject as Iri)
+                t.predicate == ShaclSparqlTerms.bodyExpression && t.subject is Iri -> functions.add(t.subject as Iri)
                 t.subject !in shapes -> Unit
                 t.predicate == ShaclSparqlTerms.values && !isSupportedExpression(t.obj, index) ->
                     out["sh:values node expression on ${t.subject}"] = expression(t.obj)
@@ -469,8 +472,10 @@ internal object ShapesCompiler {
                 }
             }
         }
+        // Functions with a SPARQL body are evaluated (SparqlFunctionDeclarations). A declared function library is
+        // harmless; calling one of its other functions (a shnex: body) from SPARQL is not evaluable.
+        functions.retainAll { budget.tick("feature detection"); !SparqlFunctionDeclarations.compiles(it, index) }
         if (functions.isNotEmpty()) {
-            // A declared function library is harmless; calling one of its functions from SPARQL is not evaluable.
             val sparqlTexts = index.triples
                 .filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == ShaclSparqlTerms.sparqlExpr }
                 .mapNotNull { (it.obj as? Literal)?.lexical }

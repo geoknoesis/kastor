@@ -151,9 +151,11 @@ class NativeReauditSemanticsTest {
         assertTrue(validate("ex:a ex:p 'x' .", component + "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeKind sh:IRI .").isValid)
     }
 
-    @Test fun `SHACL 1_2 expression functions called from SPARQL fail explicitly`() {
+    @Test fun `SHACL 1_2 expression functions with a shnex body called from SPARQL fail explicitly`() {
+        // Functions with a SPARQL body are evaluated (SparqlFunctionTest); a node expression body is not.
         val shapes = """
-            ex:twice a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:sparqlExpr "CONCAT(${'$'}arg0, ${'$'}arg0)" ] .
+            ex:twice a sh:ListParameterExpressionFunction ;
+              sh:bodyExpression [ <http://www.w3.org/ns/shacl-node-expr#count> [ <http://www.w3.org/ns/shacl-node-expr#arg> 0 ] ] .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''SELECT ${'$'}this ?value WHERE { BIND (<http://example.org/twice>("x") AS ?value) }''' ] .
         """

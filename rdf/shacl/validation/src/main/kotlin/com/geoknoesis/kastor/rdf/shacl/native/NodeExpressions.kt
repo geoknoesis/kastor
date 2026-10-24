@@ -20,7 +20,8 @@ internal sealed class NodeExpression {
 
     /**
      * A SPARQL node expression (SHACL 1.2 SPARQL §6): `sh:select`, or `sh:sparqlExpr` rewritten to
-     * `SELECT (expr AS ?result) WHERE {}`. Only `this` is pre-bound. The result nodes are the values of [variable].
+     * `SELECT (expr AS ?result) WHERE {}`. Only `this` is pre-bound (in a function body, `arg0`, `arg1`, ... as well).
+     * The result nodes are the values of [variable].
      */
     class Select(val node: BlankNode, val template: SparqlQueryTemplate, val variable: String) : NodeExpression()
 }
@@ -35,9 +36,10 @@ internal object NodeExpressions {
     /**
      * Compiles [term], or returns null when it is not a supported expression: a blank node with neither `sh:select`
      * nor `sh:sparqlExpr` (a `shnex:` or other expression). Ill-formed SPARQL expressions throw
-     * [ShapeCompileException], pre-binding violations [SparqlPreBindingRestrictionException].
+     * [ShapeCompileException], pre-binding violations [SparqlPreBindingRestrictionException]. [preBound] are the
+     * scope variables the restriction check treats as potentially pre-bound (`this`, and the `arg<i>` of a function).
      */
-    fun compile(term: RdfTerm, index: ShapeGraphIndex): NodeExpression? {
+    fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? {
         index.tick("node expression compilation")
         if (term is Iri && (index.objects(term, SHACL.select).isNotEmpty() || index.objects(term, ShaclSparqlTerms.sparqlExpr).isNotEmpty())) {
             throw ShapeCompileException("SPARQL node expression $term must be a blank node")
@@ -60,7 +62,7 @@ internal object NodeExpressions {
         if (index.objects(node, SHACL.prefixes).size > 1) throw ShapeCompileException("Node expression $node has more than one sh:prefixes")
         val body = if (hasSelect) text else "SELECT ($text AS ?$RESULT_VARIABLE) WHERE {}"
         val template = SparqlQueryTemplate.compileRestricted(
-            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)), body, PRE_BOUND, "Node expression $node",
+            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)), body, preBound, "Node expression $node",
         )
         val variable = if (hasSelect) {
             val projected = SparqlQueryTemplate.projectedVariables(body)

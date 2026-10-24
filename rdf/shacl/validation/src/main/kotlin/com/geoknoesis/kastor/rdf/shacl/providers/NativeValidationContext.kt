@@ -77,6 +77,7 @@ internal class NativeValidationContext(
             data.graph,
             repositoryFactory = repositoryFactory,
             inPlace = sparqlInPlace,
+            functions = compiled.functions,
         )
     }
     fun checkDeadline() {
