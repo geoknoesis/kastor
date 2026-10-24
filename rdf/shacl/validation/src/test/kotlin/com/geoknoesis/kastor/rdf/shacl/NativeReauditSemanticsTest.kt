@@ -134,14 +134,19 @@ class NativeReauditSemanticsTest {
         assertEquals(ex("AS"), v.sourceConstraint)
     }
 
-    @Test fun `SPARQL-based constraint components fail when a shape uses them`() {
+    @Test fun `SPARQL-based constraint components compile when a shape uses them`() {
         val component = """
             ex:C a sh:ConstraintComponent ;
               sh:parameter [ sh:path ex:lang ] ;
               sh:validator [ a sh:SPARQLAskValidator ; sh:ask "ASK { FILTER (lang(${'$'}value) = ${'$'}lang) }" ] .
         """
-        assertUnsupported("ex:a ex:p 'x' .", component + "ex:S a sh:NodeShape ; sh:targetNode ex:a ; ex:lang 'en' .")
+        fun components(shape: String) =
+            com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler.compile(g(component + shape).getTriples(), ValidationConfig.default())
+                .referencedNodeShapes.getValue(Iri("http://example.org/S")).nodeConstraints
+                .filterIsInstance<com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint.SparqlComponent>()
+        assertEquals(Iri("http://example.org/C"), components("ex:S a sh:NodeShape ; sh:targetNode ex:a ; ex:lang 'en' .").single().component)
         // Declared but unused components are harmless.
+        assertTrue(components("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeKind sh:IRI .").isEmpty())
         assertTrue(validate("ex:a ex:p 'x' .", component + "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeKind sh:IRI .").isValid)
     }
 

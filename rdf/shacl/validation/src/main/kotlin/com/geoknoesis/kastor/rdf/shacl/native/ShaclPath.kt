@@ -49,6 +49,9 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** Graph-level `sh:declare` prefixes (used by nodes without `sh:prefixes`), computed once per index. */
     val graphLevelPrefixes: Map<String, String> by lazy { SparqlPrefixes.graphLevel(this) }
 
+    /** SPARQL-based constraint components of this shapes graph, collected once per index. */
+    val sparqlComponents: SparqlComponentCatalog by lazy { SparqlComponentCatalog.build(this) }
+
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 
     fun hasSubject(sub: RdfResource): Boolean = bySubject.containsKey(sub)

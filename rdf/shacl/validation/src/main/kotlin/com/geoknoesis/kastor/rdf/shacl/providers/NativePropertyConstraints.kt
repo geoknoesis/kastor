@@ -82,6 +82,8 @@ internal fun NativeShaclValidator.evaluateConstraint(
         is PropertyConstraint.ReifierShape,
         is PropertyConstraint.ReificationRequired,
         -> Unit
+        // Task 5: SPARQL-based constraint components are compiled but not evaluated yet.
+        is PropertyConstraint.SparqlComponent -> Unit
     }
 }
 
