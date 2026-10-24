@@ -42,6 +42,12 @@ class SparqlPrefixesTest {
     }
 
     @Test
+    fun `sh prefixes values must be IRIs or blank nodes`() {
+        assertThrows(ShapeCompileException::class.java) { collect("ex:C sh:prefixes \"x\" .") }
+        assertThrows(ShapeCompileException::class.java) { collect("ex:C sh:prefixes ex:P , 1 . ex:P sh:declare [ sh:prefix \"p\" ; sh:namespace \"http://p/\" ] .") }
+    }
+
+    @Test
     fun `graph-level declarations apply only without sh prefixes`() {
         val withPrefixes = collect(
             """
