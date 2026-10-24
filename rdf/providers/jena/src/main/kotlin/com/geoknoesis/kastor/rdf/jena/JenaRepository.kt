@@ -1018,8 +1018,19 @@ class JenaRepository private constructor(
     override fun select(query: SparqlSelect): SparqlQueryResult = withSelectRows(query) { JenaResultSet(it.toList()) }
 
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withRead {
-        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
+        val parsed = parseSelect(query)
+        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(parsed, queryDataset()) }
         exec.use { consumeRows(it, query.sparql, consume) }
+    }
+
+    /**
+     * Parses [query] once, so a [SandboxedSelectQuery] is checked ([JenaQuerySandbox]) on the very query that is
+     * executed. A refused sandboxed query fails with [IllegalArgumentException] before evaluation.
+     */
+    private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query {
+        val parsed = queryOperation(query.sparql) { QueryFactory.create(query.sparql) }
+        if (query is SandboxedSelectQuery) JenaQuerySandbox.check(parsed)
+        return parsed
     }
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
@@ -1049,10 +1060,11 @@ class JenaRepository private constructor(
 
     private fun <T> withSelectRowsSubstituted(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T = withRead {
+        val parsed = parseSelect(query)
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
             bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
-            QueryExecution.dataset(queryDataset()).query(query.sparql).substitution(initial)
+            QueryExecution.dataset(queryDataset()).query(parsed).substitution(initial)
                 .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
         }
         // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation).

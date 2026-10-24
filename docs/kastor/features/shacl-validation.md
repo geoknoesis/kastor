@@ -240,6 +240,8 @@ A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when t
 
 The restrictions are checked on the query text and again on the full query with its `PREFIX` prologue.
 
+The provider enforces the same boundary at run time. Every SHACL-SPARQL query reaches it as a `SandboxedSelectQuery`, which the Jena and RDF4J providers parse with their own parser and refuse before evaluation if it contains `SERVICE` anywhere, or (on Jena) a `java:` function or property function, which would load a class by name. Validation then throws `ShaclValidationException`. A remote SPARQL endpoint cannot be checked, so a dataset backed by one is validated on a private in-memory copy of the data graph instead.
+
 Sub-selects need not project `$this` (SHACL 1.2 removed that restriction). One limit remains: a blank-node value used inside a sub-select that does not project it cannot be passed to the provider. The provider contract rejects it, and validation throws `ShaclValidationException`.
 
 `$PATH` (either `$` or `?`) is substituted on property shapes and left unbound on node shapes.

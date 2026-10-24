@@ -280,8 +280,10 @@ class SparqlRepository internal constructor(
      * response headers; time spent consuming rows is only limited by
      * [SparqlEndpointConfig.streamingRequestTimeout] (and the per-read timeout).
      */
-    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
-        selectRows(query.sparql, config.maxStreamedResponseBytes, Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T {
+        refuseSandboxed(query)
+        return selectRows(query.sparql, config.maxStreamedResponseBytes, Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
+    }
 
     /**
      * Streams rows with [bindings] as initial bindings. [timeout] bounds the whole call, like the
@@ -306,6 +308,7 @@ class SparqlRepository internal constructor(
         consume: (Sequence<BindingSet>) -> T,
     ): T {
         require(!timeout.isNegative && !timeout.isZero) { "timeout must be positive" }
+        refuseSandboxed(query)
         val rendered = bindings.mapValues { (_, term) ->
             SparqlTermFormat.term(term) { throw IllegalArgumentException("Blank nodes cannot be used as query bindings") }
         }
@@ -314,6 +317,16 @@ class SparqlRepository internal constructor(
         // The response headers are awaited until the earliest of requestTimeout and the whole-call deadline.
         val headers = config.requestTimeout?.let { minOf(it, timeout) } ?: timeout
         return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(headers, overall), consume)
+    }
+
+    /**
+     * The endpoint evaluates queries itself, so it cannot be held to [SandboxedSelectQuery]'s guarantees (no `SERVICE`):
+     * such a query is refused with [UnsupportedOperationException] and is never sent.
+     */
+    private fun refuseSandboxed(query: SparqlSelect) {
+        if (query is SandboxedSelectQuery) {
+            throw UnsupportedOperationException("A remote SPARQL endpoint cannot be restricted to sandboxed queries")
+        }
     }
 
     private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: Timeouts, consume: (Sequence<BindingSet>) -> T): T {

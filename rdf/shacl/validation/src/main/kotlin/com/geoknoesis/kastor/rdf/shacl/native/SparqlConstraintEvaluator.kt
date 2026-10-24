@@ -11,7 +11,7 @@ import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SparqlQueryable
-import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
@@ -131,7 +131,7 @@ internal object SparqlConstraintEvaluator {
                     return run(dataset, query, bindings, timeout, consume)
                 } catch (_: UnsupportedOperationException) {
                     logOnce("unsupported-bound-queries", dataset, warn = true) {
-                        "${dataset.javaClass.simpleName} does not support bound, timed SPARQL queries: SHACL-SPARQL " +
+                        "${dataset.javaClass.simpleName} does not support bound, timed, sandboxed SPARQL queries: SHACL-SPARQL " +
                             "constraints fall back to a private copy of the data graph"
                     }
                     inPlace = null
@@ -148,7 +148,8 @@ internal object SparqlConstraintEvaluator {
             consume: (Sequence<BindingSet>) -> T,
         ): T =
             try {
-                target.withSelectRows(SparqlSelectQuery(query), bindings, timeout, consume)
+                // Queries come from the shapes graph: the provider refuses SERVICE and code loading on its own parse of them.
+                target.withSelectRows(SandboxedSelectQuery(query), bindings, timeout, consume)
             } catch (e: ShaclValidationException) {
                 throw e
             } catch (e: UnsupportedOperationException) {

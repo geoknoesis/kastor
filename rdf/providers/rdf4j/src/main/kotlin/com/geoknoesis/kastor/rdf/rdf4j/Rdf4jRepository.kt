@@ -565,6 +565,7 @@ class Rdf4jRepository(
      * propagate unchanged.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
+        if (query is SandboxedSelectQuery) checkSandboxed(query.sparql)
         val result = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
         result.use { consume(it.rows(query.sparql)) }
     }
@@ -656,6 +657,8 @@ class Rdf4jRepository(
         }
         // Outside queryOperation: a query the substitution rejects is the caller's error (IllegalArgumentException).
         val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(query.sparql, constants, expressions)
+        // The rewritten text is the one prepared below, so that is the text checked.
+        if (query is SandboxedSelectQuery) checkSandboxed(sparql)
         return withConnection { conn ->
             val result = queryOperation(sparql) {
                 val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
@@ -665,6 +668,21 @@ class Rdf4jRepository(
             }
             result.use { consume(it.rows(sparql, hidden = placeholders.keys + expressions.values)) }
         }
+    }
+
+    /**
+     * Refuses a [SandboxedSelectQuery] whose [sparql] text, parsed by RDF4J's own SPARQL parser (the one that prepares
+     * it), contains `SERVICE`, with [IllegalArgumentException]. RDF4J resolves functions by IRI from its registry and
+     * never loads classes by name, so `SERVICE` is the only way such a query reaches outside the repository.
+     */
+    private fun checkSandboxed(sparql: String) {
+        val parsed = queryOperation(sparql) { org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(sparql, null) }
+        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) {
+                val ref = node.serviceRef
+                throw IllegalArgumentException("A sandboxed query may not use SERVICE ${ref.value?.stringValue()?.let { "<$it>" } ?: "?" + ref.name}")
+            }
+        })
     }
 
     /** A variable name for a natively bound term that occurs nowhere in [sparql] and is not in [taken]. */
