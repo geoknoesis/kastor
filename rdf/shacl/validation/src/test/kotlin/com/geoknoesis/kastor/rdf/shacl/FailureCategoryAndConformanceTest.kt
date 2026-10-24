@@ -55,7 +55,7 @@ class FailureCategoryAndConformanceTest {
     @Test fun `unsupported features fail with their category`() {
         val cases = listOf(
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ sh:path ex:q ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
-            "ex:S a sh:NodeShape ; sh:targetNode [ sh:select \"SELECT ?x WHERE { ?x ?p ?o }\" ] ; sh:class ex:Q ." to
+            "ex:S a sh:NodeShape ; sh:targetWhere [ sh:select \"SELECT ?x WHERE { ?x ?p ?o }\" ] ; sh:class ex:Q ." to
                 UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION,
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:target [ a ex:CustomTarget ] ." to UnsupportedShaclFeature.CUSTOM_TARGET,
         )

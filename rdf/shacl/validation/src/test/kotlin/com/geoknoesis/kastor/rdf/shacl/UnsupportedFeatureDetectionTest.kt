@@ -163,7 +163,6 @@ class UnsupportedFeatureDetectionTest {
         // sh:select / sh:sparqlExpr, the shnex: and sparql: namespaces and calls of declared functions have no reading
         // as data: W3C sparql/targets/targetNode-select-001 validates such a shapes graph against itself.
         val cases = mapOf(
-            "[ sh:select \"SELECT ?this WHERE { ?this a ex:T }\" ]" to UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION,
             "[ shnex:pathValues ex:q ]" to UnsupportedShaclFeature.NODE_EXPRESSION,
             "[ a shnex:PathValuesExpression ; ex:q 1 ]" to UnsupportedShaclFeature.NODE_EXPRESSION,
         )

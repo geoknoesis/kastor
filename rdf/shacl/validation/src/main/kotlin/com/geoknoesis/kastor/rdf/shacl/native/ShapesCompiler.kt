@@ -36,6 +36,8 @@ internal data class Targets(
      * `isTargetNodeExpression`).
      */
     val callShapedTargets: Map<BlankNode, Iri> = emptyMap(),
+    /** SPARQL node expressions among the `sh:targetNode` values (SHACL 1.2 SPARQL §6); `$this` is the shape node. */
+    val targetNodeExpressions: List<NodeExpression.Select> = emptyList(),
 )
 
 internal sealed class NodeLogicalPart {
@@ -167,6 +169,10 @@ internal data class CompiledPropertyShape(
     val nestedPropertyShapes: List<CompiledPropertyShape> = emptyList(),
     /** `sh:deactivated true`: every node conforms. */
     val deactivated: Boolean = false,
+    /** `sh:values` node expression (predicate paths only); null when absent or [deactivated]. */
+    val values: NodeExpression? = null,
+    /** `sh:defaultValue` node expression (predicate paths only); null when absent or [deactivated]. */
+    val defaultValue: NodeExpression? = null,
 )
 
 internal data class CompiledNodeShape(
@@ -328,10 +334,8 @@ internal object ShapesCompiler {
 
     /** SPARQL function namespace used by SHACL 1.2 node expressions (`sparql:concat ( … )`). */
     private const val SPARQL_NAMESPACE = "http://www.w3.org/ns/sparql#"
-    private val shValues = Iri(SHACL.namespace + "values")
     private val shExpression = Iri(SHACL.namespace + "expression")
     private val shTarget = Iri(SHACL.namespace + "target")
-    private val shSparqlExpr = Iri(SHACL.namespace + "sparqlExpr")
     private val shBodyExpression = Iri(SHACL.namespace + "bodyExpression")
 
     /** True for SHACL 1.2 SPARQL node expressions (`sh:SelectExpression`, `sh:SPARQLExprExpression`, `sh:select`, `sh:sparqlExpr`). */
@@ -339,7 +343,7 @@ internal object ShapesCompiler {
         val node = term as? RdfResource ?: return false
         val types = index.objects(node, RDF.type)
         return SHACL.SelectExpression in types || SHACL.SPARQLExprExpression in types ||
-            listOf(SHACL.selectExpression, SHACL.exprExpression, SHACL.select, shSparqlExpr).any { index.objects(node, it).isNotEmpty() }
+            listOf(SHACL.selectExpression, SHACL.exprExpression, SHACL.select, ShaclSparqlTerms.sparqlExpr).any { index.objects(node, it).isNotEmpty() }
     }
 
     /**
@@ -387,6 +391,17 @@ internal object ShapesCompiler {
         if (index.objects(node, RDF.type).any { it is Iri && it.value.startsWith(SHACL.namespace) }) return true
         return index.predicates(node).any { it.value.startsWith(SHACL.namespace) }
     }
+
+    /**
+     * True when [term] compiles as a node expression. An ill-formed one counts as supported: the compiler reports it
+     * with its own error where the expression is used (a deactivated shape never compiles its expressions).
+     */
+    private fun isSupportedExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
+        try {
+            NodeExpressions.compile(term, index) != null
+        } catch (_: ShapeCompileException) {
+            true
+        }
 
     private val shapeReferencePredicates: List<Iri> by lazy {
         listOf(
@@ -439,13 +454,16 @@ internal object ShapesCompiler {
             when {
                 t.predicate == shBodyExpression && t.subject is Iri -> functions.add(t.subject as Iri)
                 t.subject !in shapes -> Unit
-                t.predicate == shValues -> out["sh:values node expression on ${t.subject}"] = expression(t.obj)
+                t.predicate == ShaclSparqlTerms.values && !isSupportedExpression(t.obj, index) ->
+                    out["sh:values node expression on ${t.subject}"] = expression(t.obj)
+                t.predicate == ShaclSparqlTerms.defaultValue && !isSupportedExpression(t.obj, index) ->
+                    out["sh:defaultValue node expression on ${t.subject}"] = expression(t.obj)
                 t.predicate == shExpression -> out["sh:expression constraint on ${t.subject}"] = expression(t.obj)
                 t.predicate == shTarget ->
                     out["sh:target (SPARQL-based or custom target) on ${t.subject}"] = UnsupportedShaclFeature.CUSTOM_TARGET
                 t.predicate == SHACL.targetWhere && isNodeExpression(t.obj, index) ->
                     out["sh:targetWhere with a SPARQL node expression on ${t.subject}"] = UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION
-                t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) ->
+                t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) && !isSupportedExpression(t.obj, index) ->
                     out["sh:targetNode with a node expression on ${t.subject}"] = expression(t.obj)
                 t.predicate == SHACL.nodeByExpression && t.obj is BlankNode ->
                     out["sh:nodeByExpression with a computed node expression on ${t.subject}"] = expression(t.obj)
@@ -460,7 +478,7 @@ internal object ShapesCompiler {
         if (functions.isNotEmpty()) {
             // A declared function library is harmless; calling one of its functions from SPARQL is not evaluable.
             val sparqlTexts = index.triples
-                .filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == shSparqlExpr }
+                .filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == ShaclSparqlTerms.sparqlExpr }
                 .mapNotNull { (it.obj as? Literal)?.lexical }
             for (function in functions) {
                 val localName = function.value.substringAfterLast('#').substringAfterLast('/')
@@ -579,7 +597,11 @@ internal object ShapesCompiler {
             } else {
                 emptyList()
             }
-        val targetNodes = index.objects(subject, SHACL.targetNode)
+        val targetNodeValues = index.objects(subject, SHACL.targetNode)
+        val targetNodeExpressions = targetNodeValues
+            .filter { isTargetNodeExpression(it, index) }
+            .mapNotNull { NodeExpressions.compile(it, index) as? NodeExpression.Select }
+        val targetNodes = targetNodeValues
             .filterNot { isTargetNodeExpression(it, index) }
             .onEach { ensureShapeTermAllowed(it, config) }
         val callShapedTargets = LinkedHashMap<BlankNode, Iri>()
@@ -590,6 +612,7 @@ internal object ShapesCompiler {
             targetSubjectsOf = index.objects(subject, SHACL.targetSubjectsOf).filterIsInstance<Iri>(),
             targetObjectsOf = index.objects(subject, SHACL.targetObjectsOf).filterIsInstance<Iri>(),
             callShapedTargets = callShapedTargets,
+            targetNodeExpressions = targetNodeExpressions,
         )
 
         val nodeSev =
@@ -930,6 +953,8 @@ internal object ShapesCompiler {
             constraints = constraints,
             logicalParts = logicalParts,
             nestedPropertyShapes = nestedPropertyShapes,
+            values = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.values, path, index),
+            defaultValue = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.defaultValue, path, index),
         )
     }
 

@@ -23,6 +23,7 @@ class NativeReauditSemanticsTest {
     private val prefixes = """
         @prefix sh: <http://www.w3.org/ns/shacl#> .
         @prefix ex: <http://example.org/> .
+        @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
         @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
     """.trimIndent()
@@ -105,12 +106,12 @@ class NativeReauditSemanticsTest {
     @Test fun `node expressions in sh values sh expression and sh targetNode fail`() {
         assertUnsupported(
             "ex:a a ex:P .",
-            "ex:S a sh:PropertyShape ; sh:targetClass ex:P ; sh:path ex:q ; sh:values [ sh:select \"SELECT ?q WHERE { }\" ] ; sh:minCount 1 .",
+            "ex:S a sh:PropertyShape ; sh:targetClass ex:P ; sh:path ex:q ; sh:values [ shnex:count [ shnex:pathValues ex:q ] ] ; sh:minCount 1 .",
         )
         assertUnsupported("ex:a a ex:P .", "ex:S a sh:NodeShape ; sh:targetClass ex:P ; sh:expression false .")
         assertUnsupported(
             "ex:a a ex:P .",
-            "ex:S a sh:NodeShape ; sh:targetNode [ sh:select \"SELECT ?x WHERE { ?x a ex:P }\" ] ; sh:class ex:Q .",
+            "ex:S a sh:NodeShape ; sh:targetNode [ shnex:concat ( ex:a ex:b ) ] ; sh:class ex:Q .",
         )
     }
 
