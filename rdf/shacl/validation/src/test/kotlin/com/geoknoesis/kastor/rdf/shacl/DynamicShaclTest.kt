@@ -54,6 +54,18 @@ class DynamicShaclTest {
     private fun validate(provider: String, data: String, shapes: String, config: ValidationConfig = ValidationConfig.default()) =
         NativeShaclValidator(config) { repository(provider) }.validate(g(data), g(shapes))
 
+    /**
+     * [data] validated against [shapes] on a run budget of **work**, not time: the clock advances by one each time the
+     * engine consults the budget (every 64th tick), so the run fails with "timed out" past [consultations], on any host.
+     * Gives the report and the consultations used.
+     */
+    private fun validateWorkBounded(consultations: Long, data: String, shapes: String): Pair<ValidationReport, Long> {
+        var now = 0L
+        val validator = NativeShaclValidator(ValidationConfig.default().copy(timeout = java.time.Duration.ofNanos(consultations))) { repository("jena") }
+            .also { it.budgetClock = { now++ } }
+        return validator.validate(g(data), g(shapes)) to now
+    }
+
     /** The shapes graph validated against itself, as the W3C cases do. */
     private fun validateSelf(provider: String, ttl: String) = g(ttl).let { NativeShaclValidator(ValidationConfig.default()) { repository(provider) }.validate(it, it) }
 
@@ -1015,16 +1027,16 @@ class DynamicShaclTest {
             for (i in 0 until n) appendLine("ex:t$i a ex:T ; ex:keys ex:c , ex:e ; ex:c 1 ; ex:d $i .")
         }
         val shapes = "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
-        val config = ValidationConfig(timeout = java.time.Duration.ofSeconds(15))
-        val report = validate("jena", data, shapes, config)
-        assertEquals(config.maxViolations, report.violations.size)
+        // About 87,000 budget consultations; rescanning the shared value set per focus node needs about 2.25 million.
+        val (report, _) = validateWorkBounded(260_000L, data, shapes)
+        assertEquals(ValidationConfig.default().maxViolations, report.violations.size)
         assertTrue(report.violations.all { "shared with ${n - 1} other" in it.message }, report.violations.take(3).toString())
     }
 
     @Test
     fun `a dynamic sh uniqueValuesFor with a distinct property list per target stays linear`() {
         // 12000 targets, each keyed on a property of its own: one pass over the targets per distinct list would compare
-        // 144 million keys (over 30 s here); the timeout stops such a run. ex:x and ex:y share ex:t0's key on ex:k0, and
+        // 144 million keys; the work budget stops such a run. ex:x and ex:y share ex:t0's key on ex:k0, and
         // nothing else is shared.
         val n = 12_000
         val data = buildString {
@@ -1033,8 +1045,8 @@ class DynamicShaclTest {
             appendLine("ex:y a ex:T ; ex:keys ex:k0 ; ex:k0 1 .")
         }
         val shapes = "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
-        val config = ValidationConfig(timeout = java.time.Duration.ofSeconds(15))
-        val report = validate("jena", data, shapes, config)
+        // About 62,000 budget consultations; a pass over the targets per distinct list needs about 2.25 million.
+        val (report, _) = validateWorkBounded(190_000L, data, shapes)
         assertEquals(setOf(ex("t0"), ex("x"), ex("y")), report.violations.map { it.focusNode }.toSet(), report.violations.toString())
         assertTrue(report.violations.all { "shared with 2 other" in it.message }, report.violations.toString())
     }
