@@ -569,10 +569,21 @@ internal class SparqlQueryTemplate private constructor(
                 else -> null
             }
 
+        /**
+         * [s] escaped for a `"..."` string. Every backslash is doubled, so a Java-style codepoint pre-pass (RDF4J
+         * decodes `\u` only after an odd run of backslashes) leaves the text alone, and a parser without a pre-pass
+         * (Jena) reads it as written. A `u` or `U` right after a backslash of [s] is itself written as a codepoint
+         * escape (backslash-u-0075, backslash-u-0055, as `SparqlLexical.escapeString` does), so the text also reads
+         * the same under a naive pre-pass that decodes every well-formed `\u` whatever precedes it: with doubling
+         * alone, such a pass would turn the value's backslash-u-0022 into an escaped quote, changing the value.
+         */
         private fun escape(s: String): String =
             buildString(s.length + 8) {
+                var afterBackslash = false
                 for (ch in s) {
                     when {
+                        afterBackslash && ch == 'u' -> append("\\u0075")
+                        afterBackslash && ch == 'U' -> append("\\u0055")
                         ch == '\\' -> append("\\\\")
                         ch == '"' -> append("\\\"")
                         // So a literal stays one string even where a parser reads a single-quoted context.
@@ -583,6 +594,7 @@ internal class SparqlQueryTemplate private constructor(
                         ch.code < 0x20 -> append("\\u").append(ch.code.toString(16).padStart(4, '0'))
                         else -> append(ch)
                     }
+                    afterBackslash = ch == '\\'
                 }
             }
     }
