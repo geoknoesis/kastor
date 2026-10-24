@@ -31,7 +31,10 @@ and is kept as is; it was never published to Maven Central.
   A shape's `sh:deactivated` may be a node expression, evaluated per focus node; so may that of an `sh:sparql`
   constraint (SHACL 1.2 SPARQL). A shape deactivated for a node is a `sh:targetWhere` member without candidate
   narrowing, and gets no `sh:uniqueValuesFor` result for it. A second `sh:deactivated` value next to `true` is a
-  compile error. Report RDF holds a deep copy of a blank-node `sh:sourceConstraint`, written lazily by
+  compile error. A reifier of a parameter triple deactivates the constraints that use it (Core 3.1.6), with the
+  constant `true` (before, only on `sh:property` and `sh:datatype` triples) or a node expression evaluated per focus
+  node, for every constraint kind; a triple with two reifiers carrying `sh:deactivated` is a compile error.
+  Report RDF holds a deep copy of a blank-node `sh:sourceConstraint`, written lazily by
   `toShaclValidationReportRdf()` with each blank node once per report (validation itself copies nothing). Relative
   IRIs in SPARQL queries are resolved in linear time, on the preparation budget. Custom node expression functions must be SHACL subclasses of
   `sh:NamedParameterExpression` / `sh:ListParameterExpression` (spec Appendix A).
