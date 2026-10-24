@@ -856,6 +856,24 @@ class NodeExpressionConstraintTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a shape read by a property shape's sh deactivated is a negative dependency`(provider: String) {
+        // ex:P is deactivated for x iff x does not conform to ex:S, which holds iff ex:P conforms: a paradox.
+        val paradox = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:property ex:P .
+            ex:P sh:path ex:p ; sh:maxCount 0 ;
+              sh:deactivated [ sparql:logical-not ( [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:S ) ] ) ] .
+        """
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:x ex:p 1 .", paradox) }
+        // Decidable: deactivated iff x conforms to ex:Y, which reads ex:S back but fails sh:minCount on its own.
+        val decidable = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:property ex:P .
+            ex:P sh:path ex:p ; sh:maxCount 0 ; sh:deactivated [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Y ) ] .
+            ex:Y a sh:NodeShape ; sh:node ex:S ; sh:property [ sh:path ex:missing ; sh:minCount 1 ] .
+        """
+        assertEquals(1, validate(provider, "ex:x ex:p 1 .", decidable).violations.size)
+    }
+
     @Test
     fun `constant sh deactivated is unchanged`() {
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true ; sh:class ex:C ."
