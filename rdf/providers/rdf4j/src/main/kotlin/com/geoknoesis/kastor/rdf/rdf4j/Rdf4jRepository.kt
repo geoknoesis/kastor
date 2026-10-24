@@ -568,6 +568,9 @@ class Rdf4jRepository(
      * Streams SELECT rows to [consume]. Failures while preparing or evaluating the query (including
      * while iterating rows) surface as [RdfQueryException]; exceptions thrown by [consume] itself
      * propagate unchanged.
+     *
+     * A [SandboxedSelectQuery] may call its custom SPARQL functions ([SandboxedSelectQuery.functions]); see the timed
+     * overload for how their nested queries are bounded in time.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
         val declared = if (query is SandboxedSelectQuery) checkSandboxed(query.sparql).dataset else null
@@ -678,7 +681,14 @@ class Rdf4jRepository(
     /**
      * Timed SELECT with initial bindings. RDF4J's `maxExecutionTime` has whole-second granularity, so
      * [timeout] is rounded **up** to the next second (minimum 1 s): a query is never cut off earlier than
-     * requested, but may run up to one second longer.
+     * requested, but may run up to one second longer. A timeout too long for a nanosecond deadline (about 292 years)
+     * is no limit at all.
+     *
+     * The nested queries of the custom functions of a [SandboxedSelectQuery] end by the exact deadline: it is checked
+     * before each nested query, before each of its rows and before each statement it reads. Known RDF4J limitation
+     * (ruling R8): RDF4J checks its own limit only between rows, and work that reads no statements (a cross product of
+     * `VALUES` blocks, a catastrophic `REGEX` over a few statements) is not interrupted within a row, neither at the
+     * top level nor in a nested query. Jena checks cancellation per binding.
      *
      * Bindings follow the initial-bindings contract shared by every provider
      * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings], the rules of Jena's `substitution`), so every

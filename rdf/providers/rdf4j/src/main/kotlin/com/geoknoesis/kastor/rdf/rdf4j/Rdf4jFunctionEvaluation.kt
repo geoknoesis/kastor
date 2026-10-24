@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Resource
 import org.eclipse.rdf4j.model.Statement
+import org.eclipse.rdf4j.model.Triple
 import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.ValueFactory
 import org.eclipse.rdf4j.query.Dataset
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot
 import org.eclipse.rdf4j.query.algebra.TupleExpr
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep
+import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver
@@ -240,7 +242,7 @@ internal class KastorEvaluationStrategy(
             }
             checkDeadline()
             // Every statement the nested query reads checks the deadline too, so it also stops while it computes a row.
-            val source = if (deadline == Long.MAX_VALUE) tripleSource else DeadlineTripleSource(tripleSource, ::checkDeadline)
+            val source = if (deadline == Long.MAX_VALUE) tripleSource else DeadlineTripleSource.of(tripleSource, ::checkDeadline)
             val strategy = KastorEvaluationStrategy(
                 source, nested.dataset, serviceResolver, cacheThreshold, statistics, trackResults, queryEvaluationMode,
                 Rdf4jFunctionScope.Scope(query.functions, scope.depth + 1, deadline, scope.clock, scope.nested, nested.confinedTo),
@@ -275,10 +277,24 @@ internal class KastorEvaluationStrategy(
 
 /**
  * [source], with [check] (which throws [QueryInterruptedException] once the deadline has passed) run before every
- * statement is read. RDF4J's own time limit (`TimeLimitIteration`) is only checked between result rows, so it does not
- * stop a query while it computes a row (an aggregate, a sort, a join); this does.
+ * statement or triple term is read. RDF4J's own time limit (`TimeLimitIteration`) is only checked between result rows,
+ * so it does not stop a query while it computes a row (an aggregate, a sort, a join); this does.
+ *
+ * Known RDF4J limitation (ruling R8): work that reads no statements, such as a cross product of `VALUES` blocks or a
+ * catastrophic `REGEX` over a few statements, is still not interrupted within a row; it stops at the next statement
+ * read or the next row. A top-level sandboxed query has the same limitation, since RDF4J's `maxExecutionTime` is
+ * whole-second and checked between rows. (Jena checks cancellation per binding.)
+ *
+ * [of] keeps RDF4J's triple-term access: a source that is an [RDFStarTripleSource] (as a store's is) is wrapped as one,
+ * because RDF4J matches `<< ?s ?p ?o >>` against `rdf:subject` / `rdf:predicate` / `rdf:object` statements on any other
+ * source.
  */
-private class DeadlineTripleSource(private val source: TripleSource, private val check: () -> Unit) : TripleSource {
+private open class DeadlineTripleSource(private val source: TripleSource, protected val check: () -> Unit) : TripleSource {
+
+    companion object {
+        fun of(source: TripleSource, check: () -> Unit): TripleSource =
+            if (source is RDFStarTripleSource) DeadlineRdfStarTripleSource(source, check) else DeadlineTripleSource(source, check)
+    }
 
     override fun getStatements(
         subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?,
@@ -301,19 +317,30 @@ private class DeadlineTripleSource(private val source: TripleSource, private val
 
     override fun getValueFactory(): ValueFactory = source.valueFactory
 
-    private inner class Checked(private val statements: CloseableIteration<out Statement>) : CloseableIteration<Statement> {
+    /** [items], with [check] run before each is read. */
+    protected inner class Checked<E>(private val items: CloseableIteration<out E>) : CloseableIteration<E> {
         override fun hasNext(): Boolean {
             check()
-            return statements.hasNext()
+            return items.hasNext()
         }
 
-        override fun next(): Statement {
+        override fun next(): E {
             check()
-            return statements.next()
+            return items.next()
         }
 
-        override fun remove() = statements.remove()
+        override fun remove() = items.remove()
 
-        override fun close() = statements.close()
+        override fun close() = items.close()
+    }
+}
+
+/** A [DeadlineTripleSource] over an [RDFStarTripleSource], whose triple terms are read with the same [check]. */
+private class DeadlineRdfStarTripleSource(private val source: RDFStarTripleSource, check: () -> Unit) :
+    DeadlineTripleSource(source, check), RDFStarTripleSource {
+
+    override fun getRdfStarTriples(subj: Resource?, pred: IRI?, obj: Value?): CloseableIteration<out Triple> {
+        check()
+        return Checked(source.getRdfStarTriples(subj, pred, obj))
     }
 }

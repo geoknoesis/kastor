@@ -9,10 +9,12 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfQueryException
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.string
 import org.eclipse.rdf4j.query.QueryInterruptedException
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry
@@ -334,6 +336,24 @@ class Rdf4jSparqlFunctionTest {
         // With time enough (or without a timeout) the count is complete.
         assertEquals("200", (repository.withSelectRows(query, emptyMap(), Duration.ofDays(1)) { rows -> rows.single().get("v") } as Literal).lexical)
         assertEquals("200", (repository.withSelectRows(query) { rows -> rows.single().get("v") } as Literal).lexical)
+    }
+
+    @Test
+    fun `a nested query matches triple terms with and without a timeout`() {
+        // A timed nested query reads through a deadline-checking triple source, which must keep RDF4J's triple-term
+        // access: without it, RDF4J matches << ?s ?p ?o >> against rdf:subject / rdf:predicate / rdf:object statements.
+        repository.editDefaultGraph().addTriples(listOf(
+            RdfTriple(Iri("urn:r"), Iri("urn:says"), TripleTerm(RdfTriple(Iri("urn:a"), Iri("urn:b"), Iri("urn:c")))),
+        ))
+        val quoted = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:quoted", emptyList()) { call ->
+                call.select(SandboxedSelectQuery("SELECT ?s WHERE { ?r <urn:says> << ?s ?p ?o >> }"), emptyMap()) { rows ->
+                    rows.single().get("s")
+                }
+            },
+        ))
+        // values() runs the untimed and the timed path and requires the same rows.
+        assertEquals(Iri("urn:a"), value("SELECT ?v WHERE { BIND (<urn:quoted>() AS ?v) }", quoted))
     }
 
     @Test
