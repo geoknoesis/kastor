@@ -465,6 +465,33 @@ class NodeExpressionConstraintTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a deadline that expires inside a function body of the last query fails the run`(provider: String) {
+        // The budget expires while ex:f's body validates against ex:Aux, during the only (so the last) focus node of
+        // the last shape (ex:Aux, a node shape without targets, is ordered first):
+        // the provider turns it into a SPARQL error of the call, FILTER (!ex:f(...)) drops the row, and no later
+        // check of the run would come. The query's own check on return reports the timeout instead of a report.
+        val shapes = """
+            ex:f a sh:ListParameterExpressionFunction ;
+              sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ shnex:exists [ shnex:filterShape ex:Aux ; shnex:nodes [ shnex:arg 0 ] ] ] .
+            ex:Aux a sh:NodeShape ; sh:nodeKind sh:IRI .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
+        """
+        val config = ValidationConfig.default().copy(timeout = java.time.Duration.ofSeconds(1))
+        // The clock stands still until it is first read inside a function body, then jumps past the deadline.
+        var expired = false
+        val clock = {
+            if (!expired && Thread.currentThread().stackTrace.any { it.methodName.startsWith("runFunctionBody") }) expired = true
+            if (expired) 1_000_000_000_000L else 0L
+        }
+        val validator = NativeShaclValidator(config) { repository(provider) }.also { it.budgetClock = clock }
+        val error = assertThrows(ShaclValidationException::class.java) { validator.validate(g("ex:a ex:p 1 ."), g(shapes)) }
+        assertTrue(expired, "the clock was never read inside the function body")
+        assertTrue("timed out" in error.message.orEmpty(), error.message)
+    }
+
     @Test
     fun `an acyclic chain of shapes through expressions is bounded by maxRecursionDepth`() {
         // No shape is recursive, so only the shape depth carried through the evaluator bounds the nesting.
