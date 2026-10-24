@@ -217,7 +217,7 @@ A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated 
 
 SHACL 1.2 node expressions (Node Expressions spec) are supported in full:
 
-- **The `shnex:` library:** constants, `shnex:empty`, `shnex:var`, `shnex:list`, `shnex:pathValues`, `shnex:exists`, `shnex:if`, `shnex:distinct`, `shnex:intersection`, `shnex:concat`, `shnex:remove`, `shnex:filterShape`, `shnex:limit`, `shnex:offset`, `shnex:orderBy`, `shnex:flatMap`, `shnex:findFirst`, `shnex:matchAll`, `shnex:count`, `shnex:min`, `shnex:max`, `shnex:sum`, `shnex:instancesOf`, `shnex:nodesMatching` and `shnex:conformsToShape`.
+- **The `shnex:` library:** constants, empty expressions (an empty blank node `[]`), list expressions (an RDF list), `shnex:var`, `shnex:pathValues`, `shnex:exists`, `shnex:if`, `shnex:distinct`, `shnex:intersection`, `shnex:concat`, `shnex:remove`, `shnex:filterShape`, `shnex:limit`, `shnex:offset`, `shnex:orderBy`, `shnex:flatMap`, `shnex:findFirst`, `shnex:matchAll`, `shnex:count`, `shnex:min`, `shnex:max`, `shnex:sum`, `shnex:instancesOf`, `shnex:nodesMatching` and `shnex:conformsToShape`.
 - **`sparql:<name>` functions** (spec section 5), custom functions with named parameters or list parameters (`shnex:arg`), and the SPARQL expressions `sh:select` / `sh:sparqlExpr`.
 
 They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by two constraint components: `sh:expression` (`sh:ExpressionConstraintComponent`) and a computed `sh:nodeByExpression`.
@@ -232,7 +232,7 @@ They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by 
 
 Limits:
 - Expression nesting is capped at 128 levels.
-- Nested SPARQL and custom function calls share a cap of 16.
+- Calls of SPARQL-callable functions (`sh:ListParameterExpressionFunction`, from SPARQL or from node expressions) are capped at 16 under way at a time. Native custom function calls are bounded by the expression nesting cap of 128.
 - Every intermediate list is capped at `ValidationConfig.maxPathValueNodes`.
 - Every evaluation step ticks the run budget, so the validation timeout bounds everything.
 
@@ -244,7 +244,8 @@ A `sh:ListParameterExpressionFunction` whose `sh:bodyExpression` is a `sh:select
 
 - **Parameters:** `shnex:arg0`, `shnex:arg1`, ... form a contiguous run starting at 0, and an optional parameter (`sh:optional true`) cannot be followed by a mandatory one. Otherwise the shapes graph is ill-formed (`ShapeCompileException`).
 - **Body:** in a SPARQL body, `$this` is the function IRI and `$arg<i>` holds each argument. A `shnex:` body is evaluated as a node expression with the arguments as its parameters. An argument that is absent or failed to evaluate stays unbound if its parameter is optional; otherwise the call is an error.
-- **Errors:** a blank-node argument, too many arguments, and a body with no result or several results are errors, as is a call to an unknown function IRI. A function error is an ordinary SPARQL error: `BIND` leaves its variable unbound and `FILTER` is false. It never fails validation.
+- **Errors:** a blank-node argument, too many arguments, and a body with no result or several results are errors, as is a call to an unknown function IRI. A function error is an ordinary SPARQL error: `BIND` leaves its variable unbound and `FILTER` is false. It does not fail validation, with one exception: a `shnex:` body that fails on a conformance check the engine cannot decide (an undefined answer, an unsupported or ill-formed shape, a nested validation error) fails the calling query, so that a `FILTER` cannot turn the undecided check into a definite answer. A timeout inside a body stops the run when the query returns.
+- **Recursion:** a shape that runs SPARQL (`sh:sparql`, a SPARQL-based constraint component, a SPARQL node expression) depends on every shape a `shnex:` function body validates against, so recursion through a body is decided by the recursion solver; a cycle that makes a shape conform iff it does not is undefined and fails validation.
 - **Nesting:** functions can call each other, up to 16 levels deep (`MAX_FUNCTION_DEPTH`); a deeper call is an error, so recursion terminates. Nested queries are sandboxed like the outer one (no `SERVICE`, no `java:`) and run on the calling query's dataset; their own `FROM` can only select graphs inside it. A timeout stops the whole query. Time is the only bound on how many nested calls a query can make (fan-out); SHACL queries always run under the validation timeout.
 
 Limits:
@@ -326,7 +327,7 @@ Detection only inspects declared and implicit shapes, plus the nodes reachable f
 
 ### W3C conformance
 
-CI runs the **full W3C SHACL 1.2 test suite** (core, node-expression and SPARQL manifests) against the native engine. The suite comes from a pinned `w3c/data-shapes` commit (`94d8bc2`, 166 cases). To run it locally:
+CI runs the **full W3C SHACL 1.2 test suite** (core, node-expression and SPARQL manifests) against the native engine. The suite comes from a pinned `w3c/data-shapes` commit (`94d8bc2`: 166 `sht:Validate` cases plus 144 `sht:EvalNodeExpr` cases, 310 in total). To run it locally:
 
 ```bash
 python scripts/fetch-conformance-data.py --only shacl
@@ -334,7 +335,7 @@ python scripts/fetch-conformance-data.py --only shacl
 ```
 
 The task fails instead of skipping when the suite is missing, and every case is executed. The default `test` task runs the same harness against the bundled fixture when the checkout is missing; a missing manifest, a manifest without `sht:Validate` entries or one without an approved case fails the test rather than skipping it, unless `-PshaclW3cAllowMissingData=true` opts out. Manifest rows that are not approved are skipped unless `-PshaclW3cIncludeNonApproved=true`. The harness checks failures strictly:
-- All 144 `sht:EvalNodeExpr` cases and all `sht:Validate` cases pass on the default provider (Jena). `W3cKnownDeviations` holds 0 unsupported-feature deviations; a deviation would need an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category.
+- All 144 `sht:EvalNodeExpr` cases and all `sht:Validate` cases pass on the default provider (Jena), except `hasLang.ttl`, which is accepted as ill-formed (spec override, see below). `W3cKnownDeviations` holds 0 unsupported-feature deviations; a deviation would need an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category.
 - Spec overrides are approved cases whose expected result contradicts the normative SHACL 1.2 text. The engine follows the text. There is 1 in `W3cKnownDeviations`: `unsupported-sparql-002` expects any `VALUES` to fail, but SHACL 1.2 Appendix A only forbids `VALUES` that mentions a pre-bound variable. The node expression harness lists 1 ill-formed case: `node-expr/shnex-sparql/hasLang.ttl` calls `sparql:hasLang` with 2 arguments, but the spec table and SPARQL 1.2 define 1, so Kastor treats the call as ill-formed (`ShapeCompileException`).
 - On RDF4J 5.3, some SPARQL 1.2 functions are missing (`hasLang`, `hasLangdir`, `langdir`, `strlangdir`, `sameValue`, `isTriple`, `triple`, `subject`, `predicate`, `object`), and a `sparql:` call of one fails there. RDF4J also returns different lexical forms for some numeric results (`ceil`, `floor`, `round`, `divide`, `seconds`).
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.

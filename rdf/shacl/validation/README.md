@@ -78,14 +78,14 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   refuses SERVICE on its own parse. SPARQL-based constraint components are supported; SHACL functions with a `sh:select` /
   `sh:sparqlExpr` or `shnex:` body (spec section 7) are callable from any SHACL-SPARQL query, per query and never registered
   globally (built-ins cannot be redefined; nesting is limited to 16 levels; a call error is a SPARQL error, not a
-  validation failure; on RDF4J only Kastor-created stores evaluate them; on every provider, declaring any such function, even an
+  validation failure, unless a `shnex:` body failed on a conformance check the engine cannot decide; on RDF4J only Kastor-created stores evaluate them; on every provider, declaring any such function, even an
   unused one, makes validation run on the private copy).
 - **Node expressions.** The full SHACL 1.2 Node Expressions language is evaluated: the `shnex:` library, `sparql:<name>`
   functions (one provider query per call, so SPARQL error and unbound handling come from the provider), custom
   functions (`shnex:arg`) and `sh:select` / `sh:sparqlExpr`. They are accepted at `sh:values`, `sh:defaultValue` and
   `sh:targetNode`, and by the `sh:expression` and computed `sh:nodeByExpression` constraint components. An evaluation
-  failure fails validation with `ShaclValidationException`. Limits: nesting depth 128, nested SPARQL and custom function
-  calls 16, every intermediate list `ValidationConfig.maxPathValueNodes`, and every step ticks the run budget.
+  failure fails validation with `ShaclValidationException`. Limits: nesting depth 128 (which also bounds native custom
+  function calls), 16 calls of SPARQL-callable functions under way at a time, every intermediate list `ValidationConfig.maxPathValueNodes`, and every step ticks the run budget.
   Still unsupported: a non-constant `sh:deactivated` and SPARQL node expressions at `sh:targetWhere`. Known deviation:
   `sh:sourceConstraint` is the expression node, not the deep copy of spec sections 7.1 / 7.2. RDF4J 5.3 lacks some
   SPARQL 1.2 functions (`hasLang`, `hasLangdir`, `langdir`, `strlangdir`, `sameValue`, `isTriple`, `triple`, `subject`,
@@ -98,6 +98,6 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   warnings (`ksh:warning`). The vocabulary document ships in the JAR:
   `/com/geoknoesis/kastor/rdf/shacl/kastor-shacl.ttl` (`KastorShaclVocabulary.VOCABULARY_RESOURCE`).
 - **W3C conformance.** `Shacl12NativeConformanceTest` runs the SHACL 1.2 test suite (core, node-expr, sparql) when
-  `test-data/w3c-shacl12` is present and compares result graphs up to blank-node isomorphism. All 144 `sht:EvalNodeExpr` cases and all `sht:Validate` cases pass on Jena; `W3cKnownDeviations` holds 0 unsupported
+  `test-data/w3c-shacl12` is present and compares result graphs up to blank-node isomorphism. All 144 `sht:EvalNodeExpr` cases and all `sht:Validate` cases pass on Jena, except `hasLang.ttl`, which is accepted as ill-formed (spec override); `W3cKnownDeviations` holds 0 unsupported
   cases and lists one spec override (`unsupported-sparql-002`). A case fails when the engine emits an undecided result
   (`ksh:resultStatus`) where the expected report has a definite one.

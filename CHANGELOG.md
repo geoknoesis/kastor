@@ -25,6 +25,9 @@ and is kept as is; it was never published to Maven Central.
 - Added a `holons { holon(id) { content { ... } } }` Kotlin DSL with explicit parent, content-import
   and shapes-import declarations. Snapshot-bound `Holon` handles expose content, scopes, query datasets,
   validation and context-wide conversion through the same checked RDF-H processing model.
+- `rdf-shacl`: SHACL 1.2 Node Expressions (`sh:expression`, computed `sh:nodeByExpression`, the full `shnex:` library).
+  `ConstraintType.EXPRESSION` is a new constant inserted after `NODE_BY_EXPRESSION`, mid-enum: the `ordinal` of every
+  later constant (`DATATYPE` onwards) shifts by one, so code that persists or switches on ordinals must be updated.
 
 ### Fixed (repository review)
 
