@@ -231,7 +231,10 @@ class ReifierDeactivationTest {
      * The hand-kept list of core constraint parameters ([ShapesCompiler.coreParameterPredicates]) is exactly the set of
      * predicates whose triples the cases above deactivate, and contains every parameter Dynamic SHACL may compute. A
      * parameter missing from the list would still be deactivated by the compiler, but its reifier would be reported
-     * as having no effect, and the shapes its expression reads would escape feature detection.
+     * as having no effect, and the shapes read by a `sh:deactivated` expression of that reifier would escape feature
+     * detection (parameter expressions are detected through [DynamicParameters.predicates], not through this list).
+     *
+     * Limit: a newly compiled parameter that has neither a case above nor an entry in the list is not caught.
      */
     @Test
     fun `the core parameter list matches the parameters a reifier deactivates`() {

@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.shacl
 
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
@@ -49,7 +50,6 @@ class DynamicShaclTest {
         NativeShaclValidator(config) { repository(provider) }.validate(g(data), g(shapes))
 
     /** The shapes graph validated against itself, as the W3C cases do. */
-    @Suppress("unused")
     private fun validateSelf(provider: String, ttl: String) = g(ttl).let { NativeShaclValidator(ValidationConfig.default()) { repository(provider) }.validate(it, it) }
 
     private fun unsupported(error: Throwable): Set<UnsupportedShaclFeature> =
@@ -242,7 +242,7 @@ class DynamicShaclTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
-    fun `a dynamic parameter in a recursive shape reports provisional answers as undefined, not violations`(provider: String) {
+    fun `a dynamic parameter in a recursive shape reports only decided violations, with no undefined results`(provider: String) {
         // ex:S is recursive (sh:node through ex:p, and the expression's read of ex:T, which is ex:S). While the solver
         // iterates, the conformance of ex:b and ex:c is provisional: the dynamic sh:maxCount must not turn it into a
         // violation. Decided: ex:b conforms, ex:c fails ex:S (ex:bad), so one of the two ex:q values is a T: maxCount 1.
@@ -344,5 +344,213 @@ class DynamicShaclTest {
             assertEquals(setOf(ex("s")), report.violations.map { it.focusNode }.toSet(), "${case.parameter}: ${report.violations}")
             assertTrue(report.violations.all { it.constraint.constraintType == case.type }, "${case.parameter}: ${report.violations}")
         }
+    }
+
+    // --- list-taking parameters (D2 rows 2 and 3, D6) --------------------------------------------------------------------
+
+    /** §8.2 Examples 32 and 33 verbatim. */
+    private val addresses = """
+        ex:ArizonaAddress1
+            a ex:Address ;
+            ex:street "123 John Muir Ave" ;
+            ex:country ex:USA ;
+            ex:state "AZ" ;
+        .
+        ex:QueenslandAddress1
+            a ex:Address ;
+            ex:street "123 Bob Katter Cl" ;
+            ex:country ex:Australia ;
+            ex:state "QLD" ;
+        .
+        ex:Australia
+            a            ex:Country ;
+            ex:stateCode "ACT",
+                         "NSW",
+                         "NT",
+                         "QLD",
+                         "SA",
+                         "TAS",
+                         "VIC",
+                         "WA" ;
+        .
+        ex:USA
+            a            ex:Country ;
+            ex:stateCode "AL",
+                         "AK",
+                         "AZ",
+                         "AR" ; # ...
+        .
+    """
+
+    /** §8.2 Example 34 verbatim. */
+    private val addressShapes = """
+        ex:Address
+            a sh:ShapeClass ;
+            sh:property ex:Address-state ;
+        .
+        ex:Address-state
+            a sh:PropertyShape ;
+            sh:path ex:state ;
+            sh:in [
+                shnex:pathValues ( ex:country ex:stateCode )
+            ] .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `spec example 34 computes the allowed states from the country`(provider: String) {
+        val data = addresses + "\nex:Bad a ex:Address ; ex:country ex:USA ; ex:state \"QLD\" ."
+        val v = validate(provider, data, addressShapes).violations.single()
+        assertEquals(ex("Bad"), v.focusNode)
+        assertEquals("QLD", (v.value as Literal).lexical)
+        assertEquals(ConstraintType.IN, v.constraint.constraintType)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an sh in expression with no output rejects every value`(provider: String) {
+        val data = addresses + "\nex:Lost a ex:Address ; ex:country ex:Nowhere ; ex:state \"AZ\" ."
+        val v = validate(provider, data, addressShapes).violations.single()
+        assertEquals(ex("Lost") to ConstraintType.IN, v.focusNode to v.constraint.constraintType)
+        assertEquals("AZ", (v.value as Literal).lexical)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh class takes the outputs as alternatives`(provider: String) {
+        val data = "ex:a ex:allowedType ex:A , ex:B ; ex:v ex:x , ex:y . ex:x a ex:B . ex:y a ex:C ."
+        val v = validate(provider, data, prop("sh:class [ shnex:pathValues ex:allowedType ]")).violations.single()
+        assertEquals(Triple(ex("a"), ex("y"), ConstraintType.CLASS), Triple(v.focusNode, v.value, v.constraint.constraintType))
+        // One output is a single class.
+        assertTrue(validate(provider, "ex:a ex:allowedType ex:B ; ex:v ex:x . ex:x a ex:B .", prop("sh:class [ shnex:pathValues ex:allowedType ]")).isValid)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh class, sh datatype, sh nodeKind and sh rootClass need at least one output`(provider: String) {
+        for (parameter in listOf("sh:class", "sh:datatype", "sh:nodeKind", "sh:rootClass")) {
+            val error = assertThrows(ShaclValidationException::class.java, {
+                validate(provider, "ex:a ex:v 1 .", prop("$parameter [ shnex:pathValues ex:none ]"))
+            }, parameter)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && parameter in message && "no nodes" in message, message)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic list members must be well-typed`(provider: String) {
+        val cases = listOf(
+            "sh:class" to "\"lit\"",
+            "sh:rootClass" to "\"lit\"",
+            "sh:datatype" to "[]",
+            "sh:nodeKind" to "ex:Foo",
+            "sh:nodeKind" to "sh:IRI , sh:IRIOrLiteral",
+            "sh:languageIn" to "ex:en",
+            // A literal, but not a string: only the D6 rule rejects it (a constant list would take its lexical form).
+            "sh:languageIn" to "1",
+        )
+        for ((parameter, bad) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, {
+                validate(provider, "ex:a ex:v 1 ; ex:p $bad .", prop("$parameter [ shnex:pathValues ex:p ]"))
+            }, "$parameter $bad")
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && parameter in message, message)
+        }
+    }
+
+    /** [parameter] computed from the ex:p values [allowed]: the ex:v values [values] give exactly one violation, of [type]. */
+    private class ListCase(val parameter: String, val allowed: String, val values: String, val type: ConstraintType)
+
+    private val listCases = listOf(
+        ListCase("sh:datatype", "xsd:integer , xsd:string", "1 , \"s\" , true", ConstraintType.DATATYPE),
+        ListCase("sh:nodeKind", "sh:IRIOrLiteral", "1 , ex:x , []", ConstraintType.NODE_KIND),
+        ListCase("sh:nodeKind", "sh:IRI , sh:BlankNode", "1 , ex:x , []", ConstraintType.NODE_KIND),
+        ListCase("sh:rootClass", "ex:Top", "ex:Sub , ex:Other", ConstraintType.ROOT_CLASS),
+        ListCase("sh:languageIn", "\"en\" , \"fr\"", "\"a\"@en , \"b\"@fr-CA , \"c\"@de", ConstraintType.LANGUAGE_IN),
+        ListCase("sh:in", "1 , 2", "1 , 2 , 3", ConstraintType.IN),
+    )
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `every list-taking parameter accepts an expression`(provider: String) {
+        for (case in listCases) {
+            val data = "ex:Sub rdfs:subClassOf ex:Top . ex:a ex:p ${case.allowed} ; ex:v ${case.values} ."
+            val report = validate(provider, data, prop("${case.parameter} [ shnex:pathValues ex:p ]"))
+            assertEquals(listOf(case.type), report.violations.map { it.constraint.constraintType }, "${case.parameter} ${case.allowed}: ${report.violations}")
+        }
+    }
+
+    @Test
+    fun `dynamic sh datatype keeps the severity annotated on its triple`() {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property ex:P .
+            ex:P sh:path ex:v ; sh:datatype _:e {| sh:severity sh:Warning |} .
+            _:e shnex:pathValues ex:dt .
+        """
+        val compiled = ShapesCompiler.compile(g(shapes).getTriples(), ValidationConfig.default())
+        assertTrue(compiled.referencedPropertyShapes.getValue(ex("P")).constraints.single() is PropertyConstraint.Dynamic)
+        val v = validate("jena", "ex:a ex:dt xsd:integer ; ex:v \"x\" .", shapes).violations.single()
+        assertEquals(ConstraintType.DATATYPE, v.constraint.constraintType)
+        assertEquals(ViolationSeverity.WARNING, v.severity)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `constant lists and blank-node sh hasValue keep their meaning when shapes are data`(provider: String) {
+        val ttl = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:c ;
+              sh:property ex:P , ex:Q , ex:R , ex:K .
+            ex:P sh:path ex:p ; sh:in ( ex:a ex:b ) .
+            ex:Q sh:path ex:q ; sh:hasValue _:x .
+            ex:R sh:path ex:r ; sh:languageIn ( "en" ) .
+            ex:K sh:path ex:k ; sh:class ( ex:A ex:B ) ; sh:nodeKind ( sh:IRI ) ; sh:datatype ( xsd:string ) .
+            ex:a ex:p ex:b ; ex:q _:x ; ex:r "x"@en .
+            ex:c ex:p ex:c ; ex:r "y"@fr ; ex:k ex:a .
+        """
+        val compiled = ShapesCompiler.compile(g(ttl).getTriples(), ValidationConfig.default())
+        val constraints = listOf("P", "Q", "R", "K").flatMap { compiled.referencedPropertyShapes.getValue(ex(it)).constraints }
+        assertTrue(constraints.none { it is PropertyConstraint.Dynamic }, constraints.toString())
+        assertTrue(PropertyConstraint.In(listOf(ex("a"), ex("b"))) in constraints, constraints.toString())
+        assertTrue(PropertyConstraint.ClassAnyOf(listOf(ex("A"), ex("B"))) in constraints, constraints.toString())
+        val report = validateSelf(provider, ttl)
+        assertEquals(
+            setOf(
+                ex("c") to ConstraintType.IN, ex("c") to ConstraintType.HAS_VALUE, ex("c") to ConstraintType.LANGUAGE_IN,
+                ex("c") to ConstraintType.CLASS, ex("c") to ConstraintType.DATATYPE,
+            ),
+            report.violations.map { it.focusNode to it.constraint.constraintType }.toSet(),
+            report.violations.toString(),
+        )
+        assertEquals(5, report.violations.size, report.violations.toString())
+    }
+
+    @Test
+    fun `at a list-taking parameter a malformed list stays a compile error and an undeclared call is unsupported`() {
+        // [ rdf:rest () ] has the shape of a call [ fn ( … ) ], but it is a (malformed) constant list (D4 rule 2).
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        for (config in listOf(ValidationConfig.default(), ignore)) {
+            val malformed = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", prop("sh:in [ rdf:rest () ]"), config) }
+            val chain = generateSequence<Throwable>(malformed) { it.cause }.toList()
+            assertTrue(chain.any { it is ShapeCompileException } && chain.none { it is UnsupportedShaclFeatureException }, malformed.toString())
+        }
+        val call = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", prop("sh:class [ ex:undeclared ( ex:A ) ]")) }
+        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported(call))
+        assertTrue("sh:class" in call.message.orEmpty(), call.message)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an sh in expression larger than maxPathValueNodes fails`(provider: String) {
+        val config = ValidationConfig(maxPathValueNodes = 3)
+        val error = assertThrows(ShaclValidationException::class.java) {
+            validate(provider, "ex:a ex:allowed 1 , 2 , 3 , 4 ; ex:v 1 .", prop("sh:in [ shnex:pathValues ex:allowed ]"), config)
+        }
+        val messages = generateSequence<Throwable>(error) { it.cause }.mapNotNull { it.message }.joinToString(" | ")
+        assertTrue("maxPathValueNodes" in messages, messages)
+    }
+
+    @Test
+    fun `targetWhere narrowing ignores dynamic value-type constraints`() {
+        // Every node is an IRI or a literal, so every candidate is a member of ex:W: ex:a and the literal both fail sh:in.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetWhere ex:W ; sh:in ( ex:none ) .
+            ex:W a sh:NodeShape ; sh:nodeKind [ shnex:if true ; shnex:then sh:IRIOrLiteral ; shnex:else sh:IRIOrLiteral ] .
+        """
+        val focusNodes = validate("jena", "ex:a ex:p \"lit\" .", shapes).violations.map { it.focusNode }
+        assertTrue(ex("a") in focusNodes, focusNodes.toString())
+        assertTrue(focusNodes.any { it is Literal && it.lexical == "lit" }, focusNodes.toString())
     }
 }

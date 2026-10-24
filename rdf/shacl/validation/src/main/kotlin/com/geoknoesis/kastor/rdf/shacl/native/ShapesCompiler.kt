@@ -799,10 +799,12 @@ internal object ShapesCompiler {
      * True when [term], the value of a constraint parameter Dynamic SHACL may compute (§8), is a call `[ fn ( … ) ]`
      * of a function the engine does not know: an expression it cannot evaluate, so an unsupported feature like one at
      * any other expression position. Any other blank node that is no node expression is not one at all, and makes the
-     * shapes graph ill-formed ([DynamicParameters.value]).
+     * shapes graph ill-formed ([DynamicParameters.value]); a constant SHACL list at the list-taking [predicate], even a
+     * malformed one, is no expression either ([DynamicParameters.isConstantList]).
      */
-    private fun isUnsupportedParameterExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
-        term is BlankNode && callPredicate(term, index) != null && !isSupportedExpression(term, index)
+    private fun isUnsupportedParameterExpression(predicate: Iri, term: RdfTerm, index: ShapeGraphIndex): Boolean =
+        term is BlankNode && !DynamicParameters.isConstantList(predicate, term, index) &&
+            callPredicate(term, index) != null && !isSupportedExpression(term, index)
 
     private val shapeReferencePredicates: List<Iri> by lazy {
         listOf(
@@ -975,7 +977,7 @@ internal object ShapesCompiler {
                 "sh:targetNode with a node expression on ${t.subject}" to expression(t.obj)
             t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
-            t.predicate in DynamicParameters.predicates && isUnsupportedParameterExpression(t.obj, index) ->
+            t.predicate in DynamicParameters.predicates && isUnsupportedParameterExpression(t.predicate, t.obj, index) ->
                 "${DynamicParameters.displayName(t.predicate)} node expression on ${t.subject}" to expression(t.obj)
             // SHACL 1.2 Core §3.1.6: the sh:deactivated of a shape, or of a reifier of a parameter triple (one
             // constraint), may be any node expression.
@@ -1313,68 +1315,56 @@ internal object ShapesCompiler {
         }
         // SHACL 1.2 Node Expressions §8: a constant value is the constant constraint, as ever; a value a node expression
         // computes is a Dynamic one, instantiated per focus node. Both use the parameter triple for reifier deactivation.
-        fun scalar(component: DynamicComponent, pred: Iri, term: RdfTerm) {
+        // [members] gives the values of a constant: the term itself for a single-node parameter, the members of a
+        // list-taking one.
+        fun parameter(
+            component: DynamicComponent,
+            pred: Iri,
+            term: RdfTerm,
+            extras: ComponentExtras = ComponentExtras(),
+            members: (RdfTerm) -> List<RdfTerm> = { listOf(it) },
+        ) {
             // An unsupported expression (see detectUnsupportedFeatures), ignored with a warning, has no constraint.
-            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(term, index)) return
+            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)) return
             when (val value = DynamicParameters.value(subject, pred, term, index)) {
                 is ParameterValue.Constant ->
-                    ConstraintInstantiation.instantiate(component, mapOf(pred to listOf(term)), ComponentExtras(), config)?.let { add(it, pred to term) }
-                is ParameterValue.Computed -> add(PropertyConstraint.Dynamic(component, mapOf(pred to value)), pred to term)
+                    ConstraintInstantiation.instantiate(component, mapOf(pred to members(term)), extras, config)?.let { add(it, pred to term) }
+                is ParameterValue.Computed -> add(PropertyConstraint.Dynamic(component, mapOf(pred to value), extras), pred to term)
             }
         }
+        fun scalar(component: DynamicComponent, pred: Iri, term: RdfTerm) = parameter(component, pred, term)
+        // The members of a constant IRI-or-list value (Core §6.6.3): the IRI, or the members of the list, which
+        // instantiate checks are IRIs.
+        fun iriOrList(term: RdfTerm, notIriOrList: () -> String): List<RdfTerm> =
+            when (term) {
+                is Iri -> listOf(term)
+                is BlankNode -> index.parseRdfList(term)
+                else -> throw ShapeCompileException(notIriOrList())
+            }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
             atMostOne(SHACL.minCount)?.let { scalar(DynamicComponent.MIN_COUNT, SHACL.minCount, it) }
             atMostOne(SHACL.maxCount)?.let { scalar(DynamicComponent.MAX_COUNT, SHACL.maxCount, it) }
         }
         for (dtObj in index.objects(subject, SHACL.datatype)) {
             val override = annotatedConstraintSeverity(subject, SHACL.datatype, dtObj, index)
-            val allowed =
-                when (dtObj) {
-                    is Iri -> listOf(dtObj)
-                    is BlankNode ->
-                        index.parseRdfList(dtObj).map {
-                            it as? Iri ?: throw ShapeCompileException("sh:datatype list entries must be IRIs: $it")
-                        }
-                    else -> throw ShapeCompileException("sh:datatype expects an IRI or RDF list, got $dtObj")
-                }
-            if (allowed.isNotEmpty()) {
-                add(PropertyConstraint.Datatype(allowed, override, annotatedConstraintMessages(subject, SHACL.datatype, dtObj, index)), SHACL.datatype to dtObj)
-            }
+            val extras = ComponentExtras(override, annotatedConstraintMessages(subject, SHACL.datatype, dtObj, index))
+            parameter(DynamicComponent.DATATYPE, SHACL.datatype, dtObj, extras) { iriOrList(it) { "sh:datatype expects an IRI or RDF list, got $it" } }
         }
         for (co in index.objects(subject, SHACL.`class`)) {
-            when (co) {
-                is Iri -> add(PropertyConstraint.Class(co), SHACL.`class` to co)
-                is BlankNode -> {
-                    val opts =
-                        index.parseRdfList(co).map {
-                            it as? Iri ?: throw ShapeCompileException("sh:class list entries must be IRIs: $it")
-                        }
-                    when (opts.size) {
-                        0 -> Unit
-                        1 -> add(PropertyConstraint.Class(opts.first()), SHACL.`class` to co)
-                        else -> add(PropertyConstraint.ClassAnyOf(opts), SHACL.`class` to co)
-                    }
-                }
-                // A literal (or triple term) is not a class: the shapes graph is ill-formed. Dropping the constraint
-                // would validate nothing where the author asked for a class.
-                else -> throw ShapeCompileException("sh:class of shape $subject expects a class IRI or an RDF list of IRIs, got $co")
+            // A literal (or triple term) is not a class: the shapes graph is ill-formed. Dropping the constraint would
+            // validate nothing where the author asked for a class.
+            parameter(DynamicComponent.CLASS, SHACL.`class`, co) {
+                iriOrList(it) { "sh:class of shape $subject expects a class IRI or an RDF list of IRIs, got $it" }
             }
         }
         // Every sh:nodeKind value is its own constraint (all must hold); an RDF list value allows any listed kind.
         for (nk in index.objects(subject, SHACL.nodeKind)) {
-            val kinds =
-                when (nk) {
-                    is Iri -> listOf(nk)
-                    is BlankNode ->
-                        index.parseRdfList(nk).map {
-                            it as? Iri ?: throw ShapeCompileException("sh:nodeKind list entries must be IRIs: $it")
-                        }
-                    else -> throw ShapeCompileException(
-                        "sh:nodeKind of shape $subject expects one of the sh:NodeKind IRIs (sh:IRI, sh:BlankNode, " +
-                            "sh:Literal, ...) or an RDF list of them, got $nk",
-                    )
+            parameter(DynamicComponent.NODE_KIND, SHACL.nodeKind, nk) {
+                iriOrList(it) {
+                    "sh:nodeKind of shape $subject expects one of the sh:NodeKind IRIs (sh:IRI, sh:BlankNode, " +
+                        "sh:Literal, ...) or an RDF list of them, got $it"
                 }
-            if (kinds.isNotEmpty()) add(PropertyConstraint.NodeKind(kinds.distinct()), SHACL.nodeKind to nk)
+            }
         }
         val flagsTerm = atMostOne(SHACL.flags)
         val flags = flagsTerm?.let { ConstraintInstantiation.literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
@@ -1385,21 +1375,12 @@ internal object ShapesCompiler {
         }
         atMostOne(SHACL.minLength)?.let { scalar(DynamicComponent.MIN_LENGTH, SHACL.minLength, it) }
         atMostOne(SHACL.maxLength)?.let { scalar(DynamicComponent.MAX_LENGTH, SHACL.maxLength, it) }
-        atMostOne(SHACL.`in`)?.let { head ->
-            val terms = index.parseRdfList(head)
-            terms.forEach { ensureShapeTermAllowed(it, config) }
-            add(PropertyConstraint.In(terms), SHACL.`in` to head)
-        }
+        atMostOne(SHACL.`in`)?.let { head -> parameter(DynamicComponent.IN, SHACL.`in`, head) { index.parseRdfList(it) } }
         for (hv in index.objects(subject, SHACL.hasValue)) {
             ensureShapeTermAllowed(hv, config)
             add(PropertyConstraint.HasValue(hv), SHACL.hasValue to hv)
         }
-        atMostOne(SHACL.languageIn)?.let { head ->
-            val langs = index.parseRdfList(head).map {
-                ConstraintInstantiation.literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals")
-            }
-            add(PropertyConstraint.LanguageIn(langs), SHACL.languageIn to head)
-        }
+        atMostOne(SHACL.languageIn)?.let { head -> parameter(DynamicComponent.LANGUAGE_IN, SHACL.languageIn, head) { index.parseRdfList(it) } }
         atMostOne(SHACL.uniqueLang)?.let { scalar(DynamicComponent.UNIQUE_LANG, SHACL.uniqueLang, it) }
         atMostOne(SHACL.minListLength)?.let { scalar(DynamicComponent.MIN_LIST_LENGTH, SHACL.minListLength, it) }
         atMostOne(SHACL.maxListLength)?.let { scalar(DynamicComponent.MAX_LIST_LENGTH, SHACL.maxListLength, it) }
@@ -1409,16 +1390,7 @@ internal object ShapesCompiler {
         atMostOne(SHACL.uniqueMembers)?.let { scalar(DynamicComponent.UNIQUE_MEMBERS, SHACL.uniqueMembers, it) }
         atMostOne(SHACL.singleLine)?.let { scalar(DynamicComponent.SINGLE_LINE, SHACL.singleLine, it) }
         for (rc in index.objects(subject, SHACL.rootClass)) {
-            val roots =
-                when (rc) {
-                    is Iri -> listOf(rc)
-                    is BlankNode ->
-                        index.parseRdfList(rc).map {
-                            it as? Iri ?: throw ShapeCompileException("sh:rootClass list members must be IRIs")
-                        }
-                    else -> throw ShapeCompileException("sh:rootClass expects an IRI or RDF list")
-                }
-            add(PropertyConstraint.RootClass(roots), SHACL.rootClass to rc)
+            parameter(DynamicComponent.ROOT_CLASS, SHACL.rootClass, rc) { iriOrList(it) { "sh:rootClass expects an IRI or RDF list" } }
         }
         index.objects(subject, SHACL.subsetOf).forEach {
             add(PropertyConstraint.SubsetOfPath(ShaclPathParser.parse(it, index)), SHACL.subsetOf to it)
@@ -1679,7 +1651,7 @@ internal object ShapesCompiler {
             it as? RdfResource ?: throw ShapeCompileException("Shape list entries must be IRIs or blank nodes: $it")
         }
 
-    private fun ensureShapeTermAllowed(term: RdfTerm, config: ValidationConfig) {
+    internal fun ensureShapeTermAllowed(term: RdfTerm, config: ValidationConfig) {
         if (term is TripleTerm && !config.allowTripleTermsInShapeParameters) {
             throw ShapeCompileException(
                 "Triple-term value in shape parameter requires ValidationConfig.allowTripleTermsInShapeParameters=true (architecture §5.1 P1b)",

@@ -29,11 +29,17 @@ internal object ConstraintInstantiation {
     /**
      * Builds the constant constraint; throws ShapeCompileException on an ill-typed value. Null = no constraint. For
      * computed values, `resolveDynamic` wraps that error in a "Dynamic SHACL: …" ShaclValidationException.
+     *
+     * A list-taking parameter ([ParameterShape.IRI_OR_LIST], [ParameterShape.LIST]) takes its values as the members:
+     * the IRI of a constant `sh:class ex:C`, the parsed members of a constant list, or the outputs of an expression.
+     * No member makes no constraint for `sh:class`, `sh:datatype` and `sh:nodeKind`, and the constraint of an empty
+     * list for the others, as constant empty lists always did; computed `IRI_OR_LIST` values never get here empty (D6).
      */
-    @Suppress("UNUSED_PARAMETER")
     fun instantiate(component: DynamicComponent, values: Map<Iri, List<RdfTerm>>, extras: ComponentExtras, config: ValidationConfig): PropertyConstraint? {
         fun single(): RdfTerm = values[component.parameters.single()]?.singleOrNull()
             ?: throw ShapeCompileException("${DynamicParameters.displayName(component.parameters.single())} needs exactly one value")
+        fun members(): List<RdfTerm> = values[component.parameters.single()].orEmpty()
+        fun iris(notIri: (RdfTerm) -> String): List<Iri> = members().map { it as? Iri ?: throw ShapeCompileException(notIri(it)) }
         return when (component) {
             DynamicComponent.MIN_COUNT -> PropertyConstraint.MinCount(parseNonNegativeInt(single(), "sh:minCount"))
             DynamicComponent.MAX_COUNT -> PropertyConstraint.MaxCount(parseNonNegativeInt(single(), "sh:maxCount"))
@@ -48,6 +54,24 @@ internal object ConstraintInstantiation {
             DynamicComponent.MIN_LIST_LENGTH -> PropertyConstraint.MinListLength(parseNonNegativeInt(single(), "sh:minListLength"))
             DynamicComponent.MAX_LIST_LENGTH -> PropertyConstraint.MaxListLength(parseNonNegativeInt(single(), "sh:maxListLength"))
             DynamicComponent.UNIQUE_MEMBERS -> PropertyConstraint.UniqueMembers(isLexicallyTrue(single()))
+            DynamicComponent.CLASS -> iris { "sh:class list entries must be IRIs: $it" }.let {
+                when (it.size) {
+                    0 -> null
+                    1 -> PropertyConstraint.Class(it.single())
+                    else -> PropertyConstraint.ClassAnyOf(it)
+                }
+            }
+            DynamicComponent.DATATYPE -> iris { "sh:datatype list entries must be IRIs: $it" }.takeIf { it.isNotEmpty() }
+                ?.let { PropertyConstraint.Datatype(it, extras.severityOverride, extras.messages) }
+            DynamicComponent.NODE_KIND -> iris { "sh:nodeKind list entries must be IRIs: $it" }.takeIf { it.isNotEmpty() }?.let { PropertyConstraint.NodeKind(it.distinct()) }
+            DynamicComponent.ROOT_CLASS -> PropertyConstraint.RootClass(iris { "sh:rootClass list members must be IRIs" })
+            DynamicComponent.IN -> members().let { terms ->
+                terms.forEach { ShapesCompiler.ensureShapeTermAllowed(it, config) }
+                PropertyConstraint.In(terms)
+            }
+            DynamicComponent.LANGUAGE_IN -> PropertyConstraint.LanguageIn(
+                members().map { literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals") },
+            )
         }
     }
 
@@ -57,12 +81,18 @@ internal object ConstraintInstantiation {
     private val bounds: Set<Iri> by lazy { setOf(SHACL.minInclusive, SHACL.maxInclusive, SHACL.minExclusive, SHACL.maxExclusive) }
     private val booleans: Set<Iri> by lazy { setOf(SHACL.uniqueLang, SHACL.singleLine, SHACL.uniqueMembers) }
     private val booleanLexicals = setOf("true", "false", "1", "0")
+    private val iriMembers: Set<Iri> by lazy { setOf(SHACL.`class`, SHACL.datatype, SHACL.rootClass) }
+
+    /** Core 1.2 §7.1.3: the node kinds of an IRI value, and those of the members of a list value. */
+    private val nodeKinds: Set<Iri> by lazy {
+        setOf(SHACL.BlankNode, SHACL.IRI, SHACL.Literal, SHACL.BlankNodeOrIRI, SHACL.BlankNodeOrLiteral, SHACL.IRIOrLiteral, SHACL.TripleTerm)
+    }
+    private val listNodeKinds: Set<Iri> by lazy { setOf(SHACL.BlankNode, SHACL.IRI, SHACL.Literal, SHACL.TripleTerm) }
 
     /**
      * D6 type rule of [parameter] for one computed output; returns the reason it fails, or null. [outputs] is the number
-     * of output nodes of the expression, for the parameters whose rule depends on it.
+     * of output nodes of the expression, for the parameters whose rule depends on it (`sh:nodeKind`).
      */
-    @Suppress("UNUSED_PARAMETER")
     fun outputError(parameter: Iri, node: RdfTerm, outputs: Int): String? =
         when (parameter) {
             in counts -> try {
@@ -78,6 +108,17 @@ internal object ConstraintInstantiation {
                 } else {
                     "${DynamicParameters.displayName(parameter)} expects an xsd:boolean literal, got $node"
                 }
+            in iriMembers -> if (node is Iri) null else "${DynamicParameters.displayName(parameter)} expects IRIs, got $node"
+            SHACL.nodeKind -> when {
+                outputs == 1 && node in nodeKinds -> null
+                outputs == 1 -> "sh:nodeKind expects one of ${nodeKinds.joinToString { DynamicParameters.displayName(it) }}, got $node"
+                node in listNodeKinds -> null
+                else -> "sh:nodeKind list members must be one of ${listNodeKinds.joinToString { DynamicParameters.displayName(it) }}, got $node"
+            }
+            SHACL.languageIn ->
+                if (node is Literal && node.datatype == XSD.string) null else "sh:languageIn expects string literals, got $node"
+            // Any node may be a member; triple terms are checked by instantiate (allowTripleTermsInShapeParameters).
+            SHACL.`in` -> null
             else -> "${DynamicParameters.displayName(parameter)} cannot be computed"
         }
 
