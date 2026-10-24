@@ -141,8 +141,9 @@ private fun collectClosedByTypesProperties(focus: RdfResource, ctx: NativeValida
  *
  * A computed `sh:uniqueValuesFor` (SHACL 1.2 Node Expressions §8) gives each focus node V its own properties
  * ([resolveUniqueValuesFor]): V has a result when another target has the same values as V for all of them. The keys
- * are built in one pass over the targets per distinct property list. Deactivation is checked before the properties
- * are resolved.
+ * are indexed once per property, and each focus node is compared only with the targets that share its rarest value
+ * set, so distinct property lists do not each cost a pass over the targets. Deactivation is checked before the
+ * properties are resolved.
  */
 internal fun NativeShaclValidator.validateUniqueValuesForShape(
     shape: CompiledNodeShape,
@@ -229,18 +230,39 @@ private fun NativeShaclValidator.validateDynamicUniqueValuesFor(
     if (targets.size < 2) return emptyList<ValidationViolation>() to 0L
     val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
     val duplicates = ArrayList<Pair<RdfResource, Int>>()
-    for ((props, foci) in byProps) {
-        // One pass over the targets per property list: how many targets share each key.
-        val keys = HashMap<RdfResource, List<List<String>>>()
-        val counts = HashMap<List<List<String>>, Int>()
-        for (t in targets) {
+    // How often each node is a target (a key shared with oneself counts once per occurrence, as before).
+    val multiplicity = HashMap<RdfResource, Int>().apply { targets.forEach { merge(it, 1, Int::plus) } }
+    // Per property, the id of each target's value set (absent: no values) and the targets with each id, built once from
+    // the triples of the property: linear in the data, however many distinct property lists there are.
+    val ids = HashMap<Iri, Map<RdfResource, Int>>()
+    val buckets = HashMap<Iri, Map<Int, List<RdfResource>>>()
+    fun idsOf(p: Iri): Map<RdfResource, Int> = ids.getOrPut(p) {
+        val interned = HashMap<List<String>, Int>()
+        val byTarget = HashMap<RdfResource, Int>()
+        val byId = HashMap<Int, MutableList<RdfResource>>()
+        for (t in ctx.data.subjectsWithPredicate(p)) {
+            if (t !in multiplicity) continue
             ctx.budget.tick("uniqueValuesFor")
-            val key = uniqueValuesKey(t, props, ctx) ?: continue
-            keys[t] = key
-            counts.merge(key, 1, Int::plus)
+            val values = ctx.data.objects(t, p).map { shaclRdfTermFingerprint(it) }.sorted()
+            val id = interned.getOrPut(values) { interned.size }
+            byTarget[t] = id
+            byId.getOrPut(id) { ArrayList() }.add(t)
         }
+        buckets[p] = byId
+        byTarget
+    }
+    for ((props, foci) in byProps) {
         for (focus in foci) {
-            val shared = keys[focus]?.let { counts.getValue(it) } ?: continue
+            // The targets with the same values as the focus node for every property: all of them are in the targets
+            // that share its value set for the property where that set is the rarest. A focus node with no value for
+            // any property has no key.
+            val own = props.map { idsOf(it)[focus] }
+            val rarest = props.indices.filter { own[it] != null }.minByOrNull { buckets.getValue(props[it]).getValue(own[it]!!).size } ?: continue
+            var shared = 0
+            for (candidate in buckets.getValue(props[rarest]).getValue(own[rarest]!!)) {
+                ctx.budget.tick("uniqueValuesFor")
+                if (props.indices.all { i -> ids.getValue(props[i])[candidate] == own[i] }) shared += multiplicity.getValue(candidate)
+            }
             if (shared >= 2) duplicates.add(focus to shared)
         }
     }

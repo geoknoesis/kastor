@@ -915,6 +915,45 @@ class DynamicShaclTest {
         }
     }
 
+    @Test
+    fun `a dynamic sh uniqueValuesFor compares every property, not only the rarest`() {
+        // ex:c shares the rare k2 "1" with ex:a, ex:b and ex:d but not k1; ex:b, keyed on k1 alone, shares "x" with ex:a
+        // and ex:d whatever their k2; ex:e has no value for its only property, so no key.
+        val data = """
+            ex:a a ex:T ; ex:keys ex:k1 , ex:k2 ; ex:k1 "x" ; ex:k2 "1" .
+            ex:b a ex:T ; ex:keys ex:k1 ; ex:k1 "x" ; ex:k2 "1" .
+            ex:c a ex:T ; ex:keys ex:k1 , ex:k2 ; ex:k1 "y" ; ex:k2 "1" .
+            ex:d a ex:T ; ex:keys ex:k1 , ex:k2 ; ex:k1 "x" ; ex:k2 "1" .
+            ex:e a ex:T ; ex:keys ex:k3 .
+            ex:f a ex:T ; ex:keys ex:k1 , ex:k2 ; ex:k1 "x" .
+        """
+        val shapes = "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
+        val report = validate("jena", data, shapes)
+        assertEquals(
+            mapOf(ex("a") to 2, ex("b") to 3, ex("d") to 2),
+            report.violations.associate { it.focusNode to Regex("shared with ([0-9]+)").find(it.message)!!.groupValues[1].toInt() },
+            report.violations.toString(),
+        )
+    }
+
+    @Test
+    fun `a dynamic sh uniqueValuesFor with a distinct property list per target stays linear`() {
+        // 12000 targets, each keyed on a property of its own: one pass over the targets per distinct list would compare
+        // 144 million keys (over 30 s here); the timeout stops such a run. ex:x and ex:y share ex:t0's key on ex:k0, and
+        // nothing else is shared.
+        val n = 12_000
+        val data = buildString {
+            for (i in 0 until n) appendLine("ex:t$i a ex:T ; ex:keys ex:k$i ; ex:k$i 1 .")
+            appendLine("ex:x a ex:T ; ex:keys ex:k0 ; ex:k0 1 ; ex:k1 2 .")
+            appendLine("ex:y a ex:T ; ex:keys ex:k0 ; ex:k0 1 .")
+        }
+        val shapes = "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
+        val config = ValidationConfig(timeout = java.time.Duration.ofSeconds(15))
+        val report = validate("jena", data, shapes, config)
+        assertEquals(setOf(ex("t0"), ex("x"), ex("y")), report.violations.map { it.focusNode }.toSet(), report.violations.toString())
+        assertTrue(report.violations.all { "shared with 2 other" in it.message }, report.violations.toString())
+    }
+
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `validateClosedShapes=false also skips dynamic sh closed`(provider: String) {
         // "maybe" would fail the run, so sh:closed is not even evaluated.
