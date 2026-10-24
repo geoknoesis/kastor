@@ -600,6 +600,32 @@ class DynamicShaclTest {
     }
 
     @Test
+    fun `the constant half of a dynamic pattern is checked without focus nodes`() {
+        // No target: no focus node is ever reached, so only the compiler can reject the constant half.
+        val cases = listOf(
+            "sh:pattern ex:iri ; sh:flags [ shnex:pathValues ex:f ]" to "sh:pattern must be a string literal",
+            "sh:pattern \"(\" ; sh:flags [ shnex:pathValues ex:f ]" to "Invalid sh:pattern",
+            "sh:pattern [ shnex:pathValues ex:p ] ; sh:flags \"z\"" to "Unsupported sh:flags character",
+        )
+        for ((body, message) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:v 1 .", "ex:S a sh:NodeShape ; sh:property [ sh:path ex:v ; $body ] .") }, body)
+            val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+            assertTrue(causes.any { it is ShapeCompileException && message in it.message.orEmpty() }, "$body: $error")
+        }
+    }
+
+    @Test
+    fun `an ignored unsupported sh flags expression leaves out the patterns and says so`() {
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:a ex:v \"b\" .", prop("sh:pattern \"^a$\" ; sh:flags [ ex:undeclared ( \"i\" ) ]"), ignore)
+        assertTrue(report.violations.isEmpty(), report.violations.toString())
+        assertTrue(
+            report.warnings.any { "sh:flags" in it.message && "the constraints that use it are left out" in it.message },
+            report.warnings.toString(),
+        )
+    }
+
+    @Test
     fun `a pattern read from the data is bounded by the pattern budget`() {
         // (.*a){30} needs astronomically many backtracking steps to reject sixty a's and a "!" (PatternBudgetTest). The
         // JDK's regex engine rejects the brief's (a+)+$ on 40 a's and a "!" at once, so it would not reach the budget.

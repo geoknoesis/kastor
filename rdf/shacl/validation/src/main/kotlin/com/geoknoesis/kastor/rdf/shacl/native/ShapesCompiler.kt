@@ -978,7 +978,8 @@ internal object ShapesCompiler {
             t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
             t.predicate in DynamicParameters.predicates && isUnsupportedParameterExpression(t.predicate, t.obj, index) ->
-                "${DynamicParameters.displayName(t.predicate)} node expression on ${t.subject}" to expression(t.obj)
+                "${DynamicParameters.displayName(t.predicate)} node expression on ${t.subject} (the constraints that use it are left out)" to
+                    expression(t.obj)
             // SHACL 1.2 Core §3.1.6: the sh:deactivated of a shape, or of a reifier of a parameter triple (one
             // constraint), may be any node expression.
             t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
@@ -1403,6 +1404,16 @@ internal object ShapesCompiler {
         if (flagsTerm == null || flagsValue != null) {
             for (p in index.objects(subject, SHACL.pattern)) {
                 val patternValue = valueOf(SHACL.pattern, p) ?: continue
+                // A constant half of a Dynamic pattern is checked here, with the constant messages, whether or not a
+                // focus node is ever reached: a constant pattern must be a string literal that compiles (read without
+                // flags), and constant flags must be supported.
+                if (patternValue is ParameterValue.Constant && flagsValue is ParameterValue.Computed) {
+                    val pat = ConstraintInstantiation.literalString(patternValue.term) ?: throw ShapeCompileException("sh:pattern must be a string literal")
+                    compileShaclPattern(pat, null)
+                }
+                if (patternValue is ParameterValue.Computed && flagsValue is ParameterValue.Constant) {
+                    compileShaclPattern("", ConstraintInstantiation.literalString(flagsValue.term))
+                }
                 val values = listOfNotNull(SHACL.pattern to patternValue, flagsValue?.let { SHACL.flags to it }).toMap()
                 // sh:flags is a parameter of each pattern constraint, so its reifier deactivates all of them.
                 multi(DynamicComponent.PATTERN, values, ComponentExtras(), SHACL.pattern to p, SHACL.flags to flagsTerm)
