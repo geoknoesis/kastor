@@ -277,7 +277,17 @@ internal object ShapesCompiler {
         val nodeShapeSubjects = findNodeShapes(index, budget)
         val extraRoots = expressionShapes(index).toList()
         val exprShapes = ExpressionShapes(index)
-        val detected = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, exprShapes, budget)
+        // The functions come first, as the shapes of their node expression bodies are validated against (and so
+        // inspected) although nothing else may reach them. An ill-formed declaration is reported after detection,
+        // which keeps reporting the unsupported features first.
+        var functionsError: ShapeCompileException? = null
+        val functions = try {
+            SparqlFunctionDeclarations.compile(index)
+        } catch (e: ShapeCompileException) {
+            functionsError = e
+            SparqlFunctionDeclarationSet.EMPTY
+        }
+        val detected = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, functions.expressionBodies, exprShapes, budget)
         val unsupported = detected.strict
         if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
             throw UnsupportedShaclFeatureException(
@@ -286,7 +296,7 @@ internal object ShapesCompiler {
                 unsupported.values.toSet(),
             )
         }
-        val functions = SparqlFunctionDeclarations.compile(index)
+        functionsError?.let { throw it }
         val compiled = mutableListOf<CompiledNodeShape>()
         val byNode = LinkedHashMap<RdfResource, CompiledNodeShape>()
         for (subject in nodeShapeSubjects.sortedWith { a, b -> budget.check("shape ordering"); resourceOrdering.compare(a, b) }) {
@@ -714,16 +724,24 @@ internal object ShapesCompiler {
         index: ShapeGraphIndex,
         nodeShapes: List<RdfResource>,
         extraRoots: List<RdfResource>,
+        functionBodies: List<NodeExpression>,
         exprShapes: ExpressionShapes,
         budget: ValidationBudget,
     ): Detected {
         val out = LinkedHashMap<String, UnsupportedShaclFeature>()
         val candidateOnly = LinkedHashMap<RdfResource, String>()
         val functions = LinkedHashSet<Iri>()
-        val reach = shapeReachableNodes(index, nodeShapes + extraRoots + index.subjects(RDF.type, SHACL.PropertyShape), exprShapes, budget)
+        // The shapes of the node expression bodies of the functions SPARQL queries may call are compiled, so they are
+        // shapes the run validates against, reachable from nothing else maybe; so are the candidates of a body that
+        // computes its shapes.
+        val bodyShapes = functionBodies.flatMap { budget.tick("feature detection"); exprShapes.strict(it) }
+        val bodiesNeedCandidates = functionBodies.any { exprShapes.computes(it) }
+        val reach = shapeReachableNodes(
+            index, nodeShapes + extraRoots + index.subjects(RDF.type, SHACL.PropertyShape) + bodyShapes, exprShapes, budget,
+        )
         val shapes = reach.shapes
         val candidateShapes =
-            if (reach.needsCandidates) shapeReachableNodes(index, exprShapes.allCandidates - shapes, exprShapes, budget).shapes - shapes else emptySet()
+            if (reach.needsCandidates || bodiesNeedCandidates) shapeReachableNodes(index, exprShapes.allCandidates - shapes, exprShapes, budget).shapes - shapes else emptySet()
         fun expression(term: RdfTerm) =
             if (isNodeExpression(term, index)) UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION else UnsupportedShaclFeature.NODE_EXPRESSION
         for (t in index.triples) {

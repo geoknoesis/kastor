@@ -41,9 +41,10 @@ internal class ProvisionalUndefined(val node: RdfTerm, val shape: RdfResource) :
 
 /**
  * The [ProvisionalUndefined] answers that function bodies read during a SPARQL query, which cannot carry them, and
- * the validation failures of bodies that read a final undefined answer ([stashFailure]): each query runs in its own
- * [scoped] block, so that nested queries keep their own, a query that returns rethrows the first one (a failure
- * before a provisional answer), and a query that throws discards it (it never reaches a later, unrelated query).
+ * the validation failures of bodies that failed on a conformance check the engine could not decide ([stashFailure]):
+ * each query runs in its own [scoped] block, so that nested queries keep their own, a query that returns rethrows
+ * the first one (a failure before a provisional answer), and a query that throws discards it (it never reaches a
+ * later, unrelated query).
  */
 internal class ProvisionalStash {
     private var pending: RuntimeException? = null
@@ -54,9 +55,10 @@ internal class ProvisionalStash {
     }
 
     /**
-     * Records [e], the validation failure of a function body that read a final undefined conformance answer, for the
-     * query under way: the query's answer cannot be decided (R16), whatever SPARQL makes of the body's error. It
-     * replaces a provisional answer, which the solver would only evaluate again.
+     * Records [e], the validation failure of a function body that failed on a conformance check the engine could not
+     * decide (a final undefined answer, R16; an unsupported or ill-formed candidate shape, R8), for the query under
+     * way: the query's answer cannot be decided either, whatever SPARQL makes of the body's error. It replaces a
+     * provisional answer, which the solver would only evaluate again.
      */
     fun stashFailure(e: ShaclValidationException) {
         if (pending !is ShaclValidationException) pending = e
@@ -375,7 +377,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
         // R8: a candidate of a computed shape reference that did not compile.
-        compiled.candidateErrors[shape]?.let { fail("$function: $it") }
+        compiled.candidateErrors[shape]?.let { ctx.undecidedReads++; fail("$function: $it") }
         if (shape !in compiled.referencedNodeShapes && shape !in compiled.referencedPropertyShapes) {
             fail("$function: $shape is not a shape of the shapes graph")
         }
@@ -384,6 +386,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
             if (isRunAbort(e)) throw e
+            ctx.undecidedReads++
             fail("$function: validating $node against $shape failed: ${e.message}", e)
         }
         return when (answer) {
@@ -391,7 +394,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             Conformance.FAILS -> false
             Conformance.UNDEFINED -> {
                 if (ctx.isProvisional(node, shape)) throw ProvisionalUndefined(node, shape)
-                ctx.undefinedReads++
+                ctx.undecidedReads++
                 fail("$function: the conformance of $node to $shape is undefined")
             }
         }

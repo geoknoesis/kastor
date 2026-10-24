@@ -530,6 +530,48 @@ class NodeExpressionConstraintTest {
 
     // --- still unsupported ------------------------------------------------------------------------------------------
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an unsupported construct of a shape only a SPARQL-called function body names is reported`(provider: String) {
+        // ex:T is untyped, has no target and is named by nothing but the body of ex:f, which the SPARQL constraint of
+        // ex:S calls: it is still validated against, so its unsupported constructs must not be dropped silently.
+        fun shapes(t: String) = """
+            ex:f a sh:ListParameterExpressionFunction ;
+              sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ shnex:exists [ shnex:filterShape ex:T ; shnex:nodes [ shnex:arg 0 ] ] ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
+            $t
+        """
+        val cases = mapOf(
+            "ex:T sh:expression [ ex:unknown 1 ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
+            "ex:T sh:nodeKind sh:IRI ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
+            "ex:T sh:nodeKind sh:IRI ; sh:target [ a ex:CustomTarget ] ." to UnsupportedShaclFeature.CUSTOM_TARGET,
+        )
+        for ((t, feature) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", shapes(t)) }, t)
+            val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().firstOrNull()
+            assertEquals(setOf(feature), unsupported?.features, "$t: ${error.message}")
+        }
+        // A body that computes its shape: every candidate shape is validated against, so the same holds for them.
+        val computed = """
+            ex:f a sh:ListParameterExpressionFunction ;
+              sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ shnex:conformsToShape ( [ shnex:arg 0 ] [ shnex:pathValues ex:shape ; shnex:focusNode [ shnex:arg 0 ] ] ) ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
+            ex:T sh:nodeKind sh:IRI ; sh:expression [ ex:unknown 1 ] .
+        """
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate(provider, "ex:a ex:shape ex:T .", computed, ignore)
+        assertTrue(report.warnings.any { "Unsupported SHACL feature ignored" in it.message && "ns#T>" in it.message }, report.warnings.toString())
+        // By default, a used candidate with an unsupported construct fails the expression (R8); through the SPARQL
+        // call that is a failure of the query, not an error that FILTER would turn into a conforming answer.
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:shape ex:T .", computed) }
+        assertTrue("ns#T>" in error.message.orEmpty() && "sh:expression constraint" in error.message.orEmpty(), error.message)
+        // Unused (no ex:shape, so the call is a SPARQL error and FILTER drops the row), it fails nothing.
+        assertTrue(validate(provider, "ex:a ex:p 1 .", computed).isValid)
+    }
+
     @Test
     fun `non-constant sh deactivated stays unsupported`() {
         val cases = listOf(
