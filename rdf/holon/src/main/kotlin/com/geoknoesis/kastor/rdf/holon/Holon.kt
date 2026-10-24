@@ -48,7 +48,7 @@ class Holon internal constructor(val context: HolonContext, val id: RdfResource)
 
 /** Select a registered holon without imposing parent/import checks on a DIRECT request. */
 fun HolonContext.holon(id: RdfResource): Holon {
-  if (id !in registry) fail(HolonError.UNKNOWN_HOLON, "$id is not explicitly registered in M")
+  requireKnown(id)
   return Holon(this, id)
 }
 

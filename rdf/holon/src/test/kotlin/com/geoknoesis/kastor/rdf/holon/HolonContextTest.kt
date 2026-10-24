@@ -217,11 +217,48 @@ class HolonContextTest {
   }
 
   @Test fun `reifier source cannot silently contain named graphs`() {
-    assertFailsWith<IllegalArgumentException> { HolonContext.of(g(), mapOf(a to g()), profile = HolonProfile.REIFIER) }
+    error(HolonError.UNSUPPORTED_CAPABILITY) { HolonContext.of(g(), mapOf(a to g()), profile = HolonProfile.REIFIER) }
   }
 
   @Test fun `low-level reifier input also requires an explicit M`() {
     error(HolonError.UNSUPPORTED_CAPABILITY) { HolonContext.of(HolonGraph(registrations(a)), profile = HolonProfile.REIFIER) }
+  }
+
+  @Test fun `M from a named graph of the source repository shares its blank-node scope`() {
+    val h = BlankNode("h")
+    val base = t(a, value, string("base"))
+    Rdf.repository { providerId = "memory" }.use { repository ->
+      repository.editDefaultGraph().addTriples(member(ex("r"), h, base))
+      repository.editGraph(ex("m")).addTriples(registrations(h) + t(h, RDFH.contentGraph, ex("content")))
+      val context = HolonContext.fromDataset(repository, repository.getGraph(ex("m")), mixed = true)
+      assertEquals(listOf(base), context.resolve(h).graph.getTriples())
+    }
+  }
+
+  @Test fun `a fresh wrapper of the default graph is still the shared default scope`() {
+    val h = BlankNode("h")
+    val base = t(a, value, string("base"))
+    Rdf.repository { providerId = "memory" }.use { repository ->
+      repository.editDefaultGraph().addTriples(registrations(h) + t(h, RDFH.contentGraph, ex("content")) + member(ex("r"), h, base))
+      val wrapper = GraphRef(repository.defaultGraph, repository)
+      assertNotSame(repository.defaultGraph, wrapper)
+      val context = HolonContext.fromDataset(repository, wrapper, mixed = true)
+      assertEquals(listOf(base), context.resolve(h).graph.getTriples())
+      assertEquals(repository.defaultGraph.size(), context.assertedGraph.size())
+    }
+  }
+
+  @Test fun `reifier M from the source repository keeps every source blank node`() {
+    val h = BlankNode("h")
+    val reifier = BlankNode("r")
+    val base = t(a, value, string("base"))
+    Rdf.repository { providerId = "memory" }.use { repository ->
+      repository.editDefaultGraph().addTriples(member(reifier, h, base))
+      repository.editGraph(ex("m")).addTriples(registrations(h))
+      val context = HolonContext.fromGraph(repository.defaultGraph, repository.getGraph(ex("m")))
+      assertEquals(listOf(base), context.resolve(h).graph.getTriples())
+      assertTrue(context.defaultGraph.hasTriple(t(reifier, RDFH.inHolon, h)))
+    }
   }
 
   @Test fun `independent M retains its holon identity and source blank-node sharing stays intact`() {

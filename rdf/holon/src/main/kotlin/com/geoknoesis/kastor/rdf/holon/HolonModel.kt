@@ -44,9 +44,11 @@ internal class HolonGraph(triples: Iterable<RdfTriple>) : RdfGraph {
   override fun size(): Int = triples.size
 }
 
-internal fun RdfGraph.snapshot(): RdfGraph = HolonGraph(getTriples())
+internal fun RdfGraph.snapshot(): RdfGraph = this as? HolonGraph ?: HolonGraph(getTriples())
 internal fun union(graphs: Iterable<RdfGraph>): RdfGraph = HolonGraph(graphs.flatMap { it.getTriples() })
 internal fun emptyGraph(): RdfGraph = HolonGraph(emptyList())
+/** Set equality of two duplicate-free graphs, without copying either one. */
+internal fun sameTriples(a: RdfGraph, b: RdfGraph): Boolean = a.size() == b.size() && a.getTriplesSequence().all(b::hasTriple)
 internal fun <K, V> frozenMap(values: Map<K, V>): Map<K, V> = Collections.unmodifiableMap(LinkedHashMap(values))
 internal fun <T> frozenSet(values: Collection<T>): Set<T> = Collections.unmodifiableSet(LinkedHashSet(values))
 internal fun fail(condition: HolonError, detail: String): Nothing = throw HolonException(condition, detail)

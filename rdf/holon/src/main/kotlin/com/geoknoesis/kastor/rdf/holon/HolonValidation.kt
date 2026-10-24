@@ -38,23 +38,32 @@ fun HolonContext.validate(
     dataset = DatasetValidationConfig(discoverShapesGraphFromData = false),
     imports = ImportConfig(resolveOwlImports = false),
   ))
+  val syntax = try {
+    validator.validate(effective, HolonShapeSyntax.graph)
+  } catch (error: ShaclValidationException) {
+    // The bundled syntax shapes are not the caller's; failing to compile them is an internal error.
+    if (error.definitionFailure()) throw IllegalStateException("The bundled SHACL syntax shapes could not be compiled", error)
+    throw error
+  }
+  if (!syntax.isValid) fail(HolonError.ILL_FORMED_SHAPES_GRAPH, "The effective shapes union violates the SHACL syntax shapes")
   try {
-    if (!validator.validate(effective, HolonShapeSyntax.graph).isValid) {
-      fail(HolonError.ILL_FORMED_SHAPES_GRAPH, "The effective shapes union violates the SHACL syntax shapes")
-    }
-    validator.validate(emptyGraph(), effective)
     val report = validator.validate(resolution.graph, effective)
     return HolonValidation(resolution, names, effective, entailmentRegime, report)
   } catch (error: ShaclValidationException) {
-    val causes = generateSequence<Throwable>(error) { it.cause }.toList()
     when {
-      causes.any { it is UnsupportedShaclFeatureException || it is UnsupportedShaclOperationException } ->
+      error.causes().any { it is UnsupportedShaclFeatureException || it is UnsupportedShaclOperationException } ->
         throw HolonException(HolonError.UNSUPPORTED_CAPABILITY, "Unsupported SHACL feature", error)
-      causes.any { it is ShapeCompileException } ->
+      error.causes().any { it is ShapeCompileException } ->
         throw HolonException(HolonError.ILL_FORMED_SHAPES_GRAPH, "The effective shapes union is ill-formed", error)
       else -> throw error // Resource limits or execution failures are not shapes-definition errors.
     }
   }
+}
+
+private fun Throwable.causes(): Sequence<Throwable> = generateSequence(this) { it.cause }
+
+private fun Throwable.definitionFailure(): Boolean = causes().any {
+  it is ShapeCompileException || it is UnsupportedShaclFeatureException || it is UnsupportedShaclOperationException
 }
 
 /** Bundled W3C SHACL-for-SHACL; no network resolution or automatic imports. */

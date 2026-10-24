@@ -44,11 +44,7 @@ class HolonsDsl internal constructor() {
     }
     val context = HolonContext.of(metadata, graphs, sourceId = sourceId, filtered = filtered)
     // The authoring DSL rejects invalid declarations globally, including forward references.
-    context.contents()
-    context.registry.firstOrNull()?.let { context.resolve(it, HolonScope.AGGREGATED) }
-    metadata.find(predicate = RDFH.imports).forEach {
-      if (it.obj !in context.registry) fail(HolonError.UNRESOLVED_IMPORT, "${it.subject} imports unregistered ${it.obj}")
-    }
+    context.validateDeclarations()
     return context
   }
 }

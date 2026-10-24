@@ -23,6 +23,7 @@ class BlankNodeScopes(preservedGraph: RdfGraph? = null) {
     private val preservedSource = preservedGraph?.let(::source)
     private val preservedGraph = preservedGraph?.asGraphRef()?.getReferencedGraph()
     private val reservedIds = HashSet<String>()
+    private val views = IdentityHashMap<RdfGraph, RdfGraph>()
 
     init {
         fun reserve(term: RdfTerm) {
@@ -43,11 +44,14 @@ class BlankNodeScopes(preservedGraph: RdfGraph? = null) {
         val ref = graph.asGraphRef()
         val source = source(ref)
         if (ref.getReferencedGraph() === preservedGraph) return ref.getReferencedGraph()
-        val scope = sources[source] ?: sources.size.also { sources[source] = it }
-        return ScopedGraph(
-            ref.getReferencedGraph(), "kastor_scope_${scope}_", reservedIds,
-            if (source === preservedSource) reservedIds else emptySet(),
-        )
+        // Views are stateless over a fixed namespace, so repeated mapTerm calls reuse one per graph.
+        return views.getOrPut(ref.getReferencedGraph()) {
+            val scope = sources[source] ?: sources.size.also { sources[source] = it }
+            ScopedGraph(
+                ref.getReferencedGraph(), "kastor_scope_${scope}_", reservedIds,
+                if (source === preservedSource) reservedIds else emptySet(),
+            )
+        }
     }
 
     /** Maps a term with the same namespace as [graph], for references held outside its triples (e.g. metadata). */

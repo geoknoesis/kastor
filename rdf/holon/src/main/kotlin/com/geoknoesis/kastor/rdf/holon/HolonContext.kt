@@ -23,15 +23,17 @@ class HolonContext private constructor(
 ) {
   val snapshotId: String = UUID.randomUUID().toString()
   val namedGraphs: Map<RdfResource, RdfGraph> = frozenMap(named)
-  val assertedGraph: RdfGraph = union(listOf(defaultGraph, metadata) + namedGraphs.values)
+  val assertedGraph: RdfGraph by lazy { union(listOf(defaultGraph, metadata) + namedGraphs.values) }
   val registry: Set<RdfResource> = frozenSet(metadata.getTriples().filter {
     it.predicate == RDFH.contentGraph ||
       (it.predicate == RDF.type && (it.obj == RDFH.Holon || it.obj == RDFH.CompleteHolon))
   }.map { it.subject })
-  private val sourceAssertions: RdfGraph = union(listOf(defaultGraph) + namedGraphs.values)
+  private val sourceAssertions: RdfGraph by lazy { union(listOf(defaultGraph) + namedGraphs.values) }
   private val contentCache: Map<RdfResource, RdfGraph> by lazy { extractContents() }
+  // A failed initializer is retried, so invalid hierarchies are rejected on every composed resolve.
+  private val parentCache: Map<RdfResource, RdfResource> by lazy { extractParents() }
 
-  private fun requireKnown(holon: RdfResource) {
+  internal fun requireKnown(holon: RdfResource) {
     if (holon !in registry) fail(HolonError.UNKNOWN_HOLON, "$holon is not explicitly registered in M")
   }
 
@@ -75,7 +77,9 @@ class HolonContext private constructor(
     return result.mapValues { HolonGraph(it.value) }
   }
 
-  private fun parents(): Map<RdfResource, RdfResource> {
+  private fun parents(): Map<RdfResource, RdfResource> = parentCache
+
+  private fun extractParents(): Map<RdfResource, RdfResource> {
     val parents = linkedMapOf<RdfResource, RdfResource>()
     metadata.find(predicate = RDFH.parentHolon).forEach { edge ->
       if (edge.subject !in registry || edge.obj !in registry) {
@@ -112,15 +116,22 @@ class HolonContext private constructor(
         children[pending.removeFirst()].orEmpty().forEach { if (chosen.add(it)) pending.add(it) }
       }
     }
-    if (scope == HolonScope.VISIBLE) {
-      metadata.find(holon, RDFH.imports).forEach {
-        if (it.obj !in registry) fail(HolonError.UNRESOLVED_IMPORT, "$holon imports unregistered ${it.obj}")
-        chosen.add(it.obj as RdfResource)
-      }
-    }
+    if (scope == HolonScope.VISIBLE) chosen.addAll(imports(holon))
     val selected = chosen.associateWith { content.getValue(it) }
     val graph = if (scope == HolonScope.GLOBAL) assertedGraph else union(selected.values)
     return HolonResolution(sourceId, snapshotId, metadata, profile, holon, scope, filtered, graph, selected)
+  }
+
+  private fun imports(holon: RdfResource?): List<RdfResource> = metadata.find(holon, RDFH.imports).map {
+    if (it.obj !in registry) fail(HolonError.UNRESOLVED_IMPORT, "${it.subject} imports unregistered ${it.obj}")
+    it.obj as RdfResource
+  }
+
+  /** Check every mapping, membership, parent edge and import, not only those reachable from one holon. */
+  internal fun validateDeclarations() {
+    contents()
+    parents()
+    imports(null)
   }
 
   /** Select only H's explicit shape imports from a separately supplied validation dataset. */
@@ -149,7 +160,9 @@ class HolonContext private constructor(
       sourceId: String = UUID.randomUUID().toString(),
       filtered: Boolean = false,
     ): HolonContext {
-      require(profile != HolonProfile.REIFIER || namedGraphs.isEmpty()) { "Reifier input is a graph, not a dataset; declare MIXED for named content" }
+      if (profile == HolonProfile.REIFIER && namedGraphs.isNotEmpty()) {
+        fail(HolonError.UNSUPPORTED_CAPABILITY, "Reifier input is a graph, not a dataset; declare MIXED for named content")
+      }
       val selectedMetadata = metadata ?: if (profile == HolonProfile.REIFIER) {
         fail(HolonError.UNSUPPORTED_CAPABILITY, "Reifier input requires an explicitly supplied metadata context M")
       } else defaultGraph
@@ -171,17 +184,25 @@ class HolonContext private constructor(
         val default = source.defaultGraph
         val selectedMetadata = metadata ?: default
         val named = source.namedGraphs
-        val shared = metadata == null || metadata === default || metadataSharesSourceScope
-        val combined = union(listOf(default) + named.values)
+        val shared = metadata == null || metadataSharesSourceScope || sameScope(metadata, default, source as? RdfRepository)
         val scopes = if (shared) null else BlankNodeScopes(selectedMetadata)
-        fun scoped(graph: RdfGraph): RdfGraph = if (scopes == null) graph else HolonGraph(graph.getTriples().map {
-          RdfTriple(scopes.mapTerm(combined, it.subject) as RdfResource, it.predicate, scopes.mapTerm(combined, it.obj))
-        })
+        // One namespace for the whole dataset, so blank nodes shared across its graphs stay shared.
+        val key = emptyGraph()
+        fun scoped(graph: RdfGraph): RdfGraph = if (scopes == null) graph else HolonGraph(graph.getTriplesSequence().map {
+          RdfTriple(scopes.mapTerm(key, it.subject) as RdfResource, it.predicate, scopes.mapTerm(key, it.obj))
+        }.asIterable())
         snapshot = of(scoped(default), named.mapValues { scoped(it.value) }, selectedMetadata,
           if (mixed) HolonProfile.MIXED else HolonProfile.DATASET, sourceId, filtered)
       }
       if (source is RdfRepository) source.readTransaction { capture() } else capture()
       return checkNotNull(snapshot)
+    }
+
+    /** Graphs of one repository share its scope, whatever wrapper a provider returns for each access. */
+    private fun sameScope(metadata: RdfGraph, source: RdfGraph, owner: RdfRepository? = null): Boolean {
+      if (metadata === source) return true
+      val repository = source.asGraphRef().sourceRepository ?: owner ?: return false
+      return metadata.asGraphRef().sourceRepository === repository
     }
 
     /** M is mandatory. A separately loaded M never shares blank-node labels with the source by default. */
@@ -192,7 +213,7 @@ class HolonContext private constructor(
       sourceId: String = UUID.randomUUID().toString(),
       filtered: Boolean = false,
     ): HolonContext {
-      val graph = if (metadata === source || metadataSharesSourceScope) source else BlankNodeScopes(metadata).graph(source)
+      val graph = if (metadataSharesSourceScope || sameScope(metadata, source)) source else BlankNodeScopes(metadata).graph(source)
       return of(graph, metadata = metadata, profile = HolonProfile.REIFIER, sourceId = sourceId, filtered = filtered)
     }
   }

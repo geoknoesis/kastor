@@ -12,31 +12,33 @@ object RdfHConformanceAdapter {
   }
 
   internal fun respond(request: JsonObject): JsonObject {
-    if (request.text("language") != "rdf-h") return buildJsonObject { put("status", "unsupported") }
-    return try {
-      val source = source(request)
-      val result = when (request.text("operation")) {
-        "convert" -> conversion(source.convert(
-          when (request.text("targetRepresentation")) {
-            "dataset" -> HolonProfile.DATASET
-            "reifier" -> HolonProfile.REIFIER
-            else -> throw IllegalArgumentException("Unknown target representation")
-          },
-          when (request.text("preservationLevel")) {
-            "content" -> HolonPreservation.CONTENT
-            "assertion" -> HolonPreservation.ASSERTION
-            else -> throw IllegalArgumentException("Unknown preservation level")
-          },
-        ))
-        "validate" -> {
-          Rdf.parseDataset(request.getValue("shapesDataset").jsonObject.text("text"), RdfFormat.TRIG).use { shapes ->
-            val validation = source.validate(Iri(request.text("holon")), shapes.namedGraphs,
-              HolonScope.valueOf(request.text("scope").uppercase()))
-            buildJsonObject { put("conforms", validation.report.isValid) }
-          }
+    if (request.text("language") != "rdf-h") return unsupported()
+    // Decide support before reading the input, so an unsupported request is never reported as rejected.
+    val operation: (HolonContext) -> JsonElement = when (request.text("operation")) {
+      "convert" -> {
+        val target = when (request.text("targetRepresentation")) {
+          "dataset" -> HolonProfile.DATASET
+          "reifier" -> HolonProfile.REIFIER
+          else -> return unsupported()
         }
-        else -> return buildJsonObject { put("status", "unsupported") }
+        val preservation = when (request.text("preservationLevel")) {
+          "content" -> HolonPreservation.CONTENT
+          "assertion" -> HolonPreservation.ASSERTION
+          else -> return unsupported()
+        }
+        fun(source: HolonContext): JsonElement = conversion(source.convert(target, preservation))
       }
+      "validate" -> {
+        val scope = HolonScope.entries.firstOrNull { it.name == request.text("scope").uppercase() } ?: return unsupported()
+        fun(source: HolonContext): JsonElement =
+          Rdf.parseDataset(request.getValue("shapesDataset").jsonObject.text("text"), RdfFormat.TRIG).use { shapes ->
+            buildJsonObject { put("conforms", source.validate(Iri(request.text("holon")), shapes.namedGraphs, scope).report.isValid) }
+          }
+      }
+      else -> return unsupported()
+    }
+    return try {
+      val result = operation(source(request))
       buildJsonObject { put("status", "ok"); put("result", result) }
     } catch (error: HolonException) {
       buildJsonObject {
@@ -55,9 +57,8 @@ object RdfHConformanceAdapter {
       "reifier" -> {
         val input = request.getValue("sourceGraph").jsonObject
         val graph = decodeGraph(input.getValue("terms"))
-        val m = input["metadataTerms"]?.let(::decodeGraph) ?: metadata
-          ?: throw IllegalArgumentException("Reifier input requires M")
-        HolonContext.of(graph, metadata = m, profile = HolonProfile.REIFIER)
+        // A missing M is rejected by the context with its RDF-H condition.
+        HolonContext.of(graph, metadata = input["metadataTerms"]?.let(::decodeGraph) ?: metadata, profile = HolonProfile.REIFIER)
       }
       else -> fail(HolonError.UNSUPPORTED_CAPABILITY, "Unsupported source representation")
     }
@@ -79,6 +80,7 @@ object RdfHConformanceAdapter {
     })
   }
 
+  private fun unsupported(): JsonObject = buildJsonObject { put("status", "unsupported") }
   private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
   private fun decodeGraph(value: JsonElement): RdfGraph = HolonGraph(value.jsonArray.map {
     val row = it.jsonArray

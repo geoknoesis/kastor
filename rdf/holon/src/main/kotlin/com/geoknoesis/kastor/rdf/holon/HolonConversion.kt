@@ -80,7 +80,7 @@ fun HolonContext.convert(
       original.forEach { (holon, graph) ->
         val name = mappings.getValue(holon)
         val previous = graphs[name]
-        if (previous != null && previous.getTriples().toSet() != graph.getTriples().toSet()) {
+        if (previous != null && !sameTriples(previous, graph)) {
           fail(HolonError.UNREPRESENTABLE_CONVERSION, "Different contents select the same target graph $name")
         }
         graphs[name] = graph
@@ -99,7 +99,7 @@ fun HolonContext.convert(
   }
   try {
     val converted = output.contents()
-    if (registry != output.registry || original.any { (h, graph) -> graph.getTriples().toSet() != converted[h]?.getTriples()?.toSet() }) {
+    if (registry != output.registry || original.any { (h, graph) -> converted[h]?.let { sameTriples(graph, it) } != true }) {
       fail(HolonError.UNREPRESENTABLE_CONVERSION, "The target changes the registry or a holon's direct content")
     }
   } catch (error: HolonException) {
