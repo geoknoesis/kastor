@@ -133,6 +133,9 @@ internal sealed class PropertyConstraint {
     /**
      * SHACL-SPARQL constraint (`sh:sparql`). [template] holds the query with `sh:prefixes` declarations prepended
      * and `$PATH` substituted; pre-binding is applied by the engine through [SparqlQueryTemplate.bind].
+     * [deactivatedWhen] is a non-constant `sh:deactivated` of the constraint node (SHACL 1.2 SPARQL, "Validation with
+     * SPARQL-based Constraints"): the constraint has no results for a focus node for which
+     * `evalExpr(expr, data graph, focus node, {})` produces `true` as its only output node.
      */
     data class Sparql(
         val constraintNode: RdfResource,
@@ -141,6 +144,7 @@ internal sealed class PropertyConstraint {
         val severity: ViolationSeverity?,
         val severityCustomIri: Iri?,
         val annotations: List<SparqlResultAnnotation>,
+        val deactivatedWhen: NodeExpression? = null,
     ) : PropertyConstraint() {
         /** Pre-bound variables the query references (`this`). */
         val preBound: Set<String> get() = template.preBound
@@ -709,6 +713,10 @@ internal object ShapesCompiler {
                 index.objects(shape, p).forEach { head -> runCatching { index.parseRdfList(head) }.getOrDefault(emptyList()).forEach(::visit) }
             }
             for (p in expressionPositions) index.objects(shape, p).forEach { expression(it, computedShape = false) }
+            // The sh:deactivated of a SPARQL-based constraint is a node expression too.
+            for (c in index.objects(shape, SHACL.sparql)) {
+                if (c is RdfResource) index.objects(c, SHACL.deactivated).forEach { expression(it, computedShape = false) }
+            }
             // An IRI is a constant shape reference; any other value computes its shapes.
             index.objects(shape, SHACL.nodeByExpression).forEach { if (it is Iri) visit(it) else expression(it, computedShape = true) }
         }
@@ -762,8 +770,10 @@ internal object ShapesCompiler {
             budget.tick("feature detection")
             if (t.predicate == ShaclSparqlTerms.bodyExpression && t.subject is Iri) functions.add(t.subject as Iri)
             // A reifier deactivates the constraint of the triple it reifies, whose subject is a shape.
+            // So does a SPARQL-based constraint, the value of sh:sparql of a shape.
             val owner = if (t.predicate == SHACL.deactivated) {
-                val reified = index.objects(t.subject, RDF.reifies).filterIsInstance<TripleTerm>().map { it.triple.subject }
+                val reified = index.objects(t.subject, RDF.reifies).filterIsInstance<TripleTerm>().map { it.triple.subject } +
+                    index.subjects(SHACL.sparql, t.subject)
                 reified.firstOrNull { it in shapes } ?: reified.firstOrNull { it in candidateShapes } ?: t.subject
             } else {
                 t.subject
@@ -851,11 +861,15 @@ internal object ShapesCompiler {
     private fun computedRefs(c: PropertyConstraint, exprShapes: ExpressionShapes): Collection<RdfResource> =
         if (c is PropertyConstraint.NodeByExpressionComputed) exprShapes.allCandidates else emptyList()
 
-    /** The node expression [c] evaluates (`sh:expression`, a computed `sh:nodeByExpression`), if any. */
+    /**
+     * The node expression [c] evaluates (`sh:expression`, a computed `sh:nodeByExpression`, the non-constant
+     * `sh:deactivated` of a SPARQL-based constraint), if any.
+     */
     internal fun constraintExpression(c: PropertyConstraint): NodeExpression? =
         when (c) {
             is PropertyConstraint.Expression -> c.expr
             is PropertyConstraint.NodeByExpressionComputed -> c.expr
+            is PropertyConstraint.Sparql -> c.deactivatedWhen
             else -> null
         }
 
@@ -1348,6 +1362,7 @@ internal object ShapesCompiler {
             severity = sev?.level,
             severityCustomIri = sev?.customIri,
             annotations = compileResultAnnotations(node, index),
+            deactivatedWhen = deactivationExpression(node, index),
         )
     }
 
@@ -1405,20 +1420,32 @@ internal object ShapesCompiler {
     }
 
     /**
-     * The node expression of a non-constant `sh:deactivated` of [shape] (SHACL 1.2 Core §3.1.6: "Shapes can have at
-     * most one value for the property sh:deactivated"), or null for none or a constant (the constant `true` makes the
-     * shape [isDeactivated]; any other constant never produces `true`). A blank node that is no node expression is
-     * reported by feature detection and gives null; an ill-formed one, or a second value, is a compile error.
+     * The node expression of a non-constant `sh:deactivated` of [subject], a shape or a SPARQL-based constraint
+     * (SHACL 1.2 Core §3.1.6 and SHACL 1.2 SPARQL: at most one value), or null for none or a constant (the constant
+     * `true` makes it [isDeactivated]; any other constant never produces `true`). A blank node that is no node
+     * expression is reported by feature detection and gives null; an ill-formed one is a compile error, and so is a
+     * second value ([deactivatedValues]).
      */
-    private fun deactivationExpression(shape: RdfResource, index: ShapeGraphIndex): NodeExpression? {
-        val values = index.objects(shape, SHACL.deactivated)
-        val expression = values.firstOrNull { it is BlankNode } ?: return null
-        if (values.size > 1) throw ShapeCompileException("Shape $shape has more than one value for sh:deactivated")
+    private fun deactivationExpression(subject: RdfResource, index: ShapeGraphIndex): NodeExpression? {
+        val expression = deactivatedValues(subject, index).firstOrNull { it is BlankNode } ?: return null
         return NodeExpressions.compile(expression, index)
     }
 
+    /** True for a shape or SPARQL-based constraint whose `sh:deactivated` is the constant `true`. */
     private fun isDeactivated(subject: RdfResource, index: ShapeGraphIndex): Boolean =
-        index.objects(subject, SHACL.deactivated).any { isLexicallyTrue(it) }
+        deactivatedValues(subject, index).any { isLexicallyTrue(it) }
+
+    /**
+     * The `sh:deactivated` values of [subject]. More than one is a compile error, checked before any of them is
+     * read, so that `sh:deactivated true , [ … ]` is not taken for a deactivated shape.
+     */
+    private fun deactivatedValues(subject: RdfResource, index: ShapeGraphIndex): List<RdfTerm> {
+        val values = index.objects(subject, SHACL.deactivated)
+        if (values.size > 1) {
+            throw ShapeCompileException("$subject has ${values.size} values for sh:deactivated; it can have at most one value")
+        }
+        return values
+    }
 
     private data class SeverityParse(val level: ViolationSeverity, val customIri: Iri?)
 

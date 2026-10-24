@@ -779,6 +779,58 @@ class NodeExpressionConstraintTest {
         assertTrue(validate("jena", "ex:a ex:p 1 .", namedSub + " " + calls[1].second).isValid)
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a SPARQL constraint is deactivated for the focus nodes whose expression is true`(provider: String) {
+        // SHACL 1.2 SPARQL: evalExpr(expr, data graph, focus node, {}) producing true deactivates the constraint.
+        val select = "sh:select '''SELECT ${'$'}this WHERE { FILTER NOT EXISTS { ${'$'}this <http://example.com/ns#ok> ?x } }'''"
+        val skip = "sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ]"
+        val data = "ex:a ex:skip 1 . ex:b ex:p 1 ."
+        val node = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:sparql [ $select ; $skip ] ."
+        assertEquals(listOf(ex("b")), validate(provider, data, node).violations.map { it.focusNode })
+        val property = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property [ sh:path ex:p ; sh:sparql [ $select ; $skip ] ] ."
+        assertEquals(listOf(ex("b")), validate(provider, data, property).violations.map { it.focusNode })
+        // Only exactly true deactivates; a failing expression fails validation.
+        val flag = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ $select ; sh:deactivated [ shnex:pathValues ex:flag ] ] ."
+        assertTrue(validate(provider, "ex:a ex:flag true .", flag).isValid)
+        assertEquals(1, validate(provider, "ex:a ex:flag false .", flag).violations.size)
+        val failing = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ $select ; sh:deactivated [ sparql:abs ( ( 1 2 ) ) ] ] ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", failing) }
+        // A shape read by the expression is a dependency: decidable here (ex:Y fails sh:minCount on its own).
+        val recursive = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:x ;
+              sh:sparql [ $select ; sh:deactivated [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Y ) ] ] .
+            ex:Y a sh:NodeShape ; sh:node ex:S ; sh:property [ sh:path ex:missing ; sh:minCount 1 ] .
+        """
+        assertEquals(1, validate(provider, "ex:x ex:p 1 .", recursive).violations.size)
+    }
+
+    @Test
+    fun `a SPARQL constraint sh deactivated that is no node expression is unsupported`() {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select 'SELECT ?this WHERE { }' ; sh:deactivated [ ex:undeclared 1 ] ] ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
+        val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
+        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features)
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:a ex:p 1 .", shapes, ignore)
+        assertTrue(report.warnings.any { "Unsupported SHACL feature ignored" in it.message && "sh:deactivated" in it.message }, report.warnings.toString())
+    }
+
+    @Test
+    fun `a second sh deactivated value next to true is a compile error`() {
+        // SHACL 1.2 Core §3.1.6: at most one value, also when one of them is the constant true.
+        val forms = listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true , [ shnex:exists [ shnex:pathValues ex:p ] ] ; sh:class ex:C .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true , false ; sh:class ex:C .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:deactivated true , [ shnex:exists [ shnex:pathValues ex:p ] ] ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select 'SELECT ?this WHERE { }' ; sh:deactivated true , false ] .",
+        )
+        for (shapes in forms) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:p 1 .", shapes) }, shapes)
+            val compile = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<ShapeCompileException>().firstOrNull()
+            assertTrue(compile != null && "at most one value" in compile.message.orEmpty(), "$shapes: $error")
+        }
+    }
+
     @Test
     fun `constant sh deactivated is unchanged`() {
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true ; sh:class ex:C ."

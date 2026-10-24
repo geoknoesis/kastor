@@ -84,7 +84,12 @@ internal fun NativeShaclValidator.evaluateConstraint(
             evaluateExpression(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.NodeByExpressionComputed ->
             evaluateComputedNodeByExpression(focus, tpl, values, c, ctx, state, sink)
-        is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
+        is PropertyConstraint.Sparql -> {
+            // SHACL 1.2 SPARQL: a constraint deactivated for the focus node has no results.
+            if (c.deactivatedWhen == null || !deactivates(c.deactivatedWhen, focus, ctx, state.depth)) {
+                sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
+            }
+        }
         is PropertyConstraint.ReifierShape,
         is PropertyConstraint.ReificationRequired,
         -> Unit

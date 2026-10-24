@@ -212,12 +212,21 @@ private fun NativeShaclValidator.deactivatedFor(
     state: DepthState,
     sink: Sink,
 ): Boolean {
-    val out = try {
-        evalNodeExpression(expr, ctx, focus, shapeDepth = state.depth)
+    return try {
+        deactivates(expr, focus, ctx, state.depth)
     } catch (e: ProvisionalUndefined) {
         sink.undefinedAnswer(ctx, focus, tpl, type, null, e.node, e.shape)
-        return true
+        true
     }
+}
+
+/**
+ * Whether the non-constant `sh:deactivated` [expr] (of a shape or a SPARQL-based constraint) deactivates it for
+ * [focus]: `evalExpr(expr, data graph, focus node, {})` at shape nesting [depth] produces exactly the term
+ * `"true"^^xsd:boolean` as its only output node. A failure is thrown; so is a [ProvisionalUndefined] answer.
+ */
+internal fun NativeShaclValidator.deactivates(expr: NodeExpression, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): Boolean {
+    val out = evalNodeExpression(expr, ctx, focus, shapeDepth = depth)
     return out.size == 1 && out.single() == TrueLiteral
 }
 
