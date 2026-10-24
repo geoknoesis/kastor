@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.shacl
 
 import com.geoknoesis.kastor.rdf.FalseLiteral
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
@@ -16,7 +17,9 @@ import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.providers.NodeExprOutcome
 import com.geoknoesis.kastor.rdf.shacl.providers.evaluateNodeExpression
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import java.math.BigDecimal
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -30,11 +33,13 @@ class NodeExpressionEvaluationLibraryTest {
         @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
         @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
+        @prefix sparql: <http://www.w3.org/ns/sparql#> .
         @prefix ex: <http://example.com/ns#> .
     """.trimIndent()
 
     private fun ex(local: String) = Iri("http://example.com/ns#$local")
     private fun int(n: Int) = TypedLiteral(n.toString(), XSD.integer)
+    private fun str(s: String) = TypedLiteral(s, XSD.string)
 
     private fun repository(provider: String): RdfRepository =
         when (provider) {
@@ -211,10 +216,128 @@ class NodeExpressionEvaluationLibraryTest {
         assertFailure(eval("ex:holder ex:expr [ shnex:instancesOf ( ex:Super 1 ) ] ."), "IRI")
     }
 
+    // --- custom functions (§6) --------------------------------------------------------------------------------------
+
+    /** §6.1 Example 25. */
+    private val average = """
+        ex:AverageExpression a sh:NamedParameterExpressionFunction ;
+          rdfs:subClassOf sh:NamedParameterExpression ;
+          sh:parameter ex:AverageExpression-average ;
+          sh:bodyExpression [ sparql:divide ( [ shnex:sum [ shnex:arg ex:average ] ] [ shnex:count [ shnex:arg ex:average ] ] ) ] .
+        ex:AverageExpression-average a sh:Parameter ; sh:path ex:average ; sh:keyParameter true .
+    """
+
+    /** A named parameter function that outputs the nodes of its key argument twice, then those of `ex:extra`. */
+    private val twice = """
+        ex:Twice a sh:NamedParameterExpressionFunction ;
+          sh:parameter [ sh:path ex:twice ; sh:keyParameter true ] , [ sh:path ex:extra ] ;
+          sh:bodyExpression [ shnex:concat ( [ shnex:arg ex:twice ] [ shnex:arg ex:twice ] [ shnex:arg ex:extra ] ) ] .
+    """
+
+    /** §6.2 Example 27. */
+    private val spacedConcat = """
+        ex:spacedConcat a sh:ListParameterExpressionFunction ;
+          rdfs:subClassOf sh:ListParameterExpression ;
+          sh:bodyExpression [ sparql:concat ( [ shnex:arg 0 ] " " [ shnex:arg 1 ] ) ] ;
+          sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg1 ] .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `custom named and list parameter functions`(provider: String) {
+        // §6.1 Example 26: the argument is a node expression, evaluated where the body uses shnex:arg.
+        val company = "ex:holder ex:expr [ ex:average [ shnex:pathValues ( ex:employee ex:income ) ] ] . " +
+            "ex:C ex:employee ex:e1 , ex:e2 . ex:e1 ex:income 10 . ex:e2 ex:income 20 . $average"
+        val avg = nodes(eval(company, focus = ex("C"), provider = provider)).single() as Literal
+        assertEquals(XSD.decimal, avg.datatype)
+        assertEquals(0, BigDecimal("15").compareTo(BigDecimal(avg.lexical)), avg.lexical)
+        // The argument keeps its list of output nodes; a parameter that is not given has no output nodes.
+        assertEquals(listOf(int(1), int(2), int(1), int(2)), nodes(eval("ex:holder ex:expr [ ex:twice ( 1 2 ) ] . $twice")))
+        assertEquals(listOf(int(1), int(1), int(3)), nodes(eval("ex:holder ex:expr [ ex:twice 1 ; ex:extra 3 ] . $twice")))
+        // §6.3: named arguments are evaluated with an empty scope, for the focus node of the arg expression.
+        val x = mapOf("x" to int(1))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("""ex:holder ex:expr [ ex:twice [ shnex:var "x" ] ] . $twice""", variables = x)))
+        assertEquals(listOf(ex("a"), ex("a")), nodes(eval("""ex:holder ex:expr [ ex:twice [ shnex:var "focusNode" ] ] . $twice""", focus = ex("a"))))
+        // A failing argument fails the call where the body evaluates it (§3.3).
+        assertFailure(eval("ex:holder ex:expr [ ex:twice $failing ] . $twice"), "more than one")
+
+        // §6.2 Example 28: arguments are evaluated in the scope of the call, each to at most one node.
+        fun concat(args: String, variables: Map<String, RdfTerm> = emptyMap()) =
+            eval(
+                """ex:holder ex:expr [ ex:spacedConcat ( $args ) ] . ex:p ex:firstName "John" ; ex:lastName "Doe" . $spacedConcat""",
+                focus = ex("p"), variables = variables, provider = provider,
+            )
+        assertEquals(listOf(str("John Doe")), nodes(concat("[ shnex:pathValues ex:firstName ] [ shnex:pathValues ex:lastName ]")))
+        assertEquals(listOf(str("a Doe")), nodes(concat("""[ shnex:var "x" ] [ shnex:pathValues ex:lastName ]""", mapOf("x" to str("a")))))
+        // §3.2.2: more than one node is a failure, none is no output, and a failure takes precedence over none.
+        assertFailure(concat("""( "a" "b" ) "c""""), "more than one")
+        assertEquals(emptyList<RdfTerm>(), nodes(concat("""[] "c"""")))
+        assertFailure(concat("""[] ( "a" "b" )"""), "more than one")
+        // The body sees the arguments only, not the scope variables of the call.
+        val leak = """ex:leak a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ shnex:var "x" ] 1 ) ] ."""
+        assertEquals(listOf(int(1)), nodes(eval("ex:holder ex:expr [ ex:leak () ] . $leak", variables = mapOf("x" to int(9)))))
+        // §6.2: a body with more than one output node is a failure.
+        val pair = "ex:pair a sh:ListParameterExpressionFunction ; sh:bodyExpression ( 1 2 ) ."
+        assertFailure(eval("ex:holder ex:expr [ ex:pair () ] . $pair"), "more than one")
+    }
+
     @Test
-    fun `functions of later tasks are reported unsupported`() {
-        val outcome = eval("ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] . ex:holder ex:expr [ ex:f ( 1 ) ] .")
-        assertTrue(outcome is NodeExprOutcome.Failure && outcome.reason.startsWith("unsupported:"), "$outcome")
+    fun `arg expressions`() {
+        // §6.3: outside a custom function, the scope has no arguments.
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ shnex:arg 0 ] .")))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ shnex:arg ex:p ] .")))
+        // List arguments are nodes, returned as constants; an index without an argument has no output nodes.
+        val pick = """
+            ex:first a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] .
+            ex:third a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 2 ] .
+            ex:named a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg ex:p ] .
+        """
+        assertEquals(listOf(ex("a")), nodes(eval("ex:holder ex:expr [ ex:first ( ex:a 2 ) ] . $pick")))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:third ( ex:a 2 ) ] . $pick")))
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:named ( ex:a ) ] . $pick")))
+        // A positional arg in a named parameter function has no output nodes either.
+        val named = "ex:N a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:n ; sh:keyParameter true ] ; sh:bodyExpression [ shnex:arg 0 ] ."
+        assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:n 1 ] . $named")))
+        // Arguments stay in scope in the nested expressions of the body.
+        val nested = "ex:rep a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:count [ shnex:flatMap [ shnex:arg 0 ] ; shnex:nodes ( 1 2 ) ] ] ."
+        assertEquals(listOf(int(2)), nodes(eval("ex:holder ex:expr [ ex:rep ( 5 ) ] . $nested")))
+    }
+
+    @Test
+    fun `recursive custom function fails at the depth limit`() {
+        val loops = """
+            ex:loop a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:loop () ] .
+            ex:Rec a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:rec ; sh:keyParameter true ] ;
+              sh:bodyExpression [ ex:rec [ shnex:arg ex:rec ] ] .
+        """
+        assertFailure(eval("ex:holder ex:expr [ ex:loop () ] . $loops"), "nested more than")
+        assertFailure(eval("ex:holder ex:expr [ ex:rec 1 ] . $loops"), "nested more than")
+    }
+
+    @Test
+    fun `an ill-formed custom function is an error only where it is used`() {
+        val bad = """
+            ex:Bad a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:bad ; sh:keyParameter true ] , [ sh:name "no path" ] ;
+              sh:bodyExpression 1 .
+            ex:NoBody a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:noBody ; sh:keyParameter true ] .
+            ex:twoBodies a sh:ListParameterExpressionFunction ; sh:bodyExpression 1 , 2 .
+            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
+        """
+        assertEquals(listOf(int(2)), nodes(eval("ex:holder ex:expr [ shnex:count ( 1 2 ) ] . $bad")))
+        for (use in listOf("[ ex:bad 1 ]", "[ ex:noBody 1 ]", "[ ex:twoBodies () ]", "[ ex:badBody () ]", "[ ex:usesBad () ]", "[ shnex:count [ ex:bad 1 ] ]")) {
+            assertThrows(ShapeCompileException::class.java, { eval("ex:holder ex:expr $use . $bad") }, use)
+        }
+    }
+
+    @Test
+    fun `shapes used only in custom function bodies are compiled`() {
+        val functions = """
+            ex:ints a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:count [ shnex:filterShape ex:Int ; shnex:nodes ( 1 2.5 3 ) ] ] .
+            ex:Wrap a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:wrap ; sh:keyParameter true ] ;
+              sh:bodyExpression [ ex:ints () ] .
+            ex:Int sh:datatype xsd:integer .
+        """
+        assertEquals(listOf(int(2)), nodes(eval("ex:holder ex:expr [ ex:wrap 1 ] . $functions")))
     }
 
     @Test

@@ -151,15 +151,16 @@ class NativeReauditSemanticsTest {
         assertTrue(validate("ex:a ex:p 'x' .", component + "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeKind sh:IRI .").isValid)
     }
 
-    @Test fun `SHACL 1_2 expression functions with a shnex body called from SPARQL fail explicitly`() {
-        // Functions with a SPARQL body are evaluated (SparqlFunctionTest); a node expression body is not.
-        val shapes = """
-            ex:twice a sh:ListParameterExpressionFunction ;
-              sh:bodyExpression [ <http://www.w3.org/ns/shacl-node-expr#count> [ <http://www.w3.org/ns/shacl-node-expr#arg> 0 ] ] .
+    @Test fun `SHACL 1_2 expression functions whose body is no node expression fail explicitly when SPARQL calls them`() {
+        // Functions with a SPARQL or shnex: body are evaluated (SparqlFunctionTest); a body that is no node expression is not.
+        fun shapes(body: String) = """
+            ex:twice a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ; sh:bodyExpression $body .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''SELECT ${'$'}this ?value WHERE { BIND (<http://example.org/twice>("x") AS ?value) }''' ] .
         """
-        assertUnsupported("ex:a ex:p 1 .", shapes)
+        assertUnsupported("ex:a ex:p 1 .", shapes("[ ex:unknown 1 ]"))
+        val counted = validate("ex:a ex:p 1 .", shapes("[ <http://www.w3.org/ns/shacl-node-expr#count> [ <http://www.w3.org/ns/shacl-node-expr#arg> 0 ] ]"))
+        assertEquals("1", (counted.violations.single().value as com.geoknoesis.kastor.rdf.Literal).lexical)
     }
 
     @Test fun `prefix declarations of the shapes graph apply to SPARQL queries without sh prefixes`() {

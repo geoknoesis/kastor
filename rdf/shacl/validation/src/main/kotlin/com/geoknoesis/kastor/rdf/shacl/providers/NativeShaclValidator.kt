@@ -424,7 +424,7 @@ internal class NativeShaclValidator(
         sparqlInPlace: SparqlQueryable? = null,
     ): NativeValidationContext =
         NativeValidationContext(
-            compiled, DataGraphIndex(graph, budget, config.maxPathValueNodes), budget, sparqlRepositoryFactory, sparqlInPlace, instrumentation,
+            this, compiled, DataGraphIndex(graph, budget, config.maxPathValueNodes), budget, sparqlRepositoryFactory, sparqlInPlace, instrumentation,
         )
 
     /**

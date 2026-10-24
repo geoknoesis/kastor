@@ -154,15 +154,9 @@ internal object W3cKnownDeviations {
         UnsupportedShaclFeature.NODE_EXPRESSION,
         "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine",
     )
-    private val SPARQL_FUNCTIONS = Deviation(
-        UnsupportedShaclFeature.SHACL_FUNCTION,
-        "SHACL 1.2 expression functions (sh:ListParameterExpressionFunction) whose sh:bodyExpression is a shnex: " +
-            "node expression, called from SPARQL, are not implemented by the native engine (SPARQL bodies are)",
-    )
 
     private val deviations: Map<String, Deviation> = linkedMapOf(
         "node-expr/constraints/expression-001.ttl" to NODE_EXPRESSIONS,
-        "sparql/functions/instanceCount-example.ttl" to SPARQL_FUNCTIONS,
     )
 
     /**

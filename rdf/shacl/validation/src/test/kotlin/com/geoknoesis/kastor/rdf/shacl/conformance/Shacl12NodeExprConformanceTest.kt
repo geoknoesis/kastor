@@ -33,9 +33,8 @@ import org.junit.jupiter.api.TestFactory
  * output nodes must equal the `mf:result` list under RDF term equality, as a multiset when `sht:ignoreOrder true` is
  * given (on the action or the entry).
  *
- * Cases in [W3cNodeExprPending] need functions that are not evaluated yet: they are executed and must produce an
- * evaluation failure whose reason starts with the listed prefix, so they never pass silently. Every other case must
- * pass, except the cases in [W3cNodeExprIllFormed], whose expression the native engine rejects as ill-formed. Tagged `w3c` like [Shacl12NativeConformanceTest]; with `shacl.w3c.requireSuite=true` the run must cover the
+ * Every case must pass, except the cases in [W3cNodeExprIllFormed], whose expression the native engine rejects as
+ * ill-formed. Tagged `w3c` like [Shacl12NativeConformanceTest]; with `shacl.w3c.requireSuite=true` the run must cover the
  * `shnex/` and `shnex-sparql/` manifests of the full suite.
  */
 @Tag("w3c")
@@ -70,12 +69,10 @@ class Shacl12NodeExprConformanceTest {
                         },
                     )
                 }
-        // Against the upstream suite, every pending entry must still name cases (a stale entry hides nothing, but
+        // Against the upstream suite, every ill-formed entry must still name cases (a stale entry hides nothing, but
         // misleads). The bundled fixture has none of the upstream files, and gets no such test (it would only skip).
         if (files.none { it.contains("/node-expr/shnex") }) return containers.stream()
-        val stale = DynamicTest.dynamicTest("pending entries name existing cases") {
-            val unused = W3cNodeExprPending.entries.filter { key -> files.none { W3cNodeExprPending.matches(it, key) } }
-            assertTrue(unused.isEmpty(), "W3cNodeExprPending entries without cases: $unused")
+        val stale = DynamicTest.dynamicTest("ill-formed entries name existing cases") {
             val unusedIllFormed = W3cNodeExprIllFormed.entries.filter { key -> files.none { it.endsWith("/$key") } }
             assertTrue(unusedIllFormed.isEmpty(), "W3cNodeExprIllFormed entries without cases: $unusedIllFormed")
         }
@@ -102,13 +99,6 @@ class Shacl12NodeExprConformanceTest {
             return
         }
         val outcome = NativeShaclValidator(ValidationConfig.default()).evaluateNodeExpression(graph, expr, focus, variables)
-        W3cNodeExprPending.reasonFor(case.manifestPath)?.let { prefix ->
-            assertTrue(
-                outcome is NodeExprOutcome.Failure && outcome.reason.startsWith(prefix),
-                "$label: pending case must fail with a reason starting with \"$prefix\", got $outcome",
-            )
-            return
-        }
         assertTrue(outcome is NodeExprOutcome.Nodes, "$label: expected output nodes $expected, got $outcome")
         val actual = (outcome as NodeExprOutcome.Nodes).nodes
         if (ignoreOrder) {
@@ -148,25 +138,6 @@ class Shacl12NodeExprConformanceTest {
 }
 
 private fun slashed(path: Path): String = path.toString().replace(java.io.File.separatorChar, '/')
-
-/**
- * The W3C `sht:EvalNodeExpr` cases whose functions the native evaluator does not evaluate yet, by case file, with
- * the prefix of the evaluation failure reason they must produce. A key ending in `/` names every file of that
- * directory. Exactly the cases that need custom functions are listed (none in the suite yet).
- */
-internal object W3cNodeExprPending {
-    private val pending: Map<String, String> = linkedMapOf(
-    )
-
-    val entries: Set<String> get() = pending.keys
-
-    fun matches(file: String, key: String): Boolean = if (key.endsWith("/")) file.contains("/$key") else file.endsWith("/$key")
-
-    fun reasonFor(manifestPath: Path): String? {
-        val file = slashed(manifestPath)
-        return pending.entries.firstOrNull { (key, _) -> matches(file, key) }?.value
-    }
-}
 
 /**
  * W3C `sht:EvalNodeExpr` cases whose expression is ill-formed under Node Expressions §5, by case file, with the reason.

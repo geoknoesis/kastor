@@ -265,6 +265,11 @@ class SparqlFunctionExpressionTest {
                 """[ sparql:coalesce ( [ sh:select "SELECT ?x WHERE { BIND (1 AS ?x) }" ] 2 ) ]""")) {
                 assertThrows(ShaclValidationException::class.java, { eval(expr, provider, repositories = cancelling(provider, cause)) }, "$provider $expr")
             }
+            // A cancelled query of a shape-based function's conformance check is a run abort as well.
+            val shape = """ex:S sh:sparql [ sh:select "SELECT ${'$'}this WHERE { FILTER (false) }" ] ."""
+            assertThrows(ShaclValidationException::class.java, {
+                eval("[ shnex:filterShape ex:S ; shnex:nodes ( ex:a ) ]", provider, data = shape, repositories = cancelling(provider, cause))
+            }, "$provider filterShape")
         }
     }
 }

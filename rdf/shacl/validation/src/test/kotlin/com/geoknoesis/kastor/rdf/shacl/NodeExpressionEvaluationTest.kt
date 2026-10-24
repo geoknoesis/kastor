@@ -154,7 +154,9 @@ class NodeExpressionEvaluationTest {
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:property [ sh:path ex:p ; sh:values [ sh:sparqlExpr "1 +" ] ] .
         """
-        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:q 1 .", shapes) }
+        val e = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:q 1 .", shapes) }
+        // The provider's error stays the cause.
+        assertTrue(e.cause != null, "no cause: $e")
     }
 
     private val threeNodes = """sh:select '''SELECT ?v { { BIND (1 AS ?v) } UNION { BIND (2 AS ?v) } UNION { BIND (3 AS ?v) } }'''"""

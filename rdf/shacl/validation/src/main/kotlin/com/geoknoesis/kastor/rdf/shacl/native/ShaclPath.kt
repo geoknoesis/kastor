@@ -52,8 +52,14 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** SPARQL-based constraint components of this shapes graph, collected once per index. */
     val sparqlComponents: SparqlComponentCatalog by lazy { SparqlComponentCatalog.build(this) }
 
-    /** Custom named parameter node expression functions of this shapes graph, collected once per index. */
+    /** Custom node expression functions of this shapes graph (§6), collected once per index. */
     val nodeExpressionFunctions: NodeExpressionFunctions by lazy { NodeExpressionFunctions.build(this) }
+
+    /** The text of every SPARQL query of this shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr` literals). */
+    val sparqlQueryTexts: List<String> by lazy {
+        triples.filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == ShaclSparqlTerms.sparqlExpr }
+            .mapNotNull { (it.obj as? com.geoknoesis.kastor.rdf.Literal)?.lexical }
+    }
 
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 

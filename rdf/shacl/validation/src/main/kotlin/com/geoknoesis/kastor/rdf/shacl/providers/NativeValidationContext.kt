@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
@@ -8,10 +10,13 @@ import java.time.Duration
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledShapeGraph
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
+import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
+import java.util.concurrent.atomic.AtomicInteger
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 
 internal class NativeValidationContext(
+    private val validator: NativeShaclValidator,
     val compiled: CompiledShapeGraph,
     val data: DataGraphIndex,
     val budget: ValidationBudget,
@@ -78,8 +83,33 @@ internal class NativeValidationContext(
             data.graph,
             repositoryFactory = repositoryFactory,
             inPlace = sparqlInPlace,
-            functions = compiled.functions,
+            functions = compiled.functions.library(::runFunctionBody),
+            declaresFunctions = !compiled.functions.isEmpty,
         )
+    }
+
+    /** Calls of SHACL SPARQL functions with a node expression body that are being evaluated (see [runFunctionBody]). */
+    private val functionBodyDepth = AtomicInteger()
+
+    /**
+     * Evaluates the node expression [body] of the SHACL SPARQL function [function] called with [arguments] (SHACL 1.2
+     * SPARQL §7.3, Node Expressions §6.2): the focus node is the function IRI and the arguments are `shnex:arg 0`,
+     * `shnex:arg 1`, ...; the result is the single output node, or null (an error) for none, several or an
+     * evaluation failure. A body can run SPARQL queries that call functions again, each as a new query, so the
+     * provider's nesting limit does not see these calls: they nest at most [MAX_FUNCTION_DEPTH] deep, deeper calls
+     * are errors, so recursion terminates.
+     */
+    private fun runFunctionBody(body: NodeExpression, function: Iri, arguments: List<RdfTerm?>): RdfTerm? {
+        if (functionBodyDepth.incrementAndGet() > MAX_FUNCTION_DEPTH) {
+            functionBodyDepth.decrementAndGet()
+            return null
+        }
+        try {
+            val outcome = validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, 0))
+            return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
+        } finally {
+            functionBodyDepth.decrementAndGet()
+        }
     }
     fun checkDeadline() {
         budget.check()

@@ -25,23 +25,34 @@ import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
 import com.geoknoesis.kastor.rdf.vocab.XSD
 
 /**
- * Maximum nesting of node expression evaluation (including, later, custom function bodies): the root expression is
- * level 1, so evaluation depths 0 to 127 are allowed and depth 128 (the 129th level) is a failure.
+ * Maximum nesting of node expression evaluation, custom function bodies included (each body is one level deeper than
+ * its call): the root expression is level 1, so evaluation depths 0 to 127 are allowed and depth 128 (the 129th
+ * level) is a failure. Recursive custom functions therefore end in a failure.
  */
 internal const val MAX_NODE_EXPRESSION_DEPTH = 128
 
 /** The outcome of `evalExpr` (Node Expressions §3): a list of output nodes, or an evaluation failure (§3.3). */
 internal sealed interface NodeExprOutcome {
     data class Nodes(val nodes: List<RdfTerm>) : NodeExprOutcome
-    data class Failure(val reason: String) : NodeExprOutcome
+    /** [cause] is the error behind the failure, such as the provider's SPARQL error, when there is one. */
+    data class Failure(val reason: String, val cause: Throwable? = null) : NodeExprOutcome
 }
 
 /**
  * The evaluation context of a node expression besides the focus graph: the focus node (null when there is none), the
- * scope variables, the arguments of the custom function being evaluated, and the evaluation nesting [depth].
+ * scope variables, the arguments of the custom function being evaluated, and the evaluation nesting [depth]. The
+ * arguments of a custom list parameter function (§6.2) are nodes by position ([args]; null for an unbound optional
+ * argument of a SPARQL call); those of a custom named parameter function (§6.1) are the argument node expressions by
+ * parameter `sh:path` ([namedArgs]).
  */
-internal class NodeExprScope(val focus: RdfTerm?, val variables: Map<String, RdfTerm>, val args: List<RdfTerm?>, val depth: Int) {
-    fun nested(focus: RdfTerm? = this.focus): NodeExprScope = NodeExprScope(focus, variables, args, depth + 1)
+internal class NodeExprScope(
+    val focus: RdfTerm?,
+    val variables: Map<String, RdfTerm>,
+    val args: List<RdfTerm?>,
+    val depth: Int,
+    val namedArgs: Map<Iri, NodeExpression> = emptyMap(),
+) {
+    fun nested(focus: RdfTerm? = this.focus): NodeExprScope = NodeExprScope(focus, variables, args, depth + 1, namedArgs)
 }
 
 /**
@@ -54,8 +65,12 @@ internal class NodeExprScope(val focus: RdfTerm?, val variables: Map<String, Rdf
  * Bounds: every output node ticks the run budget, every list larger than
  * [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes] is a failure, and so is evaluation nested
  * deeper than [MAX_NODE_EXPRESSION_DEPTH]. Run aborts (timeout, cancellation) are exceptions, not failures; a SPARQL
- * error of the provider ([NodeExpression.Select], [NodeExpression.SparqlCall], `shnex:sum`) is a failure. Functions
- * that are not evaluated yet produce a failure whose reason starts with `"unsupported:"`.
+ * error of the provider ([NodeExpression.Select], [NodeExpression.SparqlCall], `shnex:sum`) is a failure, with the
+ * provider's error as its cause.
+ *
+ * Custom functions (§6) evaluate the body compiled in the shapes index of [ctx]
+ * ([com.geoknoesis.kastor.rdf.shacl.native.NodeExpressionFunctions]) one level deeper, with a scope of their
+ * arguments only: the scope variables of the call are not visible in the body.
  *
  * The shape-based functions validate against the compiled shapes of [ctx] (§3.4): conformance that the engine cannot
  * decide (undefined recursion, an undecided `sh:pattern`), a validation error, and a shape that is not compiled are
@@ -65,19 +80,20 @@ internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeVali
     try {
         NodeExprOutcome.Nodes(NodeExpressionEvaluator(this, ctx).eval(expr, scope))
     } catch (f: NodeExprFailure) {
-        NodeExprOutcome.Failure(f.reason)
+        NodeExprOutcome.Failure(f.reason, f.cause)
     }
 
 /**
  * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`) for
- * [focus] with an empty scope. An evaluation failure is a validation failure ([ShaclValidationException]). For a
+ * [focus] with an empty scope. An evaluation failure is a validation failure ([ShaclValidationException], caused by
+ * the failure's cause). For a
  * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
  * variable is unbound are skipped, and the output nodes are distinct, in solution order.
  */
 internal fun NativeShaclValidator.evalNodeExpression(expr: NodeExpression, ctx: NativeValidationContext, focus: RdfTerm?): List<RdfTerm> =
     when (val outcome = evaluate(expr, ctx, NodeExprScope(focus, emptyMap(), emptyList(), 0))) {
         is NodeExprOutcome.Nodes -> outcome.nodes
-        is NodeExprOutcome.Failure -> throw ShaclValidationException(outcome.reason)
+        is NodeExprOutcome.Failure -> throw ShaclValidationException(outcome.reason, outcome.cause)
     }
 
 /**
@@ -109,12 +125,10 @@ private fun sizeMessage(ctx: NativeValidationContext, what: String) =
     "SHACL $what exceeded ValidationConfig.maxPathValueNodes=${ctx.data.maxPathValueNodes}"
 
 /** An evaluation failure (§3.3) on its way to [evaluate]; no stack trace, as it is an outcome, not an error. */
-private class NodeExprFailure(val reason: String) : RuntimeException(reason, null, false, false)
+private class NodeExprFailure(val reason: String, cause: Throwable? = null) : RuntimeException(reason, cause, false, false)
 
 private class NodeExpressionEvaluator(private val validator: NativeShaclValidator, private val ctx: NativeValidationContext) {
-    private fun fail(reason: String): Nothing = throw NodeExprFailure(reason)
-
-    private fun unsupported(function: String): Nothing = fail("unsupported: $function is not evaluated by the native engine yet")
+    private fun fail(reason: String, cause: Throwable? = null): Nothing = throw NodeExprFailure(reason, cause)
 
     /** [nodes] as an output list: capped, and ticking the budget per node. */
     private fun output(nodes: List<RdfTerm>): List<RdfTerm> {
@@ -188,7 +202,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             is NodeExpression.Max -> extreme(sub(expr.e), sign = 1)
             is NodeExpression.Sum -> output(listOf(sum(sub(expr.e))))
             is NodeExpression.InstancesOf -> instancesOf(sub(expr.e))
-            is NodeExpression.Select -> select(expr, scope.focus)
+            is NodeExpression.Select -> select(expr, scope.focus, scope.args)
             // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
             is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape") })
             is NodeExpression.FindFirst -> {
@@ -206,8 +220,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             is NodeExpression.ConformsToShape -> {
                 // A list parameter function (§3.2.2): both arguments are evaluated first, so that a failure takes
                 // precedence over an argument without output nodes.
-                val node = argument(sub(expr.node), "node")
-                val shape = argument(sub(expr.shape), "shape")
+                val node = argument(sub(expr.node), "node", "shnex:conformsToShape")
+                val shape = argument(sub(expr.shape), "shape", "shnex:conformsToShape")
                 when {
                     node == null || shape == null -> emptyList()
                     shape !is Iri -> fail("the shape argument $shape of shnex:conformsToShape is not an IRI")
@@ -216,10 +230,16 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             }
             // SPARQL functions (§5) and custom functions (§6).
             is NodeExpression.SparqlCall -> sparqlCall(expr, inner)
-            is NodeExpression.CustomNamed -> unsupported("custom function <${expr.function.value}>")
-            is NodeExpression.CustomList -> unsupported("custom function <${expr.function.value}>")
-            is NodeExpression.Arg -> unsupported("shnex:arg ${expr.index}")
-            is NodeExpression.NamedArg -> unsupported("shnex:arg <${expr.parameter.value}>")
+            is NodeExpression.CustomNamed -> {
+                // §6.1: the scope of the body maps each given parameter to its argument expression, unevaluated.
+                eval(body(expr.function), NodeExprScope(scope.focus, emptyMap(), emptyList(), scope.depth + 1, expr.args))
+            }
+            is NodeExpression.CustomList -> customList(expr, scope, inner)
+            // §6.3: a list argument is a node, which evaluates to itself; a named one is an expression, evaluated with
+            // an empty scope for the focus node of the arg expression. No such argument: no output nodes.
+            is NodeExpression.Arg -> output(listOfNotNull(scope.args.getOrNull(expr.index)))
+            is NodeExpression.NamedArg -> scope.namedArgs[expr.parameter]?.let { eval(it, NodeExprScope(scope.focus, emptyMap(), emptyList(), scope.depth + 1)) }
+                ?: emptyList()
         }
     }
 
@@ -227,12 +247,40 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     private fun isTrue(nodes: List<RdfTerm>): Boolean = nodes.size == 1 && TrueLiteral == nodes.single()
 
     /** The value of an argument of a list parameter function (§3.2.2): null for none, a failure for several. */
-    private fun argument(nodes: List<RdfTerm>, name: String): RdfTerm? =
+    private fun argument(nodes: List<RdfTerm>, name: String, function: String): RdfTerm? =
         when (nodes.size) {
             0 -> null
             1 -> nodes.single()
-            else -> fail("the $name argument of shnex:conformsToShape produced more than one node (${nodes.size})")
+            else -> fail("the $name argument of $function produced more than one node (${nodes.size})")
         }
+
+    /** The compiled body of the custom function [function] (compiled with the expression that calls it). */
+    private fun body(function: Iri): NodeExpression =
+        ctx.compiled.index.nodeExpressionFunctions.body(function) ?: fail("the custom function <${function.value}> has no compiled body")
+
+    /**
+     * §6.2: every argument is evaluated in the scope of the call ([argScope]) to at most one node (§3.2.2); a failing
+     * argument takes precedence over one without output nodes, which makes the output empty. The body is evaluated
+     * one level deeper with the argument nodes as its scope, and more than one output node is a failure.
+     */
+    private fun customList(expr: NodeExpression.CustomList, scope: NodeExprScope, argScope: NodeExprScope): List<RdfTerm> {
+        val function = "<${expr.function.value}>"
+        var failure: NodeExprFailure? = null
+        var unbound = false
+        val values = expr.args.mapIndexed { i, arg ->
+            try {
+                argument(eval(arg, argScope), "argument $i", function).also { if (it == null) unbound = true }
+            } catch (f: NodeExprFailure) {
+                if (failure == null) failure = f
+                null
+            }
+        }
+        failure?.let { throw it }
+        if (unbound) return emptyList()
+        val out = eval(body(expr.function), NodeExprScope(scope.focus, emptyMap(), values, scope.depth + 1))
+        if (out.size > 1) fail("the custom function $function produced more than one node (${out.size})")
+        return out
+    }
 
     /**
      * Whether [node] conforms to [shape] (§3.4), which must be a compiled shape. The compiler compiles every shape an
@@ -249,7 +297,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             validator.conformance(node, shape, ctx, DepthState(0, Mode.CONFORMS))
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
-            fail("$function: validating $node against $shape failed: ${e.message}")
+            if (isRunAbort(e)) throw e
+            fail("$function: validating $node against $shape failed: ${e.message}", e)
         }
         return when (answer) {
             Conformance.CONFORMS -> true
@@ -340,8 +389,13 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * A SPARQL node expression (SHACL 1.2 SPARQL §6): `this` is pre-bound to [focus] when it is not null; solutions
      * in which the expression variable is unbound are skipped, and the output nodes are distinct, in solution order.
      */
-    private fun select(expr: NodeExpression.Select, focus: RdfTerm?): List<RdfTerm> {
-        val (query, bindings) = expr.template.bind(if (focus == null) emptyMap() else mapOf("this" to focus))
+    private fun select(expr: NodeExpression.Select, focus: RdfTerm?, args: List<RdfTerm?>): List<RdfTerm> {
+        val scope = LinkedHashMap<String, RdfTerm>()
+        if (focus != null) scope["this"] = focus
+        // §6 of SHACL 1.2 SPARQL: a scope variable named by a number (an argument of a custom list parameter
+        // function) is bound as "arg" + str(name).
+        args.forEachIndexed { i, arg -> if (arg != null) scope["arg$i"] = arg }
+        val (query, bindings) = expr.template.bind(scope)
         val nodes = try {
             selectNodes(expr, query, bindings)
         } catch (e: ShaclValidationException) {
@@ -414,15 +468,20 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     }
 
     /**
-     * Turns the SPARQL error [e] of [function] into a failure, unless it is a run abort: the run budget is used up, the
-     * provider cancelled or interrupted the query, or no SPARQL engine is available; [e] is then rethrown.
+     * Turns the SPARQL error [e] of [function] into a failure caused by [e], unless it is a run abort: the run budget
+     * is used up, the provider cancelled or interrupted the query, or no SPARQL engine is available; [e] is then
+     * rethrown.
      */
     private fun sparqlError(function: String, e: ShaclValidationException): Nothing {
         ctx.checkDeadline()
-        // A missing SPARQL engine is a configuration error of the run, not a SPARQL error.
-        if (isCancellation(e) || e.cause is RdfProviderException) throw e
-        fail("$function failed: ${e.message}")
+        if (isRunAbort(e)) throw e
+        fail("$function failed: ${e.message}", e)
     }
+
+    /** Whether [e] aborts the run: the provider cancelled or interrupted a query, or no SPARQL engine is available. */
+    private fun isRunAbort(e: ShaclValidationException): Boolean =
+        // A missing SPARQL engine is a configuration error of the run, not a SPARQL error.
+        isCancellation(e) || e.cause is RdfProviderException
 
     private companion object {
         /** A SPARQL expression that is an error on every provider (integer division by zero). */

@@ -68,7 +68,7 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
 
         val functions = NodeExpressionFunctions.of(index)
         val builtinKeys = predicates.filter { it in NodeExpressionVocabulary.BUILTIN }
-        val customNamed = predicates.mapNotNull { functions.byKey[it] }.distinct()
+        val customNamed = predicates.flatMap { functions.namedWithKey(it) }.distinct()
         val listFunctions = predicates.filter { isListFunction(it) }
         val count = builtinKeys.size + customNamed.size + listFunctions.size
         if (count > 1) {
@@ -245,7 +245,10 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
                 }
                 NodeExpression.SparqlCall(sparqlName, args)
             }
-            else -> NodeExpression.CustomList(function, args)
+            else -> {
+                NodeExpressionFunctions.of(index).referenceList(function)
+                NodeExpression.CustomList(function, args)
+            }
         }
     }
 
@@ -342,58 +345,168 @@ internal object NodeExpressionVocabulary {
 internal class NamedParameterFunction(val iri: Iri, val parameters: Set<Iri>, val keys: Set<Iri>)
 
 /**
- * The custom named parameter functions of a shapes graph (§6.1), by key parameter: the SHACL instances of
- * `sh:NamedParameterExpressionFunction`. Built once per [ShapeGraphIndex]; an ill-formed declaration (a parameter
- * without exactly one IRI `sh:path`, no key parameter, a key parameter shared with another function) throws
- * [ShapeCompileException]. `sh:bodyExpression` is compiled where the function is evaluated.
+ * The custom node expression functions of a shapes graph (§6): the SHACL instances of
+ * `sh:NamedParameterExpressionFunction`, found by their key parameters, and of `sh:ListParameterExpressionFunction`,
+ * found by their IRI (the list parameter property). One catalog per [ShapeGraphIndex].
+ *
+ * A declaration is checked only when an expression references the function, so an ill-formed function that nothing
+ * uses does not make the shapes graph ill-formed: a named parameter function must be an IRI whose parameters each
+ * have exactly one IRI `sh:path` (at most one xsd:boolean `sh:keyParameter`), with at least one key parameter that
+ * no other function uses; every custom function has exactly one `sh:bodyExpression`, a well-formed node expression.
+ * A referencing expression throws [ShapeCompileException] for an ill-formed function, or one whose body uses an
+ * ill-formed function, at any depth.
+ *
+ * Bodies are compiled after the referencing expression ([compileBodies]), iteratively: a function may call itself
+ * or another function that calls it, and a chain of functions costs no stack. [body] then gives the compiled body
+ * to evaluation. Only compilation (one thread at a time) fills the catalog; evaluation only reads it.
  */
-internal class NodeExpressionFunctions private constructor(val byKey: Map<Iri, NamedParameterFunction>) {
+internal class NodeExpressionFunctions private constructor(
+    private val index: ShapeGraphIndex,
+    /** Every IRI that a declaration names as a key parameter, even an ill-formed one, with the declaring functions. */
+    private val candidatesByKey: Map<Iri, List<RdfResource>>,
+) {
+    private class Job(val function: Iri, val term: RdfTerm, val preBound: Set<String>)
+
+    /** Checked named parameter functions: a [NamedParameterFunction], or the [ShapeCompileException] of the check. */
+    private val named = HashMap<RdfResource, Any>()
+    private val bodies = java.util.concurrent.ConcurrentHashMap<Iri, NodeExpression>()
+    private val failures = HashMap<Iri, ShapeCompileException>()
+    private val queued = HashSet<Iri>()
+    private val pending = ArrayDeque<Job>()
+    private var compiling = false
+
+    /** The custom named parameter functions that declare [key] as a key parameter, checked (§6.1). */
+    @Synchronized
+    fun namedWithKey(key: Iri): List<NamedParameterFunction> = candidatesByKey[key]?.map { named(it) } ?: emptyList()
+
+    /** Checks the custom list parameter function [function] (§6.2), which a list parameter expression references. */
+    @Synchronized
+    fun referenceList(function: Iri) {
+        failures[function]?.let { throw it }
+        if (function in queued) return
+        val body = singleBody(function, "Node expression function")
+        // As for SHACL SPARQL functions (SHACL 1.2 SPARQL §7): a SPARQL body may use this and arg0, arg1, ...
+        val preBound = LinkedHashSet<String>().apply {
+            add("this")
+            for (i in index.objects(function, SHACL.parameter).indices) add("arg$i")
+        }
+        enqueue(Job(function, body, preBound))
+    }
+
+    /** The compiled `sh:bodyExpression` of a referenced custom function, once [compileBodies] has compiled it. */
+    fun body(function: Iri): NodeExpression? = bodies[function]
+
+    /**
+     * Compiles the bodies of the functions referenced so far, and of the functions those bodies reference in turn.
+     * Throws [ShapeCompileException] for an ill-formed body (remembered: a later reference throws it again).
+     */
+    @Synchronized
+    fun compileBodies() {
+        if (compiling) return
+        compiling = true
+        try {
+            while (pending.isNotEmpty()) {
+                index.tick("node expression function compilation")
+                val job = pending.removeFirst()
+                try {
+                    bodies[job.function] = NodeExpressionParser(index, job.preBound).parse(job.term)
+                        ?: throw ShapeCompileException("The sh:bodyExpression ${job.term} of node expression function ${job.function} must be a node expression")
+                } catch (e: ShapeCompileException) {
+                    failures[job.function] = e
+                    throw e
+                }
+            }
+        } finally {
+            compiling = false
+        }
+    }
+
+    private fun enqueue(job: Job) {
+        if (queued.add(job.function)) pending.addLast(job)
+    }
+
+    private fun singleBody(function: Iri, kind: String): RdfTerm =
+        index.objects(function, ShaclSparqlTerms.bodyExpression).singleOrNull()
+            ?: throw ShapeCompileException("$kind $function must have exactly one sh:bodyExpression")
+
+    private fun named(candidate: RdfResource): NamedParameterFunction {
+        when (val known = named[candidate]) {
+            is NamedParameterFunction -> {
+                failures[known.iri]?.let { throw it }
+                return known
+            }
+            is ShapeCompileException -> throw known
+        }
+        val function = try {
+            val function = declaration(candidate)
+            for (key in function.keys) {
+                val clash = candidatesByKey[key].orEmpty().firstOrNull { it != candidate }?.let { "custom function $it" }
+                    ?: builtinClash(key, index)
+                if (clash != null) {
+                    throw ShapeCompileException("Key parameter <${key.value}> of node expression function ${function.iri} is also a key parameter of $clash")
+                }
+            }
+            enqueue(Job(function.iri, singleBody(function.iri, "Node expression function"), setOf("this")))
+            function
+        } catch (e: ShapeCompileException) {
+            named[candidate] = e
+            throw e
+        }
+        named[candidate] = function
+        return function
+    }
+
+    private fun declaration(node: RdfResource): NamedParameterFunction {
+        val iri = node as? Iri ?: throw ShapeCompileException("Node expression function $node must be an IRI")
+        val parameters = LinkedHashSet<Iri>()
+        val keys = LinkedHashSet<Iri>()
+        for (parameter in index.objects(iri, SHACL.parameter)) {
+            index.tick("node expression function compilation")
+            val p = parameter as? RdfResource
+                ?: throw ShapeCompileException("Parameter $parameter of node expression function $iri must be a resource")
+            val path = index.objects(p, SHACL.path).singleOrNull() as? Iri
+                ?: throw ShapeCompileException("Parameter $p of node expression function $iri must have exactly one IRI sh:path")
+            if (!parameters.add(path)) {
+                throw ShapeCompileException("Node expression function $iri declares the parameter <${path.value}> more than once")
+            }
+            val key = index.objects(p, ShaclSparqlTerms.keyParameter)
+            if (key.size > 1 || key.any { it !is Literal || it.datatype != XSD.boolean }) {
+                throw ShapeCompileException("Parameter $p of node expression function $iri must have at most one xsd:boolean sh:keyParameter")
+            }
+            if (key.any { isLexicallyTrue(it) }) keys.add(path)
+        }
+        if (keys.isEmpty()) throw ShapeCompileException("Node expression function $iri must declare at least one parameter with sh:keyParameter true")
+        return NamedParameterFunction(iri, parameters, keys)
+    }
+
     companion object {
         fun of(index: ShapeGraphIndex): NodeExpressionFunctions = index.nodeExpressionFunctions
 
+        /**
+         * Collects the key parameters of the named parameter functions of [index] without checking the declarations:
+         * every IRI `sh:path` of a parameter with a true `sh:keyParameter` (whatever its datatype). A blank node
+         * that uses one of them is a call of the function, which the reference then checks.
+         */
         fun build(index: ShapeGraphIndex): NodeExpressionFunctions {
             val candidates = LinkedHashSet<RdfResource>()
             for (t in index.triples) {
                 index.tick("node expression function compilation")
                 if (t.predicate == RDF.type) candidates.add(t.subject)
             }
-            val byKey = LinkedHashMap<Iri, NamedParameterFunction>()
+            val byKey = LinkedHashMap<Iri, MutableList<RdfResource>>()
             for (candidate in candidates) {
                 index.tick("node expression function compilation")
                 if (!index.isInstanceOf(candidate, ShaclSparqlTerms.NamedParameterExpressionFunction)) continue
-                val function = declaration(candidate, index)
-                for (key in function.keys) {
-                    val clash = byKey[key]?.iri?.let { "custom function $it" } ?: builtinClash(key, index)
-                    if (clash != null) {
-                        throw ShapeCompileException("Key parameter <${key.value}> of node expression function ${function.iri} is also a key parameter of $clash")
+                for (parameter in index.objects(candidate, SHACL.parameter)) {
+                    index.tick("node expression function compilation")
+                    val p = parameter as? RdfResource ?: continue
+                    if (index.objects(p, ShaclSparqlTerms.keyParameter).none { isLexicallyTrue(it) }) continue
+                    for (path in index.objects(p, SHACL.path)) {
+                        if (path is Iri) byKey.getOrPut(path) { ArrayList(1) }.let { if (candidate !in it) it.add(candidate) }
                     }
-                    byKey[key] = function
                 }
             }
-            return NodeExpressionFunctions(byKey)
-        }
-
-        private fun declaration(node: RdfResource, index: ShapeGraphIndex): NamedParameterFunction {
-            val iri = node as? Iri ?: throw ShapeCompileException("Node expression function $node must be an IRI")
-            val parameters = LinkedHashSet<Iri>()
-            val keys = LinkedHashSet<Iri>()
-            for (parameter in index.objects(iri, SHACL.parameter)) {
-                index.tick("node expression function compilation")
-                val p = parameter as? RdfResource
-                    ?: throw ShapeCompileException("Parameter $parameter of node expression function $iri must be a resource")
-                val path = index.objects(p, SHACL.path).singleOrNull() as? Iri
-                    ?: throw ShapeCompileException("Parameter $p of node expression function $iri must have exactly one IRI sh:path")
-                if (!parameters.add(path)) {
-                    throw ShapeCompileException("Node expression function $iri declares the parameter <${path.value}> more than once")
-                }
-                val key = index.objects(p, ShaclSparqlTerms.keyParameter)
-                if (key.size > 1 || key.any { it !is Literal || it.datatype != XSD.boolean }) {
-                    throw ShapeCompileException("Parameter $p of node expression function $iri must have at most one xsd:boolean sh:keyParameter")
-                }
-                if (key.any { isLexicallyTrue(it) }) keys.add(path)
-            }
-            if (keys.isEmpty()) throw ShapeCompileException("Node expression function $iri must declare at least one parameter with sh:keyParameter true")
-            return NamedParameterFunction(iri, parameters, keys)
+            return NodeExpressionFunctions(index, byKey)
         }
 
         /** What else uses [key] as its key parameter or list parameter property, or null. */

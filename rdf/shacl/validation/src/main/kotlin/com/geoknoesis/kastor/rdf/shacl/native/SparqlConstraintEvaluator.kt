@@ -85,13 +85,16 @@ internal object SparqlConstraintEvaluator {
     /**
      * SPARQL access for one validation run, initialized only if a SPARQL constraint is evaluated.
      * [repositoryFactory] is an internal seam (tests simulate a classpath without a SPARQL provider).
-     * Every query carries [functions], the SHACL 1.2 SPARQL functions of the shapes graph.
+     * Every query carries [functions], the SHACL 1.2 SPARQL functions of the shapes graph for this run;
+     * [declaresFunctions] tells whether the shapes graph declares any (the per-run library is a new object, so it
+     * cannot be compared with [SparqlFunctionLibrary.EMPTY]).
      */
     class Session(
         private val dataGraph: RdfGraph,
         private val repositoryFactory: () -> RdfRepository = defaultRepositoryFactory,
         inPlace: SparqlQueryable? = null,
         private val functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY,
+        declaresFunctions: Boolean = functions !== SparqlFunctionLibrary.EMPTY,
     ) : AutoCloseable {
         /**
          * Caller-owned view of the data graph, used while it supports bound, timed queries. Never used when the
@@ -99,7 +102,7 @@ internal object SparqlConstraintEvaluator {
          * functions on (an RDF4J repository over a store Kastor did not create), so queries run on the private copy.
          */
         private var inPlace: SparqlQueryable? =
-            if (inPlace != null && functions === SparqlFunctionLibrary.EMPTY && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
+            if (inPlace != null && !declaresFunctions && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
         private var copy: RdfRepository? = null
 
         private fun copied(): RdfRepository {

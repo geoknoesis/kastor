@@ -165,22 +165,27 @@ internal object NodeExpressions {
      * for a blank node that is no node expression at all (such as a data node). Ill-formed expressions throw
      * [ShapeCompileException], pre-binding violations [SparqlPreBindingRestrictionException]. [preBound] are the
      * scope variables the restriction check of SPARQL expressions treats as potentially pre-bound (`this`, and the
-     * `arg<i>` of a function).
+     * `arg<i>` of a function). The bodies of the custom functions the tree calls are compiled as well, at any depth
+     * ([NodeExpressionFunctions.compileBodies]); an ill-formed one throws.
      */
-    fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? =
-        NodeExpressionParser(index, preBound).parse(term)
+    fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? {
+        val expr = NodeExpressionParser(index, preBound).parse(term)
+        NodeExpressionFunctions.of(index).compileBodies()
+        return expr
+    }
 
     /**
      * The shapes that [expr] validates against, anywhere in its tree: the shapes of `shnex:filterShape`,
      * `shnex:findFirst`, `shnex:matchAll` and `shnex:nodesMatching`, and the constant IRI shape arguments of
      * `shnex:conformsToShape`. The shapes compiler compiles them, so that evaluation finds them (§3.4). A computed
      * `shnex:conformsToShape` shape cannot be known before evaluation: it is evaluated only when it is a shape of
-     * the compiled shapes graph. Iterative and visiting a shared subexpression once, so any tree is walked in
-     * linear time and constant stack.
+     * the compiled shapes graph. The bodies of the custom functions [expr] calls are walked as well, at any depth
+     * (each once, so recursive functions end), as they are compiled in [index]. Iterative and visiting a shared
+     * subexpression once, so any tree is walked in linear time and constant stack.
      */
-    fun shapeRefs(expr: NodeExpression): Set<RdfResource> {
+    fun shapeRefs(expr: NodeExpression, index: ShapeGraphIndex): Set<RdfResource> {
         val out = LinkedHashSet<RdfResource>()
-        walk(expr) { e ->
+        walk(expr, index) { e ->
             when (e) {
                 is NodeExpression.FilterShape -> out.add(e.shape)
                 is NodeExpression.FindFirst -> out.add(e.shape)
@@ -195,16 +200,20 @@ internal object NodeExpressions {
 
     /**
      * Whether [expr] has a `shnex:conformsToShape` whose shape argument is computed (not a constant), so that the
-     * shape it validates against is only known at evaluation time.
+     * shape it validates against is only known at evaluation time. Custom function bodies count, as for [shapeRefs].
      */
-    fun computesShapes(expr: NodeExpression): Boolean {
+    fun computesShapes(expr: NodeExpression, index: ShapeGraphIndex): Boolean {
         var found = false
-        walk(expr) { e -> if (e is NodeExpression.ConformsToShape && e.shape !is NodeExpression.Constant) found = true }
+        walk(expr, index) { e -> if (e is NodeExpression.ConformsToShape && e.shape !is NodeExpression.Constant) found = true }
         return found
     }
 
-    /** Visits every node of [expr] once, in syntax order, iteratively (constant stack, shared subtrees once). */
-    private inline fun walk(expr: NodeExpression, visit: (NodeExpression) -> Unit) {
+    /**
+     * Visits every node of [expr] once, in syntax order, iteratively (constant stack, shared subtrees once), and the
+     * compiled bodies of the custom functions it calls after the call's arguments.
+     */
+    private inline fun walk(expr: NodeExpression, index: ShapeGraphIndex, visit: (NodeExpression) -> Unit) {
+        val functions = NodeExpressionFunctions.of(index)
         val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<NodeExpression, Boolean>())
         val pending = ArrayDeque<NodeExpression>()
         pending.add(expr)
@@ -212,6 +221,12 @@ internal object NodeExpressions {
             val e = pending.removeLast()
             if (!seen.add(e)) continue
             visit(e)
+            val function = when (e) {
+                is NodeExpression.CustomNamed -> e.function
+                is NodeExpression.CustomList -> e.function
+                else -> null
+            }
+            function?.let { functions.body(it) }?.let { pending.addLast(it) }
             // Reversed, so that children are visited in syntax order.
             e.children().asReversed().forEach { pending.addLast(it) }
         }

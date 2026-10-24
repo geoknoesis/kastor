@@ -7,7 +7,6 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
-import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.OWL
@@ -227,8 +226,11 @@ internal data class CompiledShapeGraph(
     val recursiveComponents: Map<RdfResource, Int> = emptyMap(),
     /** Descriptions of unsupported constructs that were ignored ([UnsupportedFeatureHandling.IGNORE_WITH_WARNING]). */
     val unsupportedFeatureWarnings: List<String> = emptyList(),
-    /** SHACL 1.2 SPARQL functions declared in the shapes graph ([SparqlFunctionDeclarations]), sent with every SHACL query. */
-    val functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY,
+    /**
+     * SHACL 1.2 SPARQL functions declared in the shapes graph ([SparqlFunctionDeclarations]): every SHACL query of a
+     * run carries the run's [SparqlFunctionDeclarationSet.library].
+     */
+    val functions: SparqlFunctionDeclarationSet = SparqlFunctionDeclarationSet.EMPTY,
 )
 
 internal object ShapesCompiler {
@@ -261,6 +263,7 @@ internal object ShapesCompiler {
                 unsupported.values.toSet(),
             )
         }
+        val functions = SparqlFunctionDeclarations.compile(index)
         val compiled = mutableListOf<CompiledNodeShape>()
         val byNode = LinkedHashMap<RdfResource, CompiledNodeShape>()
         for (subject in nodeShapeSubjects.sortedWith { a, b -> budget.check("shape ordering"); resourceOrdering.compare(a, b) }) {
@@ -294,6 +297,8 @@ internal object ShapesCompiler {
         }
         compiled.forEach { visitNode(it) }
         pending.addAll(extraRoots)
+        // The shapes of the node expression bodies of the functions SPARQL queries may call.
+        functions.expressionBodies.forEach { pending.addAll(exprShapes.of(it)) }
         while (pending.isNotEmpty()) {
             budget.check("shape compilation")
             val ref = pending.removeFirst()
@@ -310,7 +315,7 @@ internal object ShapesCompiler {
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, exprShapes, budget),
             unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
-            SparqlFunctionDeclarations.compile(index),
+            functions,
         )
     }
 
@@ -326,7 +331,7 @@ internal object ShapesCompiler {
         private val candidates: Set<RdfResource> by lazy { shapeCandidates(index) }
 
         fun of(expr: NodeExpression): Set<RdfResource> =
-            if (NodeExpressions.computesShapes(expr)) NodeExpressions.shapeRefs(expr) + candidates else NodeExpressions.shapeRefs(expr)
+            if (NodeExpressions.computesShapes(expr, index)) NodeExpressions.shapeRefs(expr, index) + candidates else NodeExpressions.shapeRefs(expr, index)
 
         /** The shapes of the `sh:values` and `sh:defaultValue` node expressions of [ps]. */
         fun of(ps: CompiledPropertyShape): List<RdfResource> = listOfNotNull(ps.values, ps.defaultValue).flatMap { of(it) }
@@ -563,19 +568,13 @@ internal object ShapesCompiler {
                 }
             }
         }
-        // Functions with a SPARQL body are evaluated (SparqlFunctionDeclarations). A declared function library is
-        // harmless; calling one of its other functions (a shnex: body) from SPARQL is not evaluable.
+        // Functions whose body is a SPARQL or other node expression are evaluated (SparqlFunctionDeclarations). A
+        // declared function library is harmless; calling one whose body is no node expression at all from SPARQL is
+        // not evaluable.
         functions.retainAll { budget.tick("feature detection"); !SparqlFunctionDeclarations.compiles(it, index) }
-        if (functions.isNotEmpty()) {
-            val sparqlTexts = index.triples
-                .filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == ShaclSparqlTerms.sparqlExpr }
-                .mapNotNull { (it.obj as? Literal)?.lexical }
-            for (function in functions) {
-                val localName = function.value.substringAfterLast('#').substringAfterLast('/')
-                val call = Regex("(?<![A-Za-z0-9_])" + Regex.escape(localName) + "[ ]*[(]")
-                if (sparqlTexts.any { it.contains(function.value) || (localName.isNotEmpty() && call.containsMatchIn(it)) }) {
-                    out["SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query"] = UnsupportedShaclFeature.SHACL_FUNCTION
-                }
+        for (function in functions) {
+            if (SparqlFunctionDeclarations.calledFromSparql(function, index)) {
+                out["SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query"] = UnsupportedShaclFeature.SHACL_FUNCTION
             }
         }
         return out

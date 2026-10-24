@@ -26,6 +26,7 @@ class SparqlFunctionTest {
     private val prefixes = """
         @prefix sh: <http://www.w3.org/ns/shacl#> .
         @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
+        @prefix sparql: <http://www.w3.org/ns/sparql#> .
         @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
         @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
         @prefix ex: <http://example.com/ns#> .
@@ -168,6 +169,98 @@ class SparqlFunctionTest {
             assertEquals("one", (report.violations.single().value as Literal).lexical)
             assertEquals(1, copies.get(), "with functions the private copy is queried")
         }
+    }
+
+    // --- shnex: bodies -------------------------------------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `instanceCount example`(provider: String) {
+        val graph = w3cGraph("instanceCount-example.ttl")
+        val violation = validator(provider).validate(graph, graph).violations.single()
+        assertEquals(ViolationSeverity.WARNING, violation.severity)
+        assertEquals("2", (violation.value as Literal).lexical)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `shnex bodies called from SPARQL`(provider: String) {
+        val functions = """
+            ex:spaced a sh:ListParameterExpressionFunction ;
+              sh:bodyExpression [ sparql:concat ( [ shnex:arg 0 ] " " [ shnex:arg 1 ] ) ] ;
+              sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg1 ] .
+            ex:self a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:var "focusNode" ] .
+            ex:constant a sh:ListParameterExpressionFunction ; sh:bodyExpression "c" .
+            ex:several a sh:ListParameterExpressionFunction ; sh:bodyExpression ( 1 2 ) .
+            ex:none a sh:ListParameterExpressionFunction ; sh:bodyExpression [] .
+            ex:failing a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:pathValues ex:p ; shnex:focusNode ( 1 2 ) ] .
+            ex:opt a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ; sh:optional true ] ;
+              sh:bodyExpression [ shnex:count [ shnex:arg 0 ] ] .
+        """
+        // A shnex: body evaluates SPARQL function expressions with nested queries.
+        assertEquals("a b", valueOf(provider, functions, "<http://example.com/ns#spaced>('a', 'b')"))
+        // The focus node is the function IRI (SPARQL §7.3).
+        assertEquals("http://example.com/ns#self", valueOf(provider, functions, "STR(<http://example.com/ns#self>())"))
+        assertEquals("c", valueOf(provider, functions, "<http://example.com/ns#constant>()"))
+        // Exactly one output node is the result; none, several or a failure is an error.
+        assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#several>())"))
+        assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#none>())"))
+        assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#failing>())"))
+        // An unbound optional argument has no output nodes.
+        assertEquals("0", valueOf(provider, functions, "STR(<http://example.com/ns#opt>())"))
+        assertEquals("1", valueOf(provider, functions, "STR(<http://example.com/ns#opt>(1))"))
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `recursion through shnex bodies ends at the depth limit`(provider: String) {
+        // Each level counts the solutions of a query that calls the function again: the deepest call is an error.
+        val functions = """
+            ex:rec a sh:ListParameterExpressionFunction ;
+              sh:bodyExpression [ shnex:count [ sh:select "SELECT ?x WHERE { BIND (<http://example.com/ns#rec>() AS ?x) }" ] ] .
+        """
+        assertEquals("1", valueOf(provider, functions, "STR(<http://example.com/ns#rec>())"))
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `with only shnex functions declared an in-place dataset is not queried`(provider: String) {
+        val copies = AtomicInteger()
+        val validator = NativeShaclValidator(ValidationConfig.default()) { copies.incrementAndGet(); repository(provider) }
+        repository(provider).use { repo ->
+            repo.transaction { editDefaultGraph().addTriples(g("ex:a ex:p 1 .").getTriples()) }
+            val shapes = """
+                ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( "one" ) ] .
+                ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+                  sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#f>() AS ?value) }''' ] .
+            """
+            val report = validator.validateDataset(repo, g(shapes))
+            assertEquals("one", (report.violations.single().value as Literal).lexical)
+            assertEquals(1, copies.get(), "with functions the private copy is queried")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a function whose body is no node expression is reported when SPARQL calls it`(provider: String) {
+        val shapes = """
+            ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:unknown 1 ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#f>() AS ?value) }''' ] .
+        """
+        val e = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+        assertEquals(setOf(UnsupportedShaclFeature.SHACL_FUNCTION), e.causeOfType<UnsupportedShaclFeatureException>()?.features, e.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an ill-formed shnex body is an error only when SPARQL calls the function`(provider: String) {
+        val bad = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] ."
+        val unused = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (1 AS ?value) }''' ] .
+        """
+        assertEquals(1, validate(provider, "ex:a ex:p 1 .", bad + unused).violations.size)
+        val used = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#bad>() AS ?value) }''' ] .
+        """
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", bad + used) }
+        assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
     }
 
     private inline fun <reified T : Throwable> Throwable.causeOfType(): T? =
