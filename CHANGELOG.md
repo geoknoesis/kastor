@@ -28,8 +28,12 @@ and is kept as is; it was never published to Maven Central.
 - `rdf-shacl`: SHACL 1.2 Node Expressions (`sh:expression`, computed `sh:nodeByExpression`, the full `shnex:` library).
   `ConstraintType.EXPRESSION` is a new constant inserted after `NODE_BY_EXPRESSION`, mid-enum: the `ordinal` of every
   later constant (`DATATYPE` onwards) shifts by one, so code that persists or switches on ordinals must be updated.
-  A shape's `sh:deactivated` may be a node expression, evaluated per focus node. Report RDF holds a deep copy of a
-  blank-node `sh:sourceConstraint`. Custom node expression functions must be SHACL subclasses of
+  A shape's `sh:deactivated` may be a node expression, evaluated per focus node; so may that of an `sh:sparql`
+  constraint (SHACL 1.2 SPARQL). A shape deactivated for a node is a `sh:targetWhere` member without candidate
+  narrowing, and gets no `sh:uniqueValuesFor` result for it. A second `sh:deactivated` value next to `true` is a
+  compile error. Report RDF holds a deep copy of a blank-node `sh:sourceConstraint`, written lazily by
+  `toShaclValidationReportRdf()` with each blank node once per report (validation itself copies nothing). Relative
+  IRIs in SPARQL queries are resolved in linear time, on the preparation budget. Custom node expression functions must be SHACL subclasses of
   `sh:NamedParameterExpression` / `sh:ListParameterExpression` (spec Appendix A).
 
 ### Fixed (repository review)
