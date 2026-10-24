@@ -146,12 +146,6 @@ class Shacl12NativeConformanceTest {
 internal object W3cKnownDeviations {
     class Deviation(val category: UnsupportedShaclFeature, val reason: String)
 
-    private val SPARQL_COMPONENTS = Deviation(
-        UnsupportedShaclFeature.SPARQL_CONSTRAINT_COMPONENT,
-        "SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / " +
-            "sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine " +
-            "(ValidatorCapabilities.supportsCustomConstraints = false)",
-    )
     private val NODE_EXPRESSIONS = Deviation(
         UnsupportedShaclFeature.NODE_EXPRESSION,
         "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine",
@@ -168,11 +162,6 @@ internal object W3cKnownDeviations {
     )
 
     private val deviations: Map<String, Deviation> = linkedMapOf(
-        "sparql/component/optional-001.ttl" to SPARQL_COMPONENTS,
-        "sparql/component/propertyValidator-select-001.ttl" to SPARQL_COMPONENTS,
-        "sparql/component/validator-001.ttl" to SPARQL_COMPONENTS,
-        // The expected sht:Failure stems from an sh:SPARQLAskValidator re-binding ?value inside a constraint component.
-        "sparql/pre-binding/unsupported-sparql-006.ttl" to SPARQL_COMPONENTS,
         "node-expr/constraints/expression-001.ttl" to NODE_EXPRESSIONS,
         "sparql/property/property-select-001.ttl" to SPARQL_EXPRESSIONS,
         "sparql/property/property-sparqlExpr-001.ttl" to SPARQL_EXPRESSIONS,

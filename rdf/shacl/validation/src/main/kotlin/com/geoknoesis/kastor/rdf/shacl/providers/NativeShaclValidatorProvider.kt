@@ -48,7 +48,7 @@ class NativeShaclValidatorProvider() : ShaclValidatorProvider {
             supportsShaclJs = false,
             supportsShaclPy = false,
             supportsShaclDash = false,
-            supportsCustomConstraints = false,
+            supportsCustomConstraints = true,
             supportsParallelValidation = false,
             supportsStreamingValidation = false,
             supportsIncrementalValidation = false,

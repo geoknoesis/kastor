@@ -65,7 +65,8 @@ internal fun solutionViolation(
         focus = focus,
         tpl = tpl,
         constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
-        message = "SPARQL constraint ${source.constraintNode?.displayId() ?: source.component?.value} returned a solution",
+        message = source.constraintNode?.let { "SPARQL constraint ${it.displayId()} returned a solution" }
+            ?: "SPARQL constraint component ${source.component?.value} returned a solution",
         value = value,
         // SHACL-SPARQL: a sh:severity on the SPARQL-based constraint is the result severity.
         severity = source.severity ?: tpl.severity,
