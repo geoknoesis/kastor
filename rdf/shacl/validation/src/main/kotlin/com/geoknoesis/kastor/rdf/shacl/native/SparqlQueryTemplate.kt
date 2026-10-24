@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 
 /** Lexical token of a SPARQL query: enough structure to rewrite variables safely (not a full parser). */
@@ -18,20 +19,33 @@ internal class SparqlToken(val kind: Kind, val text: String) {
     fun isWord(keyword: String): Boolean = kind == Kind.WORD && text.equals(keyword, ignoreCase = true)
 }
 
-/** Splits SPARQL text into tokens, keeping string literals, IRI references and comments intact. */
+/**
+ * Splits SPARQL text into tokens, keeping string literals, IRI references and comments intact.
+ *
+ * Where a token boundary decides what the restriction check sees, the lexer follows the SPARQL grammar (and the
+ * JavaCC longest-match tokenizers of Jena and RDF4J): comments and short strings end at CR or LF, an unterminated
+ * long-string opener is an empty string followed by a quote, and a word keeps the `\` escapes of a local name.
+ * A WORD token may still span several SPARQL tokens (`trueSERVICE` is `true` then `SERVICE`); see
+ * [SparqlQueryTemplate.restrictionViolation].
+ */
 internal object SparqlLexer {
     private val iriRef = java.util.regex.Pattern.compile("<[^<>\"{}|^`\\\\\\u0000-\\u0020]*>")
 
-    fun isVariableChar(c: Char): Boolean =
-        // SPARQL VARNAME: PN_CHARS_U, digits, U+00B7, U+0300..U+036F, U+203F..U+2040 (code points kept ASCII in source).
-        c.isLetterOrDigit() || c == '_' || c.code == 0xB7 || c.code in 0x300..0x36F || c.code in 0x203F..0x2040
+    /** Characters a `\` escapes in a prefixed local name (SPARQL PN_LOCAL_ESC). */
+    const val LOCAL_NAME_ESCAPES = "_~.-!$&'()*+,;=/?#@%"
+
+    /** A SPARQL VARNAME character after the first: PN_CHARS_U, digits, U+00B7, U+0300..U+036F, U+203F..U+2040. */
+    fun isVariableChar(c: Int): Boolean =
+        SparqlQueryTemplate.isPnCharsU(c) || c in '0'.code..'9'.code || c == 0xB7 || c in 0x300..0x36F || c in 0x203F..0x2040
 
     /** First character of a SPARQL VARNAME: PN_CHARS_U or a digit (the middle dot and combining marks only follow). */
-    fun isVariableStart(c: Char): Boolean = c.isLetterOrDigit() || c == '_'
+    fun isVariableStart(c: Int): Boolean = SparqlQueryTemplate.isPnCharsU(c) || c in '0'.code..'9'.code
 
     private fun isWordStart(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c == ':'
 
     private fun isWordChar(c: Char): Boolean = isWordStart(c) || c == '-' || c == '.' || c == '%'
+
+    private fun isLineEnd(c: Char): Boolean = c == '\n' || c == '\r'
 
     fun tokenize(query: String): List<SparqlToken> {
         val out = ArrayList<SparqlToken>()
@@ -47,8 +61,8 @@ internal object SparqlLexer {
                     kind = SparqlToken.Kind.WHITESPACE
                 }
                 c == '#' -> {
-                    val end = query.indexOf('\n', i)
-                    i = if (end < 0) query.length else end
+                    // SPARQL ends a comment at either line-end character.
+                    while (i < query.length && !isLineEnd(query[i])) i++
                     kind = SparqlToken.Kind.COMMENT
                 }
                 query.startsWith("\"\"\"", i) || query.startsWith("'''", i) -> {
@@ -58,31 +72,44 @@ internal object SparqlLexer {
                         if (query[j] == '\\') j++
                         j++
                     }
-                    i = minOf(query.length, j + 3)
+                    // Unterminated, the opener is (longest match) an empty short string, then a quote.
+                    i = if (j < query.length) j + 3 else i + 2
                     kind = SparqlToken.Kind.STRING
                 }
                 c == '"' || c == '\'' -> {
                     var j = i + 1
-                    while (j < query.length && query[j] != c && query[j] != '\n') {
+                    while (j < query.length && query[j] != c && !isLineEnd(query[j])) {
                         if (query[j] == '\\') j++
                         j++
                     }
-                    i = minOf(query.length, j + 1)
+                    // An unterminated string stops before the line end, which the parsers reject.
+                    i = if (j < query.length && query[j] == c) j + 1 else minOf(query.length, j)
                     kind = SparqlToken.Kind.STRING
                 }
                 c == '<' && matcher.region(i, query.length).lookingAt() -> {
                     i = matcher.end()
                     kind = SparqlToken.Kind.IRI
                 }
-                (c == '?' || c == '$') && i + 1 < query.length && isVariableStart(query[i + 1]) -> {
+                (c == '?' || c == '$') && i + 1 < query.length && isVariableStart(query.codePointAt(i + 1)) -> {
                     i++
-                    while (i < query.length && isVariableChar(query[i])) i++
+                    while (i < query.length) {
+                        val cp = query.codePointAt(i)
+                        if (!isVariableChar(cp)) break
+                        i += Character.charCount(cp)
+                    }
                     kind = SparqlToken.Kind.VARIABLE
                 }
                 isWordStart(c) -> {
-                    while (i < query.length && isWordChar(query[i])) i++
-                    // A trailing '.' terminates a triple pattern rather than belonging to the name.
-                    while (i - start > 1 && query[i - 1] == '.') i--
+                    while (i < query.length) {
+                        when {
+                            // `ex:a\'` and `ex:a\#` are local names, not the start of a string or a comment.
+                            query[i] == '\\' && i + 1 < query.length && query[i + 1] in LOCAL_NAME_ESCAPES -> i += 2
+                            isWordChar(query[i]) -> i++
+                            else -> break
+                        }
+                    }
+                    // A trailing '.' terminates a triple pattern rather than belonging to the name (unless escaped).
+                    while (i - start > 1 && query[i - 1] == '.' && !(i - start > 2 && query[i - 2] == '\\')) i--
                     kind = SparqlToken.Kind.WORD
                 }
                 else -> {
@@ -249,9 +276,17 @@ internal class SparqlQueryTemplate private constructor(
             val tokens = SparqlLexer.tokenize(query).filter { it.significant }
             for ((index, token) in tokens.withIndex()) {
                 if (token.kind != SparqlToken.Kind.WORD) continue
-                when (token.text.uppercase()) {
-                    "MINUS", "SERVICE", "VALUES" -> return token.text.uppercase()
-                    "AS" -> tokens.getOrNull(index + 1)?.let { next ->
+                // SPARQL splits a run like `trueSERVICE` or `1SERVICE` into a literal and a keyword, so the forbidden
+                // keywords are searched in every part of the word that is not a prefixed name or blank node label.
+                // No SPARQL keyword or built-in contains one of them, so a valid query gives no false positive.
+                val bare = bareParts(token.text)
+                for (part in bare) {
+                    val upper = part.uppercase()
+                    FORBIDDEN_KEYWORDS.firstOrNull { it in upper }?.let { return it }
+                }
+                val last = bare.lastOrNull()
+                if (last != null && token.text.endsWith(last) && last.endsWith("AS", ignoreCase = true)) {
+                    tokens.getOrNull(index + 1)?.let { next ->
                         if (next.kind == SparqlToken.Kind.VARIABLE && next.variableName in preBound) {
                             return "AS to re-bind the pre-bound variable \$${next.variableName}"
                         }
@@ -259,6 +294,126 @@ internal class SparqlQueryTemplate private constructor(
                 }
             }
             return null
+        }
+
+        private val FORBIDDEN_KEYWORDS = listOf("MINUS", "SERVICE", "VALUES")
+
+        /**
+         * The parts of a WORD token that SPARQL does not read as a prefixed name (PNAME_NS / PNAME_LN) or a blank node
+         * label: keywords, booleans, numbers and anything ill-formed, in order.
+         */
+        private fun bareParts(word: String): List<String> {
+            val parts = ArrayList<String>()
+            val bare = StringBuilder()
+            var i = 0
+            while (i < word.length) {
+                val end = prefixedNameEnd(word, i) ?: blankNodeLabelEnd(word, i)
+                if (end != null && end > i) {
+                    if (bare.isNotEmpty()) { parts.add(bare.toString()); bare.setLength(0) }
+                    i = end
+                } else {
+                    bare.append(word[i])
+                    i++
+                }
+            }
+            if (bare.isNotEmpty()) parts.add(bare.toString())
+            return parts
+        }
+
+        /** End of a prefixed name (`PN_PREFIX? ':' PN_LOCAL?`) starting at [start] in [w], or null. */
+        private fun prefixedNameEnd(w: String, start: Int): Int? {
+            var i = start
+            if (i < w.length && isPnCharsBase(w[i].code)) {
+                i++
+                while (i < w.length && (isPnChars(w[i].code) || w[i] == '.')) i++
+                while (w[i - 1] == '.') i-- // PN_PREFIX does not end in '.'
+            }
+            if (i >= w.length || w[i] != ':') return null
+            return localNameEnd(w, i + 1)
+        }
+
+        /** End of the PN_LOCAL starting at [start] in [w] ([start] itself when there is none). */
+        private fun localNameEnd(w: String, start: Int): Int {
+            fun escapeLength(i: Int): Int = when {
+                w[i] == '%' && i + 2 < w.length && isHex(w[i + 1]) && isHex(w[i + 2]) -> 3
+                w[i] == '\\' && i + 1 < w.length && w[i + 1] in SparqlLexer.LOCAL_NAME_ESCAPES -> 2
+                else -> 0
+            }
+            var i = start
+            if (i >= w.length) return start
+            val first = escapeLength(i)
+            when {
+                first > 0 -> i += first
+                isPnCharsU(w[i].code) || w[i] == ':' || w[i] in '0'..'9' -> i++
+                else -> return start
+            }
+            var end = i
+            while (i < w.length) {
+                val escape = escapeLength(i)
+                when {
+                    escape > 0 -> { i += escape; end = i }
+                    isPnChars(w[i].code) || w[i] == ':' -> { i++; end = i }
+                    w[i] == '.' -> i++ // allowed inside, not at the end
+                    else -> break
+                }
+            }
+            return end
+        }
+
+        /** End of a blank node label (`_:` then PN_CHARS_U or a digit, then PN_CHARS or '.', not ending in '.'), or null. */
+        private fun blankNodeLabelEnd(w: String, start: Int): Int? {
+            if (!w.startsWith("_:", start) || start + 2 >= w.length) return null
+            var i = start + 2
+            if (!(isPnCharsU(w[i].code) || w[i] in '0'..'9')) return null
+            i++
+            var end = i
+            while (i < w.length) {
+                when {
+                    isPnChars(w[i].code) -> { i++; end = i }
+                    w[i] == '.' -> i++
+                    else -> break
+                }
+            }
+            return end
+        }
+
+        private fun isHex(c: Char) = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
+
+        /**
+         * [text] with its SPARQL codepoint escapes (`\uXXXX`, `\UXXXXXXXX`, SPARQL 1.1 19.2) decoded, the way RDF4J
+         * decodes a whole query before parsing it. As in RDF4J (and Java), a backslash starts an escape only when the
+         * run of backslashes before the `u` has odd length (`\\u0041` is an escaped backslash, then `u0041`).
+         * With [strict], an ill-formed escape or a code point that is a surrogate or beyond U+10FFFF throws
+         * [ShapeCompileException]; otherwise every well-formed `\u` / `\U` sequence is decoded whatever precedes it
+         * and ill-formed ones are kept, a second, more suspicious view for the check.
+         */
+        fun decodeCodepointEscapes(text: String, strict: Boolean): String {
+            if (text.indexOf('\\') < 0) return text
+            val out = StringBuilder(text.length)
+            var i = 0
+            var backslashes = 0
+            while (i < text.length) {
+                val c = text[i]
+                if (c == '\\' && i + 1 < text.length && (text[i + 1] == 'u' || text[i + 1] == 'U') && (!strict || backslashes % 2 == 0)) {
+                    val digits = if (text[i + 1] == 'u') 4 else 8
+                    val hex = text.substring(i + 2, minOf(text.length, i + 2 + digits))
+                    val codePoint = if (hex.length == digits && hex.all { isHex(it) }) hex.toLong(16) else -1L
+                    val valid = codePoint in 0L..0x10FFFFL && codePoint !in 0xD800L..0xDFFFL
+                    if (valid) {
+                        out.appendCodePoint(codePoint.toInt())
+                        i += 2 + digits
+                        backslashes = 0
+                        continue
+                    }
+                    if (strict) {
+                        throw ShapeCompileException("Ill-formed SPARQL codepoint escape \"${text.substring(i, minOf(text.length, i + 2 + digits))}\"")
+                    }
+                }
+                backslashes = if (c == '\\') backslashes + 1 else 0
+                out.append(c)
+                i++
+            }
+            return out.toString()
         }
 
         /**
@@ -270,8 +425,16 @@ internal class SparqlQueryTemplate private constructor(
         fun compileRestricted(prologue: String, body: String, preBound: Set<String>, subject: String): SparqlQueryTemplate {
             val query = prologue + body
             for (text in listOf(body, query)) {
-                restrictionViolation(text, preBound)?.let { what ->
-                    throw SparqlPreBindingRestrictionException("$subject uses $what, which is not supported with pre-bound variables")
+                // RDF4J decodes codepoint escapes in the whole query before parsing, Jena does not: check every view.
+                val decoded = try {
+                    decodeCodepointEscapes(text, strict = true)
+                } catch (e: ShapeCompileException) {
+                    throw ShapeCompileException("$subject is ill-formed: ${e.message}", e)
+                }
+                for (view in linkedSetOf(text, decoded, decodeCodepointEscapes(text, strict = false))) {
+                    restrictionViolation(view, preBound)?.let { what ->
+                        throw SparqlPreBindingRestrictionException("$subject uses $what, which is not supported with pre-bound variables")
+                    }
                 }
             }
             return compile(query, preBound)
@@ -357,19 +520,22 @@ internal class SparqlQueryTemplate private constructor(
         }
 
         /** SPARQL PN_CHARS_BASE. */
-        private fun isPnCharsBase(c: Int): Boolean =
+        internal fun isPnCharsBase(c: Int): Boolean =
             c in 'A'.code..'Z'.code || c in 'a'.code..'z'.code || c in 0xC0..0xD6 || c in 0xD8..0xF6 || c in 0xF8..0x2FF ||
                 c in 0x370..0x37D || c in 0x37F..0x1FFF || c in 0x200C..0x200D || c in 0x2070..0x218F || c in 0x2C00..0x2FEF ||
                 c in 0x3001..0xD7FF || c in 0xF900..0xFDCF || c in 0xFDF0..0xFFFD || c in 0x10000..0xEFFFF
 
-        /** SPARQL PN_CHARS: PN_CHARS_BASE, `_`, `-`, digits, U+00B7, U+0300..U+036F, U+203F..U+2040. */
-        private fun isPnChars(c: Int): Boolean =
-            isPnCharsBase(c) || c == '_'.code || c == '-'.code || c in '0'.code..'9'.code || c == 0xB7 ||
+        /** SPARQL PN_CHARS_U: PN_CHARS_BASE or `_`. */
+        internal fun isPnCharsU(c: Int): Boolean = isPnCharsBase(c) || c == '_'.code
+
+        /** SPARQL PN_CHARS: PN_CHARS_U, `-`, digits, U+00B7, U+0300..U+036F, U+203F..U+2040. */
+        internal fun isPnChars(c: Int): Boolean =
+            isPnCharsU(c) || c == '-'.code || c in '0'.code..'9'.code || c == 0xB7 ||
                 c in 0x300..0x36F || c in 0x203F..0x2040
 
         /** Whether [name] is a SPARQL VARNAME, so `?name` is a legal variable. */
         fun isVarName(name: String): Boolean =
-            name.isNotEmpty() && SparqlLexer.isVariableStart(name[0]) && name.all { SparqlLexer.isVariableChar(it) }
+            name.isNotEmpty() && SparqlLexer.isVariableStart(name.codePointAt(0)) && name.codePoints().allMatch { SparqlLexer.isVariableChar(it) }
 
         /** `<iri>`, or null when the IRI contains characters that SPARQL's IRIREF production forbids. */
         fun renderIri(iri: String): String? =
@@ -392,6 +558,8 @@ internal class SparqlQueryTemplate private constructor(
                     when {
                         ch == '\\' -> append("\\\\")
                         ch == '"' -> append("\\\"")
+                        // So a literal stays one string even where a parser reads a single-quoted context.
+                        ch == '\'' -> append("\\'")
                         ch == '\n' -> append("\\n")
                         ch == '\r' -> append("\\r")
                         ch == '\t' -> append("\\t")
