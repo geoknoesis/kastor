@@ -89,6 +89,39 @@ class PreparationBudgetTest {
         assertFalse(calls("SELECT * WHERE { FILTER (ex:f()) }", "http://example.com/ns#f"))
         assertFalse(calls("SELECT * WHERE { BIND ('<http://example.com/ns#f>()' AS ?x) # <http://example.com/ns#f>()\n }", "http://example.com/ns#f"))
     }
+    /** Whether a `sh:select` with [query] (the SPARQL text, after Turtle decoding) may call [function]. */
+    private fun calledBy(query: String, function: String): Boolean {
+        val ttl = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n<urn:s> sh:select \"\"\"${query.replace("\\", "\\\\")}\"\"\" ."
+        return SparqlFunctionDeclarations.calledFromSparql(Iri(function), ShapeGraphIndex(Rdf.parse(ttl, RdfFormat.TURTLE).getTriples()))
+    }
+    @Test fun `calls that codepoint escapes reveal are found`() {
+        val f = "http://example.com/ns#f"
+        val ex = "PREFIX ex: <http://example.com/ns#> "
+        // RDF4J decodes \\u escapes in the whole query before parsing: a string or comment can end early, an IRI or
+        // a name can spell f with an escape.
+        assertTrue(calledBy(ex + "SELECT * WHERE { BIND ('a\\u0027 + ex:f() + \\u0027b' AS ?x) }", f))
+        assertTrue(calledBy(ex + "SELECT * WHERE { # c \\u000A FILTER (!ex:f(?x)) }", f))
+        assertTrue(calledBy("SELECT * WHERE { FILTER (<http://example.com/ns#\\u0066>()) }", f))
+        assertTrue(calledBy(ex + "SELECT * WHERE { FILTER (ex:\\u0066()) }", f))
+        assertTrue(calledBy(ex + "SELECT * WHERE { FILTER (ex:\\U00000066()) }", f))
+        assertTrue(calledBy("PREFIX ex: <http://example.com/ns\\u0023> SELECT * WHERE { FILTER (ex:f()) }", f))
+        // Without escapes, the string and the comment still hide the name.
+        assertFalse(calledBy(ex + "SELECT * WHERE { BIND ('a + ex:f() + b' AS ?x) # ex:f()\n }", f))
+    }
+    @Test fun `relative calls resolve against BASE or may call any function`() {
+        val f = "http://example.com/ns#f"
+        assertTrue(calledBy("BASE <http://example.com/ns> SELECT * WHERE { FILTER (<#f>()) }", f))
+        assertTrue(calledBy("BASE <http://example.com/a/b> SELECT * WHERE { FILTER (<../ns#f>()) }", f))
+        assertTrue(calledBy("BASE <http://example.com/x> BASE <ns> PREFIX p: <#> SELECT * WHERE { FILTER (p:f()) }", f))
+        assertTrue(calledBy("BASE <http://example.com/n\\u0073> SELECT * WHERE { FILTER (<#f>()) }", f))
+        assertFalse(calledBy("BASE <http://example.com/ns> SELECT * WHERE { FILTER (<#g>()) }", f))
+        // The base a provider uses without BASE is its own: a relative call may call any function.
+        assertTrue(calledBy("SELECT * WHERE { FILTER (<g>()) }", f))
+        assertTrue(calledBy("PREFIX p: <ns#> SELECT * WHERE { FILTER (p:g()) }", f))
+        assertTrue(calledBy("BASE <rel> SELECT * WHERE { FILTER (<#g>()) }", f))
+        // A relative IRI that is not called does not.
+        assertFalse(calledBy("SELECT * WHERE { ?s <p> ?o }", f))
+    }
     @Test fun `cancelled preparation does not populate compiled cache`() {
         val cache = NativeCompileCache()
         assertFailsWith<ShaclValidationException> {

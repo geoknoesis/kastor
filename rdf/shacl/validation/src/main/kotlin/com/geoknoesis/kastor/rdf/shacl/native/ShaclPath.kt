@@ -76,36 +76,82 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     }
 
     /**
-     * The IRIs that the [sparqlQueries] may call as functions, collected once per index in one scan of each query
-     * ([SparqlLexer] tokens, ticking the budget per query): every IRI reference, and every prefixed name followed by
-     * `(` whose prefix the query declares (a `PREFIX` of its text, which wins, or a declaration of its node), with
-     * the `\` escapes of its local name removed. Prefix names may use any letters (SPARQL PN_PREFIX). Names in
-     * strings and comments are not calls.
+     * The functions that the [sparqlQueries] may call, collected once per index in one pass over the queries that
+     * ticks the budget once per query.
+     *
+     * Each query is scanned ([SparqlLexer] tokens) in three views: as written, with its codepoint escapes decoded
+     * strictly (as RDF4J does), and decoded leniently ([SparqlQueryTemplate.decodeCodepointEscapes]). The calls of
+     * all views are kept. RDF4J decodes `\u` / `\U` escapes in the whole query before parsing, so an escape can end
+     * a string or a comment early (`'a' + ex:f() + 'b'`, `# c \u000A FILTER (ex:f())`) or spell part of
+     * an IRI, a name or a `PREFIX` / `BASE` IRI. A name that is inside a string or a comment in every view is not a
+     * call.
+     *
+     * A call is every IRI reference, and every prefixed name followed by `(` whose prefix the view declares (a
+     * `PREFIX` of its text, which wins, or a declaration of the query node), with the `\` escapes of its local name
+     * removed. Prefix names may use any letters (SPARQL PN_PREFIX). A relative IRI (a reference or a namespace) is
+     * resolved (RFC 3986 5.2) against the `BASE` the query declares before it. Without an absolute `BASE` the base is
+     * the provider's own, which Kastor does not know, so a relative IRI that is called makes the query a possible
+     * call of every function ([SparqlFunctionCalls.any]). That is sound, and only queries with such calls pay for it.
      */
-    val sparqlFunctionCalls: Set<String> by lazy {
+    val sparqlFunctionCalls: SparqlFunctionCalls by lazy {
         val out = HashSet<String>()
+        var any = false
         for (query in sparqlQueries) {
             tick("SPARQL function compilation")
-            val tokens = SparqlLexer.tokenize(query.text).filter { it.significant }
-            val prefixes = HashMap(query.prefixes)
-            for (i in 0 until tokens.size - 2) {
-                val name = tokens[i + 1]
-                if (tokens[i].isWord("PREFIX") && name.kind == SparqlToken.Kind.WORD && name.text.endsWith(":") &&
-                    tokens[i + 2].kind == SparqlToken.Kind.IRI
-                ) {
-                    prefixes[name.text.dropLast(1)] = tokens[i + 2].text.removeSurrounding("<", ">")
-                }
+            val strict = try {
+                SparqlQueryTemplate.decodeCodepointEscapes(query.text, strict = true)
+            } catch (_: ShapeCompileException) {
+                query.text
             }
-            for ((i, token) in tokens.withIndex()) {
-                if (token.kind == SparqlToken.Kind.IRI) {
-                    out.add(token.text.removeSurrounding("<", ">"))
-                } else if (token.kind == SparqlToken.Kind.WORD && ':' in token.text && tokens.getOrNull(i + 1)?.text == "(") {
-                    val namespace = prefixes[token.text.substringBefore(':')] ?: continue
-                    out.add(namespace + unescapeLocalName(token.text.substringAfter(':')))
+            for (view in linkedSetOf(query.text, strict, SparqlQueryTemplate.decodeCodepointEscapes(query.text, strict = false))) {
+                if (collectCalls(view, query.prefixes, out)) any = true
+            }
+        }
+        SparqlFunctionCalls(out, any)
+    }
+
+    /** The functions some SPARQL query may call: those of [iris], or every function when [any]. */
+    class SparqlFunctionCalls(val iris: Set<String>, val any: Boolean) {
+        fun mayCall(iri: String): Boolean = any || iri in iris
+    }
+
+    /**
+     * Adds the calls of the SPARQL text [text] to [out] (see [sparqlFunctionCalls]). Returns true when the text calls
+     * a relative IRI whose base is unknown.
+     */
+    private fun collectCalls(text: String, nodePrefixes: Map<String, String>, out: MutableSet<String>): Boolean {
+        val tokens = SparqlLexer.tokenize(text).filter { it.significant }
+        // Namespaces by prefix name; null for a relative namespace whose base is unknown.
+        val prefixes = HashMap<String, String?>()
+        for ((name, namespace) in nodePrefixes) prefixes[name] = namespace.takeIf { isAbsoluteIri(it) }
+        // The absolute base the query declares so far, or null (none, or a relative one).
+        var base: String? = null
+        fun resolve(reference: String): String? = when {
+            isAbsoluteIri(reference) -> resolveIri(reference, reference)
+            base != null -> resolveIri(base!!, reference)
+            else -> null
+        }
+        var unknownCall = false
+        for ((i, token) in tokens.withIndex()) {
+            val next = tokens.getOrNull(i + 1)
+            when {
+                token.isWord("BASE") && next?.kind == SparqlToken.Kind.IRI -> base = resolve(next.text.removeSurrounding("<", ">"))
+                token.isWord("PREFIX") && next?.kind == SparqlToken.Kind.WORD && next.text.endsWith(":") &&
+                    tokens.getOrNull(i + 2)?.kind == SparqlToken.Kind.IRI ->
+                    prefixes[next.text.dropLast(1)] = resolve(tokens[i + 2].text.removeSurrounding("<", ">"))
+                token.kind == SparqlToken.Kind.IRI -> {
+                    val iri = resolve(token.text.removeSurrounding("<", ">"))
+                    if (iri != null) out.add(iri) else if (next?.text == "(") unknownCall = true
+                }
+                token.kind == SparqlToken.Kind.WORD && ':' in token.text && next?.text == "(" -> {
+                    val prefix = token.text.substringBefore(':')
+                    if (prefix !in prefixes) continue
+                    val namespace = prefixes[prefix]
+                    if (namespace == null) unknownCall = true else out.add(namespace + unescapeLocalName(token.text.substringAfter(':')))
                 }
             }
         }
-        out
+        return unknownCall
     }
 
     /** [local] without the `\` of its escapes (SPARQL PN_LOCAL_ESC: `ex:a\-b` is `a-b`). */
@@ -283,4 +329,86 @@ internal object ShaclPathParser {
         }
         return triples.first()
     }
+}
+
+/** RFC 3986 Appendix B: the scheme, authority, path, query and fragment of an IRI reference. */
+private val IRI_REFERENCE_PARTS = Regex("""^(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$""", RegexOption.DOT_MATCHES_ALL)
+
+/** Whether [iri] has a scheme, so that it needs no base. */
+internal fun isAbsoluteIri(iri: String): Boolean = IRI_REFERENCE_PARTS.matchEntire(iri)?.groups?.get(1) != null
+
+/** [reference] resolved against the absolute [base] (RFC 3986 5.2.2, strict parser). */
+internal fun resolveIri(base: String, reference: String): String {
+    val r = IRI_REFERENCE_PARTS.matchEntire(reference)!!.groups
+    val b = IRI_REFERENCE_PARTS.matchEntire(base)!!.groups
+    val basePath = b[3]!!.value
+    val refPath = r[3]!!.value
+    val scheme: String?
+    val authority: String?
+    val path: String
+    val query: String?
+    when {
+        r[1] != null -> {
+            scheme = r[1]!!.value
+            authority = r[2]?.value
+            path = removeDotSegments(refPath)
+            query = r[4]?.value
+        }
+        r[2] != null -> {
+            scheme = b[1]?.value
+            authority = r[2]!!.value
+            path = removeDotSegments(refPath)
+            query = r[4]?.value
+        }
+        refPath.isEmpty() -> {
+            scheme = b[1]?.value
+            authority = b[2]?.value
+            path = basePath
+            query = r[4]?.value ?: b[4]?.value
+        }
+        else -> {
+            scheme = b[1]?.value
+            authority = b[2]?.value
+            // RFC 3986 5.2.3 (merge).
+            val merged = when {
+                refPath.startsWith("/") -> refPath
+                b[2] != null && basePath.isEmpty() -> "/$refPath"
+                else -> basePath.substring(0, basePath.lastIndexOf('/') + 1) + refPath
+            }
+            path = removeDotSegments(merged)
+            query = r[4]?.value
+        }
+    }
+    return buildString {
+        if (scheme != null) append(scheme).append(':')
+        if (authority != null) append("//").append(authority)
+        append(path)
+        if (query != null) append('?').append(query)
+        r[5]?.let { append('#').append(it.value) }
+    }
+}
+
+/** RFC 3986 5.2.4. */
+private fun removeDotSegments(path: String): String {
+    var input = path
+    val out = StringBuilder()
+    while (input.isNotEmpty()) {
+        when {
+            input.startsWith("../") -> input = input.substring(3)
+            input.startsWith("./") -> input = input.substring(2)
+            input.startsWith("/./") -> input = input.substring(2)
+            input == "/." -> input = "/"
+            input.startsWith("/../") || input == "/.." -> {
+                input = "/" + input.substring(if (input == "/..") 3 else 4)
+                out.setLength(maxOf(0, out.lastIndexOf("/")))
+            }
+            input == "." || input == ".." -> input = ""
+            else -> {
+                val end = input.indexOf('/', 1).let { if (it < 0) input.length else it }
+                out.append(input, 0, end)
+                input = input.substring(end)
+            }
+        }
+    }
+    return out.toString()
 }

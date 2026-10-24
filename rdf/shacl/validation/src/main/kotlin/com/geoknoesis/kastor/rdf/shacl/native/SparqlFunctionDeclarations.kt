@@ -66,9 +66,12 @@ internal object SparqlFunctionDeclarations {
      * prefixes the query declares (`PREFIX`, or the `sh:prefixes` / `sh:declare` of the query node). The calls are
      * collected once per index, in one token scan of each query that ticks the budget
      * ([ShapeGraphIndex.sparqlFunctionCalls]), so asking for any number of functions costs a lookup each. A lexical
-     * match, not a parse: an IRI reference outside a call counts as well, a name in a string or comment does not.
+     * match, not a parse, that over-approximates: an IRI reference outside a call counts as well; the query is also
+     * scanned with its `\u` escapes decoded (as RDF4J parses it), so a name a decoded escape takes out of a string or
+     * comment counts; and a called relative IRI without an absolute `BASE` makes every function count. Only a name
+     * inside a string or comment in every view does not count.
      */
-    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean = function.value in index.sparqlFunctionCalls
+    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean = index.sparqlFunctionCalls.mayCall(function.value)
 
     /** Subjects with a `sh:bodyExpression` or typed `sh:ListParameterExpressionFunction`, in shapes-graph order. */
     private fun candidates(index: ShapeGraphIndex): Set<RdfResource> {

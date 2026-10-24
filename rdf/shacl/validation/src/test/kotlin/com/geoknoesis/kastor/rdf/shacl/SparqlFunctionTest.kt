@@ -314,6 +314,32 @@ class SparqlFunctionTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a call that codepoint escapes or a relative IRI hide is a call`(provider: String) {
+        // The SPARQL text of each query, written for a Turtle ''' string (\\ is one backslash in the query).
+        val ex = "PREFIX ex: <http://example.com/ns#> "
+        val queries = listOf(
+            ex + "SELECT ${d}this ?value WHERE { BIND ('a\\\\u0027 + ex:bad() + \\\\u0027b' AS ?value) }",
+            ex + "SELECT ${d}this ?value WHERE { BIND (1 AS ?value) # c \\\\u000A FILTER (!ex:bad(${d}this))\n }",
+            "SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#\\\\u0062ad>() AS ?value) }",
+            ex + "SELECT ${d}this ?value WHERE { BIND (ex:\\\\u0062ad() AS ?value) }",
+            "PREFIX ex: <http://example.com/ns\\\\u0023> SELECT ${d}this ?value WHERE { BIND (ex:bad() AS ?value) }",
+            "BASE <http://example.com/ns> SELECT ${d}this ?value WHERE { BIND (<#bad>() AS ?value) }",
+            "SELECT ${d}this ?value WHERE { BIND (<bad>() AS ?value) }",
+        )
+        for (query in queries) {
+            val shape = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''$query''' ] ."
+            // An ill-formed declaration that the query calls is an error.
+            val illFormed = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .\n"
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", illFormed + shape) }, query)
+            assertNotNull(error.causeOfType<ShapeCompileException>(), "$query: $error")
+            // A body that is no node expression is reported.
+            val opaque = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:unknown 1 ] .\n"
+            val e = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", opaque + shape) }, query)
+            assertEquals(setOf(UnsupportedShaclFeature.SHACL_FUNCTION), e.causeOfType<UnsupportedShaclFeatureException>()?.features, "$query: $e")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `SPARQL and shnex bodies that call each other share one nesting limit`(provider: String) {
         // ex:n(k) returns the deepest k its chain reaches: it calls ex:s(k + 1), which calls ex:n(k + 1), and falls
         // back to k when that call is an error. Every call of either kind counts towards MAX_FUNCTION_DEPTH (16):
