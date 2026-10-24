@@ -87,8 +87,9 @@ data class ValidationConfig(
     /**
      * What the native engine does with SHACL features it recognises but cannot evaluate (SHACL 1.2 `shnex:` node
      * expressions, `sh:expression`, non-constant `sh:deactivated`, SPARQL node expressions used as `sh:targetWhere`
-     * values, SHACL functions called from SPARQL, SPARQL-based targets). SHACL-SPARQL constraints, constraint
-     * components and SPARQL node expressions at `sh:targetNode` / `sh:values` / `sh:defaultValue` are supported.
+     * values, SHACL functions whose body is a `shnex:` node expression, SPARQL-based targets). SHACL-SPARQL
+     * constraints, constraint components, SPARQL node expressions at `sh:targetNode` / `sh:values` /
+     * `sh:defaultValue` and SHACL functions with a `sh:select` / `sh:sparqlExpr` body are supported.
      * [UnsupportedFeatureHandling.FAIL] (default) rejects the shapes graph so such constraints are never silently
      * skipped.
      */

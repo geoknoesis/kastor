@@ -1181,6 +1181,7 @@ public final class com/geoknoesis/kastor/rdf/RdfVariant {
 }
 
 public final class com/geoknoesis/kastor/rdf/SandboxedSelectQuery : com/geoknoesis/kastor/rdf/SparqlSelect {
+	public fun <init> (Ljava/lang/String;)V
 	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;)V
 	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z

@@ -229,17 +229,17 @@ A `sh:ListParameterExpressionFunction` whose `sh:bodyExpression` is a `sh:select
 - **Parameters:** `shnex:arg0`, `shnex:arg1`, ... form a contiguous run starting at 0, and an optional parameter (`sh:optional true`) cannot be followed by a mandatory one. Otherwise the shapes graph is ill-formed (`ShapeCompileException`).
 - **Body:** `$this` is the function IRI and `$arg<i>` holds each argument. An argument that is absent or failed to evaluate stays unbound if its parameter is optional; otherwise the call is an error.
 - **Errors:** a blank-node argument, too many arguments, and a body with no result or several results are errors, as is a call to an unknown function IRI. A function error is an ordinary SPARQL error: `BIND` leaves its variable unbound and `FILTER` is false. It never fails validation.
-- **Nesting:** functions can call each other, up to 16 levels deep (`MAX_FUNCTION_DEPTH`); a deeper call is an error, so recursion terminates. Nested queries are sandboxed like the outer one (no `SERVICE`, no `java:`) and run on the calling query's dataset; their own `FROM` can only select graphs inside it. A timeout stops the whole query.
+- **Nesting:** functions can call each other, up to 16 levels deep (`MAX_FUNCTION_DEPTH`); a deeper call is an error, so recursion terminates. Nested queries are sandboxed like the outer one (no `SERVICE`, no `java:`) and run on the calling query's dataset; their own `FROM` can only select graphs inside it. A timeout stops the whole query. Time is the only bound on how many nested calls a query can make (fan-out); SHACL queries always run under the validation timeout.
 
 Limits:
 - On RDF4J, work that reads no statements (a `VALUES` cross product, a catastrophic `REGEX`) is not interrupted within a row; top-level RDF4J queries have the same limit. Jena checks cancellation per binding.
-- On RDF4J, only stores created by Kastor's factories evaluate custom functions. When the shapes graph declares functions, validation therefore always runs on the private in-memory copy (see below), not in place on your repository.
+- On RDF4J, only stores created by Kastor's factories evaluate custom functions.
 - Parameter constraints (`sh:datatype`, ...) and `sh:defaultValue` are not enforced, as the spec says.
 - Function bodies written as `shnex:` node expressions (spec section 7.1, such as the W3C `instanceCount` example) are not supported: see `SHACL_FUNCTION` below.
 
 #### Where queries run
 
-When you validate a SPARQL-capable dataset, such as a repository passed to `validateDataset`, queries run on it **in place** only if the dataset lists **no named graphs**. Otherwise the engine copies the data graph into a private in-memory repository once per validation run, and all SPARQL constraints of that run share the copy. This also happens when validating a plain graph. The reason is that a query without a dataset clause may see more than the default graph: on RDF4J it sees the union of all contexts. SHACL-SPARQL constraints must see exactly the data graph that the other constraints validate. Each kind of fallback is logged once per dataset class. The copy is not reused across runs; to validate a large graph repeatedly, validate a repository without named graphs in place.
+When you validate a SPARQL-capable dataset, such as a repository passed to `validateDataset`, queries run on it **in place** only if the dataset lists **no named graphs**. Otherwise the engine copies the data graph into a private in-memory repository once per validation run, and all SPARQL constraints of that run share the copy. This also happens when validating a plain graph. The reason is that a query without a dataset clause may see more than the default graph: on RDF4J it sees the union of all contexts. SHACL-SPARQL constraints must see exactly the data graph that the other constraints validate. Declaring any SPARQL-bodied function, even an unused one, always uses the private copy, on every provider. Each kind of fallback is logged once per dataset class. The copy is not reused across runs; to validate a large graph repeatedly, validate a repository without named graphs in place.
 
 #### Pre-binding
 

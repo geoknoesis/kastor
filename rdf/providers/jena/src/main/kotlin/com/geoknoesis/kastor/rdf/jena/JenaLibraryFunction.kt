@@ -70,9 +70,14 @@ internal class JenaLibraryFunction(
             Thread.currentThread().interrupt()
             throw QueryCancelledException(e)
         } catch (e: Exception) {
+            generateSequence<Throwable>(e) { it.cause }.filterIsInstance<QueryCancelledException>().firstOrNull()?.let { throw it }
             throw ExprEvalException("The custom function <$uri> failed: ${e.message}", e)
         } ?: throw ExprEvalException("The custom function <$uri> has no result")
-        return NodeValue.makeNode(JenaTerms.toJenaNode(result))
+        return try {
+            NodeValue.makeNode(JenaTerms.toJenaNode(result))
+        } catch (e: IllegalArgumentException) {
+            throw ExprEvalException("The custom function <$uri> returned ${e.message}", e)
+        }
     }
 
     private inner class Call(override val arguments: List<RdfTerm?>, private val env: FunctionEnv) : SparqlFunctionCall {

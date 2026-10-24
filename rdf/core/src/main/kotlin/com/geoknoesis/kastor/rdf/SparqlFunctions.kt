@@ -12,7 +12,7 @@ package com.geoknoesis.kastor.rdf
  *
  * Two queries are equal when their [sparql] is equal and their [functions] are the same library instance.
  */
-class SandboxedSelectQuery(
+class SandboxedSelectQuery @JvmOverloads constructor(
     override val sparql: String,
     val functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY,
 ) : SparqlSelect {
@@ -51,11 +51,13 @@ fun interface SparqlFunctionLibrary {
  */
 class SparqlFunction(
     val iri: String,
-    /** One entry per declared parameter, in argument order: true when the parameter is optional. */
-    val optional: List<Boolean>,
+    optional: List<Boolean>,
     /** Returns the single result node, or null for an error. Never called with a blank node argument. */
     val body: (SparqlFunctionCall) -> RdfTerm?,
-)
+) {
+    /** One entry per declared parameter, in argument order: true when the parameter is optional (a private copy). */
+    val optional: List<Boolean> = optional.toList()
+}
 
 /** The context a [SparqlFunction.body] runs in. */
 interface SparqlFunctionCall {

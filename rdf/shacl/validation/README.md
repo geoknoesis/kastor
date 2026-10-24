@@ -79,7 +79,8 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   expressions (at `sh:targetNode`, `sh:values`, `sh:defaultValue`) are supported; SHACL functions with a `sh:select` /
   `sh:sparqlExpr` body (spec section 7) are callable from any SHACL-SPARQL query, per query and never registered
   globally (built-ins cannot be redefined; nesting is limited to 16 levels; a call error is a SPARQL error, not a
-  validation failure; on RDF4J only Kastor-created stores evaluate them, so such shapes validate on the private copy).
+  validation failure; on RDF4J only Kastor-created stores evaluate them; on every provider, declaring any such function, even an
+  unused one, makes validation run on the private copy).
   Functions with a `shnex:` body and `shnex:` expressions are not supported.
 - **Reports.** `toShaclValidationReportRdf()` exports complete `sh:resultPath` structures, `sh:message` values
   (with language tags) as `sh:resultMessage`, `sh:sourceConstraint`, and `sh:value` only for components that

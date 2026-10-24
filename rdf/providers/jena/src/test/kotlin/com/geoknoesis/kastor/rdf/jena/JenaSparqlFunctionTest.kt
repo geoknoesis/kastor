@@ -264,6 +264,19 @@ class JenaSparqlFunctionTest {
     }
 
     @Test
+    fun `a cancellation wrapped in another exception still stops the query`() {
+        val wrapping = SparqlFunctionLibrary.of(listOf(SparqlFunction("urn:wrap", emptyList()) {
+            throw RuntimeException("wrapped", QueryCancelledException())
+        }))
+        val failure = assertThrows(RdfQueryException::class.java) {
+            repository.withSelectRows(SandboxedSelectQuery("SELECT ?v WHERE { BIND (<urn:wrap>() AS ?v) }", wrapping)) { rows ->
+                rows.map { it.get("v") }.toList()
+            }
+        }
+        assertTrue(generateSequence<Throwable>(failure) { it.cause }.any { it is QueryCancelledException }, failure.toString())
+    }
+
+    @Test
     fun `functions are per query`() {
         val sparql = "SELECT ?v WHERE { BIND (<urn:spaced>('John', 'Doe') AS ?v) }"
         assertEquals("John Doe", lexical(sparql))
