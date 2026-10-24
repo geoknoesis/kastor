@@ -42,6 +42,30 @@ class Shacl12NativeConformanceTest {
     internal companion object {
         /** System property that turns a missing or empty suite into a skip instead of a failure. */
         const val ALLOW_MISSING_DATA_PROPERTY = "shacl.w3c.allowMissingData"
+
+        /**
+         * The root manifest: `shacl.w3c.manifest`, else the upstream checkout, else the bundled fixture (which
+         * `shacl.w3c.requireSuite=true` forbids).
+         */
+        internal fun manifestRoot(): Path {
+            System.getProperty("shacl.w3c.manifest")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                val p = Path.of(it).toAbsolutePath().normalize()
+                // An explicit override never falls back silently to another suite.
+                check(Files.isRegularFile(p)) { "shacl.w3c.manifest=$it is not a manifest file" }
+                return p
+            }
+
+            val checkout =
+                Path.of("test-data/w3c-shacl12/tests/manifest.ttl").toAbsolutePath().normalize()
+            if (Files.isRegularFile(checkout)) return checkout
+            check(System.getProperty("shacl.w3c.requireSuite") != "true") {
+                "shacl.w3c.requireSuite=true but the W3C SHACL test suite is missing at $checkout (see test-data/README.md)"
+            }
+
+            val resource = Shacl12NativeConformanceTest::class.java.getResource("/w3c-shacl12-fixture/manifest.ttl")
+                ?: error("bundled W3C fixture missing from test classpath")
+            return Path.of(resource.toURI()).toAbsolutePath().normalize()
+        }
     }
 
     @TestFactory
@@ -113,26 +137,6 @@ class Shacl12NativeConformanceTest {
         check(missing.isEmpty()) {
             "shacl.w3c.requireSuite=true but $manifest does not include the ${missing.joinToString()} manifests of the full W3C SHACL 1.2 suite"
         }
-    }
-
-    private fun manifestRoot(): Path {
-        System.getProperty("shacl.w3c.manifest")?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            val p = Path.of(it).toAbsolutePath().normalize()
-            // An explicit override never falls back silently to another suite.
-            check(Files.isRegularFile(p)) { "shacl.w3c.manifest=$it is not a manifest file" }
-            return p
-        }
-
-        val checkout =
-            Path.of("test-data/w3c-shacl12/tests/manifest.ttl").toAbsolutePath().normalize()
-        if (Files.isRegularFile(checkout)) return checkout
-        check(System.getProperty("shacl.w3c.requireSuite") != "true") {
-            "shacl.w3c.requireSuite=true but the W3C SHACL test suite is missing at $checkout (see test-data/README.md)"
-        }
-
-        val resource = Shacl12NativeConformanceTest::class.java.getResource("/w3c-shacl12-fixture/manifest.ttl")
-            ?: error("bundled W3C fixture missing from test classpath")
-        return Path.of(resource.toURI()).toAbsolutePath().normalize()
     }
 }
 

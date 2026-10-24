@@ -19,6 +19,9 @@ import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
  */
 internal object PathEvaluator {
 
+    /** Path evaluation produced more than [DataGraphIndex.maxPathValueNodes] nodes (a node expression failure, not a run abort). */
+    class PathValueLimitExceededException(message: String) : ShaclValidationException(message)
+
     fun evaluate(focus: RdfTerm, path: ShaclPath, graph: DataGraphIndex): List<RdfTerm> =
         distinctShaclTerms(step(linkedSetOf(focus), path, forward = true, graph).toList())
 
@@ -26,7 +29,7 @@ internal object PathEvaluator {
         graph.budget.tick("path evaluation")
         val added = out.add(term)
         if (added && out.size > graph.maxPathValueNodes) {
-            throw ShaclValidationException(
+            throw PathValueLimitExceededException(
                 "SHACL property path evaluation exceeded ValidationConfig.maxPathValueNodes=${graph.maxPathValueNodes}",
             )
         }

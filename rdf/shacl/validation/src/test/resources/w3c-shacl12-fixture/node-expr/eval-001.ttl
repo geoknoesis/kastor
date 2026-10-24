@@ -1,0 +1,57 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
+@prefix sht: <http://www.w3.org/ns/shacl-test#> .
+
+# Bundled sht:EvalNodeExpr cases in the format of the W3C node-expr suite (see its README.md), so that the
+# node expression harness runs without the upstream checkout.
+
+<>
+  rdf:type mf:Manifest ;
+  mf:entries ( <eval-count> <eval-orderBy-desc> <eval-scope> <eval-ignoreOrder> ) ;
+.
+
+<eval-count>
+  rdf:type sht:EvalNodeExpr ;
+  rdfs:label "Fixture: count of a list expression" ;
+  mf:action [ sht:nodeExpr [ shnex:count ( 4 3 3 ) ] ] ;
+  mf:result ( 3 ) ;
+  mf:status sht:approved ;
+.
+
+<eval-orderBy-desc>
+  rdf:type sht:EvalNodeExpr ;
+  rdfs:label "Fixture: orderBy in descending order of a path value" ;
+  mf:action [
+    sht:nodeExpr [
+      shnex:desc true ;
+      shnex:nodes [ shnex:pathValues ex:child ] ;
+      shnex:orderBy [ shnex:pathValues ex:age ] ;
+    ] ;
+    sht:focusNode ex:Parent ;
+  ] ;
+  mf:result ( ex:Child2 ex:Child1 ) ;
+  mf:status sht:approved ;
+.
+
+<eval-scope>
+  rdf:type sht:EvalNodeExpr ;
+  rdfs:label "Fixture: a var expression reading a scope variable" ;
+  mf:action [ sht:nodeExpr [ shnex:var "x" ] ; sht:scope-x ex:Value ] ;
+  mf:result ( ex:Value ) ;
+  mf:status sht:approved ;
+.
+
+<eval-ignoreOrder>
+  rdf:type sht:EvalNodeExpr ;
+  rdfs:label "Fixture: path values compared ignoring their order" ;
+  mf:action [ sht:nodeExpr [ shnex:pathValues ex:child ] ; sht:focusNode ex:Parent ; sht:ignoreOrder true ] ;
+  mf:result ( ex:Child2 ex:Child1 ) ;
+  mf:status sht:approved ;
+.
+
+ex:Parent ex:child ex:Child1, ex:Child2 .
+ex:Child1 ex:age 3 .
+ex:Child2 ex:age 7 .

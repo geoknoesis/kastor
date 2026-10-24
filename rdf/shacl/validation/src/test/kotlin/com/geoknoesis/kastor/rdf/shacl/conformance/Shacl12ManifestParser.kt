@@ -12,7 +12,7 @@ import org.apache.jena.vocabulary.RDF
 import org.apache.jena.vocabulary.RDFS
 
 /**
- * Collects `sht:Validate` tests from W3C SHACL 1.2-style manifests (see
+ * Collects `sht:Validate` (or, with [collect]'s `testType`, `sht:EvalNodeExpr`) tests from W3C SHACL 1.2-style manifests (see
  * [data-shapes shacl12-test-suite](https://github.com/w3c/data-shapes/tree/gh-pages/shacl12-test-suite)).
  *
  * Uses Jena directly so the harness stays independent of the native SHACL engine under test.
@@ -27,17 +27,21 @@ object Shacl12ManifestParser {
     private val mfEntries = MF + "entries"
     private val mfStatus = MF + "status"
     private val shtValidate = SHT + "Validate"
+
+    /** The test type of SHACL 1.2 Node Expressions tests (`node-expr/README.md`). */
+    const val EVAL_NODE_EXPR = SHT + "EvalNodeExpr"
     private val shtApproved = SHT + "approved"
 
-    fun collect(rootManifest: Path): List<ShaclValidateCase> {
+    /** The entries of type [testType] (default `sht:Validate`) reachable from [rootManifest] through `mf:include`. */
+    fun collect(rootManifest: Path, testType: String = shtValidate): List<ShaclValidateCase> {
         check(Files.isRegularFile(rootManifest)) { "manifest not found: $rootManifest" }
         val visited = mutableSetOf<Path>()
         val out = mutableListOf<ShaclValidateCase>()
-        parseInto(rootManifest.toAbsolutePath().normalize(), visited, out)
+        parseInto(rootManifest.toAbsolutePath().normalize(), testType, visited, out)
         return out
     }
 
-    private fun parseInto(manifest: Path, visited: MutableSet<Path>, out: MutableList<ShaclValidateCase>) {
+    private fun parseInto(manifest: Path, testType: String, visited: MutableSet<Path>, out: MutableList<ShaclValidateCase>) {
         if (!visited.add(manifest)) return
         val baseUri = manifest.toUri().toString()
         val model =
@@ -59,7 +63,7 @@ object Shacl12ManifestParser {
                     obj.isURIResource -> {
                         val includedUri = obj.asResource().uri
                         uriToPath(includedUri, manifest)?.takeIf { Files.isRegularFile(it) }?.let {
-                            parseInto(it, visited, out)
+                            parseInto(it, testType, visited, out)
                         }
                     }
                     else ->
@@ -67,7 +71,7 @@ object Shacl12ManifestParser {
                             if (!node.isURIResource) return@forEach
                             val includedUri = node.asResource().uri
                             uriToPath(includedUri, manifest)?.takeIf { Files.isRegularFile(it) }?.let {
-                                parseInto(it, visited, out)
+                                parseInto(it, testType, visited, out)
                             }
                         }
                 }
@@ -76,24 +80,24 @@ object Shacl12ManifestParser {
             for (stmt in root.listProperties(entriesProp).collectStatements()) {
                 val obj = stmt.`object`
                 when {
-                    obj.isURIResource -> addValidateEntry(model, obj.asResource(), manifest, out)
+                    obj.isURIResource -> addEntry(model, obj.asResource(), testType, manifest, out)
                     else ->
                         rdfListToResources(model, obj).forEach { entry ->
-                            addValidateEntry(model, entry, manifest, out)
+                            addEntry(model, entry, testType, manifest, out)
                         }
                 }
             }
         }
     }
 
-    private fun addValidateEntry(
+    private fun addEntry(
         model: Model,
         entry: Resource,
+        testType: String,
         manifest: Path,
         out: MutableList<ShaclValidateCase>,
     ) {
-        val validateType = model.createResource(shtValidate)
-        if (!entry.hasProperty(RDF.type, validateType)) return
+        if (!entry.hasProperty(RDF.type, model.createResource(testType))) return
         if (!entry.isURIResource) return
         val entryUri = entry.uri
 

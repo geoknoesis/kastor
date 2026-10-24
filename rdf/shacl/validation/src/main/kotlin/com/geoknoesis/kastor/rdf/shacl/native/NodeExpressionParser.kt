@@ -244,11 +244,19 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
     private companion object {
         val BOOLEAN_LEXICALS = setOf("true", "false", "1", "0")
 
+        /** The xsd:integer lexical space after whitespace collapsing: ASCII digits only. */
+        val INTEGER_LEXICAL = Regex("[+-]?[0-9]+")
+
+        /** XSD whitespace (`#x20 | #x9 | #xD | #xA`), which the `collapse` facet of xsd:integer removes at both ends. */
+        val XSD_WHITESPACE = charArrayOf(' ', '\t', '\r', '\n')
+
         /** The xsd:integer value of [term], or null when it is not a valid xsd:integer literal. */
         fun integer(term: RdfTerm): BigInteger? {
             val literal = term as? Literal ?: return null
             if (literal.datatype != XSD.integer) return null
-            return literal.lexical.trim().removePrefix("+").toBigIntegerOrNull()
+            val lexical = literal.lexical.trim(*XSD_WHITESPACE)
+            if (!INTEGER_LEXICAL.matches(lexical)) return null
+            return lexical.removePrefix("+").toBigInteger()
         }
 
         fun clamp(n: BigInteger): Int = n.max(BigInteger.valueOf(Int.MIN_VALUE.toLong())).min(BigInteger.valueOf(Int.MAX_VALUE.toLong())).toInt()

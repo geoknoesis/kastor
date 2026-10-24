@@ -154,6 +154,19 @@ class NodeExpressionParserTest {
     }
 
     @Test
+    fun `ill-typed xsd integer lexicals are compile errors`() {
+        // xsd:integer is [+-]?[0-9]+ (ASCII digits only): no doubled sign, no other Unicode digits.
+        for (lexical in listOf("++1", "+-1", "١", "1٢", "", "1.0")) {
+            val literal = "\"$lexical\"^^xsd:integer"
+            for (ttl in listOf("ex:holder ex:expr [ shnex:limit $literal ; shnex:nodes [] ] .", "ex:holder ex:expr [ shnex:arg $literal ] .")) {
+                assertThrows(ShapeCompileException::class.java, { expression(ttl) }, ttl)
+            }
+        }
+        assertEquals(NodeExpression.Limit(1, NodeExpression.Empty), expression("ex:holder ex:expr [ shnex:limit \"+1\"^^xsd:integer ; shnex:nodes [] ] ."))
+        assertEquals(NodeExpression.Arg(0), expression("ex:holder ex:expr [ shnex:arg \"-0\"^^xsd:integer ] ."))
+    }
+
+    @Test
     fun `blank nodes that are no node expressions compile to null`() {
         assertNull(expression("ex:holder ex:expr [ ex:p 1 ] ."))
         assertNull(expression("ex:holder ex:expr [ ex:f ( 1 2 ) ] ."))

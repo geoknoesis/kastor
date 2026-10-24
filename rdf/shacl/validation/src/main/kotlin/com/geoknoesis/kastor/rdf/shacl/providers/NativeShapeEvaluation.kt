@@ -307,7 +307,7 @@ private fun NativeShaclValidator.validateReifierPropertyConstraints(
  * `sh:values`, and, only if that set is still empty, the outputs of `sh:defaultValue`. Value nodes are a set
  * (SHACL §2.3.2), so the result is distinct, path values first.
  */
-private fun propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: NativeValidationContext): List<RdfTerm> {
+private fun NativeShaclValidator.propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: NativeValidationContext): List<RdfTerm> {
     val pathValues = PathEvaluator.evaluate(focus, ps.path, ctx.data)
     val valuesExpr = ps.values
     var values = if (valuesExpr == null) pathValues else distinctShaclTerms(pathValues + evalNodeExpression(valuesExpr, ctx, focus))

@@ -25,6 +25,7 @@ import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import java.time.Duration
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
+import com.geoknoesis.kastor.rdf.shacl.native.CompiledShapeGraph
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.NativeCompileCache
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
@@ -285,8 +286,8 @@ internal class NativeShaclValidator(
         val compiled = try {
             compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
         } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
-        val dataIndex = DataGraphIndex(graph, budget, config.maxPathValueNodes)
-        NativeValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, instrumentation).use { ctx ->
+        newContext(compiled, graph, budget, sparqlInPlace).use { ctx ->
+            val dataIndex = ctx.data
             ctx.checkDeadline()
             val targetWarnings = checkBlankNodeTargets(compiled, dataIndex)
 
@@ -412,6 +413,28 @@ internal class NativeShaclValidator(
                 violationsTruncated = violationsTruncated,
             )
         }
+    }
+
+    /** The context of one run that validates data [graph] against [compiled] shapes. */
+    private fun newContext(
+        compiled: CompiledShapeGraph,
+        graph: RdfGraph,
+        budget: ValidationBudget,
+        sparqlInPlace: SparqlQueryable? = null,
+    ): NativeValidationContext =
+        NativeValidationContext(
+            compiled, DataGraphIndex(graph, budget, config.maxPathValueNodes), budget, sparqlRepositoryFactory, sparqlInPlace, instrumentation,
+        )
+
+    /**
+     * Runs [body] in a context over [graph] as data graph and as shapes graph (compiled from its triples alone, without
+     * `owl:imports`), as node expression evaluation outside validation needs it (Node Expressions §3.4). Ill-formed
+     * shapes throw [ShapeCompileException].
+     */
+    internal fun <T> withNodeExpressionContext(graph: RdfGraph, body: (NativeValidationContext) -> T): T {
+        val budget = ValidationBudget(config.timeout, instrumentation.budgetClock)
+        val compiled = ShapesCompiler.compile(graph.getTriples(), config, budget)
+        return newContext(compiled, graph, budget).use(body)
     }
 
     override fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport {

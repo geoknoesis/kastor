@@ -6,4 +6,5 @@
 	mf:include <property/datatype-001.ttl> ;
 	mf:include <property/minCount-001.ttl> ;
 	mf:include <targets/targetClass-001.ttl> ;
+	mf:include <node-expr/eval-001.ttl> ;
 	.
