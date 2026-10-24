@@ -95,10 +95,21 @@ class SparqlPreBindingProviderTest {
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `VALUES MINUS and AS rebinding of pre-bound variables are rejected`(provider: String) {
-        for (body in listOf("VALUES ?any { true }", "MINUS { ${'$'}this ex:p 1 }", "BIND (true AS ${'$'}this)")) {
+        for (body in listOf("VALUES ${'$'}this { ex:a }", "VALUES (?x ${'$'}this) { (1 ex:a) }", "MINUS { ${'$'}this ex:p 1 }", "BIND (true AS ${'$'}this)")) {
             val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { $body }''' ] ."
             assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", shapes) }, body)
         }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `VALUES that mentions no pre-bound variable is evaluated`(provider: String) {
+        // SHACL 1.2 Appendix A only forbids VALUES mentioning a potentially pre-bound variable.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ;
+              sh:sparql [ sh:select '''SELECT ${'$'}this ?value WHERE { VALUES ?bad { 2 3 } ${'$'}this <http://example.org/p> ?value FILTER (?value = ?bad) }''' ] .
+        """
+        val report = validate(provider, "ex:a ex:p 1 . ex:b ex:p 2 .", shapes)
+        assertEquals(listOf(ex("b")), report.violations.map { it.focusNode })
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])

@@ -163,6 +163,21 @@ internal object W3cKnownDeviations {
         "sparql/functions/spacedConcat-example.ttl" to SPARQL_FUNCTIONS,
     )
 
+    /**
+     * Approved cases whose expected result contradicts the normative SHACL 1.2 text, mapped to the reason. The engine
+     * follows the text: these cases are executed and must validate without failing.
+     */
+    private val specOverrides: Map<String, String> = linkedMapOf(
+        "sparql/pre-binding/unsupported-sparql-002.ttl" to
+            "Expects sht:Failure for `VALUES ?any { true }`, but SHACL 1.2 SPARQL Appendix A only forbids a VALUES clause " +
+            "that mentions a potentially pre-bound variable, and Appendix F records that relaxation",
+    )
+
+    fun specOverrideFor(manifestPath: Path): String? {
+        val file = manifestPath.toString().replace(java.io.File.separatorChar, '/')
+        return specOverrides.entries.firstOrNull { (suffix, _) -> file.endsWith("/$suffix") }?.value
+    }
+
     fun deviationFor(manifestPath: Path): Deviation? {
         val file = manifestPath.toString().replace(java.io.File.separatorChar, '/')
         return deviations.entries.firstOrNull { (suffix, _) -> file.endsWith("/$suffix") }?.value

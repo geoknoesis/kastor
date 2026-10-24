@@ -34,9 +34,16 @@ class SparqlQueryTemplateTest {
     }
 
     @Test
-    fun `MINUS SERVICE and VALUES stay rejected`() {
-        for (body in listOf("MINUS { ?a <p> ?b }", "SERVICE <http://e/s> { ?a <p> ?b }", "VALUES ?a { 1 }")) {
-            assertNotNull(SparqlQueryTemplate.restrictionViolation("ASK { $body }", setOf("this")), body)
+    fun `MINUS SERVICE and VALUES on pre-bound variables stay rejected`() {
+        for (body in listOf("MINUS { ?a <p> ?b }", "SERVICE <http://e/s> { ?a <p> ?b }", "VALUES ?this { 1 }", "VALUES (?a ?lang) { (1 2) }")) {
+            assertNotNull(SparqlQueryTemplate.restrictionViolation("ASK { $body }", setOf("this", "lang")), body)
+        }
+    }
+
+    @Test
+    fun `VALUES without pre-bound variables is allowed`() {
+        for (query in listOf("ASK { VALUES ?a { 1 } }", "ASK { VALUES (?a ?b) { (1 UNDEF) } }", "SELECT ?a WHERE { ?a <p> ?b } VALUES ?a { <x> }")) {
+            assertNull(SparqlQueryTemplate.restrictionViolation(query, setOf("this", "lang")), query)
         }
     }
 

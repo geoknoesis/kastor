@@ -69,6 +69,11 @@ object Shacl12W3cCaseRunner {
                 assertEquals(setOf(deviation.category), unsupported?.features, "${case.displayName}: unexpected failure $error")
                 return
             }
+            W3cKnownDeviations.specOverrideFor(manifestPath)?.let { reason ->
+                val validator = NativeShaclValidatorProvider().createValidator(ValidationConfig.default())
+                org.junit.jupiter.api.Assertions.assertDoesNotThrow({ validator.validate(data, shapes) }, "${case.displayName}: spec behaviour ($reason)")
+                return
+            }
             if (expectsFailure) {
                 val validator = NativeShaclValidatorProvider().createValidator(ValidationConfig.default())
                 val error = assertThrows(ShaclValidationException::class.java, { validator.validate(data, shapes) }, "${case.displayName}: expected sht:Failure")

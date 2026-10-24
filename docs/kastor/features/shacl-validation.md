@@ -235,7 +235,8 @@ The engine pre-binds variables itself before the query reaches the provider, so 
 - When a query uses `$shapesGraph`, the shapes graph is loaded as a named graph of the private copy. The caller's dataset is never modified.
 
 A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:
-- no `MINUS`, `SERVICE` or `VALUES`;
+- no `MINUS` or `SERVICE`;
+- no `VALUES` that mentions `this`, a parameter, or (in ASK queries) `value`;
 - no `AS` that re-binds `this`, a parameter, or (in ASK queries) `value`.
 
 The restrictions are checked on the query text and again on the full query with its `PREFIX` prologue.
@@ -246,7 +247,7 @@ Sub-selects need not project `$this` (SHACL 1.2 removed that restriction). One l
 
 `$PATH` (either `$` or `?`) is substituted on property shapes and left unbound on node shapes.
 
-`VALUES` is rejected entirely, although the spec only forbids `VALUES` that mentions a pre-bound variable: the approved W3C test `unsupported-sparql-002` expects this. This is a Kastor-specific choice.
+Other `VALUES` clauses are allowed, as SHACL 1.2 Appendix A specifies. The approved W3C test `unsupported-sparql-002` still expects any `VALUES` to fail (the SHACL 1.0 rule); the harness lists it as a spec override (see below).
 
 Validation then throws `ShaclValidationException` ("SHACL compile failed: ..."), with a `SparqlPreBindingRestrictionException` as its cause.
 
@@ -305,6 +306,7 @@ python scripts/fetch-conformance-data.py --only shacl
 The task fails instead of skipping when the suite is missing, and every case is executed. The default `test` task runs the same harness against the bundled fixture when the checkout is missing; a missing manifest, a manifest without `sht:Validate` entries or one without an approved case fails the test rather than skipping it, unless `-PshaclW3cAllowMissingData=true` opts out. Manifest rows that are not approved are skipped unless `-PshaclW3cIncludeNonApproved=true`. The harness checks failures strictly:
 - The deviations are real feature gaps, kept visible on purpose: SHACL 1.2 node expression constraints (`sh:expression`) and SHACL functions called from SPARQL (spec section 7) need an expression evaluator and a function provider that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
 - Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 4: 1 node expression and 3 SHACL functions.
+- Spec overrides in `W3cKnownDeviations` are approved cases whose expected result contradicts the normative SHACL 1.2 text. The engine follows the text, and the case must validate without failing. There is 1: `unsupported-sparql-002` expects any `VALUES` to fail, but SHACL 1.2 Appendix A only forbids `VALUES` that mentions a pre-bound variable.
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
 - `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.
 - Result graphs are compared after removing the `ksh:` triples, so an undecided result would look like a failure. A case therefore fails if the engine emits any result with a `ksh:resultStatus` (undefined recursion, pattern timeout, pattern too complex), unless the case is listed with a reason in `W3cKnownDeviations`. No case is listed: the engine decides every constraint of the suite.

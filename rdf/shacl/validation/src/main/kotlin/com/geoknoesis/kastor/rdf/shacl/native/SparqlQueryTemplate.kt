@@ -268,7 +268,8 @@ internal class SparqlQueryTemplate private constructor(
 
         /**
          * SHACL-SPARQL pre-binding restrictions (spec Appendix A), checked on tokens (never inside strings, IRIs or
-         * comments): no `MINUS`, `SERVICE` or `VALUES`, and no `AS` re-binding any of the [preBound] variables.
+         * comments): no `MINUS` or `SERVICE`, no `VALUES` that mentions one of the [preBound] variables, and no `AS`
+         * re-binding any of them.
          * A sub-select that uses a pre-bound variable without projecting it is allowed (SHACL 1.2). Returns a
          * description of the first violation, or null.
          */
@@ -283,6 +284,7 @@ internal class SparqlQueryTemplate private constructor(
                 for (part in bare) {
                     val upper = part.uppercase()
                     FORBIDDEN_KEYWORDS.firstOrNull { it in upper }?.let { return it }
+                    if ("VALUES" in upper) valuesBindingPreBound(tokens, index, preBound)?.let { return it }
                 }
                 val last = bare.lastOrNull()
                 if (last != null && token.text.endsWith(last) && last.endsWith("AS", ignoreCase = true)) {
@@ -296,7 +298,22 @@ internal class SparqlQueryTemplate private constructor(
             return null
         }
 
-        private val FORBIDDEN_KEYWORDS = listOf("MINUS", "SERVICE", "VALUES")
+        private val FORBIDDEN_KEYWORDS = listOf("MINUS", "SERVICE")
+
+        /**
+         * SHACL 1.2 (Appendix A) forbids only a `VALUES` clause that mentions a potentially pre-bound variable: its
+         * variables are those between the keyword at [index] and the `{` that opens its data block (a data block holds
+         * terms and `UNDEF`, never variables). Returns a description of the violation, or null.
+         */
+        private fun valuesBindingPreBound(tokens: List<SparqlToken>, index: Int, preBound: Set<String>): String? {
+            for (token in tokens.subList(index + 1, tokens.size)) {
+                if (token.kind == SparqlToken.Kind.PUNCT && token.text == "{") return null
+                if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
+                    return "VALUES for the pre-bound variable \$${token.variableName}"
+                }
+            }
+            return null
+        }
 
         /**
          * The parts of a WORD token that SPARQL does not read as a prefixed name (PNAME_NS / PNAME_LN) or a blank node

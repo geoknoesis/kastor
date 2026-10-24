@@ -72,7 +72,7 @@ class SparqlRestrictionLexerTest {
         assertRejected("SELECT ${d}this WHERE { # x${bs}u000A $service }")
         assertRejected("SELECT ${d}this WHERE { ${bs}u0053ERVICE <http://127.0.0.1:1/s> { ?s ?p ?o } }")
         assertRejected("SELECT ${d}this WHERE { ${bs}U00000053ERVICE <http://127.0.0.1:1/s> { ?s ?p ?o } }")
-        assertRejected("SELECT ${d}this WHERE { ${bs}u0056ALUES ?x { 1 } }")
+        assertRejected("SELECT ${d}this WHERE { ${bs}u0056ALUES ${d}this { 1 } }")
         assertRejected("SELECT ?x WHERE { BIND (1 AS ${bs}u003Fthis) }")
         // Turtle \\ is one backslash, so the query holds the six characters \u000A.
         for (shapes in allPaths("SELECT ${d}this WHERE { # x${bs}${bs}u000A $service }")) {
@@ -96,7 +96,7 @@ class SparqlRestrictionLexerTest {
         for (lead in listOf("true", "false", "1", "1.5", "1e5", "a")) {
             assertRejected("SELECT ${d}this WHERE { ${d}this ?p $lead$service }")
         }
-        assertRejected("SELECT ${d}this WHERE { ${d}this ?p 1VALUES ?x { 1 } }")
+        assertRejected("SELECT ${d}this WHERE { ${d}this ?p 1VALUES ${d}this { 1 } }")
         assertRejected("SELECT ?x WHERE { BIND (1 AS ?x) BIND (2 trueAS ${d}this) }")
     }
 

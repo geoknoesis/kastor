@@ -66,7 +66,7 @@ class FailureCategoryAndConformanceTest {
     }
 
     @Test fun `SPARQL pre-binding restrictions fail with their own category`() {
-        val error = failure("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { VALUES ?x { 1 } }''' ] .")
+        val error = failure("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { VALUES ${'$'}this { 1 } }''' ] .")
         assertTrue(error.causeOfType<SparqlPreBindingRestrictionException>() != null, error.toString())
         assertTrue(error.causeOfType<UnsupportedShaclFeatureException>() == null)
     }
