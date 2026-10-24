@@ -191,6 +191,16 @@ class NodeExpressionFailClosedTest {
             val shapes = "ex:Old sh:property [ sh:path ex:age ; sh:minInclusive 18 ] . ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression $expr ."
             assertTrue(validate(provider, data, shapes).isValid, expr)
         }
+        // A function body with an ordinary error is a SPARQL error of its call, which COALESCE skips.
+        val bad = """
+            ex:bad a sh:ListParameterExpressionFunction ;
+              sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ sparql:abs ( ( 1 2 ) ) ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${d}this WHERE { FILTER (!COALESCE(<http://example.com/ns#bad>(${d}this), true)) }''' ] ;
+              sh:expression [ sparql:coalesce ( [ sh:sparqlExpr '''COALESCE(<http://example.com/ns#bad>(${d}this), true)''' ] false ) ] .
+        """
+        assertTrue(validate(provider, data, bad).isValid)
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
