@@ -145,6 +145,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         if (scope.depth >= MAX_NODE_EXPRESSION_DEPTH) {
             fail("node expression evaluation is nested more than $MAX_NODE_EXPRESSION_DEPTH levels deep")
         }
+        // Every evaluation step is work of the run, also one without output nodes (custom function recursion).
+        ctx.budget.tick("node expression")
         val inner = scope.nested()
         fun sub(e: NodeExpression) = eval(e, inner)
         fun at(e: NodeExpression, focus: RdfTerm) = eval(e, scope.nested(focus))
@@ -200,23 +202,23 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             is NodeExpression.Count -> output(listOf(TypedLiteral(sub(expr.e).size.toString(), XSD.integer)))
             is NodeExpression.Min -> extreme(sub(expr.e), sign = -1)
             is NodeExpression.Max -> extreme(sub(expr.e), sign = 1)
-            is NodeExpression.Sum -> output(listOf(sum(sub(expr.e))))
+            is NodeExpression.Sum -> output(listOf(sum(sub(expr.e), scope.depth)))
             is NodeExpression.InstancesOf -> instancesOf(sub(expr.e))
-            is NodeExpression.Select -> select(expr, scope.focus, scope.args)
+            is NodeExpression.Select -> startedAt(scope.depth) { select(expr, scope.focus, scope.args) }
             // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
-            is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape") })
+            is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape", scope.depth) })
             is NodeExpression.FindFirst -> {
                 // R6: stops at the first conforming node; an undecided or failed check before it is a failure.
                 val inputs = expr.nodes?.let { sub(it) } ?: listOfNotNull(scope.focus)
-                output(listOfNotNull(inputs.firstOrNull { conforms(it, expr.shape, "shnex:findFirst") }))
+                output(listOfNotNull(inputs.firstOrNull { conforms(it, expr.shape, "shnex:findFirst", scope.depth) }))
             }
             is NodeExpression.MatchAll -> {
                 // R6: every node is checked, so an undecided or failed check anywhere is a failure; ( true ) for no input.
                 val inputs = expr.nodes?.let { sub(it) } ?: listOfNotNull(scope.focus)
-                val answers = inputs.map { conforms(it, expr.shape, "shnex:matchAll") }
+                val answers = inputs.map { conforms(it, expr.shape, "shnex:matchAll", scope.depth) }
                 output(listOf(if (answers.all { it }) TrueLiteral else FalseLiteral))
             }
-            is NodeExpression.NodesMatching -> nodesMatching(expr.shape)
+            is NodeExpression.NodesMatching -> nodesMatching(expr.shape, scope.depth)
             is NodeExpression.ConformsToShape -> {
                 // A list parameter function (§3.2.2): both arguments are evaluated first, so that a failure takes
                 // precedence over an argument without output nodes.
@@ -225,7 +227,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
                 when {
                     node == null || shape == null -> emptyList()
                     shape !is Iri -> fail("the shape argument $shape of shnex:conformsToShape is not an IRI")
-                    else -> output(listOf(if (conforms(node, shape, "shnex:conformsToShape")) TrueLiteral else FalseLiteral))
+                    else -> output(listOf(if (conforms(node, shape, "shnex:conformsToShape", scope.depth)) TrueLiteral else FalseLiteral))
                 }
             }
             // SPARQL functions (§5) and custom functions (§6).
@@ -240,6 +242,20 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             is NodeExpression.Arg -> output(listOfNotNull(scope.args.getOrNull(expr.index)))
             is NodeExpression.NamedArg -> scope.namedArgs[expr.parameter]?.let { eval(it, NodeExprScope(scope.focus, emptyMap(), emptyList(), scope.depth + 1)) }
                 ?: emptyList()
+        }
+    }
+
+    /**
+     * Runs [block], a query or conformance check started at nesting [depth], so that the SHACL SPARQL functions it
+     * calls evaluate their node expression bodies deeper than [depth] ([NativeValidationContext.nodeExpressionDepth]).
+     */
+    private inline fun <T> startedAt(depth: Int, block: () -> T): T {
+        val saved = ctx.nodeExpressionDepth
+        ctx.nodeExpressionDepth = depth
+        try {
+            return block()
+        } finally {
+            ctx.nodeExpressionDepth = saved
         }
     }
 
@@ -288,13 +304,13 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * [ShapesCompiler.ExpressionShapes]; any other node is not a shape and a failure. Conformance the engine cannot decide
      * and a validation error are failures of [function]; a timeout or cancellation stays a run abort.
      */
-    private fun conforms(node: RdfTerm, shape: RdfResource, function: String): Boolean {
+    private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
         if (shape !in compiled.referencedNodeShapes && shape !in compiled.referencedPropertyShapes) {
             fail("$function: $shape is not a shape of the shapes graph")
         }
         val answer = try {
-            validator.conformance(node, shape, ctx, DepthState(0, Mode.CONFORMS))
+            startedAt(depth) { validator.conformance(node, shape, ctx, DepthState(0, Mode.CONFORMS)) }
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
             if (isRunAbort(e)) throw e
@@ -311,11 +327,11 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * §4.5.2: the nodes of the focus graph (subjects and objects) that conform to [shape], in SPARQL `ORDER BY` order
      * ([NodeExpressionOrdering]) so that the output does not depend on the triple order of the provider.
      */
-    private fun nodesMatching(shape: RdfResource): List<RdfTerm> {
+    private fun nodesMatching(shape: RdfResource, depth: Int): List<RdfTerm> {
         val matches = ArrayList<RdfTerm>()
         for (node in ctx.data.allNodes()) {
             ctx.budget.tick("node expression")
-            if (conforms(node, shape, "shnex:nodesMatching")) {
+            if (conforms(node, shape, "shnex:nodesMatching", depth)) {
                 matches.add(node)
                 capped(matches.size)
             }
@@ -359,14 +375,14 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * numeric type promotion and errors are SPARQL's. SUM of nothing is `0`. A non-literal input, a literal the query
      * cannot carry, or a SPARQL error (no `?r`) is a failure.
      */
-    private fun sum(nodes: List<RdfTerm>): RdfTerm {
+    private fun sum(nodes: List<RdfTerm>, depth: Int): RdfTerm {
         if (nodes.isEmpty()) return TypedLiteral("0", XSD.integer)
         val rendered = nodes.map { node ->
             (node as? Literal)?.let { SparqlQueryTemplate.renderTerm(it) } ?: fail("shnex:sum input $node is not a literal SPARQL can sum")
         }
         val query = "SELECT (SUM(?v) AS ?r) WHERE { VALUES ?v { ${rendered.joinToString(" ")} } }"
         val result = try {
-            ctx.select(query, emptyMap()) { rows -> rows.firstOrNull()?.get("r") }
+            startedAt(depth) { ctx.select(query, emptyMap()) { rows -> rows.firstOrNull()?.get("r") } }
         } catch (e: ShaclValidationException) {
             sparqlError("shnex:sum", e)
         }
@@ -460,7 +476,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         values.forEachIndexed { i, value -> if (value != null) bound["a$i"] = value }
         val (query, bindings) = SparqlQueryTemplate.compile("SELECT ($call AS ?r) WHERE {}", bound.keys).bind(bound)
         val result = try {
-            ctx.select(query, bindings, SparqlFunctionLibrary.EMPTY) { rows -> rows.firstOrNull()?.get("r") }
+            startedAt(scope.depth) { ctx.select(query, bindings, SparqlFunctionLibrary.EMPTY) { rows -> rows.firstOrNull()?.get("r") } }
         } catch (e: ShaclValidationException) {
             sparqlError(function, e)
         }

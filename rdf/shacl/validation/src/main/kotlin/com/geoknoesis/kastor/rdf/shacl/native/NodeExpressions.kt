@@ -166,11 +166,13 @@ internal object NodeExpressions {
      * [ShapeCompileException], pre-binding violations [SparqlPreBindingRestrictionException]. [preBound] are the
      * scope variables the restriction check of SPARQL expressions treats as potentially pre-bound (`this`, and the
      * `arg<i>` of a function). The bodies of the custom functions the tree calls are compiled as well, at any depth
-     * ([NodeExpressionFunctions.compileBodies]); an ill-formed one throws.
+     * ([NodeExpressionFunctions.compileBodies]); an ill-formed one that the tree reaches throws.
      */
     fun compile(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? {
-        val expr = NodeExpressionParser(index, preBound).parse(term)
-        NodeExpressionFunctions.of(index).compileBodies()
+        val functions = NodeExpressionFunctions.of(index)
+        val (expr, called) = functions.collecting { NodeExpressionParser(index, preBound).parse(term) }
+        functions.compileBodies()
+        functions.check(called)
         return expr
     }
 

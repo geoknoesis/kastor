@@ -222,4 +222,27 @@ class NodeExpressionParserTest {
             assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features, values)
         }
     }
+
+    @Test
+    fun `an ill-formed function reached through other bodies fails every compile over the index`() {
+        val ttl = """
+            ex:holder ex:expr [ ex:usesBad () ] , [ ex:ok () ] .
+            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
+            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:unused a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
+            ex:bad1 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:bad2 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
+            ex:ok a sh:ListParameterExpressionFunction ; sh:bodyExpression 1 .
+        """
+        val index = ShapeGraphIndex(Rdf.parse(header + "\n" + ttl, RdfFormat.TURTLE).getTriples())
+        val (usesBad, ok) = index.objects(ex("holder"), ex("expr")).partition { index.objects(it as com.geoknoesis.kastor.rdf.RdfResource, ex("usesBad")).isNotEmpty() }
+        // The second compile must not find ex:usesBad already queued and pass.
+        repeat(2) { assertThrows(ShapeCompileException::class.java) { NodeExpressions.compile(usesBad.single(), index) } }
+        // An unused function with two ill-formed callees leaves no error behind for an unrelated expression.
+        val unused = index.subjects(com.geoknoesis.kastor.rdf.vocab.RDF.type, ShaclSparqlTerms.ListParameterExpressionFunction)
+            .first { it == ex("unused") }
+        val body = index.objects(unused, ShaclSparqlTerms.bodyExpression).single()
+        assertThrows(ShapeCompileException::class.java) { NodeExpressions.compile(body, index) }
+        assertEquals(NodeExpression.CustomList(ex("ok"), emptyList()), NodeExpressions.compile(ok.single(), index))
+    }
 }

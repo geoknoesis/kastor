@@ -263,6 +263,66 @@ class SparqlFunctionTest {
         assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an ill-formed function reached through another body is an error whatever was compiled first`(provider: String) {
+        val call = { f: String ->
+            """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#$f>() AS ?value) }''' ] .
+            """
+        }
+        val chain = """
+            ex:B a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:usesBad () ] .
+            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
+            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+        """
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", chain + call("B")) }
+        assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
+        // An unused function whose body calls two ill-formed functions leaves no error behind for a valid one.
+        val leftover = """
+            ex:A a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
+            ex:bad1 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:bad2 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
+            ex:B a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( "ok" ) ] .
+        """
+        assertEquals("ok", (validate(provider, "ex:a ex:p 1 .", leftover + call("B")).violations.single().value as Literal).lexical)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a call is a prefixed name whose prefix is the function namespace`(provider: String) {
+        // ex:concat is ill-formed and unused: the built-in concat( and another namespace's x:concat( do not call it
+        // (the match is textual, so the comment counts as a call when x: is the function's namespace).
+        val shapes = """
+            ex:concat a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:sparql [ sh:select '''PREFIX x: <urn:x:>
+                SELECT ${d}this ?value WHERE {
+                  # x:concat()
+                  BIND (concat("a", "b") AS ?value) }''' ] .
+        """
+        assertEquals("ab", (validate(provider, "ex:a ex:p 1 .", shapes).violations.single().value as Literal).lexical)
+        // With the function's namespace, the prefixed name is a call (and the ill-formed declaration an error).
+        val called = shapes.replace("<urn:x:>", "<http://example.com/ns#>")
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", called) }
+        assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `SPARQL and shnex bodies that call each other share one nesting limit`(provider: String) {
+        // ex:n(k) returns the deepest k its chain reaches: it calls ex:s(k + 1), which calls ex:n(k + 1), and falls
+        // back to k when that call is an error. Every call of either kind counts towards MAX_FUNCTION_DEPTH (16):
+        // the top query calls n(0) (1), s(1) (2), n(1) (3), ..., n(7) (15), s(8) (16), and n(8) is an error.
+        val functions = """
+            ex:n a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ sparql:coalesce (
+                [ sh:select "SELECT ?x WHERE { BIND (<http://example.com/ns#s>(${d}arg0 + 1) AS ?x) }" ]
+                [ shnex:arg 0 ] ) ] .
+            ex:s a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ;
+              sh:bodyExpression [ sh:sparqlExpr "<http://example.com/ns#n>(${d}arg0)" ] .
+        """
+        assertEquals("7", valueOf(provider, functions, "STR(<http://example.com/ns#n>(0))"))
+    }
+
     private inline fun <reified T : Throwable> Throwable.causeOfType(): T? =
         generateSequence(this) { it.cause }.filterIsInstance<T>().firstOrNull()
 

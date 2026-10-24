@@ -18,10 +18,12 @@ import com.geoknoesis.kastor.rdf.shacl.providers.NodeExprOutcome
 import com.geoknoesis.kastor.rdf.shacl.providers.evaluateNodeExpression
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.math.BigDecimal
+import java.time.Duration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
@@ -311,6 +313,30 @@ class NodeExpressionEvaluationLibraryTest {
         """
         assertFailure(eval("ex:holder ex:expr [ ex:loop () ] . $loops"), "nested more than")
         assertFailure(eval("ex:holder ex:expr [ ex:rec 1 ] . $loops"), "nested more than")
+    }
+
+    @Test
+    @Timeout(120)
+    fun `exponential custom function recursion stops at the run deadline`() {
+        // ex:dbl(x) calls itself twice on the successor of x: 2^30 calls along a chain of 30 nodes, all without output.
+        val chain = (0 until 30).joinToString(" ") { "ex:c$it ex:next ex:c${it + 1} ." }
+        val next = "[ shnex:pathValues ex:next ; shnex:focusNode [ shnex:arg 0 ] ]"
+        val ttl = """
+            ex:holder ex:expr [ ex:dbl ( ex:c0 ) ] .
+            ex:dbl a sh:ListParameterExpressionFunction ; sh:bodyExpression [
+              shnex:if [ shnex:exists $next ] ;
+              shnex:then [ shnex:concat ( [ ex:dbl ( $next ) ] [ ex:dbl ( $next ) ] ) ] ;
+              shnex:else [] ] .
+            $chain
+        """
+        val graph = Rdf.parse(prefixes + "\n" + ttl, RdfFormat.TURTLE)
+        val expr = graph.find(ex("holder"), ex("expr"), null).single().obj
+        // A budget of work, not time: the clock advances by one each time the engine consults it.
+        var now = 0L
+        val config = ValidationConfig.default().copy(timeout = Duration.ofNanos(200_000))
+        val validator = NativeShaclValidator(config) { repository("jena") }.also { it.budgetClock = { now++ } }
+        val e = assertThrows(ShaclValidationException::class.java) { validator.evaluateNodeExpression(graph, expr, null, emptyMap()) }
+        assertTrue(e.message!!.contains("timed out"), e.message)
     }
 
     @Test

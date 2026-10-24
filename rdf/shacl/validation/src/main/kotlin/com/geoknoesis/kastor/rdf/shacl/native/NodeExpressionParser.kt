@@ -353,12 +353,13 @@ internal class NamedParameterFunction(val iri: Iri, val parameters: Set<Iri>, va
  * uses does not make the shapes graph ill-formed: a named parameter function must be an IRI whose parameters each
  * have exactly one IRI `sh:path` (at most one xsd:boolean `sh:keyParameter`), with at least one key parameter that
  * no other function uses; every custom function has exactly one `sh:bodyExpression`, a well-formed node expression.
- * A referencing expression throws [ShapeCompileException] for an ill-formed function, or one whose body uses an
- * ill-formed function, at any depth.
  *
  * Bodies are compiled after the referencing expression ([compileBodies]), iteratively: a function may call itself
- * or another function that calls it, and a chain of functions costs no stack. [body] then gives the compiled body
- * to evaluation. Only compilation (one thread at a time) fills the catalog; evaluation only reads it.
+ * or another function that calls it, and a chain of functions costs no stack. Every body is compiled once, and its
+ * outcome is kept with the functions it calls ([callees]), whatever expression first referenced it. [check] then
+ * throws the first [ShapeCompileException] among the functions an expression reaches, at any depth, so the outcome
+ * does not depend on what was compiled before over the same index. [body] gives the compiled body to evaluation.
+ * Only compilation (one thread at a time) fills the catalog; evaluation only reads it.
  */
 internal class NodeExpressionFunctions private constructor(
     private val index: ShapeGraphIndex,
@@ -369,55 +370,104 @@ internal class NodeExpressionFunctions private constructor(
 
     /** Checked named parameter functions: a [NamedParameterFunction], or the [ShapeCompileException] of the check. */
     private val named = HashMap<RdfResource, Any>()
+    /** Checked list parameter functions, with the [ShapeCompileException] of the check (null when well-formed). */
+    private val lists = HashMap<Iri, ShapeCompileException?>()
     private val bodies = java.util.concurrent.ConcurrentHashMap<Iri, NodeExpression>()
+    /** The functions whose body is ill-formed (or calls an ill-formed declaration directly), with the error. */
     private val failures = HashMap<Iri, ShapeCompileException>()
+    /** The functions each compiled (or failed) body references directly. */
+    private val callees = HashMap<Iri, Set<Iri>>()
     private val queued = HashSet<Iri>()
     private val pending = ArrayDeque<Job>()
     private var compiling = false
+    /** The references of the expression being parsed ([collecting], [compileBodies]). */
+    private var references: MutableSet<Iri>? = null
 
     /** The custom named parameter functions that declare [key] as a key parameter, checked (§6.1). */
     @Synchronized
-    fun namedWithKey(key: Iri): List<NamedParameterFunction> = candidatesByKey[key]?.map { named(it) } ?: emptyList()
+    fun namedWithKey(key: Iri): List<NamedParameterFunction> =
+        candidatesByKey[key]?.map { candidate -> named(candidate).also { references?.add(it.iri) } } ?: emptyList()
 
     /** Checks the custom list parameter function [function] (§6.2), which a list parameter expression references. */
     @Synchronized
     fun referenceList(function: Iri) {
-        failures[function]?.let { throw it }
-        if (function in queued) return
-        val body = singleBody(function, "Node expression function")
-        // As for SHACL SPARQL functions (SHACL 1.2 SPARQL §7): a SPARQL body may use this and arg0, arg1, ...
-        val preBound = LinkedHashSet<String>().apply {
-            add("this")
-            for (i in index.objects(function, SHACL.parameter).indices) add("arg$i")
+        if (function !in lists) {
+            lists[function] = try {
+                val body = singleBody(function)
+                // As for SHACL SPARQL functions (SHACL 1.2 SPARQL §7): a SPARQL body may use this and arg0, arg1, ...
+                val preBound = LinkedHashSet<String>().apply {
+                    add("this")
+                    for (i in index.objects(function, SHACL.parameter).indices) add("arg$i")
+                }
+                enqueue(Job(function, body, preBound))
+                null
+            } catch (e: ShapeCompileException) {
+                e
+            }
         }
-        enqueue(Job(function, body, preBound))
+        lists[function]?.let { throw it }
+        references?.add(function)
+    }
+
+    /** Runs [parse] and returns its result with the functions it references directly. */
+    @Synchronized
+    fun <T> collecting(parse: () -> T): Pair<T, Set<Iri>> {
+        val saved = references
+        val collected = LinkedHashSet<Iri>()
+        references = collected
+        try {
+            return parse() to collected
+        } finally {
+            references = saved
+        }
     }
 
     /** The compiled `sh:bodyExpression` of a referenced custom function, once [compileBodies] has compiled it. */
     fun body(function: Iri): NodeExpression? = bodies[function]
 
     /**
-     * Compiles the bodies of the functions referenced so far, and of the functions those bodies reference in turn.
-     * Throws [ShapeCompileException] for an ill-formed body (remembered: a later reference throws it again).
+     * Compiles the bodies of the functions referenced so far, and of the functions those bodies reference in turn,
+     * each once. An ill-formed body is remembered, not thrown: [check] throws it for the expressions that reach it.
      */
     @Synchronized
     fun compileBodies() {
         if (compiling) return
         compiling = true
+        val saved = references
         try {
             while (pending.isNotEmpty()) {
                 index.tick("node expression function compilation")
                 val job = pending.removeFirst()
+                val collected = LinkedHashSet<Iri>()
+                references = collected
                 try {
                     bodies[job.function] = NodeExpressionParser(index, job.preBound).parse(job.term)
                         ?: throw ShapeCompileException("The sh:bodyExpression ${job.term} of node expression function ${job.function} must be a node expression")
                 } catch (e: ShapeCompileException) {
                     failures[job.function] = e
-                    throw e
+                } finally {
+                    callees[job.function] = collected
                 }
             }
         } finally {
+            references = saved
             compiling = false
+        }
+    }
+
+    /**
+     * Throws the error of the first ill-formed function that [roots] reach through the bodies of the functions they
+     * call (breadth first, each function once). Call after [compileBodies].
+     */
+    @Synchronized
+    fun check(roots: Set<Iri>) {
+        val seen = LinkedHashSet<Iri>(roots)
+        val queue = ArrayDeque(roots)
+        while (queue.isNotEmpty()) {
+            index.tick("node expression function compilation")
+            val function = queue.removeFirst()
+            failures[function]?.let { throw it }
+            for (callee in callees[function].orEmpty()) if (seen.add(callee)) queue.addLast(callee)
         }
     }
 
@@ -425,16 +475,13 @@ internal class NodeExpressionFunctions private constructor(
         if (queued.add(job.function)) pending.addLast(job)
     }
 
-    private fun singleBody(function: Iri, kind: String): RdfTerm =
+    private fun singleBody(function: Iri): RdfTerm =
         index.objects(function, ShaclSparqlTerms.bodyExpression).singleOrNull()
-            ?: throw ShapeCompileException("$kind $function must have exactly one sh:bodyExpression")
+            ?: throw ShapeCompileException("Node expression function $function must have exactly one sh:bodyExpression")
 
     private fun named(candidate: RdfResource): NamedParameterFunction {
         when (val known = named[candidate]) {
-            is NamedParameterFunction -> {
-                failures[known.iri]?.let { throw it }
-                return known
-            }
+            is NamedParameterFunction -> return known
             is ShapeCompileException -> throw known
         }
         val function = try {
@@ -446,7 +493,7 @@ internal class NodeExpressionFunctions private constructor(
                     throw ShapeCompileException("Key parameter <${key.value}> of node expression function ${function.iri} is also a key parameter of $clash")
                 }
             }
-            enqueue(Job(function.iri, singleBody(function.iri, "Node expression function"), setOf("this")))
+            enqueue(Job(function.iri, singleBody(function.iri), setOf("this")))
             function
         } catch (e: ShapeCompileException) {
             named[candidate] = e

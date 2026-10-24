@@ -1,7 +1,6 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
 import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
@@ -11,7 +10,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledShapeGraph
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
-import java.util.concurrent.atomic.AtomicInteger
+import com.geoknoesis.kastor.rdf.shacl.native.SparqlFunctionDeclarationSet
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 
@@ -88,28 +87,23 @@ internal class NativeValidationContext(
         )
     }
 
-    /** Calls of SHACL SPARQL functions with a node expression body that are being evaluated (see [runFunctionBody]). */
-    private val functionBodyDepth = AtomicInteger()
+    /**
+     * The node expression nesting depth at which the query or conformance check under way was started by the node
+     * expression evaluator (0 outside node expressions). A function body that the query calls continues one level
+     * deeper ([runFunctionBody]), so nesting through SPARQL is capped by [MAX_NODE_EXPRESSION_DEPTH] as a whole.
+     */
+    var nodeExpressionDepth = 0
 
     /**
      * Evaluates the node expression [body] of the SHACL SPARQL function [function] called with [arguments] (SHACL 1.2
      * SPARQL §7.3, Node Expressions §6.2): the focus node is the function IRI and the arguments are `shnex:arg 0`,
      * `shnex:arg 1`, ...; the result is the single output node, or null (an error) for none, several or an
-     * evaluation failure. A body can run SPARQL queries that call functions again, each as a new query, so the
-     * provider's nesting limit does not see these calls: they nest at most [MAX_FUNCTION_DEPTH] deep, deeper calls
-     * are errors, so recursion terminates.
+     * evaluation failure. The body continues the nesting depth of the node expression whose query calls it; the
+     * number of nested function calls is limited by the library ([SparqlFunctionDeclarationSet.library]).
      */
     private fun runFunctionBody(body: NodeExpression, function: Iri, arguments: List<RdfTerm?>): RdfTerm? {
-        if (functionBodyDepth.incrementAndGet() > MAX_FUNCTION_DEPTH) {
-            functionBodyDepth.decrementAndGet()
-            return null
-        }
-        try {
-            val outcome = validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, 0))
-            return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
-        } finally {
-            functionBodyDepth.decrementAndGet()
-        }
+        val outcome = validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
+        return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
     }
     fun checkDeadline() {
         budget.check()

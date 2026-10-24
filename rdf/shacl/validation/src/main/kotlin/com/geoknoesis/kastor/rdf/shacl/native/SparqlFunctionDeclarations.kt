@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
@@ -12,6 +13,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * SHACL 1.2 SPARQL §7: compiles the `sh:ListParameterExpressionFunction` declarations of a shapes graph into a
@@ -60,13 +62,19 @@ internal object SparqlFunctionDeclarations {
 
     /**
      * Whether a SPARQL query of the shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr`) may call [function]: its
-     * full IRI, or its local name followed by `(` (a prefixed name), occurs in the query text.
+     * full IRI occurs in the query text, or a prefixed name `p:local` followed by `(` does whose prefix `p` the
+     * query declares (`PREFIX`, or the `sh:prefixes` / `sh:declare` of the query node) with a namespace that,
+     * followed by `local`, is the IRI. A text match, not a parse: a name in a string or comment counts as well.
      */
-    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean {
-        val localName = function.value.substringAfterLast('#').substringAfterLast('/')
-        val call = Regex("(?<![A-Za-z0-9_])" + Regex.escape(localName) + "[ ]*[(]")
-        return index.sparqlQueryTexts.any { it.contains(function.value) || (localName.isNotEmpty() && call.containsMatchIn(it)) }
-    }
+    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean =
+        index.sparqlQueries.any { query ->
+            query.text.contains(function.value) ||
+                query.prefixes.any { (prefix, namespace) ->
+                    val local = function.value.removePrefix(namespace)
+                    namespace.isNotEmpty() && function.value.startsWith(namespace) && local.isNotEmpty() &&
+                        Regex("(?<![A-Za-z0-9_.:-])" + Regex.escape("$prefix:$local") + "\\s*[(]").containsMatchIn(query.text)
+                }
+        }
 
     /** Subjects with a `sh:bodyExpression` or typed `sh:ListParameterExpressionFunction`, in shapes-graph order. */
     private fun candidates(index: ShapeGraphIndex): Set<RdfResource> {
@@ -88,6 +96,25 @@ internal object SparqlFunctionDeclarations {
      * is left out otherwise (a node expression that calls it reports it, see [NodeExpressionFunctions]).
      */
     private fun declaration(node: RdfResource, index: ShapeGraphIndex): SparqlFunctionDeclarationSet.Declaration? {
+        // Feature detection and compile both ask: the answer is computed once per index.
+        val cache = index.sparqlFunctionDeclarations
+        when (val known = cache[node]) {
+            is SparqlFunctionDeclarationSet.Declaration -> return known
+            is ShapeCompileException -> throw known
+            NONE -> return null
+        }
+        return try {
+            uncachedDeclaration(node, index).also { cache[node] = it ?: NONE }
+        } catch (e: ShapeCompileException) {
+            cache[node] = e
+            throw e
+        }
+    }
+
+    /** Marks a node without a declaration in [ShapeGraphIndex.sparqlFunctionDeclarations]. */
+    private val NONE = Any()
+
+    private fun uncachedDeclaration(node: RdfResource, index: ShapeGraphIndex): SparqlFunctionDeclarationSet.Declaration? {
         if (!index.isInstanceOf(node, ShaclSparqlTerms.ListParameterExpressionFunction)) return null
         val iri = node as? Iri ?: throw ShapeCompileException("SHACL function $node must be an IRI")
         return try {
@@ -154,23 +181,38 @@ internal class SparqlFunctionDeclarationSet(private val declarations: List<Decla
     val isEmpty: Boolean get() = declarations.isEmpty()
 
     /** The bodies that are not SPARQL queries, which the native evaluator evaluates (their shapes must be compiled). */
-    val expressionBodies: List<NodeExpression> get() = declarations.map { it.body }.filter { it !is NodeExpression.Select }
+    val expressionBodies: List<NodeExpression> = declarations.map { it.body }.filter { it !is NodeExpression.Select }
 
     /**
      * The library of one validation run; [SparqlFunctionLibrary.EMPTY] when there are no functions. A SPARQL body is
      * evaluated as a query sent with this library. Any other body is evaluated by [run], with the function IRI as
      * focus node (SHACL 1.2 SPARQL §7.3) and the arguments as `shnex:arg 0`, `shnex:arg 1`, ... (Node Expressions
      * §6.2); [run] returns the single output node, or null for an error (none, several, or an evaluation failure).
+     *
+     * A node expression body runs its queries as new queries, which the provider's own nesting limit does not relate
+     * to the calling query. So every call of a function of the library, of either kind, counts towards one limit:
+     * at most [MAX_FUNCTION_DEPTH] calls are under way at a time (a run is single-threaded, so this is the nesting
+     * depth), and a call beyond it is an error. Recursion through any mix of bodies therefore terminates.
      */
     fun library(run: (body: NodeExpression, function: Iri, arguments: List<RdfTerm?>) -> RdfTerm?): SparqlFunctionLibrary {
         if (declarations.isEmpty()) return SparqlFunctionLibrary.EMPTY
         val byIri = LinkedHashMap<String, SparqlFunction>()
         // Bodies pass this library on to their own queries: it is complete before any query runs.
         val library = SparqlFunctionLibrary { byIri[it] }
+        val active = AtomicInteger()
         for (declaration in declarations) {
             val body = declaration.body
             byIri[declaration.iri.value] = SparqlFunction(declaration.iri.value, declaration.optional) { call ->
-                if (body is NodeExpression.Select) select(declaration.iri, body, call, library) else run(body, declaration.iri, call.arguments)
+                if (active.incrementAndGet() > MAX_FUNCTION_DEPTH) {
+                    active.decrementAndGet()
+                    null
+                } else {
+                    try {
+                        if (body is NodeExpression.Select) select(declaration.iri, body, call, library) else run(body, declaration.iri, call.arguments)
+                    } finally {
+                        active.decrementAndGet()
+                    }
+                }
             }
         }
         return library

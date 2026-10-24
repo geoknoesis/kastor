@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
@@ -15,6 +16,9 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
  * forked, so duplicate triples are dropped here and every value list is duplicate-free.
  */
+/** A `PREFIX p: <ns>` declaration in a SPARQL query text (case-insensitive keyword; `p` may be empty). */
+private val PREFIX_DECLARATION = Regex("(?i)PREFIX\\s+([A-Za-z][A-Za-z0-9_.-]*)?:\\s*<([^>]*)>")
+
 internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
     /** All (distinct) shapes-graph triples. */
     val triples: List<RdfTriple>
@@ -55,11 +59,28 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** Custom node expression functions of this shapes graph (§6), collected once per index. */
     val nodeExpressionFunctions: NodeExpressionFunctions by lazy { NodeExpressionFunctions.build(this) }
 
-    /** The text of every SPARQL query of this shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr` literals). */
-    val sparqlQueryTexts: List<String> by lazy {
+    /** A SPARQL query of this shapes graph: its text and the prefixes it can use (declared in it or for its node). */
+    class SparqlQueryText(val text: String, val prefixes: Map<String, String>)
+
+    /** Every SPARQL query of this shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr` literals), collected once. */
+    val sparqlQueries: List<SparqlQueryText> by lazy {
         triples.filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == ShaclSparqlTerms.sparqlExpr }
-            .mapNotNull { (it.obj as? com.geoknoesis.kastor.rdf.Literal)?.lexical }
+            .mapNotNull { t ->
+                tick("SPARQL function compilation")
+                val text = (t.obj as? Literal)?.lexical ?: return@mapNotNull null
+                val prefixes = LinkedHashMap<String, String>()
+                try {
+                    prefixes.putAll(SparqlPrefixes.collect(t.subject, this))
+                } catch (_: ShapeCompileException) {
+                    // An ill-formed declaration is reported where the query is compiled.
+                }
+                PREFIX_DECLARATION.findAll(text).forEach { prefixes[it.groupValues[1]] = it.groupValues[2] }
+                SparqlQueryText(text, prefixes)
+            }
     }
+
+    /** SHACL SPARQL function declarations by node, as [SparqlFunctionDeclarations] decided them (cached per index). */
+    internal val sparqlFunctionDeclarations = HashMap<RdfResource, Any>()
 
     fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
 
