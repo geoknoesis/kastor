@@ -203,7 +203,7 @@ A `sh:sparql` constraint may set `sh:severity`, which becomes the severity of it
 
 #### Prefix declarations
 
-`sh:prefixes` / `sh:declare` are followed through `owl:imports`, including `owl:versionIRI` navigation. A node with no `sh:prefixes` uses the graph-level declarations of the SHACL instances of `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and `sh:RulesGraph`. Conflicting declarations, or declarations with the wrong datatype, make the shapes graph ill-formed.
+`sh:prefixes` / `sh:declare` are followed through `owl:imports`, including `owl:versionIRI` navigation. A node with no `sh:prefixes` uses the graph-level declarations of the SHACL instances of `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and `sh:RulesGraph`. Conflicting declarations, declarations with the wrong datatype, and an `sh:prefix` that is not a SPARQL prefix name (`PN_PREFIX`: empty, or a letter followed by letters, digits, `_`, `-` or `.`, not ending in `.`) make the shapes graph ill-formed. Kastor writes each declaration into the query prologue, so this check stops a prefix from injecting query text.
 
 #### SPARQL-based constraint components
 
@@ -236,8 +236,11 @@ The engine pre-binds variables itself before the query reaches the provider, so 
 
 A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:
 - no `MINUS`, `SERVICE` or `VALUES`;
-- no `AS` that re-binds `this`, a parameter, or (in ASK queries) `value`;
-- a query that uses `$this` must project `$this` from each sub-query. A blank-node value inside a sub-select that does not project it fails at run time.
+- no `AS` that re-binds `this`, a parameter, or (in ASK queries) `value`.
+
+The restrictions are checked on the query text and again on the full query with its `PREFIX` prologue.
+
+Sub-selects need not project `$this` (SHACL 1.2 removed that restriction). One limit remains: a blank-node value used inside a sub-select that does not project it cannot be passed to the provider. The provider contract rejects it, and validation throws `ShaclValidationException`.
 
 `$PATH` (either `$` or `?`) is substituted on property shapes and left unbound on node shapes.
 
