@@ -15,6 +15,7 @@ internal class RunCounters {
     var patternSteps = 0L
     var recordedReports = 0L
     var separateReportEvaluations = 0L
+    var deactivationEvaluations = 0L
 }
 
 /**
@@ -31,6 +32,7 @@ internal class ShaclInstrumentation {
     val recordedReports = LongAdder()
     val separateReportEvaluations = LongAdder()
     val digestMemoHits = LongAdder()
+    val deactivationEvaluations = LongAdder()
 
     /**
      * Simulates an incomplete dependency recording: a recursive read of (node, shape) for which this returns true is
@@ -64,5 +66,6 @@ internal class ShaclInstrumentation {
         patternSteps.add(c.patternSteps)
         recordedReports.add(c.recordedReports)
         separateReportEvaluations.add(c.separateReportEvaluations)
+        deactivationEvaluations.add(c.deactivationEvaluations)
     }
 }

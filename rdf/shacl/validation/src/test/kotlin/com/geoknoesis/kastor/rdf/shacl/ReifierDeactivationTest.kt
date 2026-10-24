@@ -290,4 +290,48 @@ class ReifierDeactivationTest {
         val report = validate(provider, "ex:a ex:id 1 ; ex:skip 1 . ex:b ex:id 1 . ex:c ex:id 2 .", shapes)
         assertEquals(listOf(ex("b")), report.violations.map { it.focusNode })
     }
+
+    // --- evaluation counts, Kleene logic, well-formedness of every triple ----------------------------------------------
+
+    private fun onlyA(shapes: String) = shapes.replace("sh:targetNode ex:a , ex:b", "sh:targetNode ex:a")
+
+    @Test
+    fun `the reifier condition of sh reifierShape and sh reificationRequired is evaluated once per focus node`() {
+        // ex:a has no ex:skip: each constraint is active and evaluates its reifier's expression exactly once.
+        for ((shapes, data) in listOf(
+            prop("sh:reifierShape ex:N $perFocus") to "ex:a ex:p 1 {| ex:x 1 |} .",
+            prop("sh:reifierShape ex:N ; sh:reificationRequired true $perFocus") to "ex:a ex:p 1 .",
+            prop("sh:reificationRequired true $perFocus") to "ex:a ex:p 1 .",
+        )) {
+            val validator = NativeShaclValidator(ValidationConfig.default()) { repository("jena") }
+            val report = validator.validate(g(data), g(onlyA(shapes)))
+            assertEquals(1, report.violations.size, "$shapes: ${report.violations}")
+            assertEquals(1L, validator.deactivationEvaluations, shapes)
+        }
+    }
+
+    @Test
+    fun `the reifier condition of a property shape's logical constraint is evaluated once per focus node, not per value node`() {
+        val validator = NativeShaclValidator(ValidationConfig.default()) { repository("jena") }
+        val report = validator.validate(g("ex:a ex:p 1 , 2 , 3 ."), g(onlyA(prop("sh:not ex:Any $perFocus"))))
+        assertEquals(3, report.violations.size, report.violations.toString())
+        assertEquals(1L, validator.deactivationEvaluations)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a definite true at one reifier deactivates the constraint although another reifier's expression is undefined for now`(provider: String) {
+        // The first reifier reads whether ex:x conforms to ex:S, a negative self-dependency the solver answers
+        // provisionally; the second deactivates the constraint for ex:x. True or undefined is true (Kleene), so the
+        // constraint is deactivated, ex:x conforms to ex:S, and the first expression is false.
+        val notS = "{| sh:deactivated [ sparql:logical-not ( [ shnex:conformsToShape ( [ shnex:var \"focusNode\" ] ex:S ) ] ) ] |}"
+        for ((shapes, data) in listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:property ex:P . ex:P sh:path ex:p ; sh:pattern \"^z\" $notS ; sh:flags \"m\" $perFocus ." to
+                "ex:x ex:p \"a\" ; ex:skip true .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:closed true $notS ; sh:ignoredProperties ( ex:skip ) $perFocus ." to
+                "ex:x ex:p 1 ; ex:skip true .",
+        )) {
+            val report = validate(provider, data, shapes)
+            assertTrue(report.isValid, "$shapes: ${report.violations}")
+        }
+    }
 }

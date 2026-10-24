@@ -128,6 +128,9 @@ internal class NativeShaclValidator(
     /** Test instrumentation: restarts of the recursion solver caused by a read its recording had not registered. */
     internal val solverRestarts: Long get() = instrumentation.solverRestarts.sum()
 
+    /** Test instrumentation: evaluations of non-constant `sh:deactivated` node expressions (of shapes, SPARQL-based constraints and reifiers). */
+    internal val deactivationEvaluations: Long get() = instrumentation.deactivationEvaluations.sum()
+
     /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
     internal val patternEvaluations: Long get() = instrumentation.patternEvaluations.sum()
 

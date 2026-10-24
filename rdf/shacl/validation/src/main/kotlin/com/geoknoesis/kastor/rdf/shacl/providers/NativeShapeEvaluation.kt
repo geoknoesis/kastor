@@ -96,9 +96,10 @@ internal fun NativeShaclValidator.validateNodeShape(
 
 /**
  * Whether a reifier of one of the parameter triples of a constraint deactivates it for [focus] (SHACL 1.2 Core
- * §3.1.6): one of [conditions], evaluated with that focus node and an empty scope, produces exactly `true`. A
- * failure is thrown; a provisional answer of the recursion solver read by an expression is reported as undefined
- * ([type]) and counts as deactivated, so that the constraint is not evaluated (see [deactivatedFor]).
+ * §3.1.6): one of [conditions], evaluated with that focus node and an empty scope, produces exactly `true`
+ * ([anyDeactivates]). A failure is thrown; when no condition is true and one read a provisional answer of the
+ * recursion solver, the constraint is reported as undefined ([type]) once, and true is returned so that it is not
+ * evaluated.
  */
 private fun NativeShaclValidator.reifierDeactivated(
     conditions: List<NodeExpression>,
@@ -108,7 +109,35 @@ private fun NativeShaclValidator.reifierDeactivated(
     ctx: NativeValidationContext,
     state: DepthState,
     sink: Sink,
-): Boolean = conditions.any { deactivatedFor(focus, it, tpl, type, ctx, state, sink) }
+): Boolean {
+    if (conditions.isEmpty()) return false
+    return try {
+        anyDeactivates(conditions, focus, ctx, state.depth)
+    } catch (e: ProvisionalUndefined) {
+        sink.undefinedAnswer(ctx, focus, tpl, type, null, e.node, e.shape)
+        true
+    }
+}
+
+/**
+ * The disjunction, under Kleene logic, of whether each of [conditions] (the non-constant `sh:deactivated` of the
+ * reifiers of one constraint's parameter triples) deactivates the constraint for [focus]: every condition is
+ * evaluated until one is definitely true, so a definite `true` wins over an answer that is undefined for now. When
+ * none is true and one read a provisional answer of the recursion solver, the first such [ProvisionalUndefined] is
+ * thrown. A failure is thrown at once.
+ */
+internal fun NativeShaclValidator.anyDeactivates(conditions: List<NodeExpression>, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): Boolean {
+    var provisional: ProvisionalUndefined? = null
+    for (expr in conditions) {
+        try {
+            if (deactivates(expr, focus, ctx, depth)) return true
+        } catch (e: ProvisionalUndefined) {
+            if (provisional == null) provisional = e
+        }
+    }
+    provisional?.let { throw it }
+    return false
+}
 
 /** Logical constraints under Kleene logic; operands of `sh:xone` and `sh:not` are negative dependencies. */
 private fun NativeShaclValidator.evalLogical(
@@ -252,6 +281,7 @@ private fun NativeShaclValidator.deactivatedFor(
  * `"true"^^xsd:boolean` as its only output node. A failure is thrown; so is a [ProvisionalUndefined] answer.
  */
 internal fun NativeShaclValidator.deactivates(expr: NodeExpression, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): Boolean {
+    ctx.counters.deactivationEvaluations++
     val out = evalNodeExpression(expr, ctx, focus, shapeDepth = depth)
     return out.size == 1 && out.single() == TrueLiteral
 }
@@ -294,11 +324,23 @@ internal fun NativeShaclValidator.validatePropertyShape(
     }
     evaluateConstraintsForValues(focus, tpl, values, ps.constraints, ctx, state, ps.shapeNode, ps.path, sink)
     if (sink.stop) return
-    // The focus node of a constraint a reifier deactivates is the property shape's, not a value node.
     for (part in ps.logicalParts) {
-        for (v in values) {
+        if (part.deactivatedWhen.isEmpty()) {
+            for (v in values) {
+                sink.unit { s -> evalLogical(focus, v, tpl, part, ctx, state, s) }
+                if (sink.stop) return
+            }
+        } else if (values.isNotEmpty()) {
+            // The focus node of a constraint a reifier deactivates is the property shape's, not a value node: the
+            // condition is evaluated once per (focus node, constraint), in one unit with every value node, so that a
+            // re-run unit re-checks it.
             sink.unit { s ->
-                if (!reifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s)) evalLogical(focus, v, tpl, part, ctx, state, s)
+                if (!reifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s)) {
+                    for (v in values) {
+                        evalLogical(focus, v, tpl, part, ctx, state, s)
+                        if (s.stop) break
+                    }
+                }
             }
             if (sink.stop) return
         }
