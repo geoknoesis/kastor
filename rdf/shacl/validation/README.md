@@ -86,7 +86,8 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   `sh:targetNode`, and by the `sh:expression` and computed `sh:nodeByExpression` constraint components. An evaluation
   failure fails validation with `ShaclValidationException`. Limits: nesting depth 128 (which also bounds native custom
   function calls), 16 calls of SPARQL-callable functions under way at a time, every intermediate list `ValidationConfig.maxPathValueNodes`, and every step ticks the run budget.
-  Still unsupported: a non-constant `sh:deactivated` and SPARQL node expressions at `sh:targetWhere`. The report RDF
+  A shape's `sh:deactivated` may be a node expression, evaluated per focus node. Still unsupported: a non-constant
+  `sh:deactivated` on a reifier and SPARQL node expressions at `sh:targetWhere`. The report RDF
   holds a deep copy of a blank-node `sh:sourceConstraint` (spec sections 7.1 / 7.2). RDF4J 5.3 lacks some
   SPARQL 1.2 functions (`hasLang`, `hasLangdir`, `langdir`, `strlangdir`, `sameValue`, `isTriple`, `triple`, `subject`,
   `predicate`, `object`) and returns different lexical forms for some numeric results.

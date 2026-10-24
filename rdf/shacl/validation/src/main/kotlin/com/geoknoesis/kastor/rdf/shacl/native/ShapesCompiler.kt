@@ -183,6 +183,11 @@ internal data class CompiledPropertyShape(
     val nestedPropertyShapes: List<CompiledPropertyShape> = emptyList(),
     /** `sh:deactivated true`: every node conforms. */
     val deactivated: Boolean = false,
+    /**
+     * A non-constant `sh:deactivated` (SHACL 1.2 Core §3.1.6): the shape is deactivated for a focus node when this
+     * expression, evaluated with that focus node and an empty scope, produces exactly `true`.
+     */
+    val deactivatedWhen: NodeExpression? = null,
     /** `sh:values` node expression (predicate paths only); null when absent or [deactivated]. */
     val values: NodeExpression? = null,
     /** `sh:defaultValue` node expression (predicate paths only); null when absent or [deactivated]. */
@@ -211,6 +216,8 @@ internal data class CompiledNodeShape(
     val uniqueValuesForProps: List<Iri> = emptyList(),
     /** `sh:deactivated true`: every node conforms. */
     val deactivated: Boolean = false,
+    /** A non-constant `sh:deactivated`: see [CompiledPropertyShape.deactivatedWhen]. */
+    val deactivatedWhen: NodeExpression? = null,
     /**
      * Predicates allowed by `sh:closed true` (SHACL §4.8.1): the IRI `sh:path` values of **all** `sh:property`
      * values, including deactivated property shapes.
@@ -441,7 +448,7 @@ internal object ShapesCompiler {
             props[ps.shapeNode] = ps
             ps.constraints.forEach { addConstraint(it) }
             ps.logicalParts.forEach { pending.addAll(it.operandRefs()) }
-            listOfNotNull(ps.values, ps.defaultValue).forEach { addExpression(it) }
+            listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen).forEach { addExpression(it) }
             ps.nestedPropertyShapes.forEach { visitProperty(it) }
         }
 
@@ -452,6 +459,7 @@ internal object ShapesCompiler {
             cn.logicalParts.forEach { pending.addAll(it.operandRefs()) }
             cn.nodeConstraints.forEach { addConstraint(it) }
             cn.targets.targetNodeExpressions.forEach { addExpression(it) }
+            cn.deactivatedWhen?.let { addExpression(it) }
             cn.propertyShapes.forEach { visitProperty(it) }
         }
 
@@ -491,9 +499,12 @@ internal object ShapesCompiler {
 
         fun of(expr: NodeExpression): Set<RdfResource> = if (computes(expr)) strict(expr) + iriCandidates else strict(expr)
 
-        /** The shapes of the node expressions [ps] evaluates: `sh:values`, `sh:defaultValue` and its constraints'. */
+        /**
+         * The shapes of the node expressions [ps] evaluates: `sh:values`, `sh:defaultValue`, a non-constant
+         * `sh:deactivated` and its constraints'.
+         */
         fun of(ps: CompiledPropertyShape): List<RdfResource> =
-            (listOfNotNull(ps.values, ps.defaultValue) + ps.constraints.mapNotNull { constraintExpression(it) }).flatMap { of(it) }
+            (listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen) + ps.constraints.mapNotNull { constraintExpression(it) }).flatMap { of(it) }
     }
 
     /** The shapes [expr] of [index] can validate against ([ExpressionShapes]), for expressions evaluated outside validation. */
@@ -545,7 +556,7 @@ internal object ShapesCompiler {
             // The node expressions of sh:values / sh:defaultValue / sh:expression / sh:nodeByExpression are evaluated
             // while checking the shape, so their shapes are dependencies; so are the candidates of a computed
             // sh:nodeByExpression, any of which it can produce.
-            val expressions = listOfNotNull(ps.values, ps.defaultValue) + ps.constraints.mapNotNull { constraintExpression(it) }
+            val expressions = listOfNotNull(ps.values, ps.defaultValue, ps.deactivatedWhen) + ps.constraints.mapNotNull { constraintExpression(it) }
             successors[node] = ps.constraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } +
                 ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps) +
                 (if (runsSparql(ps.constraints, expressions)) sparqlBodyShapes else emptyList())
@@ -553,7 +564,9 @@ internal object ShapesCompiler {
         // A shape node that is also a property shape is always checked as a property shape (see conformance checks).
         for ((node, cn) in refNodes) {
             if (node in refProps) continue
-            val expressions = cn.nodeConstraints.mapNotNull { constraintExpression(it) }
+            // A non-constant sh:deactivated is evaluated before anything else of the shape: its shapes are
+            // dependencies too.
+            val expressions = cn.nodeConstraints.mapNotNull { constraintExpression(it) } + listOfNotNull(cn.deactivatedWhen)
             successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
                 cn.nodeConstraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } + cn.propertyShapes.map { it.shapeNode } +
                 expressions.flatMap { exprShapes.of(it) } +
@@ -702,7 +715,9 @@ internal object ShapesCompiler {
         return Reach(out, needsCandidates)
     }
 
-    private val expressionPositions: List<Iri> by lazy { listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode, shExpression) }
+    private val expressionPositions: List<Iri> by lazy {
+        listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode, shExpression, SHACL.deactivated)
+    }
 
     /**
      * Unsupported constructs: [strict] of the shapes the run validates against, by description, and [candidateOnly]:
@@ -713,7 +728,7 @@ internal object ShapesCompiler {
     /**
      * Recognised SHACL constructs the native engine cannot evaluate. They are reported instead of silently
      * compiling to something that always conforms (or targets every node): blank nodes at node expression positions
-     * that are no node expression, non-constant `sh:deactivated`, SPARQL expressions as `sh:targetWhere` values,
+     * that are no node expression, non-constant `sh:deactivated` on a reifier, SPARQL expressions as `sh:targetWhere` values,
      * and `sh:target`. Node-expression positions are only inspected on shape-reachable nodes, so data triples that
      * share the shapes graph (`validate(g, g)`, discovered shapes graphs) are never mistaken for expressions. The
      * shapes only the candidates of computed shape references reach do not fail the run: their constructs are
@@ -794,9 +809,12 @@ internal object ShapesCompiler {
                 "sh:targetNode with a node expression on ${t.subject}" to expression(t.obj)
             t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
-            // SHACL 1.2 Core §3.1.6: only the constants true and false are evaluated.
-            t.predicate == SHACL.deactivated && t.obj is BlankNode ->
-                "non-constant sh:deactivated (a node expression) on ${t.subject}" to UnsupportedShaclFeature.NODE_EXPRESSION
+            // SHACL 1.2 Core §3.1.6: a shape's sh:deactivated may be any node expression; a reifier's (one constraint)
+            // only the constants true and false.
+            t.predicate == SHACL.deactivated && t.obj is BlankNode && index.objects(t.subject, RDF.reifies).any { it is TripleTerm } ->
+                "non-constant sh:deactivated (a node expression) on the reifier ${t.subject}" to UnsupportedShaclFeature.NODE_EXPRESSION
+            t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
+                "sh:deactivated node expression on ${t.subject}" to expression(t.obj)
             (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && isLexicallyTrue(t.obj))) &&
                 hasNonPredicatePath(t.subject, index) -> {
                 val parameter = if (t.predicate == SHACL.reifierShape) "sh:reifierShape" else "sh:reificationRequired"
@@ -1011,6 +1029,7 @@ internal object ShapesCompiler {
         val uniqueValuesForProps = parseUniqueValuesFor(subject, index)
 
         return CompiledNodeShape(
+            deactivatedWhen = deactivationExpression(subject, index),
             shapeNode = subject,
             targets = targets,
             targetWhereRefs = targetWhereRefs,
@@ -1300,6 +1319,7 @@ internal object ShapesCompiler {
             nestedPropertyShapes = nestedPropertyShapes,
             values = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.values, path, index),
             defaultValue = NodeExpressions.compileParameter(ps, ShaclSparqlTerms.defaultValue, path, index),
+            deactivatedWhen = deactivationExpression(ps, index),
         )
     }
 
@@ -1382,6 +1402,19 @@ internal object ShapesCompiler {
                 "Triple-term value in shape parameter requires ValidationConfig.allowTripleTermsInShapeParameters=true (architecture §5.1 P1b)",
             )
         }
+    }
+
+    /**
+     * The node expression of a non-constant `sh:deactivated` of [shape] (SHACL 1.2 Core §3.1.6: "Shapes can have at
+     * most one value for the property sh:deactivated"), or null for none or a constant (the constant `true` makes the
+     * shape [isDeactivated]; any other constant never produces `true`). A blank node that is no node expression is
+     * reported by feature detection and gives null; an ill-formed one, or a second value, is a compile error.
+     */
+    private fun deactivationExpression(shape: RdfResource, index: ShapeGraphIndex): NodeExpression? {
+        val values = index.objects(shape, SHACL.deactivated)
+        val expression = values.firstOrNull { it is BlankNode } ?: return null
+        if (values.size > 1) throw ShapeCompileException("Shape $shape has more than one value for sh:deactivated")
+        return NodeExpressions.compile(expression, index)
     }
 
     private fun isDeactivated(subject: RdfResource, index: ShapeGraphIndex): Boolean =

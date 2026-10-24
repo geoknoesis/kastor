@@ -631,7 +631,7 @@ class NodeExpressionConstraintTest {
         """
         val cases = mapOf(
             "ex:T sh:expression [ ex:unknown 1 ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
-            "ex:T sh:nodeKind sh:IRI ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
+            "ex:T sh:nodeKind sh:IRI ; sh:deactivated [ ex:unknown 1 ] ." to UnsupportedShaclFeature.NODE_EXPRESSION,
             "ex:T sh:nodeKind sh:IRI ; sh:target [ a ex:CustomTarget ] ." to UnsupportedShaclFeature.CUSTOM_TARGET,
         )
         for ((t, feature) in cases) {
@@ -659,19 +659,91 @@ class NodeExpressionConstraintTest {
         assertTrue(validate(provider, "ex:a ex:p 1 .", computed).isValid)
     }
 
-    @Test
-    fun `non-constant sh deactivated stays unsupported`() {
-        val cases = listOf(
-            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ; sh:class ex:C .",
-            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:minCount 2 ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ] .",
-            // A reifier deactivating one constraint (SHACL 1.2 Core §3.1.6).
-            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:class ex:C {| sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] |} .",
-        )
-        for (shapes in cases) {
-            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:p 1 .", shapes) }, shapes)
-            val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
-            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features, shapes)
+    // --- non-constant sh:deactivated (SHACL 1.2 Core §3.1.6) -----------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a node shape is deactivated for the focus nodes whose expression is true`(provider: String) {
+        // evalExpr(expr, data graph, focus node, {}): ex:a has ex:skip, so ex:S is deactivated for it only.
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ] ; sh:class ex:C ."
+        assertEquals(listOf(ex("b")), validate(provider, "ex:a ex:skip 1 . ex:b ex:p 1 .", shapes).violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `only exactly true deactivates a shape`(provider: String) {
+        // The output of shnex:pathValues ex:flag: ( true ) deactivates; ( false ), ( ), ( "1"^^xsd:boolean ) and
+        // two nodes do not.
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated [ shnex:pathValues ex:flag ] ; sh:class ex:C ."
+        assertTrue(validate(provider, "ex:a ex:flag true .", shapes).isValid)
+        for (data in listOf("ex:a ex:flag false .", "ex:a ex:p 1 .", "ex:a ex:flag \"1\"^^xsd:boolean .", "ex:a ex:flag true , \"true\" .")) {
+            assertEquals(1, validate(provider, data, shapes).violations.size, data)
         }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a property shape is deactivated for the focus nodes whose expression is true`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ;
+              sh:property [ sh:path ex:p ; sh:minCount 2 ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ] ] .
+        """
+        assertEquals(listOf(ex("b")), validate(provider, "ex:a ex:skip 1 ; ex:p 1 . ex:b ex:p 1 .", shapes).violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a shape deactivated for a node conforms in nested checks`(provider: String) {
+        val shapes = """
+            ex:T a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:node ex:S .
+            ex:S a sh:NodeShape ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ] ; sh:class ex:C .
+        """
+        assertEquals(listOf(ex("b")), validate(provider, "ex:a ex:skip 1 . ex:b ex:p 1 .", shapes).violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a SPARQL expression at sh deactivated`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:deactivated [ sh:sparqlExpr '''EXISTS { ${'$'}this <http://example.com/ns#skip> ?x }''' ] ; sh:class ex:C ."
+        assertEquals(listOf(ex("b")), validate(provider, "ex:a ex:skip 1 . ex:b ex:p 1 .", shapes).violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a failing sh deactivated expression fails validation`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated [ sparql:abs ( ( 1 2 ) ) ] ; sh:class ex:C ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+        val property = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:deactivated [ sparql:abs ( ( 1 2 ) ) ] ] ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", property) }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a shape read by sh deactivated is a negative dependency`(provider: String) {
+        // ex:S is deactivated for x iff x does not conform to ex:S; active, it fails sh:class: x conforms iff it does
+        // not, undefined recursion, a validation failure.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:class ex:C ;
+              sh:deactivated [ sparql:logical-not ( [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:S ) ] ) ] .
+        """
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:x ex:p 1 .", shapes) }
+        // Decidable: deactivated iff x conforms to ex:Y, which reads ex:S back but fails sh:minCount on its own.
+        val decidable = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:class ex:C ;
+              sh:deactivated [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Y ) ] .
+            ex:Y a sh:NodeShape ; sh:node ex:S ; sh:property [ sh:path ex:missing ; sh:minCount 1 ] .
+        """
+        assertEquals(1, validate(provider, "ex:x ex:p 1 .", decidable).violations.size)
+    }
+
+    @Test
+    fun `non-constant sh deactivated on a reifier stays unsupported`() {
+        // A reifier deactivating one constraint (SHACL 1.2 Core §3.1.6) with a node expression is not evaluated.
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:class ex:C {| sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] |} ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
+        val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
+        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features)
+    }
+
+    @Test
+    fun `sh deactivated that is no node expression stays unsupported`() {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated [ ex:undeclared 1 ] ; sh:class ex:C ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
+        val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
+        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features)
     }
 
     @Test

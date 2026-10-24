@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
@@ -11,6 +12,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.ClosedMode
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledPropertyShape
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
+import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
 import com.geoknoesis.kastor.rdf.shacl.native.NodeLogicalPart
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
@@ -39,6 +41,7 @@ internal fun NativeShaclValidator.validateNodeShape(
     if (shape.deactivated) return
     ctx.counters.shapeEvaluations++
     val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
+    if (shape.deactivatedWhen != null && deactivatedFor(focus, shape.deactivatedWhen, tpl, ConstraintType.NODE, ctx, state, sink)) return
 
     for (nr in shape.nodeRefs) {
         sink.unit { s ->
@@ -192,6 +195,32 @@ private fun NativeShaclValidator.evaluateConstraintsForValues(
     }
 }
 
+/**
+ * Whether the non-constant `sh:deactivated` [expr] of a shape deactivates it for [focus] (SHACL 1.2 Core §3.1.6):
+ * `evalExpr(expr, data graph, focus node, {})` produces exactly the term `"true"^^xsd:boolean` (R5) as its only output
+ * node. Any other output, the empty list included, leaves the shape active. An evaluation failure is a validation
+ * failure (Node Expressions §3.4), thrown by [evalNodeExpression]. A provisional answer of the recursion solver read by
+ * the expression makes the whole shape undefined for now: it is reported as undefined ([type]) and true is returned,
+ * so that nothing else of the shape is evaluated.
+ */
+private fun NativeShaclValidator.deactivatedFor(
+    focus: RdfTerm,
+    expr: NodeExpression,
+    tpl: ResultTemplate,
+    type: ConstraintType,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+): Boolean {
+    val out = try {
+        evalNodeExpression(expr, ctx, focus, shapeDepth = state.depth)
+    } catch (e: ProvisionalUndefined) {
+        sink.undefinedAnswer(ctx, focus, tpl, type, null, e.node, e.shape)
+        return true
+    }
+    return out.size == 1 && out.single() == TrueLiteral
+}
+
 /** The constraint type an undefined [ProvisionalUndefined] answer of [c] is reported with. */
 private fun provisionalType(c: PropertyConstraint): ConstraintType =
     when (c) {
@@ -217,6 +246,7 @@ internal fun NativeShaclValidator.validatePropertyShape(
     if (ps.deactivated) return
     ctx.counters.shapeEvaluations++
     val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
+    if (ps.deactivatedWhen != null && deactivatedFor(focus, ps.deactivatedWhen, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink)) return
     val values = try {
         propertyValueNodes(focus, ps, ctx, state)
     } catch (e: ProvisionalUndefined) {
