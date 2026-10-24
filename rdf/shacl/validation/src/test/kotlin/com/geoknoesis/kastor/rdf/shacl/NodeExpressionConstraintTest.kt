@@ -12,9 +12,12 @@ import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.shacl.providers.ProvisionalStash
+import com.geoknoesis.kastor.rdf.shacl.providers.ProvisionalUndefined
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -412,19 +415,20 @@ class NodeExpressionConstraintTest {
         assertTrue("cannot be decided" in error.message.orEmpty() || "undefined" in error.message.orEmpty(), error.message)
         // A chain ends: b has no ex:p, so it conforms to T and S, and so does a.
         assertTrue(validate("jena", "ex:a ex:p ex:b .", shapes).isValid)
-        // A long chain is bounded by the nesting limit, or decided: never a stack overflow.
+        // A long chain is decided by the recursion solver ({S, T} is a component), not by nested checks: the last
+        // node has no ex:p, so every node conforms. A stack overflow would be a ShaclValidationException instead.
         val chain = (0 until 300).joinToString(" ") { "ex:n$it ex:p ex:n${it + 1} ." } + " ex:a ex:p ex:n0 ."
-        try {
-            validate("jena", chain, shapes)
-        } catch (_: ShaclValidationException) {
-            // Bounded: a proper validation failure.
-        }
+        val report = validate("jena", chain, shapes)
+        assertTrue(report.isValid, report.violations.toString())
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `recursion through a SPARQL function body stays bounded`(provider: String) {
         // The function body validates against ex:S, whose SPARQL constraint calls the function: no static dependency
-        // records it, so only the nesting depth carried through the evaluator bounds it.
+        // records it. The nesting of function bodies (nodeExpressionDepth, 128) and the shape depth carried through
+        // the evaluator (maxRecursionDepth) bound it: the innermost call fails, which is a SPARQL error of the
+        // function, so FILTER drops the row at every level and ex:a conforms. A stack overflow would instead be a
+        // ShaclValidationException.
         val shapes = """
             ex:f a sh:ListParameterExpressionFunction ;
               sh:parameter [ sh:path shnex:arg0 ] ;
@@ -432,11 +436,44 @@ class NodeExpressionConstraintTest {
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
         """
-        try {
-            validate(provider, "ex:a ex:p ex:a .", shapes)
-        } catch (_: ShaclValidationException) {
-            // Bounded: a proper validation failure.
+        val report = validate(provider, "ex:a ex:p ex:a .", shapes)
+        assertTrue(report.isValid, report.violations.toString())
+    }
+
+    @Test
+    fun `an acyclic chain of shapes through expressions is bounded by maxRecursionDepth`() {
+        // No shape is recursive, so only the shape depth carried through the evaluator bounds the nesting.
+        val shapes = (0 until 5).joinToString("\n") {
+            "ex:S$it a sh:NodeShape ; sh:expression [ shnex:conformsToShape ( [ shnex:var \"focusNode\" ] ex:S${it + 1} ) ] ."
+        } + "\nex:S5 a sh:NodeShape ; sh:nodeKind sh:IRI .\nex:S0 sh:targetNode ex:a ."
+        assertTrue(validate("jena", "ex:a ex:p 1 .", shapes).isValid)
+        val error = assertThrows(ShaclValidationException::class.java) {
+            validate("jena", "ex:a ex:p 1 .", shapes, ValidationConfig(maxRecursionDepth = 3))
         }
+        assertTrue("nesting exceeded ValidationConfig.maxRecursionDepth=3" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
+    fun `a provisional answer stashed by a query that throws does not leak into the next query`() {
+        val stash = ProvisionalStash()
+        val p = ProvisionalUndefined(ex("a"), ex("S"))
+        val q = ProvisionalUndefined(ex("b"), ex("S"))
+        // The provider throws after a function body stashed: the stash is discarded with the query.
+        assertThrows(IllegalStateException::class.java) { stash.scoped<Unit> { stash.stash(p); throw IllegalStateException("provider") } }
+        assertEquals("next", stash.scoped { "next" })
+        // A query that returns rethrows its own stashed answer.
+        assertSame(p, assertThrows(ProvisionalUndefined::class.java) { stash.scoped { stash.stash(p); "x" } })
+        // Nested queries keep their own: an inner query neither takes nor clobbers the outer one's.
+        val outer = assertThrows(ProvisionalUndefined::class.java) {
+            stash.scoped {
+                stash.stash(p)
+                assertEquals("inner", stash.scoped { "inner" })
+                runCatching { stash.scoped<Unit> { stash.stash(q); throw IllegalStateException("inner provider") } }
+                "outer"
+            }
+        }
+        assertSame(p, outer)
+        assertEquals("after", stash.scoped { "after" })
     }
 
     // --- still unsupported ------------------------------------------------------------------------------------------

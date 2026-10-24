@@ -101,8 +101,8 @@ internal class NativeValidationContext(
      */
     var expressionShapeDepth = 0
 
-    /** A provisional answer read by a function body during the query under way, rethrown when the query returns. */
-    private var provisionalInQuery: ProvisionalUndefined? = null
+    /** Provisional answers read by function bodies during the queries under way ([ProvisionalStash]). */
+    private val provisionalInQuery = ProvisionalStash()
 
     /**
      * Whether "undefined" is only a provisional answer to "does [node] conform to [shape]": the recursion solver of
@@ -129,7 +129,7 @@ internal class NativeValidationContext(
             validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
         } catch (e: ProvisionalUndefined) {
             // The query cannot carry it: the whole query's answer is provisional ([select] rethrows it).
-            if (provisionalInQuery == null) provisionalInQuery = e
+            provisionalInQuery.stash(e)
             return null
         }
         return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
@@ -138,17 +138,10 @@ internal class NativeValidationContext(
         budget.check()
     }
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume).also { rethrowProvisional() }
+        provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume) }
     /** As [select], with the function library [library] instead of the shapes graph's. */
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, library: SparqlFunctionLibrary, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume).also { rethrowProvisional() }
-
-    private fun rethrowProvisional() {
-        provisionalInQuery?.let {
-            provisionalInQuery = null
-            throw it
-        }
-    }
+        provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume) }
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
     fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */

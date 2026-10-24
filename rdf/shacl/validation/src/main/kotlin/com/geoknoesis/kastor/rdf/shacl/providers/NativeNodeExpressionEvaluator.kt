@@ -39,6 +39,34 @@ internal const val MAX_NODE_EXPRESSION_DEPTH = 128
  */
 internal class ProvisionalUndefined(val node: RdfTerm, val shape: RdfResource) : RuntimeException(null, null, false, false)
 
+/**
+ * The [ProvisionalUndefined] answers that function bodies read during a SPARQL query, which cannot carry them: each
+ * query runs in its own [scoped] block, so that nested queries keep their own, a query that returns rethrows the
+ * first one, and a query that throws discards it (it never reaches a later, unrelated query).
+ */
+internal class ProvisionalStash {
+    private var pending: ProvisionalUndefined? = null
+
+    /** Records [e] for the query under way (the first one wins). */
+    fun stash(e: ProvisionalUndefined) {
+        if (pending == null) pending = e
+    }
+
+    inline fun <T> scoped(query: () -> T): T {
+        val outer = swap(null)
+        try {
+            val result = query()
+            swap(null)?.let { throw it }
+            return result
+        } finally {
+            swap(outer)
+        }
+    }
+
+    /** Replaces the pending answer with [value], returning the previous one. */
+    fun swap(value: ProvisionalUndefined?): ProvisionalUndefined? = pending.also { pending = value }
+}
+
 /** The outcome of `evalExpr` (Node Expressions §3): a list of output nodes, or an evaluation failure (§3.3). */
 internal sealed interface NodeExprOutcome {
     data class Nodes(val nodes: List<RdfTerm>) : NodeExprOutcome
