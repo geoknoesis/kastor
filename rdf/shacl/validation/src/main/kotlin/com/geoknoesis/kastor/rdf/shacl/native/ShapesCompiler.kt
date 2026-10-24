@@ -315,7 +315,9 @@ internal data class CompiledNodeShape(
  * Compiled shapes graph. Every shape reachable from a top-level shape (via `sh:node`, `sh:and`/`sh:or`/`sh:xone`/
  * `sh:not`, `sh:qualifiedValueShape`, `sh:shape`, `sh:someValue`, `sh:memberShape`, `sh:reifierShape`,
  * `sh:nodeByExpression`, `sh:targetWhere`, `sh:property`, and the shapes of the node expressions at `sh:values`,
- * `sh:defaultValue`, `sh:targetNode`, `sh:expression` and `sh:nodeByExpression` ([NodeExpressions.shapeRefs])) is
+ * `sh:defaultValue`, `sh:targetNode`, `sh:expression`, `sh:nodeByExpression` and the computed constraint parameters
+ * of Dynamic SHACL, Node Expressions §8, which include those of SPARQL-based constraint components
+ * ([NodeExpressions.shapeRefs])) is
  * compiled exactly once — including deactivated and constraint-free shapes, to which every node conforms. So is every
  * candidate of a computed shape reference that compiles ([CompiledShapeGraph.candidateErrors] has the others).
  */

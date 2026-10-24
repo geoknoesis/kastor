@@ -43,6 +43,37 @@ and is kept as is; it was never published to Maven Central.
   `toShaclValidationReportRdf()` with each blank node once per report (validation itself copies nothing). Relative
   IRIs in SPARQL queries are resolved in linear time, on the preparation budget. Custom node expression functions must be SHACL subclasses of
   `sh:NamedParameterExpression` / `sh:ListParameterExpression` (spec Appendix A).
+- `rdf-shacl`: Dynamic SHACL (SHACL 1.2 Node Expressions section 8) in the native engine, always on, with no flag and no
+  API change. A node expression computes, per focus node, the value of `sh:minCount`, `sh:maxCount`, `sh:minLength`,
+  `sh:maxLength`, the four bounds, `sh:uniqueLang`, `sh:singleLine`, `sh:minListLength`, `sh:maxListLength`,
+  `sh:uniqueMembers`, `sh:pattern`, `sh:flags`, the qualified counts and `sh:qualifiedValueShapesDisjoint`,
+  `sh:reificationRequired` and `sh:closed` (one output node); `sh:class`, `sh:datatype`, `sh:nodeKind`, `sh:rootClass` and
+  `sh:uniqueValuesFor` (the output nodes, at least one); `sh:in`, `sh:languageIn` and `sh:ignoredProperties` (the output
+  nodes as list members, possibly none). The parameters of SPARQL-based constraint components are computed when their
+  declaration rules out blank nodes (`sh:class` alone does not); the value is pre-bound like a constant one, written into
+  the query with the same hardened escaping as `$this` and `$value`, and values that cannot be written as text (triple
+  terms, directional strings) go to provider bindings. Output rules fail closed: no output or several for a single
+  node parameter, no output for an IRI or list parameter, an ill-typed output, a blank node at a component parameter, or
+  a triple term without `allowTripleTermsInShapeParameters` fails validation ("Dynamic SHACL: ..."). A computed
+  `"1"` or `"0"^^xsd:boolean` is well typed but not true. At a parameter, a call of an undeclared function is an
+  unsupported feature; any other blank node that is no constant and no node expression is a compile error. A computed
+  `sh:closed` must be the only `sh:closed` value, and at most one `sh:ignoredProperties` value may be computed. With
+  computed `sh:flags`, a constant `sh:pattern` is compiled at run time with the resolved flags.
+
+### Changed (Dynamic SHACL behaviour)
+
+- `sh:in []` is now the empty node expression and rejects every value. `sh:class []`, `sh:ignoredProperties []` and
+  `sh:uniqueValuesFor []` are empty node expressions too: they used to be compile or list errors, and now fail at run time
+  with "no nodes". `sh:closed []` used to mean silently not closed; it now fails at run time. A blank node that is no
+  node expression, such as `[ ex:foo 1 ]`, at one of these parameters is a compile error (for `sh:closed` it used to be
+  ignored).
+- An undeclared function called at `sh:closed`, `sh:ignoredProperties` or `sh:uniqueValuesFor` on a property shape is now
+  reported as an unsupported feature, although these parameters have no effect there.
+
+### Fixed (Dynamic SHACL)
+
+- A language-tagged pre-bound value written into a plain query slot is followed by a space, so that the template text
+  after the variable cannot extend the language tag. This applies to `$this` and `$value` too.
 
 ### Fixed (repository review)
 

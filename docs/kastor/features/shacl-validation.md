@@ -210,7 +210,7 @@ A `sh:sparql` constraint may set `sh:severity`, which becomes the severity of it
 A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated like a built-in component:
 
 - **Validators:** SELECT validators come from `sh:nodeValidator` / `sh:propertyValidator`, ASK validators from `sh:validator`. The validator is chosen as in spec section 4.2.3; a component with no validator that fits the shape kind is ignored.
-- **Parameters:** parameter values are pre-bound. A shape with several values for a parameter yields one constraint per combination, up to 1024 combinations per shape and component; more than that makes the shapes graph ill-formed.
+- **Parameters:** parameter values are pre-bound. A shape with several values for a parameter yields one constraint per combination, up to 1024 combinations per shape and component; more than that makes the shapes graph ill-formed. A parameter whose declaration rules out blank nodes can also be computed by a node expression for each focus node: see [Dynamic SHACL](#dynamic-shacl).
 - **Results:** results report `sh:sourceConstraintComponent` as the component IRI. The message comes from the validator, else the component, else the shape, with `{$param}` substitution.
 
 #### Node expressions
@@ -220,7 +220,7 @@ SHACL 1.2 node expressions (Node Expressions spec) are supported in full:
 - **The `shnex:` library:** constants, empty expressions (an empty blank node `[]`), list expressions (an RDF list), `shnex:var`, `shnex:pathValues`, `shnex:exists`, `shnex:if`, `shnex:distinct`, `shnex:intersection`, `shnex:concat`, `shnex:remove`, `shnex:filterShape`, `shnex:limit`, `shnex:offset`, `shnex:orderBy`, `shnex:flatMap`, `shnex:findFirst`, `shnex:matchAll`, `shnex:count`, `shnex:min`, `shnex:max`, `shnex:sum`, `shnex:instancesOf`, `shnex:nodesMatching` and `shnex:conformsToShape`.
 - **`sparql:<name>` functions** (spec section 5), custom functions with named parameters or list parameters (`shnex:arg`), and the SPARQL expressions `sh:select` / `sh:sparqlExpr`. As spec Appendix A requires, a custom function used in a node expression must be a SHACL instance of `sh:NamedParameterExpressionFunction` and a SHACL subclass of `sh:NamedParameterExpression` (or of `sh:ListParameterExpressionFunction` and `sh:ListParameterExpression`), for example `ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression`. Without the subclass, a call of the function is no node expression, which is reported as `NODE_EXPRESSION`. A function that is only called from SPARQL needs just the type.
 
-They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by two constraint components: `sh:expression` (`sh:ExpressionConstraintComponent`) and a computed `sh:nodeByExpression`.
+They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by two constraint components: `sh:expression` (`sh:ExpressionConstraintComponent`) and a computed `sh:nodeByExpression`. They also compute constraint parameters (see [Dynamic SHACL](#dynamic-shacl)).
 
 - **Positions:** at `sh:targetNode`, `$this` is bound to the shape node; at `sh:values` and `sh:defaultValue` it is bound to the focus node. At `sh:targetNode`, list and empty expressions still follow the data-node rule (see "Blank node `sh:targetNode` values" below).
 - **Values:** the value nodes of a property shape are the path values plus the `sh:values` outputs, and `sh:defaultValue` applies when that set is empty. Both are allowed only on predicate paths. Constant IRI and literal values work too. An IRI node that carries `sh:select` / `sh:sparqlExpr` and is used there is ill-formed.
@@ -239,6 +239,105 @@ Limits:
 - Every evaluation step ticks the run budget, so the validation timeout bounds everything.
 
 The `sh:sourceConstraint` of an `sh:expression` result is the expression, and that of an `sh:nodeByExpression` result is the shape. When it is a blank node, `toShaclValidationReportRdf()` writes its deep copy (spec sections 7.1 and 7.2, SHACL 1.2 Core "Deep Copy"): its triples and those of the blank nodes they reach, RDF lists included, with blank node labels of the report's own. Validation copies nothing: the results only carry a handle on the shapes graph (in `ValidationViolation.context["sourceConstraintTriples"]`), and the copy is made when `toShaclValidationReportRdf()` is called. The writer walks it one blank node at a time, and each blank node is written once per report, even when many results or many expressions share it: shared structure is written once, a cycle ends where it closes, and all the copies of a report together hold at most the shapes graph. The copy uses labels of its own, so a `sh:focusNode` or `sh:value` that is the same blank node as the source constraint (possible when the shapes graph is also the data graph) is not relabelled and no longer co-refers with the copy.
+
+#### Dynamic SHACL
+
+SHACL 1.2 Node Expressions section 8 (Dynamic SHACL) lets a node expression compute the value of a constraint parameter for each focus node. The native engine supports it, always: there is no `ValidationConfig` flag and no API change. A computed value is ill-formed without Dynamic SHACL, so supporting it changes the outcome for no well-formed shapes graph. A few ill-formed constants did change meaning: see the CHANGELOG.
+
+```turtle
+ex:PresidentShape-age
+    a sh:PropertyShape ;
+    sh:path ex:age ;
+    sh:minInclusive [
+        shnex:if [ sparql:equals ( [ shnex:pathValues ex:country ] ex:USA ) ] ;
+        shnex:then 35 ;
+        shnex:else 18 ;
+    ] .
+
+ex:Address-state
+    a sh:PropertyShape ;
+    sh:path ex:state ;
+    sh:in [ shnex:pathValues ( ex:country ex:stateCode ) ] .
+```
+
+These are Examples 31 and 34 of the specification: the minimum age depends on the country of the president, and the allowed states on the country of the address.
+
+**Which parameters.** A parameter is computed when its value is a blank node that is a node expression (and, where the parameter takes a SHACL list, not a list). The parameters fall in three groups, which decide how many output nodes are accepted:
+
+| Group | Parameters | Output nodes |
+|---|---|---|
+| Single node | `sh:minCount`, `sh:maxCount`, `sh:minLength`, `sh:maxLength`, `sh:minInclusive`, `sh:maxInclusive`, `sh:minExclusive`, `sh:maxExclusive`, `sh:uniqueLang`, `sh:singleLine`, `sh:minListLength`, `sh:maxListLength`, `sh:uniqueMembers`, `sh:pattern`, `sh:flags`, `sh:qualifiedMinCount`, `sh:qualifiedMaxCount`, `sh:qualifiedValueShapesDisjoint`, `sh:reificationRequired`, `sh:closed` | exactly one |
+| IRI or list | `sh:class`, `sh:datatype`, `sh:nodeKind`, `sh:rootClass`, `sh:uniqueValuesFor` | the members; at least one |
+| List | `sh:in`, `sh:languageIn`, `sh:ignoredProperties` | the members, in order; none is the empty list |
+
+The parameters of SPARQL-based constraint components are computed under the rule further down.
+
+**Parameters that are not computed, and why.**
+
+| Parameters | Reason |
+|---|---|
+| `sh:node`, `sh:property`, `sh:qualifiedValueShape`, `sh:not`, `sh:and`, `sh:or`, `sh:xone`, `sh:memberShape`, `sh:someValue`, `sh:shape`, `sh:reifierShape` | the value is a shape, which may be a blank node |
+| `sh:hasValue` | the value may be any node, a blank node included |
+| `sh:path`, `sh:equals`, `sh:disjoint`, `sh:lessThan`, `sh:lessThanOrEquals`, `sh:subsetOf` | the value is a property path, which may be a blank node |
+| `sh:sparql` | the value is a blank node |
+| `sh:targetNode`, `sh:values`, `sh:defaultValue`, `sh:deactivated`, `sh:expression`, `sh:nodeByExpression` | already node expressions (see above) |
+| `sh:severity`, `sh:message` | not constraint parameters |
+
+**Evaluation.** The expression is evaluated in the data graph, with the focus node of the shape and an empty scope, so `shnex:var "value"` is unbound (unlike at `sh:expression`). On a property shape the focus node is the node the shape applies to, never a value node. A parameter is evaluated once for each focus node and constraint, before any value node is visited. The result is the ordinary constraint with the computed values, reported like a constant one: the same `sh:sourceConstraintComponent`, `sh:value` and messages (a default message quotes the computed value). A reifier of the parameter triple that deactivates the constraint is checked first, so a deactivated constraint never evaluates its expressions. Constant parameters are not affected, so every fast path stays. A computed `sh:class`, `sh:nodeKind` or `sh:datatype` does not narrow `sh:targetWhere` candidates.
+
+**Output rules.** An output that breaks one of them fails validation with a `ShaclValidationException` ("Dynamic SHACL: ..."), as any failed evaluation does.
+
+- A single node parameter fails on no output and on two or more. The same holds for a parameter of a SPARQL-based constraint component, even an `sh:optional` one.
+- An IRI or list parameter fails on no output.
+- Counts and lengths need a non-negative `xsd:integer`-family literal, bounds a literal, and booleans an `xsd:boolean` literal. A computed `"1"^^xsd:boolean` or `"0"^^xsd:boolean` is well typed but not true, as everywhere else: only `"true"^^xsd:boolean` is true.
+- `sh:pattern` and `sh:flags` need `xsd:string` literals, and the pattern must compile with the flags.
+- `sh:class`, `sh:rootClass`, `sh:datatype`, `sh:uniqueValuesFor` and `sh:ignoredProperties` members need IRIs. `sh:languageIn` members need `xsd:string` literals. `sh:nodeKind` takes one of the seven node kinds when there is one output, and one of the four kinds a list may hold when there are several.
+- `sh:closed` needs an `xsd:boolean` literal or `sh:ByTypes`: `true` and `sh:ByTypes` close the shape, any other boolean does not, and anything else fails.
+- A triple term needs `ValidationConfig.allowTripleTermsInShapeParameters`, as for a constant.
+- The output is capped by `ValidationConfig.maxPathValueNodes`, and every evaluation ticks the run budget.
+
+**Shapes, recursion and limits.** The shapes a parameter expression reads are compiled, and the shape depends on them as it does for `sh:expression`. They are read as non-monotone, so a data cycle through one is undecided and fails validation. A computed `sh:pattern` is bounded by the pattern budget (`patternTimeout`). The engine keeps at most 4096 instantiated constraints per run: past that, more are built when needed and none is evicted.
+
+**Details by parameter.**
+
+- **`sh:pattern` and `sh:flags`:** with computed `sh:flags`, a constant `sh:pattern` is checked at compile time only for being a string literal. Its regex is compiled at run time with the resolved flags, because validity can depend on them (`q`, `x`). With constant `sh:flags`, the flags are validated at compile time, also when `sh:pattern` is computed.
+- **`sh:closed`:** a computed `sh:closed` must be the only `sh:closed` value of the shape, and at most one `sh:ignoredProperties` value may be computed (its output is added to the constant values). Otherwise the shapes graph is ill-formed (`ShapeCompileException`). A computed `sh:ignoredProperties` is evaluated only for focus nodes for which the shape is closed. It is dropped at compile time when `sh:closed` is constant false or absent, and skipped at run time when a computed `sh:closed` resolves to false, so a broken expression there fails the run only for closed focus nodes. `validateClosedShapes = false` skips both.
+- **`sh:uniqueValuesFor`:** a computed value is evaluated for every focus node that is not deactivated, whatever the number of targets, so a broken expression fails the run even with one target. Targets are compared only when they resolve to the same list.
+- **`sh:qualifiedMaxCount`:** a computed one is non-monotone in recursion, like a constant one.
+- **`sh:reificationRequired`:** a computed value on a property shape whose `sh:path` is not a predicate IRI is reported as `REIFIER_CONSTRAINT_ON_COMPLEX_PATH`, like the constant `true`.
+
+**Unsupported expressions at a parameter.** A parameter may hold a constant as well as an expression, so a blank node there is classified more carefully than at `sh:values` or `sh:deactivated`:
+
+- A call `[ fn ( ... ) ]` of a function the shapes graph does not declare is an unsupported feature (`NODE_EXPRESSION`). It fails the run by default. With `IGNORE_WITH_WARNING` the warning ends with " (the constraints that use it are left out)": every `sh:pattern` of the shape for `sh:flags`, both qualified components for a qualified count, the closed constraint for `sh:closed` and `sh:ignoredProperties`.
+- A list at a list parameter (`sh:in`, `sh:class`, ...) is a constant. A malformed one is a compile error.
+- Any other blank node that is neither a constant nor a node expression, such as `sh:minCount [ ex:foo 1 ]`, is a compile error (`ShapeCompileException`), whatever `unsupportedFeatures` says.
+
+At `sh:values`, `sh:expression` and `sh:deactivated` both kinds are unsupported features, because no constant reading exists there. Detection does not know the kind of shape. An unsupported call at `sh:minCount` on a node shape, where the compiler ignores `sh:minCount`, still fails the run. On a property shape, an undeclared call at `sh:closed`, `sh:ignoredProperties` or `sh:uniqueValuesFor` is reported as unsupported although the parameter has no effect there.
+
+**SPARQL-based constraint component parameters.** A parameter of a `sh:ConstraintComponent` is computed only when its declaration rules out blank nodes. SHACL 1.2 SPARQL section 4.2.1 makes a value that breaks the declaration ill-formed, so a blank node there cannot be a constant and is read as an expression. The declaration rules out blank nodes when, in its own triples, it has a constant value for one of:
+
+| Declaration | Needed |
+|---|---|
+| `sh:nodeKind` | an IRI among `sh:IRI`, `sh:Literal`, `sh:IRIOrLiteral`, `sh:TripleTerm`, or a list that holds only these |
+| `sh:datatype` | any |
+| `sh:in` | a list with no blank-node member |
+| `sh:pattern`, `sh:minLength`, `sh:maxLength`, `sh:minInclusive`, `sh:maxInclusive`, `sh:minExclusive`, `sh:maxExclusive` | a literal |
+| `sh:languageIn`, `sh:rootClass` | any |
+
+`sh:class` alone does not count, because a SHACL instance can be a blank node. Neither do `sh:hasValue`, `sh:singleLine` or a declaration value that is itself an expression. For any other parameter a blank node stays a constant, as before. A declaration that rules out blank nodes also rules out lists, so there a blank node is an expression or a compile error. The output must be one node, not a blank node, and must satisfy the declared `sh:nodeKind` and `sh:datatype`. The other declared constraints are not checked, as for constants.
+
+```turtle
+ex:MaxAgeComponent a sh:ConstraintComponent ;
+    sh:parameter [ sh:path ex:maxAge ; sh:datatype xsd:integer ] ;
+    sh:validator [ a sh:SPARQLAskValidator ; sh:ask "ASK { FILTER ($value <= $maxAge) }" ] .
+
+ex:P sh:path ex:age ;
+    ex:maxAge [ shnex:if [ sparql:equals ( [ shnex:pathValues ex:kind ] ex:strict ) ] ; shnex:then 65 ; shnex:else 70 ] .
+```
+
+The computed value is pre-bound like a constant one (see [Pre-binding](#pre-binding)): once for each focus node, shared by every value node of an ASK validator, and `{$maxAge}` in a message shows it. It comes from the **data graph**, so it is written into the query text with the same hardened escaping as `$this` and `$value`: quotes, line breaks, control characters and backslashes cannot change the structure of the query, whatever `\u` decoding the provider applies. A value that cannot be written as text, such as a triple term or a directional language string, goes to the provider as a binding. There is no separate path for computed values. A computed triple term needs `allowTripleTermsInShapeParameters`. A language-tagged pre-bound value written into a plain slot is followed by a space, so that the template text after the variable cannot extend the tag (`$p-1` gives `"a"@en -1`, not the tag `en-1`); this holds for `$this` and `$value` too. Computed values add no cache: queries are built for each focus node anyway.
+
+Dynamic SHACL is evaluated by the native engine only.
 
 #### SPARQL functions
 
@@ -292,13 +391,15 @@ The native engine recognises some SHACL constructs that it cannot evaluate. By d
 | `UnsupportedShaclFeature` | Constructs |
 |---------------------------|------------|
 | `SPARQL_CONSTRAINT_COMPONENT` | None: SPARQL-based constraint components are supported (see above). The category is kept for compatibility |
-| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: a blank node at a node expression position (`sh:values`, `sh:defaultValue`, `sh:targetNode`, `sh:deactivated` of a shape, an `sh:sparql` constraint or a reifier, `sh:expression`, `sh:nodeByExpression`) that is no node expression of the library, such as a call of a function the shapes graph does not declare |
+| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: a blank node at a node expression position (`sh:values`, `sh:defaultValue`, `sh:targetNode`, `sh:deactivated` of a shape, an `sh:sparql` constraint or a reifier, `sh:expression`, `sh:nodeByExpression`) that is no node expression of the library, such as a call of a function the shapes graph does not declare. At a computed constraint parameter only a call of an undeclared function counts (see Dynamic SHACL) |
 | `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values. At every node expression position (`sh:targetNode`, `sh:values`, `sh:defaultValue`, `sh:expression`, `sh:nodeByExpression`) they are supported |
 | `SHACL_FUNCTION` | SHACL 1.2 functions that a SPARQL query calls but the engine cannot compile: not a `sh:ListParameterExpressionFunction`, or a `sh:bodyExpression` that is no node expression at all. Functions with a `sh:select` / `sh:sparqlExpr` or `shnex:` body are supported (see above) |
 | `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
 | `REIFIER_CONSTRAINT_ON_COMPLEX_PATH` | `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a predicate IRI (the engine only knows which triples a predicate path traverses) |
 
 `sh:sparql` constraints, SPARQL-based constraint components, node expressions and SPARQL functions (see above) are supported. Still unsupported are SPARQL node expressions at `sh:targetWhere` (`SPARQL_NODE_EXPRESSION`) and blank nodes at node expression positions that are no node expression (`NODE_EXPRESSION`). A non-constant `sh:deactivated` on a reifier is supported (see above).
+
+Dynamic SHACL (computed constraint parameters) is supported (see above). These parameters stay constant, because their value may be a blank node: the shape references (`sh:node`, `sh:property`, `sh:qualifiedValueShape`, `sh:not`, `sh:and`, `sh:or`, `sh:xone`, `sh:memberShape`, `sh:someValue`, `sh:shape`, `sh:reifierShape`), `sh:hasValue`, the property path parameters (`sh:path`, `sh:equals`, `sh:disjoint`, `sh:lessThan`, `sh:lessThanOrEquals`, `sh:subsetOf`), `sh:sparql`, and the parameters of a SPARQL-based constraint component whose declaration does not rule out blank nodes. At a parameter, a call of an undeclared function is `NODE_EXPRESSION`; any other blank node that is no constant and no node expression is a compile error.
 
 In the failure, `ShaclValidationException` wraps an `UnsupportedShaclFeatureException`. Its message names each offending construct, and its `features` property lists the categories:
 
