@@ -14,6 +14,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.DynamicComponent
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.providers.DynamicInstanceCache
+import com.geoknoesis.kastor.rdf.shacl.providers.dynamicInstanceCacheFor
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -746,6 +747,20 @@ class DynamicShaclTest {
         val one = cache.getOrPut(dynamic, listOf(list(1))) { PropertyConstraint.In(list(1)) }
         assertSame(one, cache.getOrPut(dynamic, listOf(list(1))) { PropertyConstraint.In(list(1)) })
         assertEquals(20L, cache.members)
+    }
+
+    @Test
+    fun `a run's dynamic instance cache takes its member cap from maxPathValueNodes`() {
+        assertEquals(37L, dynamicInstanceCacheFor(37).maxMembers)
+        assertEquals(1_000_000L, dynamicInstanceCacheFor(ValidationConfig.default().maxPathValueNodes).maxMembers)
+        val cache = dynamicInstanceCacheFor(6)
+        val dynamic = PropertyConstraint.Dynamic(DynamicComponent.IN, emptyMap())
+        val three = (0 until 3).map { int(it) }
+        val four = (0 until 4).map { int(it) }
+        cache.getOrPut(dynamic, listOf(three)) { PropertyConstraint.In(three) }
+        cache.getOrPut(dynamic, listOf(four)) { PropertyConstraint.In(four) }
+        assertEquals(1, cache.size)
+        assertEquals(6L, cache.members)
     }
 
     // --- multi-parameter components: qualified value shapes ---------------------------------------------------------------

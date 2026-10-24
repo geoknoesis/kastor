@@ -27,7 +27,7 @@ internal const val DYNAMIC_INSTANCE_CACHE_MAX = 4096
  * values twice, once for its key and once for the instance built from them (an `sh:in` list, say), so the memory held
  * stays bounded by [maxMembers] nodes, not only by the number of entries.
  */
-internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACHE_MAX, private val maxMembers: Long = Long.MAX_VALUE) {
+internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACHE_MAX, val maxMembers: Long = Long.MAX_VALUE) {
     private val instances = IdentityHashMap<PropertyConstraint.Dynamic, HashMap<List<List<RdfTerm>>, Instance>>()
 
     /** A cached instance; [constraint] is null for "no constraint". */
@@ -52,6 +52,9 @@ internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACH
         return built
     }
 }
+
+/** The [DynamicInstanceCache] of a run: its stored members are capped by the run's `maxPathValueNodes`. */
+internal fun dynamicInstanceCacheFor(maxPathValueNodes: Int): DynamicInstanceCache = DynamicInstanceCache(maxMembers = maxPathValueNodes.toLong())
 
 /**
  * `evalExpr(expr, data graph, focus, {})` of a computed constraint parameter (SHACL 1.2 Node Expressions §8): the focus

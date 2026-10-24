@@ -79,7 +79,7 @@ internal class NativeValidationContext(
     }
     val reportPaths = HashMap<RdfResource, ReportPath>()
     /** The constraints instantiated from the run's [PropertyConstraint.Dynamic] constraints (SHACL 1.2 Node Expressions §8). */
-    val dynamicInstances = DynamicInstanceCache(maxMembers = data.maxPathValueNodes.toLong())
+    val dynamicInstances = dynamicInstanceCacheFor(data.maxPathValueNodes)
     private val session = lazy {
         SparqlConstraintEvaluator.Session(
             data.graph,
