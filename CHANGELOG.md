@@ -28,6 +28,9 @@ and is kept as is; it was never published to Maven Central.
 - `rdf-shacl`: SHACL 1.2 Node Expressions (`sh:expression`, computed `sh:nodeByExpression`, the full `shnex:` library).
   `ConstraintType.EXPRESSION` is a new constant inserted after `NODE_BY_EXPRESSION`, mid-enum: the `ordinal` of every
   later constant (`DATATYPE` onwards) shifts by one, so code that persists or switches on ordinals must be updated.
+  A shape's `sh:deactivated` may be a node expression, evaluated per focus node. Report RDF holds a deep copy of a
+  blank-node `sh:sourceConstraint`. Custom node expression functions must be SHACL subclasses of
+  `sh:NamedParameterExpression` / `sh:ListParameterExpression` (spec Appendix A).
 
 ### Fixed (repository review)
 
