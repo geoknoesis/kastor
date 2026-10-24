@@ -31,13 +31,23 @@ open class ShapeCompileException(message: String, cause: Throwable? = null) :
 
 /** Categories of recognised SHACL features that the native engine does not implement. */
 enum class UnsupportedShaclFeature {
-    /** SHACL-SPARQL constraint components (`sh:validator`, `sh:nodeValidator`, `sh:propertyValidator`). */
+    /**
+     * SHACL-SPARQL constraint components (`sh:validator`, `sh:nodeValidator`, `sh:propertyValidator`). Kept for
+     * compatibility: these components are now evaluated, so the engine no longer reports this category.
+     */
     SPARQL_CONSTRAINT_COMPONENT,
 
-    /** SHACL 1.2 node expressions (`sh:values`, `sh:expression`, computed `sh:targetNode` / `sh:nodeByExpression`). */
+    /**
+     * SHACL 1.2 node expressions that are not SPARQL expressions (`shnex:` expressions at `sh:values`,
+     * `sh:defaultValue` and `sh:targetNode`), `sh:expression` constraints, and blank-node `sh:nodeByExpression` values.
+     */
     NODE_EXPRESSION,
 
-    /** SHACL 1.2 SPARQL node expressions (`sh:select` / `sh:sparqlExpr` expressions, SPARQL `sh:targetWhere`). */
+    /**
+     * SHACL 1.2 SPARQL node expressions (`sh:select` / `sh:sparqlExpr`) the engine cannot evaluate: those used as
+     * `sh:targetWhere` or `sh:nodeByExpression` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are
+     * supported.
+     */
     SPARQL_NODE_EXPRESSION,
 
     /** SHACL 1.2 functions (`sh:bodyExpression`) called from SPARQL queries. */

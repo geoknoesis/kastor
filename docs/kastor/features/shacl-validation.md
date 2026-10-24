@@ -252,8 +252,8 @@ The native engine recognises some SHACL constructs that it cannot evaluate. By d
 | `UnsupportedShaclFeature` | Constructs |
 |---------------------------|------------|
 | `SPARQL_CONSTRAINT_COMPONENT` | None: SPARQL-based constraint components are supported (see above). The category is kept for compatibility |
-| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: `shnex:` expressions, `sh:expression`, non-constant `sh:deactivated`, computed `sh:targetNode` / `sh:nodeByExpression` values |
-| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are supported |
+| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: `shnex:` and other non-SPARQL node expressions at `sh:values`, `sh:defaultValue` and `sh:targetNode`, `sh:expression`, non-constant `sh:deactivated`, and any blank-node `sh:nodeByExpression` value (a SPARQL one is reported as `SPARQL_NODE_EXPRESSION`) |
+| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values or as blank-node `sh:nodeByExpression` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are supported |
 | `SHACL_FUNCTION` | SHACL 1.2 functions (`sh:bodyExpression`, `sh:ListParameterExpressionFunction`) called from a SPARQL query (spec section 7) |
 | `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
 | `REIFIER_CONSTRAINT_ON_COMPLEX_PATH` | `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a predicate IRI (the engine only knows which triples a predicate path traverses) |
