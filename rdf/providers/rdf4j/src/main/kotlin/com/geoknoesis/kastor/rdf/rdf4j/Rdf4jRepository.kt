@@ -570,8 +570,8 @@ class Rdf4jRepository(
      * propagate unchanged.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        if (query is SandboxedSelectQuery) checkSandboxed(query.sparql)
-        val result = withFunctions(query, Long.MAX_VALUE, conn) {
+        val declared = if (query is SandboxedSelectQuery) checkSandboxed(query.sparql).dataset else null
+        val result = withFunctions(query, Long.MAX_VALUE, declared, conn) {
             queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
         }
         result.use { consume(it.rows(query.sparql)) }
@@ -579,21 +579,60 @@ class Rdf4jRepository(
 
     /**
      * Runs [block], which prepares and evaluates [query] on [conn], with the custom functions of a sandboxed [query]
-     * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none).
+     * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none),
+     * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset).
      * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
      * is RDF4J's unknown-function error.
      */
-    private fun <T> withFunctions(query: SparqlSelect, deadline: Long, conn: RepositoryConnection, block: () -> T): T =
+    private fun <T> withFunctions(
+        query: SparqlSelect,
+        deadline: Long,
+        declared: org.eclipse.rdf4j.query.Dataset?,
+        conn: RepositoryConnection,
+        block: () -> T,
+    ): T =
         if (query !is SandboxedSelectQuery) block()
-        else Rdf4jFunctionScope.with(query.functions, 0, deadline, clock, { nested, bindings -> prepareNested(nested, bindings, conn) }, block)
+        else Rdf4jFunctionScope.with(
+            query.functions, 0, deadline, clock, { nested, bindings, caller -> prepareNested(nested, bindings, caller, conn) }, declared, block,
+        )
 
-    /** A nested query of a custom function, prepared as [withSelectRows] prepares a sandboxed query with bindings. */
-    private fun prepareNested(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, conn: RepositoryConnection): Rdf4jNestedQuery {
+    /**
+     * A nested query of a custom function, prepared as [withSelectRows] prepares a sandboxed query with bindings, on the
+     * dataset of its calling query ([caller]; null for Kastor's dataset, see [onKastorDataset]). Its own dataset clauses
+     * select among the named graphs of [caller] ([within]).
+     */
+    private fun prepareNested(
+        query: SandboxedSelectQuery,
+        bindings: Map<String, RdfTerm>,
+        caller: org.eclipse.rdf4j.query.Dataset?,
+        conn: RepositoryConnection,
+    ): Rdf4jNestedQuery {
         val bound = bind(query.sparql, bindings)
         val parsed = checkSandboxed(bound.sparql)
         val placeholders = org.eclipse.rdf4j.query.impl.MapBindingSet()
         bound.placeholders.forEach { (name, value) -> placeholders.addBinding(name, value) }
-        return Rdf4jNestedQuery(parsed, parsed.dataset ?: kastorDataset(parsed.tupleExpr, conn), placeholders, bound.hidden)
+        val own = parsed.dataset
+        val dataset = when {
+            caller == null -> own ?: kastorDataset(parsed.tupleExpr, conn)
+            own == null -> caller
+            else -> within(own, caller)
+        }
+        return Rdf4jNestedQuery(parsed, dataset, if (caller == null && own == null) null else dataset, placeholders, bound.hidden)
+    }
+
+    /**
+     * The graphs [own] selects among the named graphs of [caller], as Jena's dynamic dataset over the calling query's
+     * dataset selects them: any other graph reads as empty.
+     */
+    private fun within(own: org.eclipse.rdf4j.query.Dataset, caller: org.eclipse.rdf4j.query.Dataset): org.eclipse.rdf4j.query.Dataset {
+        val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
+        own.defaultGraphs.filter { it in caller.namedGraphs }.forEach(dataset::addDefaultGraph)
+        own.namedGraphs.filter { it in caller.namedGraphs }.forEach(dataset::addNamedGraph)
+        // RDF4J reads every context for a dataset without any graph: a graph name that no store holds reads nothing.
+        if (dataset.defaultGraphs.isEmpty() && dataset.namedGraphs.isEmpty()) {
+            dataset.addDefaultGraph(SimpleValueFactory.getInstance().createIRI("urn:kastor:no-graph:" + java.util.UUID.randomUUID()))
+        }
+        return dataset
     }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
@@ -664,19 +703,29 @@ class Rdf4jRepository(
         val bound = bind(query.sparql, bindings)
         val sparql = bound.sparql
         // The rewritten text is the one prepared below, so that is the text checked.
-        if (query is SandboxedSelectQuery) checkSandboxed(sparql)
+        val declared = if (query is SandboxedSelectQuery) checkSandboxed(sparql).dataset else null
         return withConnection { conn ->
-            val deadline = clock() + timeout.toNanos().coerceAtLeast(1)
-            val result = withFunctions(query, deadline, conn) {
+            // A timeout too long for a nanosecond deadline (about 292 years) is no deadline and no time limit.
+            val deadline = deadlineAfter(clock(), timeout)
+            val result = withFunctions(query, deadline, declared, conn) {
                 queryOperation(sparql) {
                     val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
                     bound.placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
-                    prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+                    if (deadline != Long.MAX_VALUE) {
+                        prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+                    }
                     prepared.evaluate()
                 }
             }
             result.use { consume(it.rows(sparql, hidden = bound.hidden)) }
         }
+    }
+
+    /** [now] plus [timeout] (at least 1 ns); [Long.MAX_VALUE] (no deadline) when that does not fit in a Long. */
+    private fun deadlineAfter(now: Long, timeout: java.time.Duration): Long = try {
+        Math.addExact(now, timeout.toNanos().coerceAtLeast(1)).let { if (it == Long.MAX_VALUE) it - 1 else it }
+    } catch (e: ArithmeticException) {
+        Long.MAX_VALUE
     }
 
     /**

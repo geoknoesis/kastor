@@ -1076,14 +1076,23 @@ class JenaRepository private constructor(
         val parsed = parseSelect(query)
         // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation),
         // and the nested queries of custom functions.
-        val deadline = hooks.clock() + timeout.toNanos().coerceAtLeast(1)
+        // A timeout too long for a nanosecond deadline (about 292 years) is no deadline.
+        val deadline = deadlineAfter(hooks.clock(), timeout)
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
             bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
-            execution(query, parsed, deadline).substitution(initial)
-                .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
+            val builder = execution(query, parsed, deadline).substitution(initial)
+            if (deadline != Long.MAX_VALUE) builder.timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS)
+            builder.build()
         }
-        exec.use { consumeRows(it, query.sparql, deadline, consume) }
+        exec.use { consumeRows(it, query.sparql, deadline.takeIf { it != Long.MAX_VALUE }, consume) }
+    }
+
+    /** [now] plus [timeout] (at least 1 ns); [Long.MAX_VALUE] (no deadline) when that does not fit in a Long. */
+    private fun deadlineAfter(now: Long, timeout: java.time.Duration): Long = try {
+        Math.addExact(now, timeout.toNanos().coerceAtLeast(1)).let { if (it == Long.MAX_VALUE) it - 1 else it }
+    } catch (e: ArithmeticException) {
+        Long.MAX_VALUE
     }
 
     private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T =

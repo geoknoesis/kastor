@@ -32,7 +32,8 @@ import java.util.concurrent.TimeUnit
  *
  * Every failure is a SPARQL error ([ExprEvalException]): an argument error the parameters do not allow
  * ([bindArguments]), a body that returns null or throws, and a nested query that is refused, that cannot be parsed or
- * that nests deeper than [MAX_FUNCTION_DEPTH]. Only a cancellation ([QueryCancelledException]) stops the calling query.
+ * that nests deeper than [MAX_FUNCTION_DEPTH]. Only a cancellation ([QueryCancelledException], also for a body interrupted
+ * with [InterruptedException], whose interrupt flag is restored) stops the calling query.
  *
  * Nested queries run on the dataset of the calling query, restricted like it, and end by [deadline] (a [clock] value;
  * [Long.MAX_VALUE] when the calling query has no timeout).
@@ -64,6 +65,10 @@ internal class JenaLibraryFunction(
             throw e
         } catch (e: ExprEvalException) {
             throw e
+        } catch (e: InterruptedException) {
+            // The thread was asked to stop: keep the request and stop the calling query.
+            Thread.currentThread().interrupt()
+            throw QueryCancelledException(e)
         } catch (e: Exception) {
             throw ExprEvalException("The custom function <$uri> failed: ${e.message}", e)
         } ?: throw ExprEvalException("The custom function <$uri> has no result")

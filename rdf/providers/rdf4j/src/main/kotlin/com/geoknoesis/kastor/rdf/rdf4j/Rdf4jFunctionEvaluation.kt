@@ -9,8 +9,14 @@ import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.bindArguments
+import org.eclipse.rdf4j.common.iteration.CloseableIteration
+import org.eclipse.rdf4j.common.order.StatementOrder
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode
+import org.eclipse.rdf4j.model.IRI
+import org.eclipse.rdf4j.model.Resource
+import org.eclipse.rdf4j.model.Statement
 import org.eclipse.rdf4j.model.Value
+import org.eclipse.rdf4j.model.ValueFactory
 import org.eclipse.rdf4j.query.Dataset
 import org.eclipse.rdf4j.query.QueryInterruptedException
 import org.eclipse.rdf4j.query.algebra.FunctionCall
@@ -47,7 +53,8 @@ internal object Rdf4jFunctionScope {
 
     /**
      * The custom [functions] of a query at nesting [depth] (0 for the query the caller runs), whose nested queries end
-     * by [deadline] (a [clock] value; [Long.MAX_VALUE] for none) and are prepared by [nested].
+     * by [deadline] (a [clock] value; [Long.MAX_VALUE] for none), are prepared by [nested] and run on [dataset]: the
+     * dataset that the query's own dataset clauses (or those of a calling query) select, null for Kastor's dataset.
      */
     class Scope(
         val functions: SparqlFunctionLibrary,
@@ -55,6 +62,7 @@ internal object Rdf4jFunctionScope {
         val deadline: Long,
         val clock: () -> Long,
         val nested: Rdf4jNestedQueries,
+        val dataset: Dataset?,
     )
 
     private val pending = ThreadLocal<Scope?>()
@@ -66,19 +74,17 @@ internal object Rdf4jFunctionScope {
         deadline: Long,
         clock: () -> Long,
         nested: Rdf4jNestedQueries,
+        dataset: Dataset?,
         block: () -> T,
     ): T {
         val previous = pending.get()
-        pending.set(Scope(functions, depth, deadline, clock, nested))
+        pending.set(Scope(functions, depth, deadline, clock, nested, dataset))
         try {
             return block()
         } finally {
             if (previous == null) pending.remove() else pending.set(previous)
         }
     }
-
-    /** The scope waiting for a strategy on this thread, if any. */
-    val current: Scope? get() = pending.get()
 
     /** Takes the scope waiting on this thread: only the first strategy created within [with] evaluates its functions. */
     fun claim(): Scope? = pending.get()?.also { pending.set(null) }
@@ -87,8 +93,10 @@ internal object Rdf4jFunctionScope {
 /** A nested query of a custom function, prepared by the repository the calling query runs on. */
 internal class Rdf4jNestedQuery(
     val parsed: ParsedQuery,
-    /** The dataset to evaluate [parsed] on (Kastor's dataset rules); null for the union of every context. */
+    /** The dataset to evaluate [parsed] on; null for the union of every context. */
     val dataset: Dataset?,
+    /** The dataset its own nested queries run on ([Rdf4jFunctionScope.Scope.dataset]). */
+    val confinedTo: Dataset?,
     /** Bound natively: variables that stand for constants the query text cannot spell. */
     val bindings: org.eclipse.rdf4j.query.BindingSet,
     /** Variables that are not returned in rows. */
@@ -99,9 +107,11 @@ internal class Rdf4jNestedQuery(
 internal fun interface Rdf4jNestedQueries {
     /**
      * Applies [bindings] to [query] (the initial-bindings contract of a top-level query), refuses it with
-     * [IllegalArgumentException] as a top-level sandboxed query is refused, and parses it.
+     * [IllegalArgumentException] as a top-level sandboxed query is refused, and parses it. It runs on [caller], the
+     * dataset of the calling query (null for Kastor's dataset): its own `FROM` / `FROM NAMED` select among the named
+     * graphs of that dataset, and any other graph reads as empty, as with Jena's dynamic datasets.
      */
-    fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>): Rdf4jNestedQuery
+    fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, caller: Dataset?): Rdf4jNestedQuery
 }
 
 /** A [MemoryStore] whose queries use [KastorEvaluationStrategyFactory]. */
@@ -142,7 +152,8 @@ internal class KastorEvaluationStrategyFactory(
  *   (SHACL 1.2 SPARQL Extensions, section 7.3);
  * - otherwise a custom function of [scope] is evaluated with its arguments ([SparqlFunction.bindArguments]); every
  *   failure is a SPARQL error ([ValueExprEvaluationException]: `BIND` leaves the variable unbound, `FILTER` is false),
- *   except an interrupted nested query ([QueryInterruptedException]), which stops this query;
+ *   except an interrupted nested query or body ([QueryInterruptedException]; a body's [InterruptedException] keeps
+ *   the thread's interrupt flag), which stops this query;
  * - any other function IRI is an error when it is called, as on Jena (RDF4J fails the whole query otherwise);
  * - calls with constant arguments are not folded while the query is optimized, so that each call runs its body once
  *   and RDF4J does not fail on an unknown function before evaluation.
@@ -201,6 +212,10 @@ internal class KastorEvaluationStrategy(
             throw e
         } catch (e: ValueExprEvaluationException) {
             throw e
+        } catch (e: InterruptedException) {
+            // The thread was asked to stop: keep the request and stop the calling query.
+            Thread.currentThread().interrupt()
+            throw QueryInterruptedException(e)
         } catch (e: Exception) {
             generateSequence<Throwable>(e) { it.cause }.filterIsInstance<QueryInterruptedException>().firstOrNull()?.let { throw it }
             throw ValueExprEvaluationException("The custom function <${function.iri}> failed: ${e.message}", e)
@@ -216,7 +231,7 @@ internal class KastorEvaluationStrategy(
 
         override fun <T> select(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, consume: (Sequence<BindingSet>) -> T): T {
             if (scope.depth >= MAX_FUNCTION_DEPTH) throw ValueExprEvaluationException("Custom SPARQL functions nest deeper than $MAX_FUNCTION_DEPTH")
-            val nested = scope.nested.prepare(query, bindings)
+            val nested = scope.nested.prepare(query, bindings, scope.dataset)
             val deadline = scope.deadline
             fun checkDeadline() {
                 if (deadline != Long.MAX_VALUE && scope.clock() - deadline >= 0) {
@@ -224,9 +239,11 @@ internal class KastorEvaluationStrategy(
                 }
             }
             checkDeadline()
+            // Every statement the nested query reads checks the deadline too, so it also stops while it computes a row.
+            val source = if (deadline == Long.MAX_VALUE) tripleSource else DeadlineTripleSource(tripleSource, ::checkDeadline)
             val strategy = KastorEvaluationStrategy(
-                tripleSource, nested.dataset, serviceResolver, cacheThreshold, statistics, trackResults, queryEvaluationMode,
-                Rdf4jFunctionScope.Scope(query.functions, scope.depth + 1, deadline, scope.clock, scope.nested),
+                source, nested.dataset, serviceResolver, cacheThreshold, statistics, trackResults, queryEvaluationMode,
+                Rdf4jFunctionScope.Scope(query.functions, scope.depth + 1, deadline, scope.clock, scope.nested, nested.confinedTo),
             )
             strategy.setCollectionFactory(collectionFactory)
             val optimized = strategy.optimize(QueryRoot(nested.parsed.tupleExpr.clone()), statistics, nested.bindings)
@@ -253,5 +270,50 @@ internal class KastorEvaluationStrategy(
             })
             return found
         }
+    }
+}
+
+/**
+ * [source], with [check] (which throws [QueryInterruptedException] once the deadline has passed) run before every
+ * statement is read. RDF4J's own time limit (`TimeLimitIteration`) is only checked between result rows, so it does not
+ * stop a query while it computes a row (an aggregate, a sort, a join); this does.
+ */
+private class DeadlineTripleSource(private val source: TripleSource, private val check: () -> Unit) : TripleSource {
+
+    override fun getStatements(
+        subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?,
+    ): CloseableIteration<out Statement> {
+        check()
+        return Checked(source.getStatements(subj, pred, obj, *contexts))
+    }
+
+    override fun getStatements(
+        order: StatementOrder?, subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?,
+    ): CloseableIteration<out Statement> {
+        check()
+        return Checked(source.getStatements(order, subj, pred, obj, *contexts))
+    }
+
+    override fun getSupportedOrders(subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?): Set<StatementOrder> =
+        source.getSupportedOrders(subj, pred, obj, *contexts)
+
+    override fun getComparator(): Comparator<Value>? = source.comparator
+
+    override fun getValueFactory(): ValueFactory = source.valueFactory
+
+    private inner class Checked(private val statements: CloseableIteration<out Statement>) : CloseableIteration<Statement> {
+        override fun hasNext(): Boolean {
+            check()
+            return statements.hasNext()
+        }
+
+        override fun next(): Statement {
+            check()
+            return statements.next()
+        }
+
+        override fun remove() = statements.remove()
+
+        override fun close() = statements.close()
     }
 }

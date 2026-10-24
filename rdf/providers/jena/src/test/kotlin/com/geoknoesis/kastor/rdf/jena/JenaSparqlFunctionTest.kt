@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.jena
 
+import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.Rdf
@@ -213,6 +214,53 @@ class JenaSparqlFunctionTest {
                 assertEquals("2", (it.withSelectRows(SandboxedSelectQuery(sparql, library)) { rows -> rows.single().get("v") } as Literal).lexical)
             }
         }
+    }
+
+    @Test
+    fun `nested queries run on the dataset of the calling query`() {
+        repository.editGraph(Iri("urn:g")).addTriples(Rdf.parse("<urn:a> <urn:l> \"w\"@en .", RdfFormat.TURTLE).getTriples())
+        repository.editGraph(Iri("urn:h")).addTriples(
+            Rdf.parse("<urn:a> <urn:l> \"v\"@en , \"u\"@en , \"t\"@en .", RdfFormat.TURTLE).getTriples()
+        )
+        fun from(graph: String) = SparqlFunction("urn:from-${graph.substringAfter(':')}", emptyList()) { call ->
+            call.select(SandboxedSelectQuery("SELECT (COUNT(?l) AS ?n) FROM <$graph> WHERE { <urn:a> <urn:l> ?l }"), emptyMap()) { rows ->
+                rows.single().get("n")
+            }
+        }
+        val graphs = SparqlFunctionLibrary.of(listOf(count, from("urn:g"), from("urn:h")))
+        // Without dataset clauses, the nested query reads Kastor's default graph.
+        assertEquals("2", lexical("SELECT ?v WHERE { BIND (<urn:count>(<urn:a>) AS ?v) }", graphs))
+        // The calling query reads <urn:g> as its default graph: so does the nested query.
+        assertEquals("1", lexical("SELECT ?v FROM <urn:g> WHERE { BIND (<urn:count>(<urn:a>) AS ?v) }", graphs))
+        // A nested FROM selects among the graphs of the calling query's dataset; any other graph reads as empty.
+        assertEquals("3", lexical("SELECT ?v WHERE { BIND (<urn:from-h>() AS ?v) }", graphs))
+        assertEquals("0", lexical("SELECT ?v FROM <urn:g> WHERE { BIND (<urn:from-h>() AS ?v) }", graphs))
+        assertEquals("3", lexical("SELECT ?v FROM <urn:g> FROM NAMED <urn:h> WHERE { BIND (<urn:from-h>() AS ?v) }", graphs))
+        // Only the named graphs of the calling query can be selected: its default graph has no name there.
+        assertEquals("0", lexical("SELECT ?v FROM <urn:g> WHERE { BIND (<urn:from-g>() AS ?v) }", graphs))
+        // A calling query with FROM NAMED only has an empty default graph, and so has the nested query.
+        assertEquals("0", lexical("SELECT ?v FROM NAMED <urn:h> WHERE { BIND (<urn:count>(<urn:a>) AS ?v) }", graphs))
+    }
+
+    @Test
+    fun `a timeout too long for nanoseconds means no deadline`() {
+        val rows = repository.withSelectRows(SandboxedSelectQuery("SELECT ?v WHERE { BIND (1 AS ?v) }", library), emptyMap(), Duration.ofMillis(Long.MAX_VALUE)) {
+            it.toList()
+        }
+        assertEquals(1, rows.size)
+    }
+
+    @Test
+    fun `an interrupted body cancels the calling query and keeps the interrupt`() {
+        val interrupted = SparqlFunctionLibrary.of(listOf(SparqlFunction("urn:wait", emptyList()) { throw InterruptedException("stop") }))
+        val failure = assertThrows(RdfQueryException::class.java) {
+            repository.withSelectRows(SandboxedSelectQuery("SELECT ?v WHERE { BIND (<urn:wait>() AS ?v) }", interrupted)) { rows ->
+                rows.map { it.get("v") }.toList()
+            }
+        }
+        // Thread.interrupted() also clears the flag for the next tests on this thread.
+        assertTrue(Thread.interrupted(), "the interrupt flag is restored")
+        assertTrue(generateSequence<Throwable>(failure) { it.cause }.any { it is QueryCancelledException }, failure.toString())
     }
 
     @Test
