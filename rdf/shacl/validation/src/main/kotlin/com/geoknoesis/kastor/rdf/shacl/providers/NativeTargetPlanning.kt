@@ -66,6 +66,8 @@ internal fun NativeShaclValidator.computeFocusNodes(shape: CompiledNodeShape, ct
     shape.targets.targetObjectsOf.forEach { p ->
         data.objectsWithPredicate(p).forEach { o -> out.add(o) }
     }
+    // SHACL 1.2 Core §3.1.3.1: the outputs of evalExpr(expr, data graph, shape, {}) are targets.
+    shape.targets.targetNodeExpressions.forEach { out.addAll(evalNodeExpression(it, ctx, shape.shapeNode)) }
     val shapeIri = shape.shapeNode as? Iri
     if (shapeIri != null) {
         data.subjectsWith(SHACL.shape, shapeIri).forEach { out.add(it) }

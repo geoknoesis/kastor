@@ -16,6 +16,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
 import com.geoknoesis.kastor.rdf.shacl.native.constraintStub
+import com.geoknoesis.kastor.rdf.shacl.native.distinctShaclTerms
 
 private fun NodeLogicalPart.constraintType(): ConstraintType =
     when (this) {
@@ -197,8 +198,7 @@ internal fun NativeShaclValidator.validatePropertyShape(
 ) {
     if (ps.deactivated) return
     ctx.counters.shapeEvaluations++
-    // Value nodes are a set (SHACL §2.3.2); the path evaluator returns distinct nodes.
-    val values = PathEvaluator.evaluate(focus, ps.path, ctx.data)
+    val values = propertyValueNodes(focus, ps, ctx)
     val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
     evaluateConstraintsForValues(focus, tpl, values, ps.constraints, ctx, state, ps.shapeNode, ps.path, sink)
     if (sink.stop) return
@@ -300,4 +300,18 @@ private fun NativeShaclValidator.validateReifierPropertyConstraints(
             }
         }
     }
+}
+
+/**
+ * The value nodes of [ps] for [focus] (SHACL 1.2 Core §6.9.2): the nodes reached by the path, then the outputs of
+ * `sh:values`, and, only if that set is still empty, the outputs of `sh:defaultValue`. Value nodes are a set
+ * (SHACL §2.3.2), so the result is distinct, path values first.
+ */
+private fun propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: NativeValidationContext): List<RdfTerm> {
+    val pathValues = PathEvaluator.evaluate(focus, ps.path, ctx.data)
+    val valuesExpr = ps.values
+    var values = if (valuesExpr == null) pathValues else distinctShaclTerms(pathValues + evalNodeExpression(valuesExpr, ctx, focus))
+    val defaultExpr = ps.defaultValue
+    if (values.isEmpty() && defaultExpr != null) values = evalNodeExpression(defaultExpr, ctx, focus)
+    return values
 }
