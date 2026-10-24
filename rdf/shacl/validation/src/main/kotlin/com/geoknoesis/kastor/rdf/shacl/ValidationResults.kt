@@ -105,7 +105,11 @@ data class ValidationViolation(
     val resultPathTriples: List<RdfTriple> = emptyList(),
     /** `sh:message` values of the source shape/constraint (with language tags), emitted as `sh:resultMessage`. */
     val resultMessages: List<Literal> = emptyList(),
-    /** `sh:sourceConstraint` (e.g. the SHACL-SPARQL constraint node), when applicable. */
+    /**
+     * `sh:sourceConstraint` (e.g. the SHACL-SPARQL constraint node), when applicable. For a blank-node expression of
+     * `sh:expression`, or a blank-node shape of `sh:nodeByExpression`, the native engine also puts the triples of its
+     * deep copy in [context] (key `"sourceConstraintTriples"`), and [toShaclValidationReportRdf] writes them.
+     */
     val sourceConstraint: RdfTerm? = null,
     /**
      * `sh:sourceConstraintComponent` when it is not implied by [constraint] (a SPARQL-based constraint component);
@@ -196,6 +200,13 @@ data class ValidationViolation(
         const val REIFIER_CONTEXT_KEY: String = "reifier"
     }
 }
+
+/**
+ * Key of the [ValidationViolation.context] entry that holds the triples (a `List<RdfTriple>`) of the deep copy of a
+ * blank-node [ValidationViolation.sourceConstraint], which [toShaclValidationReportRdf] writes into the results graph
+ * (SHACL 1.2 Node Expressions §7.1 and §7.2).
+ */
+internal const val SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY: String = "sourceConstraintTriples"
 
 /**
  * SHACL validation warning.

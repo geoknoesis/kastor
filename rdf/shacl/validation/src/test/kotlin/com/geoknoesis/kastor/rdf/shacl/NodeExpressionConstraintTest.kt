@@ -170,6 +170,71 @@ class NodeExpressionConstraintTest {
         assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", nested) }
     }
 
+    /** The triples of [graph] reachable from [node] through blank-node objects (a deep copy's triples). */
+    private fun deepCopyIn(graph: com.geoknoesis.kastor.rdf.RdfGraph, node: RdfTerm): List<com.geoknoesis.kastor.rdf.RdfTriple> {
+        val triples = graph.getTriples()
+        val out = ArrayList<com.geoknoesis.kastor.rdf.RdfTriple>()
+        val seen = HashSet<RdfTerm>()
+        fun visit(n: RdfTerm) {
+            if (n !is BlankNode || !seen.add(n)) return
+            for (t in triples.filter { it.subject == n }) { out.add(t); visit(t.obj) }
+        }
+        visit(node)
+        return out
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `the source constraint of an expression result is a deep copy of the expression`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:expression [ sparql:less-than ( [ shnex:var "value" ] 5 ) ] ] .
+        """
+        val report = validate(provider, "ex:a ex:p 1 , 7 , 9 .", shapes)
+        assertEquals(2, report.violations.size)
+        val rdf = report.toShaclValidationReportRdf()
+        val sources = rdf.getTriples().filter { it.predicate == SHACL.sourceConstraint }.map { it.obj }
+        assertEquals(2, sources.size)
+        for (source in sources) {
+            assertTrue(source is BlankNode, "$source")
+            val copy = deepCopyIn(rdf, source)
+            // [ sparql:less-than ( [ shnex:var "value" ] 5 ) ]: the call, two list cells and the variable expression.
+            val lessThan = copy.single { it.subject == source }
+            assertEquals(Iri("http://www.w3.org/ns/sparql#less-than"), lessThan.predicate)
+            val firstCell = lessThan.obj
+            val varExpr = copy.single { it.subject == firstCell && it.predicate == com.geoknoesis.kastor.rdf.vocab.RDF.first }.obj
+            assertEquals("value", (copy.single { it.subject == varExpr }.obj as com.geoknoesis.kastor.rdf.Literal).lexical)
+            val secondCell = copy.single { it.subject == firstCell && it.predicate == com.geoknoesis.kastor.rdf.vocab.RDF.rest }.obj
+            assertEquals(int(5), copy.single { it.subject == secondCell && it.predicate == com.geoknoesis.kastor.rdf.vocab.RDF.first }.obj)
+            assertEquals(com.geoknoesis.kastor.rdf.vocab.RDF.nil, copy.single { it.subject == secondCell && it.predicate == com.geoknoesis.kastor.rdf.vocab.RDF.rest }.obj)
+            assertEquals(6, copy.size)
+        }
+        // The report's own blank nodes are not reused for the copy.
+        val resultNodes = rdf.getTriples().filter { it.predicate == SHACL.result }.map { it.obj }.toSet()
+        assertTrue(sources.none { it in resultNodes })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `the deep copy of a cyclic blank node shape terminates`(provider: String) {
+        // The shapes graph is its own data graph, so the expression can output the blank node shape itself; the shape
+        // refers back to itself through a blank node property shape (a cycle of blank nodes).
+        val ttl = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression [ shnex:pathValues ex:shape ] .
+            ex:a ex:shape _:s .
+            _:s a sh:NodeShape ; sh:property _:p .
+            _:p sh:path ex:next ; sh:node _:s ; sh:minCount 1 .
+        """
+        val report = validateSelf(provider, ttl)
+        val v = report.violations.single { it.constraint.constraintType == ConstraintType.NODE_BY_EXPRESSION }
+        assertTrue(v.sourceConstraint is BlankNode)
+        val rdf = report.toShaclValidationReportRdf()
+        val source = rdf.getTriples().single { it.predicate == SHACL.sourceConstraint }.obj
+        val copy = deepCopyIn(rdf, source)
+        // _:s a sh:NodeShape ; sh:property _:p . _:p sh:path ; sh:node _:s (the cycle, kept) ; sh:minCount.
+        assertEquals(5, copy.size, copy.toString())
+        val p = copy.single { it.subject == source && it.predicate == SHACL.`property` }.obj
+        assertEquals(source, copy.single { it.subject == p && it.predicate == SHACL.node }.obj)
+    }
+
     // --- sh:nodeByExpression (§7.2) ---------------------------------------------------------------------------------
 
     private val dataCubeShapes = """

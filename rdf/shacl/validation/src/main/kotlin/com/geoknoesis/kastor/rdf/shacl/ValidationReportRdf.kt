@@ -48,10 +48,12 @@ fun ValidationReport.toShaclValidationReportRdf(
         val report = this@toShaclValidationReportRdf
         reportNode - RDF.type - SHACL.ValidationReport
         reportNode - SHACL.conforms - if (report.isValid) TrueLiteral else FalseLiteral
+        // One copy of each source constraint blank node for the whole report (results share it, as they share the node).
+        val sourceConstraintCopies = HashMap<BlankNode, BlankNode>()
         report.violations.forEachIndexed { idx, v ->
             val row = bnode("resultV$idx")
             reportNode - SHACL.result - row
-            addValidationResult(row, v, "resultV${idx}_")
+            addValidationResult(row, v, "resultV${idx}_", sourceConstraintCopies)
         }
         report.warnings.forEachIndexed { idx, w ->
             val res = w.resource
@@ -69,7 +71,12 @@ fun ValidationReport.toShaclValidationReportRdf(
         }
     }
 
-private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation, bnodePrefix: String) {
+private fun GraphDsl.addValidationResult(
+    row: BlankNode,
+    v: ValidationViolation,
+    bnodePrefix: String,
+    sourceConstraintCopies: MutableMap<BlankNode, BlankNode>,
+) {
     row - RDF.type - SHACL.ValidationResult
     row - SHACL.focusNode - v.focusNode
     row - SHACL.resultSeverity - (v.resultSeverityIri?.let { Iri(it) } ?: v.severity.toShaclSeverityIri())
@@ -91,7 +98,7 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
         }
     }
     v.value?.let { row - SHACL.value - it }
-    v.sourceConstraint?.let { row - SHACL.sourceConstraint - it }
+    v.sourceConstraint?.let { row - SHACL.sourceConstraint - copySourceConstraint(it, v, sourceConstraintCopies) }
     v.resultAnnotations.forEach { (property, values) -> values.forEach { row - property - it } }
     // Kastor extensions (never in the sh: namespace): an undecided constraint is told apart from a failure, and a
     // sh:reifierShape result names its reifier.
@@ -120,6 +127,29 @@ private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoes
         return copied
     }
     return copy(root, emptySet())
+}
+
+/**
+ * The `sh:sourceConstraint` value of [v] in the results graph: [source] itself, or, when [v] carries the triples of
+ * its deep copy ([SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY]), the copy, written here. Its blank nodes get labels of their
+ * own (`sourceConstraint<k>`), one per source blank node for the whole report ([copies]), so the copy cannot merge
+ * with the report's own blank nodes; shared and cyclic structure stays as it is in the shapes graph.
+ */
+private fun GraphDsl.copySourceConstraint(source: RdfTerm, v: ValidationViolation, copies: MutableMap<BlankNode, BlankNode>): RdfTerm {
+    @Suppress("UNCHECKED_CAST")
+    val triples = v.context[SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY] as? List<com.geoknoesis.kastor.rdf.RdfTriple>
+    if (source !is BlankNode || triples.isNullOrEmpty()) return source
+    fun rename(term: RdfTerm): RdfTerm =
+        if (term is BlankNode) copies.getOrPut(term) { bnode("sourceConstraint${copies.size}") } else term
+    val known = source in copies
+    val root = rename(source)
+    if (!known) {
+        for (t in triples) {
+            // A blank node the copy shares with an earlier copy is already written with its triples.
+            triple(rename(t.subject) as RdfResource, t.predicate, rename(t.obj))
+        }
+    }
+    return root
 }
 
 internal fun ViolationSeverity.toShaclSeverityIri(): Iri =

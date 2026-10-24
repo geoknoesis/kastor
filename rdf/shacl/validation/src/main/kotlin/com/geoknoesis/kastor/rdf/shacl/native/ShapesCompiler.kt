@@ -98,8 +98,7 @@ internal sealed class PropertyConstraint {
     /**
      * SHACL 1.2 `sh:expression` (Node Expressions §7.1): [expr] must produce exactly `( true )` for each value node,
      * evaluated with the focus node and the scope variable `value`. [node] is the `sh:expression` value, reported as
-     * `sh:sourceConstraint`. Known deviation (ruling R15): §7.1 and §7.2 ask for a deep copy of the expression (or
-     * shape) in the results graph; the report names the node itself, as for SHACL-SPARQL constraints.
+     * `sh:sourceConstraint`; the report RDF holds its deep copy (§7.1, see [com.geoknoesis.kastor.rdf.shacl.providers.withSourceConstraintCopy]).
      */
     data class Expression(val node: RdfTerm, val expr: NodeExpression) : PropertyConstraint()
     data class EqualsPath(val otherPath: ShaclPath) : PropertyConstraint()
