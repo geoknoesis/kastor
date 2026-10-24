@@ -75,9 +75,8 @@ internal class NativeValidationContext(
     private val session = lazy {
         SparqlConstraintEvaluator.Session(
             data.graph,
-            if (compiled.sparqlUsesShapesGraph) compiled.index.triples else emptyList(),
-            repositoryFactory,
-            sparqlInPlace,
+            repositoryFactory = repositoryFactory,
+            inPlace = sparqlInPlace,
         )
     }
     fun checkDeadline() {

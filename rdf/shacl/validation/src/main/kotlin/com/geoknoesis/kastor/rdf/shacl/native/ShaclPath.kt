@@ -16,7 +16,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * forked, so duplicate triples are dropped here and every value list is duplicate-free.
  */
 internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
-    /** All (distinct) shapes-graph triples (retained for SHACL-SPARQL `$shapesGraph` access). */
+    /** All (distinct) shapes-graph triples. */
     val triples: List<RdfTriple>
     private val bySubject = HashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
     private val byPredicateObject = HashMap<Iri, HashMap<RdfTerm, MutableList<RdfResource>>>()

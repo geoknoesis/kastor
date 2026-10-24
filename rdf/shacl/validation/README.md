@@ -71,11 +71,13 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   alternative paths with fewer than two members fail compilation; list cells may be IRIs.
 - **SHACL-SPARQL.** `sh:sparql` constraints need a SPARQL-capable provider at runtime (`rdf-jena` or `rdf-rdf4j`);
   without one validation fails with a `ShaclValidationException` naming the missing module, and the provider
-  reports `supportsShaclSparql = false`. Queries run over the **data graph**; `sh:prefixes`/`sh:declare`, `$PATH`,
-  `$this`, `$currentShape` and `$shapesGraph` (bound to the named graph `urn:x-kastor:shacl:shapesGraph`) are
-  supported; each solution is one result (`?value`, `?path`, `sh:message` templates `{?var}` / `{$var}`). Queries
-  using MINUS, SERVICE, VALUES, sub-queries not projecting pre-bound variables, or re-binding them are rejected.
-  SPARQL-based constraint components and SHACL 1.2 node expressions are not supported.
+  reports `supportsShaclSparql = false`. Queries run over the **data graph**; `sh:prefixes`/`sh:declare`, `$PATH` and
+  `$this` are supported (as in SHACL 1.2, `$currentShape` / `$shapesGraph` are not pre-bound); each solution is one
+  result (`?value`, `?path`, `sh:message` templates `{?var}` / `{$var}`, `sh:resultAnnotation`). Queries using MINUS
+  or SERVICE, a VALUES that mentions a pre-bound variable, or `AS` re-binding one are rejected; the provider also
+  refuses SERVICE on its own parse. SPARQL-based constraint components and `sh:select` / `sh:sparqlExpr` node
+  expressions (at `sh:targetNode`, `sh:values`, `sh:defaultValue`) are supported; SHACL functions called from SPARQL
+  and `shnex:` expressions are not.
 - **Reports.** `toShaclValidationReportRdf()` exports complete `sh:resultPath` structures, `sh:message` values
   (with language tags) as `sh:resultMessage`, `sh:sourceConstraint`, and `sh:value` only for components that
   define it. Kastor extension triples (`KastorShaclVocabulary`, namespace `https://kastor.geoknoesis.com/ns/shacl#`)

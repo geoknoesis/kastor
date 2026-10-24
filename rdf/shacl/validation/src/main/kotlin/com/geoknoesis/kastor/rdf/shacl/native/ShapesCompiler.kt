@@ -128,7 +128,7 @@ internal sealed class PropertyConstraint {
         val severityCustomIri: Iri?,
         val annotations: List<SparqlResultAnnotation>,
     ) : PropertyConstraint() {
-        /** Pre-bound variables the query references (`this`, `currentShape`, `shapesGraph`). */
+        /** Pre-bound variables the query references (`this`). */
         val preBound: Set<String> get() = template.preBound
     }
     /**
@@ -225,13 +225,7 @@ internal data class CompiledShapeGraph(
     val recursiveComponents: Map<RdfResource, Int> = emptyMap(),
     /** Descriptions of unsupported constructs that were ignored ([UnsupportedFeatureHandling.IGNORE_WITH_WARNING]). */
     val unsupportedFeatureWarnings: List<String> = emptyList(),
-) {
-    /** True when some SHACL-SPARQL constraint references `$shapesGraph`. */
-    val sparqlUsesShapesGraph: Boolean by lazy {
-        fun uses(cs: List<PropertyConstraint>) = cs.any { it is PropertyConstraint.Sparql && "shapesGraph" in it.preBound }
-        referencedNodeShapes.values.any { uses(it.nodeConstraints) } || referencedPropertyShapes.values.any { uses(it.constraints) }
-    }
-}
+)
 
 internal object ShapesCompiler {
 

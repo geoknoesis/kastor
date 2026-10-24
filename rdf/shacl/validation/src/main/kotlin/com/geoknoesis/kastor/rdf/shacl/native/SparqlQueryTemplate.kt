@@ -124,9 +124,9 @@ internal object SparqlLexer {
 }
 
 /**
- * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$currentShape`,
- * `$shapesGraph`, `$value` or a component's parameter names) located at compile time, so pre-binding is performed by the SHACL engine itself and behaves identically on every SPARQL provider,
- * including inside sub-queries.
+ * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$value` or a component's
+ * parameter names) located at compile time, so pre-binding is performed by the SHACL engine itself and behaves
+ * identically on every SPARQL provider, including inside sub-queries.
  *
  * [bind] substitutes IRIs and literals syntactically: in a triple pattern or expression the term replaces the
  * variable; in a SELECT projection it becomes `(term AS ?fresh)`, in `GROUP BY` / `ORDER BY` `(term)`, and
@@ -198,8 +198,8 @@ internal class SparqlQueryTemplate private constructor(
     }
 
     companion object {
-        /** Pre-bound variables of a `sh:sparql` constraint: `$this` plus Kastor's `$currentShape` / `$shapesGraph` extension. */
-        val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this", "currentShape", "shapesGraph")
+        /** Pre-bound variables of a `sh:sparql` constraint: only `$this` (SHACL 1.2 no longer pre-binds `$shapesGraph` / `$currentShape`). */
+        val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this")
 
         fun compile(query: String, preBound: Set<String>): SparqlQueryTemplate {
             val parts = ArrayList<Part>()

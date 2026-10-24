@@ -78,7 +78,7 @@ internal fun NativeShaclValidator.evaluateConstraint(
             evaluateNestedShape(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Qualified ->
             evaluateQualified(focus, tpl, values, c, ctx, state, sink)
-        is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path, firstOnly = !sink.reports))
+        is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
         is PropertyConstraint.ReifierShape,
         is PropertyConstraint.ReificationRequired,
         -> Unit

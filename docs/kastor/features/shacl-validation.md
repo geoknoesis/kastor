@@ -196,7 +196,7 @@ Each failing reifier yields its own result; results that would be identical are 
 
 - run over the **data graph** (see [where queries run](#where-queries-run));
 - honour `sh:prefixes`/`sh:declare`, `$PATH`, `sh:deactivated` and message templates;
-- pre-bind `$this`, `$currentShape` and `$shapesGraph` (the last two are a legacy Kastor extension, available to `sh:sparql` constraints only);
+- pre-bind `$this` (as in SHACL 1.2, `$currentShape` and `$shapesGraph` are not pre-bound: they are ordinary variables);
 - produce one result per solution row, with `sh:sourceConstraint`.
 
 A `sh:sparql` constraint may set `sh:severity`, which becomes the severity of its results, and `sh:resultAnnotation` (`sh:annotationProperty`, `sh:annotationVarName`, `sh:annotationValue`) to add annotation triples to them.
@@ -211,7 +211,7 @@ A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated 
 
 - **Validators:** SELECT validators come from `sh:nodeValidator` / `sh:propertyValidator`, ASK validators from `sh:validator`. The validator is chosen as in spec section 4.2.3; a component with no validator that fits the shape kind is ignored.
 - **Parameters:** parameter values are pre-bound. A shape with several values for a parameter yields one constraint per combination, up to 1024 combinations per shape and component; more than that makes the shapes graph ill-formed.
-- **Results:** results report `sh:sourceConstraintComponent` as the component IRI. The message comes from the validator, else the component, else the shape, with `{$param}` substitution. `$currentShape` / `$shapesGraph` are not pre-bound for component validators.
+- **Results:** results report `sh:sourceConstraintComponent` as the component IRI. The message comes from the validator, else the component, else the shape, with `{$param}` substitution.
 
 #### SPARQL node expressions
 
@@ -232,7 +232,6 @@ The engine pre-binds variables itself before the query reaches the provider, so 
 
 - IRIs and literals are substituted **textually** into the query text. In a `SELECT` projection a value becomes `(term AS ?fresh)`, and `BOUND(?var)` on a substituted variable becomes `true`.
 - Values with no equivalent SPARQL syntax are passed to the provider as initial bindings: blank nodes, triple terms, directional language strings, and IRIs containing characters that are illegal in an `IRIREF`.
-- When a query uses `$shapesGraph`, the shapes graph is loaded as a named graph of the private copy. The caller's dataset is never modified.
 
 A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:
 - no `MINUS` or `SERVICE`;

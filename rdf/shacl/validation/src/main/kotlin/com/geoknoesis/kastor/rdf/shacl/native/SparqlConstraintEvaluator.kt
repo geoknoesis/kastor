@@ -34,14 +34,10 @@ import org.slf4j.LoggerFactory
  * silently serve stale data. Callers validating a large graph repeatedly should validate a repository in place.
  *
  * The evaluator serves `sh:sparql` constraints, SPARQL-based constraint component validators and SPARQL node
- * expressions. When a `sh:sparql` constraint query references `$shapesGraph` (a legacy Kastor extension, together
- * with `$currentShape`; component validators get neither), the shapes graph is loaded as the named graph
- * [SHAPES_GRAPH_IRI] of the private copy (the caller's dataset is never modified) and `$shapesGraph` is pre-bound to
- * that IRI. Pre-binding itself is performed by [SparqlQueryTemplate] before a query reaches the provider.
+ * expressions. Pre-binding is performed by [SparqlQueryTemplate] before a query reaches the provider. As in SHACL 1.2,
+ * `$currentShape` and `$shapesGraph` are not pre-bound: queries see only the data graph.
  */
 internal object SparqlConstraintEvaluator {
-
-    val SHAPES_GRAPH_IRI = Iri("urn:x-kastor:shacl:shapesGraph")
 
     private const val MISSING_ENGINE =
         "SHACL-SPARQL constraints (sh:sparql) require a SPARQL-capable RDF provider at runtime. " +
@@ -91,13 +87,12 @@ internal object SparqlConstraintEvaluator {
      */
     class Session(
         private val dataGraph: RdfGraph,
-        private val shapesTriples: List<RdfTriple> = emptyList(),
         private val repositoryFactory: () -> RdfRepository = defaultRepositoryFactory,
         inPlace: SparqlQueryable? = null,
     ) : AutoCloseable {
         /** Caller-owned view of the data graph, used while it supports bound, timed queries. */
         private var inPlace: SparqlQueryable? =
-            if (shapesTriples.isEmpty() && inPlace != null && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
+            if (inPlace != null && queriesSeeOnlyDefaultGraph(inPlace)) inPlace else null
         private var copy: RdfRepository? = null
 
         private fun copied(): RdfRepository {
@@ -109,10 +104,7 @@ internal object SparqlConstraintEvaluator {
                     throw ShaclValidationException(MISSING_ENGINE, e)
                 }
             try {
-                repo.transaction {
-                    editDefaultGraph().addTriples(dataGraph.getTriples())
-                    if (shapesTriples.isNotEmpty()) editGraph(SHAPES_GRAPH_IRI).addTriples(shapesTriples)
-                }
+                repo.transaction { editDefaultGraph().addTriples(dataGraph.getTriples()) }
             } catch (e: Throwable) {
                 repo.close()
                 throw e

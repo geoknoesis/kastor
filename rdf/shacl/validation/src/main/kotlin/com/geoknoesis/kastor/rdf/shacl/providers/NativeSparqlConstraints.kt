@@ -91,14 +91,11 @@ internal fun evaluateSparql(
     tpl: ResultTemplate,
     c: PropertyConstraint.Sparql,
     ctx: NativeValidationContext,
-    currentShape: RdfResource,
     path: ShaclPath?,
     firstOnly: Boolean,
 ): List<ValidationViolation> {
     val preBound = LinkedHashMap<String, RdfTerm>()
     preBound["this"] = focus
-    if ("currentShape" in c.preBound) preBound["currentShape"] = currentShape
-    if ("shapesGraph" in c.preBound) preBound["shapesGraph"] = SparqlConstraintEvaluator.SHAPES_GRAPH_IRI
     val (query, providerBindings) = c.template.bind(preBound)
     val source = SparqlResultSource(
         constraintNode = c.constraintNode,
