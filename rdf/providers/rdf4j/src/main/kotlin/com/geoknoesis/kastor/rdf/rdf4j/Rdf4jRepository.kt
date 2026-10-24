@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.ValueFactory
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.eclipse.rdf4j.repository.sail.SailRepository
-import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
@@ -97,6 +96,12 @@ class Rdf4jRepository(
     /** Skip statements that are not valid Kastor terms on graph reads (with a warning) instead of failing. */
     @Volatile internal var lenientRead: Boolean = lenientRead
         private set
+
+    /**
+     * The clock (nanoseconds) that the deadline of a timed sandboxed query is measured with: the nested queries of its
+     * custom SPARQL functions end by that deadline. Internal: changed by tests only.
+     */
+    @Volatile internal var clock: () -> Long = System::nanoTime
 
     /** Switches graph reads to lenient mode (used for the provider's `lenientRead` option). */
     internal fun lenient(): Rdf4jRepository = also { lenientRead = true }
@@ -371,13 +376,13 @@ class Rdf4jRepository(
     
     companion object {
         fun MemoryRepository(): Rdf4jRepository {
-            val repository = SailRepository(MemoryStore())
+            val repository = SailRepository(kastorMemoryStore())
             repository.init()
             return Rdf4jRepository(repository).withVariant("memory")
         }
 
         fun NativeRepository(location: String): Rdf4jRepository {
-            val repository = SailRepository(NativeStore(java.io.File(location)))
+            val repository = SailRepository(kastorNativeStore(location))
             repository.init()
             return Rdf4jRepository(repository).withVariant("native")
         }
@@ -389,7 +394,7 @@ class Rdf4jRepository(
          * that the variant identifier is honored and the capability is advertised.
          */
         fun MemoryStarRepository(): Rdf4jRepository {
-            val repository = SailRepository(MemoryStore())
+            val repository = SailRepository(kastorMemoryStore())
             repository.init()
             return Rdf4jRepository(repository).withVariant("memory-star")
         }
@@ -399,7 +404,7 @@ class Rdf4jRepository(
          * RDF-star triple terms, so this variant does not advertise them.
          */
         fun NativeStarRepository(location: String): Rdf4jRepository {
-            val repository = SailRepository(NativeStore(java.io.File(location)))
+            val repository = SailRepository(kastorNativeStore(location))
             repository.init()
             return Rdf4jRepository(repository).withVariant("native-star")
         }
@@ -409,7 +414,7 @@ class Rdf4jRepository(
          * entailment is materialized at query time.
          */
         fun MemoryRdfsRepository(): Rdf4jRepository {
-            val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
+            val repository = SailRepository(SchemaCachingRDFSInferencer(kastorMemoryStore()))
             repository.init()
             return Rdf4jRepository(repository, true).withVariant("memory-rdfs")
         }
@@ -418,7 +423,7 @@ class Rdf4jRepository(
          * Native (persistent) store wrapped with [SchemaCachingRDFSInferencer].
          */
         fun NativeRdfsRepository(location: String): Rdf4jRepository {
-            val repository = SailRepository(SchemaCachingRDFSInferencer(NativeStore(java.io.File(location))))
+            val repository = SailRepository(SchemaCachingRDFSInferencer(kastorNativeStore(location)))
             repository.init()
             return Rdf4jRepository(repository, true).withVariant("native-rdfs")
         }
@@ -429,7 +434,7 @@ class Rdf4jRepository(
          * `ShaclSailValidationException` (wrapped in a `RepositoryException`) at commit time.
          */
         fun MemoryShaclRepository(): Rdf4jRepository {
-            val repository = SailRepository(ShaclSail(MemoryStore()))
+            val repository = SailRepository(ShaclSail(kastorMemoryStore()))
             repository.init()
             return Rdf4jRepository(repository).withVariant("memory-shacl")
         }
@@ -438,7 +443,7 @@ class Rdf4jRepository(
          * Native (persistent) [ShaclSail] backed by [NativeStore].
          */
         fun NativeShaclRepository(location: String): Rdf4jRepository {
-            val repository = SailRepository(ShaclSail(NativeStore(java.io.File(location))))
+            val repository = SailRepository(ShaclSail(kastorNativeStore(location)))
             repository.init()
             return Rdf4jRepository(repository).withVariant("native-shacl")
         }
@@ -566,8 +571,29 @@ class Rdf4jRepository(
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
         if (query is SandboxedSelectQuery) checkSandboxed(query.sparql)
-        val result = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
+        val result = withFunctions(query, Long.MAX_VALUE, conn) {
+            queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
+        }
         result.use { consume(it.rows(query.sparql)) }
+    }
+
+    /**
+     * Runs [block], which prepares and evaluates [query] on [conn], with the custom functions of a sandboxed [query]
+     * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none).
+     * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
+     * is RDF4J's unknown-function error.
+     */
+    private fun <T> withFunctions(query: SparqlSelect, deadline: Long, conn: RepositoryConnection, block: () -> T): T =
+        if (query !is SandboxedSelectQuery) block()
+        else Rdf4jFunctionScope.with(query.functions, 0, deadline, clock, { nested, bindings -> prepareNested(nested, bindings, conn) }, block)
+
+    /** A nested query of a custom function, prepared as [withSelectRows] prepares a sandboxed query with bindings. */
+    private fun prepareNested(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, conn: RepositoryConnection): Rdf4jNestedQuery {
+        val bound = bind(query.sparql, bindings)
+        val parsed = checkSandboxed(bound.sparql)
+        val placeholders = org.eclipse.rdf4j.query.impl.MapBindingSet()
+        bound.placeholders.forEach { (name, value) -> placeholders.addBinding(name, value) }
+        return Rdf4jNestedQuery(parsed, parsed.dataset ?: kastorDataset(parsed.tupleExpr, conn), placeholders, bound.hidden)
     }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
@@ -635,6 +661,32 @@ class Rdf4jRepository(
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
+        val bound = bind(query.sparql, bindings)
+        val sparql = bound.sparql
+        // The rewritten text is the one prepared below, so that is the text checked.
+        if (query is SandboxedSelectQuery) checkSandboxed(sparql)
+        return withConnection { conn ->
+            val deadline = clock() + timeout.toNanos().coerceAtLeast(1)
+            val result = withFunctions(query, deadline, conn) {
+                queryOperation(sparql) {
+                    val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
+                    bound.placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
+                    prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+                    prepared.evaluate()
+                }
+            }
+            result.use { consume(it.rows(sparql, hidden = bound.hidden)) }
+        }
+    }
+
+    /**
+     * A query text with initial bindings applied (see the timed [withSelectRows]): [placeholders] are bound natively and
+     * [hidden] variables are not returned in rows.
+     */
+    private class BoundQuery(val sparql: String, val placeholders: Map<String, org.eclipse.rdf4j.model.Value>, val hidden: Set<String>)
+
+    /** Applies [bindings] to [sparql]; a query the substitution rejects fails with [IllegalArgumentException]. */
+    private fun bind(sparql: String, bindings: Map<String, RdfTerm>): BoundQuery {
         // Fresh variables: bound natively with setBinding, or declared with BIND for triple terms in expressions.
         val placeholders = LinkedHashMap<String, org.eclipse.rdf4j.model.Value>()
         val expressions = HashMap<String, String>()
@@ -647,35 +699,26 @@ class Rdf4jRepository(
                         "bind its components to separate variables and match the triple term in the query " +
                         "(e.g. ?x ?y << ?s ?p ?o >>) instead."
                 )
-                spelled == null -> placeholderFor(name, query.sparql, placeholders.keys + expressions.values)
+                spelled == null -> placeholderFor(name, sparql, placeholders.keys + expressions.values)
                     .also { placeholders[it] = Rdf4jTerms.toRdf4jValue(term) }.let { "?$it" }
                 term is TripleTerm -> spelled.also {
-                    expressions[name] = placeholderFor(name, query.sparql, placeholders.keys + expressions.values)
+                    expressions[name] = placeholderFor(name, sparql, placeholders.keys + expressions.values)
                 }
                 else -> spelled
             }
         }
         // Outside queryOperation: a query the substitution rejects is the caller's error (IllegalArgumentException).
-        val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(query.sparql, constants, expressions)
-        // The rewritten text is the one prepared below, so that is the text checked.
-        if (query is SandboxedSelectQuery) checkSandboxed(sparql)
-        return withConnection { conn ->
-            val result = queryOperation(sparql) {
-                val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
-                placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
-                prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
-                prepared.evaluate()
-            }
-            result.use { consume(it.rows(sparql, hidden = placeholders.keys + expressions.values)) }
-        }
+        val rewritten = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(sparql, constants, expressions)
+        return BoundQuery(rewritten, placeholders, placeholders.keys + expressions.values)
     }
 
     /**
      * Refuses a [SandboxedSelectQuery] whose [sparql] text, parsed by RDF4J's own SPARQL parser (the one that prepares
-     * it), contains `SERVICE`, with [IllegalArgumentException]. RDF4J resolves functions by IRI from its registry and
-     * never loads classes by name, so `SERVICE` is the only way such a query reaches outside the repository.
+     * it), contains `SERVICE`, with [IllegalArgumentException], and returns the parsed query. RDF4J resolves functions
+     * by IRI from its registry and never loads classes by name, so `SERVICE` is the only way such a query reaches
+     * outside the repository.
      */
-    private fun checkSandboxed(sparql: String) {
+    private fun checkSandboxed(sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery {
         val parsed = queryOperation(sparql) { org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(sparql, null) }
         parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
             override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) {
@@ -683,6 +726,7 @@ class Rdf4jRepository(
                 throw IllegalArgumentException("A sandboxed query may not use SERVICE ${ref.value?.stringValue()?.let { "<$it>" } ?: "?" + ref.name}")
             }
         })
+        return parsed
     }
 
     /** A variable name for a natively bound term that occurs nowhere in [sparql] and is not in [taken]. */
@@ -747,13 +791,21 @@ class Rdf4jRepository(
     private fun <Q : org.eclipse.rdf4j.query.Query> Q.onKastorDataset(conn: RepositoryConnection): Q {
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return this
         if (parsed.dataset != null) return this
-        val reads = GraphReads.of(parsed.tupleExpr)
-        if (reads.named && !reads.default && holdsNoBlankContexts) return this
+        kastorDataset(parsed.tupleExpr, conn)?.let(::setDataset)
+        return this
+    }
+
+    /**
+     * Kastor's dataset (see [onKastorDataset]) for a query without dataset clauses whose algebra is [expr]; null when the
+     * query runs without a dataset.
+     */
+    private fun kastorDataset(expr: org.eclipse.rdf4j.query.algebra.TupleExpr, conn: RepositoryConnection): org.eclipse.rdf4j.query.Dataset? {
+        val reads = GraphReads.of(expr)
+        if (reads.named && !reads.default && holdsNoBlankContexts) return null
         val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
         dataset.addDefaultGraph(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL)
         if (reads.named) iriContexts(conn).forEach(dataset::addNamedGraph)
-        setDataset(dataset)
-        return this
+        return dataset
     }
 
     /** The IRI-named contexts found by one enumeration, and the [modificationStamp] read before it. */
