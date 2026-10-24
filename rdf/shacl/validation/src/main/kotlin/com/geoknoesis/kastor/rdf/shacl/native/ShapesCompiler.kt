@@ -252,7 +252,8 @@ internal object ShapesCompiler {
         val index = ShapeGraphIndex(shapesTriples, budget)
         val nodeShapeSubjects = findNodeShapes(index, budget)
         val extraRoots = expressionShapes(index).toList()
-        val unsupported = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, budget)
+        val exprShapes = ExpressionShapes(index)
+        val unsupported = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, exprShapes, budget)
         if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
             throw UnsupportedShaclFeatureException(
                 "Unsupported SHACL feature(s) for the native engine: ${unsupported.keys.joinToString("; ")}. " +
@@ -277,7 +278,8 @@ internal object ShapesCompiler {
             if (refProps.putIfAbsent(ps.shapeNode, ps) != null) return
             ps.constraints.forEach { pending.addAll(constraintRefs(it)) }
             ps.logicalParts.forEach { pending.addAll(it.operandRefs()) }
-            pending.addAll(expressionRefs(ps))
+            // Groundwork for when ruling R1 is lifted (Task 6): validation positions hold only Constant/Select today.
+            pending.addAll(exprShapes.of(ps))
             ps.nestedPropertyShapes.forEach { visitProperty(it) }
         }
         fun visitNode(cn: CompiledNodeShape) {
@@ -286,7 +288,8 @@ internal object ShapesCompiler {
             pending.addAll(cn.targetWhereRefs)
             cn.logicalParts.forEach { pending.addAll(it.operandRefs()) }
             cn.nodeConstraints.forEach { pending.addAll(constraintRefs(it)) }
-            cn.targets.targetNodeExpressions.forEach { pending.addAll(NodeExpressions.shapeRefs(it)) }
+            // Groundwork for when ruling R1 is lifted (Task 6), as for sh:values above.
+            cn.targets.targetNodeExpressions.forEach { pending.addAll(exprShapes.of(it)) }
             cn.propertyShapes.forEach { visitProperty(it) }
         }
         compiled.forEach { visitNode(it) }
@@ -305,27 +308,67 @@ internal object ShapesCompiler {
         }
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
-            recursiveComponents(refNodes, refProps, budget),
+            recursiveComponents(refNodes, refProps, exprShapes, budget),
             unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
             SparqlFunctionDeclarations.compile(index),
         )
     }
 
-    /** The shapes referenced from the `sh:values` and `sh:defaultValue` node expressions of [ps] ([NodeExpressions.shapeRefs]). */
-    private fun expressionRefs(ps: CompiledPropertyShape): List<RdfResource> =
-        listOfNotNull(ps.values, ps.defaultValue).flatMap { NodeExpressions.shapeRefs(it) }
+    /**
+     * The shapes a node expression of [index] can validate against, which the compiler must therefore compile:
+     * its [NodeExpressions.shapeRefs], and, when it computes a `shnex:conformsToShape` shape
+     * ([NodeExpressions.computesShapes]), every IRI of the shapes graph that is a shape ([shapeCandidates]), since the
+     * computed IRI is only known at evaluation time. They are compiled up front, not on demand, so that the compiled
+     * graph and its recursion analysis stay complete and immutable; the scan is done once per index and ticks the
+     * preparation budget, and the compile loop checks the budget per shape.
+     */
+    internal class ExpressionShapes(private val index: ShapeGraphIndex) {
+        private val candidates: Set<RdfResource> by lazy { shapeCandidates(index) }
+
+        fun of(expr: NodeExpression): Set<RdfResource> =
+            if (NodeExpressions.computesShapes(expr)) NodeExpressions.shapeRefs(expr) + candidates else NodeExpressions.shapeRefs(expr)
+
+        /** The shapes of the `sh:values` and `sh:defaultValue` node expressions of [ps]. */
+        fun of(ps: CompiledPropertyShape): List<RdfResource> = listOfNotNull(ps.values, ps.defaultValue).flatMap { of(it) }
+    }
+
+    /** The shapes [expr] of [index] can validate against ([ExpressionShapes]), for expressions evaluated outside validation. */
+    fun expressionShapes(expr: NodeExpression, index: ShapeGraphIndex): Set<RdfResource> = ExpressionShapes(index).of(expr)
+
+    private val shapeClasses: Set<RdfTerm> by lazy { setOf(SHACL.NodeShape, SHACL.PropertyShape, SHACL.Shape, SHACL.ShapeClass) }
+
+    private val shapeMarkers: Set<Iri> by lazy {
+        (shapeParameters + listOf(
+            SHACL.path, SHACL.deactivated, SHACL.targetClass, SHACL.targetNode, SHACL.targetSubjectsOf, SHACL.targetObjectsOf,
+        )).toSet()
+    }
+
+    /**
+     * The IRIs of [index] that are shapes: instances of a shape class, or subjects of a shape parameter, `sh:path`,
+     * `sh:deactivated` or a target. Only IRIs, as a computed `shnex:conformsToShape` shape must be one (§4.5.3).
+     */
+    private fun shapeCandidates(index: ShapeGraphIndex): Set<RdfResource> {
+        val out = LinkedHashSet<RdfResource>()
+        for (t in index.triples) {
+            index.tick("shape discovery")
+            val subject = t.subject as? Iri ?: continue
+            if (t.predicate in shapeMarkers || (t.predicate == RDF.type && t.obj in shapeClasses)) out.add(subject)
+        }
+        return out
+    }
 
     /** Static shape dependency graph → shapes that belong to a recursive strongly connected component. */
     private fun recursiveComponents(
         refNodes: Map<RdfResource, CompiledNodeShape>,
         refProps: Map<RdfResource, CompiledPropertyShape>,
+        exprShapes: ExpressionShapes,
         budget: ValidationBudget,
     ): Map<RdfResource, Int> {
         val successors = HashMap<RdfResource, List<RdfResource>>()
         for ((node, ps) in refProps) {
             // sh:values / sh:defaultValue are evaluated while checking the shape, so their shapes are dependencies.
             successors[node] = ps.constraints.flatMap { constraintRefs(it) } +
-                ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + expressionRefs(ps)
+                ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps)
         }
         // A shape node that is also a property shape is always checked as a property shape (see conformance checks).
         for ((node, cn) in refNodes) {
@@ -432,6 +475,7 @@ internal object ShapesCompiler {
         index: ShapeGraphIndex,
         nodeShapes: List<RdfResource>,
         extraRoots: List<RdfResource>,
+        exprShapes: ExpressionShapes,
         budget: ValidationBudget,
     ): Set<RdfResource> {
         val out = LinkedHashSet<RdfResource>()
@@ -450,7 +494,8 @@ internal object ShapesCompiler {
                 // Malformed lists are reported by the compiler itself.
                 index.objects(shape, p).forEach { head -> runCatching { index.parseRdfList(head) }.getOrDefault(emptyList()).forEach(::visit) }
             }
-            for (p in expressionPositions) index.objects(shape, p).forEach { term -> expressionShapeRefs(term, index).forEach(::visit) }
+            // Groundwork for when ruling R1 is lifted (Task 6): no shape refs at these positions today.
+            for (p in expressionPositions) index.objects(shape, p).forEach { term -> expressionShapeRefs(term, index, exprShapes).forEach(::visit) }
         }
         return out
     }
@@ -462,14 +507,14 @@ internal object ShapesCompiler {
      * ([NodeExpressions.compileForValidation]). Constants and SPARQL expressions reference none and are not parsed
      * here; an ill-formed expression references none either (the compiler reports it).
      */
-    private fun expressionShapeRefs(term: RdfTerm, index: ShapeGraphIndex): Set<RdfResource> {
+    private fun expressionShapeRefs(term: RdfTerm, index: ShapeGraphIndex, exprShapes: ExpressionShapes): Set<RdfResource> {
         if (term !is BlankNode || isNodeExpression(term, index)) return emptySet()
         val expr = try {
             NodeExpressions.compileForValidation(term, index)
         } catch (_: ShapeCompileException) {
             null
         }
-        return expr?.let { NodeExpressions.shapeRefs(it) } ?: emptySet()
+        return expr?.let { exprShapes.of(it) } ?: emptySet()
     }
 
     /**
@@ -484,11 +529,12 @@ internal object ShapesCompiler {
         index: ShapeGraphIndex,
         nodeShapes: List<RdfResource>,
         extraRoots: List<RdfResource>,
+        exprShapes: ExpressionShapes,
         budget: ValidationBudget,
     ): Map<String, UnsupportedShaclFeature> {
         val out = LinkedHashMap<String, UnsupportedShaclFeature>()
         val functions = LinkedHashSet<Iri>()
-        val shapes = shapeReachableNodes(index, nodeShapes, extraRoots, budget)
+        val shapes = shapeReachableNodes(index, nodeShapes, extraRoots, exprShapes, budget)
         fun expression(term: RdfTerm) =
             if (isNodeExpression(term, index)) UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION else UnsupportedShaclFeature.NODE_EXPRESSION
         for (t in index.triples) {

@@ -15,6 +15,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.NodeExpressionOrdering
 import com.geoknoesis.kastor.rdf.shacl.native.NodeExpressions
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeGraphIndex
+import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate
 import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
@@ -87,14 +88,14 @@ internal fun NativeShaclValidator.evaluateNodeExpression(graph: RdfGraph, exprNo
     val shapes = { index: ShapeGraphIndex ->
         val compiled = NodeExpressions.compile(exprNode, index) ?: throw ShapeCompileException("$exprNode is not a node expression")
         expr = compiled
-        NodeExpressions.shapeRefs(compiled)
+        ShapesCompiler.expressionShapes(compiled, index)
     }
     return withNodeExpressionContext(graph, shapes) { ctx -> evaluate(checkNotNull(expr), ctx, NodeExprScope(focus, variables, emptyList(), 0)) }
 }
 
 /** As [evaluateNodeExpression], for an expression tree that is already compiled. */
 internal fun NativeShaclValidator.evaluateNodeExpression(graph: RdfGraph, expr: NodeExpression, focus: RdfTerm?, variables: Map<String, RdfTerm>): NodeExprOutcome =
-    withNodeExpressionContext(graph, { NodeExpressions.shapeRefs(expr) }) { ctx -> evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0)) }
+    withNodeExpressionContext(graph, { index -> ShapesCompiler.expressionShapes(expr, index) }) { ctx -> evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0)) }
 
 /** Fails when [size] output nodes exceed [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes], as path evaluation does. */
 internal fun checkNodeExpressionSize(size: Int, ctx: NativeValidationContext, what: String) {
@@ -188,13 +189,15 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
             is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape") })
             is NodeExpression.FindFirst -> {
+                // R6: stops at the first conforming node; an undecided or failed check before it is a failure.
                 val inputs = expr.nodes?.let { sub(it) } ?: listOfNotNull(scope.focus)
                 output(listOfNotNull(inputs.firstOrNull { conforms(it, expr.shape, "shnex:findFirst") }))
             }
             is NodeExpression.MatchAll -> {
-                // Stops at the first node that does not conform; ( true ) for no input nodes.
+                // R6: every node is checked, so an undecided or failed check anywhere is a failure; ( true ) for no input.
                 val inputs = expr.nodes?.let { sub(it) } ?: listOfNotNull(scope.focus)
-                output(listOf(if (inputs.all { conforms(it, expr.shape, "shnex:matchAll") }) TrueLiteral else FalseLiteral))
+                val answers = inputs.map { conforms(it, expr.shape, "shnex:matchAll") }
+                output(listOf(if (answers.all { it }) TrueLiteral else FalseLiteral))
             }
             is NodeExpression.NodesMatching -> nodesMatching(expr.shape)
             is NodeExpression.ConformsToShape -> {
@@ -229,7 +232,9 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         }
 
     /**
-     * Whether [node] conforms to [shape] (§3.4), which must be a compiled shape. Conformance the engine cannot decide
+     * Whether [node] conforms to [shape] (§3.4), which must be a compiled shape. The compiler compiles every shape an
+     * expression can name, deactivated ones included (to which every node conforms), see
+     * [ShapesCompiler.ExpressionShapes]; any other node is not a shape and a failure. Conformance the engine cannot decide
      * and a validation error are failures of [function]; a timeout or cancellation stays a run abort.
      */
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String): Boolean {

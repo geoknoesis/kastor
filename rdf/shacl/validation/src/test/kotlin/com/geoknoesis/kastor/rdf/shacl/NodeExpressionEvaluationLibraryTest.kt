@@ -327,9 +327,13 @@ class NodeExpressionEvaluationLibraryTest {
         // The shape argument may be computed.
         assertEquals(listOf(TrueLiteral), nodes(call("""ex:Co1 [ shnex:var "s" ]""", mapOf("s" to ex("HasDirectorShape")))))
         assertEquals(emptyList<RdfTerm>(), nodes(call("""ex:Co1 [ shnex:var "s" ]""")))
-        // More than one node is a failure, and a failure takes precedence over an empty argument.
-        assertFailure(call("( ex:Co1 ex:Co2 ) ex:HasDirectorShape"), "more than one")
-        assertFailure(call("""[ shnex:var "unbound" ] $failing"""), "more than one")
+        // More than one node in an argument is a failure.
+        assertFailure(call("( ex:Co1 ex:Co2 ) ex:HasDirectorShape"), "node argument of shnex:conformsToShape produced more than one")
+        assertFailure(call("ex:Co1 ( ex:HasDirectorShape ex:HasDirectorShape )"), "shape argument of shnex:conformsToShape produced more than one")
+        // A failing argument ($failing: a path values expression with two focus nodes) takes precedence over an
+        // argument without output nodes, whatever their order (§3.2.2).
+        assertFailure(call("""[ shnex:var "unbound" ] $failing"""), "shnex:focusNode of a path values expression")
+        assertFailure(call("""$failing [ shnex:var "unbound" ]"""), "shnex:focusNode of a path values expression")
         // The shape must be the IRI of a shape of the shapes graph.
         assertFailure(call("ex:Co1 1"), "IRI")
         assertFailure(call("""ex:Co1 [ shnex:var "s" ]""", mapOf("s" to ex("Unknown"))), "not a shape")
@@ -351,6 +355,49 @@ class NodeExpressionEvaluationLibraryTest {
         assertEquals(listOf(int(2)), nodes(eval(nested)))
         // A constant shape argument of conformsToShape.
         assertEquals(listOf(FalseLiteral), nodes(eval("ex:holder ex:expr [ shnex:conformsToShape ( 2.5 ex:S ) ] . ex:S sh:datatype xsd:integer .")))
+    }
+
+    /**
+     * ex:S: ex:g conforms (ex:p "good"), ex:b does not (no ex:p, no ex:loop), and ex:u is undecided (it has ex:loop,
+     * so it conforms iff it does not).
+     */
+    private val mixedShape = """
+        ex:S sh:or ( [ sh:property [ sh:path ex:p ; sh:hasValue "good" ] ]
+                     [ sh:property [ sh:path ex:loop ; sh:minCount 1 ] ; sh:not ex:S ] ) .
+        ex:g ex:p "good" . ex:u ex:loop true . ex:b ex:p "bad" .
+    """
+
+    @Test
+    fun `matchAll checks every node`() {
+        fun matchAll(nodes: String) = eval("ex:holder ex:expr [ shnex:matchAll ex:S ; shnex:nodes ( $nodes ) ] . $mixedShape")
+        assertEquals(listOf(TrueLiteral), nodes(matchAll("ex:g ex:g")))
+        assertEquals(listOf(FalseLiteral), nodes(matchAll("ex:g ex:b")))
+        // R6: an undecided check anywhere is a failure, also after a node that does not conform.
+        assertFailure(matchAll("ex:b ex:u"), "undefined")
+        assertFailure(matchAll("ex:u ex:g"), "undefined")
+    }
+
+    @Test
+    fun `findFirst stops at the first conforming node`() {
+        fun findFirst(nodes: String) = eval("ex:holder ex:expr [ shnex:findFirst ex:S ; shnex:nodes ( $nodes ) ] . $mixedShape")
+        // Nodes after the first conforming one are not checked.
+        assertEquals(listOf(ex("g")), nodes(findFirst("ex:b ex:g ex:u")))
+        // An undecided check before it is a failure.
+        assertFailure(findFirst("ex:b ex:u ex:g"), "undefined")
+    }
+
+    @Test
+    fun `a computed shape IRI may name any shape of the shapes graph`() {
+        fun call(shape: Iri, shapes: String) =
+            eval("""ex:holder ex:expr [ shnex:conformsToShape ( 2.5 [ shnex:var "s" ] ) ] . $shapes""", variables = mapOf("s" to shape))
+        // R7: a deactivated shape that nothing references; every node conforms to it.
+        assertEquals(listOf(TrueLiteral), nodes(call(ex("Off"), "ex:Off a sh:NodeShape ; sh:datatype xsd:integer ; sh:deactivated true .")))
+        assertEquals(listOf(TrueLiteral), nodes(call(ex("Off"), "ex:Off sh:datatype xsd:integer ; sh:deactivated true .")))
+        // An active shape that is neither declared nor referenced.
+        assertEquals(listOf(FalseLiteral), nodes(call(ex("Int"), "ex:Int sh:datatype xsd:integer .")))
+        assertEquals(listOf(TrueLiteral), nodes(call(ex("Dec"), "ex:Dec sh:datatype xsd:decimal .")))
+        // An IRI that is no shape at all.
+        assertFailure(call(ex("holder"), ""), "not a shape")
     }
 
     @Test

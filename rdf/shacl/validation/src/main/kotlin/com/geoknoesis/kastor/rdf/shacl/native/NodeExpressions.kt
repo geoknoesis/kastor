@@ -180,12 +180,7 @@ internal object NodeExpressions {
      */
     fun shapeRefs(expr: NodeExpression): Set<RdfResource> {
         val out = LinkedHashSet<RdfResource>()
-        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<NodeExpression, Boolean>())
-        val pending = ArrayDeque<NodeExpression>()
-        pending.add(expr)
-        while (pending.isNotEmpty()) {
-            val e = pending.removeLast()
-            if (!seen.add(e)) continue
+        walk(expr) { e ->
             when (e) {
                 is NodeExpression.FilterShape -> out.add(e.shape)
                 is NodeExpression.FindFirst -> out.add(e.shape)
@@ -194,10 +189,32 @@ internal object NodeExpressions {
                 is NodeExpression.ConformsToShape -> ((e.shape as? NodeExpression.Constant)?.term as? Iri)?.let { out.add(it) }
                 else -> Unit
             }
-            // Reversed, so that children are visited (and refs collected) in syntax order.
-            e.children().asReversed().forEach { pending.addLast(it) }
         }
         return out
+    }
+
+    /**
+     * Whether [expr] has a `shnex:conformsToShape` whose shape argument is computed (not a constant), so that the
+     * shape it validates against is only known at evaluation time.
+     */
+    fun computesShapes(expr: NodeExpression): Boolean {
+        var found = false
+        walk(expr) { e -> if (e is NodeExpression.ConformsToShape && e.shape !is NodeExpression.Constant) found = true }
+        return found
+    }
+
+    /** Visits every node of [expr] once, in syntax order, iteratively (constant stack, shared subtrees once). */
+    private inline fun walk(expr: NodeExpression, visit: (NodeExpression) -> Unit) {
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<NodeExpression, Boolean>())
+        val pending = ArrayDeque<NodeExpression>()
+        pending.add(expr)
+        while (pending.isNotEmpty()) {
+            val e = pending.removeLast()
+            if (!seen.add(e)) continue
+            visit(e)
+            // Reversed, so that children are visited in syntax order.
+            e.children().asReversed().forEach { pending.addLast(it) }
+        }
     }
 
     /**
