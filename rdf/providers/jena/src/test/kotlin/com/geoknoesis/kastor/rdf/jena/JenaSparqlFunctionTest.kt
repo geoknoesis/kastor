@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.RdfQueryException
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
@@ -12,15 +13,19 @@ import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
 import com.geoknoesis.kastor.rdf.string
+import org.apache.jena.query.QueryCancelledException
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.CleanupMode
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Custom SPARQL functions (SHACL 1.2 SPARQL Extensions, section 7) are visible to the one sandboxed query that carries
@@ -138,6 +143,60 @@ class JenaSparqlFunctionTest {
         assertNull(value("SELECT ?v WHERE { BIND (<urn:self>() AS ?v) }", recursive))
         // Bodies run in the top query and in nested queries 1 to MAX_FUNCTION_DEPTH, on each of the two paths.
         assertEquals(2 * (MAX_FUNCTION_DEPTH + 1), calls.get())
+    }
+
+    @Test
+    fun `a nested query never outlives the timeout of the calling query`() {
+        // The deadline is measured with the repository's clock, which only moves when the body says so: the nested
+        // query starts after the deadline, so it is cancelled, and the cancellation stops the calling query instead
+        // of becoming an unbound value (Jena's own timer, on real time, never fires within the minute given).
+        val now = AtomicLong()
+        (repository as JenaRepository).hooks.clock = now::get
+        val late = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:late", emptyList()) { call ->
+                now.addAndGet(Duration.ofMinutes(2).toNanos())
+                call.select(SandboxedSelectQuery("SELECT ?l WHERE { <urn:a> <urn:l> ?l } LIMIT 1"), emptyMap()) { rows ->
+                    rows.single().get("l")
+                }
+            },
+        ))
+        val query = SandboxedSelectQuery("SELECT ?v WHERE { BIND (<urn:late>() AS ?v) }", late)
+        val failure = assertThrows(RdfQueryException::class.java) {
+            repository.withSelectRows(query, emptyMap(), Duration.ofMinutes(1)) { rows -> rows.map { it.get("v") }.toList() }
+        }
+        assertTrue(generateSequence<Throwable>(failure) { it.cause }.any { it is QueryCancelledException }, failure.toString())
+        // Without a timeout, the same query has no deadline.
+        assertEquals(1, repository.withSelectRows(query) { rows -> rows.map { it.get("v") }.toList() }.filterNotNull().size)
+    }
+
+    @Test
+    fun `a nested query sees only its own functions`() {
+        // The calling query's library has <urn:spaced>; the nested query is sent without a library.
+        val nested = "SELECT (<urn:spaced>('a', 'b') AS ?x) {}"
+        fun outer(nestedFunctions: SparqlFunctionLibrary) = SparqlFunctionLibrary.of(listOf(
+            spaced,
+            SparqlFunction("urn:outer", emptyList()) { call ->
+                call.select(SandboxedSelectQuery(nested, nestedFunctions), emptyMap()) { rows -> rows.single().get("x") ?: string("unseen") }
+            },
+        ))
+        val sparql = "SELECT ?v WHERE { BIND (<urn:outer>() AS ?v) }"
+        assertEquals("unseen", lexical(sparql, outer(SparqlFunctionLibrary.EMPTY)))
+        assertEquals("a b", lexical(sparql, outer(library)))
+    }
+
+    @Test
+    fun `a function IRI computed at run time in a nested query cannot load a java class`() {
+        val probe = "java:" + SandboxProbeFunction::class.java.name
+        val (head, tail) = probe.substring(0, 5) to probe.substring(5)
+        val nested = "SELECT ?x WHERE { BIND (CALL(IRI(CONCAT(\"$head\", \"$tail\")), 1) AS ?x) }"
+        val probing = SparqlFunctionLibrary.of(listOf(
+            SparqlFunction("urn:probe", emptyList()) { call ->
+                call.select(SandboxedSelectQuery(nested), emptyMap()) { rows -> rows.single().get("x") ?: string("unseen") }
+            },
+        ))
+        val before = SandboxProbeFunction.instances.get()
+        assertEquals("unseen", lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
+        assertEquals(before, SandboxProbeFunction.instances.get())
     }
 
     @Test
