@@ -90,6 +90,19 @@ internal class SparqlComponentCatalog private constructor(
         val template = SparqlQueryTemplate.compile(validator.prologue + body, preBound)
         val messages = validator.messages.ifEmpty { index.objects(component.iri, SHACL.message).filterIsInstance<Literal>() }
         // One constraint per combination of the values of the parameters the shape has; absent optional ones stay unbound.
+        // The number of combinations is checked before any is built: memory, not only time, must stay bounded.
+        var size = 1L
+        for (parameter in parameters) {
+            val count = index.objects(shape, parameter.path).size.toLong()
+            // Saturating multiplication: a product beyond Long.MAX_VALUE stays Long.MAX_VALUE.
+            if (count > 0) size = if (size > Long.MAX_VALUE / count) Long.MAX_VALUE else size * count
+        }
+        if (size > MAX_CONSTRAINTS_PER_COMPONENT_USE) {
+            throw ShapeCompileException(
+                "Shape $shape uses constraint component ${component.iri} with $size combinations of parameter values; " +
+                    "at most $MAX_CONSTRAINTS_PER_COMPONENT_USE are supported",
+            )
+        }
         var combinations = listOf(emptyMap<String, RdfTerm>())
         for (parameter in parameters) {
             val values = index.objects(shape, parameter.path)
@@ -147,7 +160,13 @@ internal class SparqlComponentCatalog private constructor(
             return Validator(node, ask = false, text)
         }
         return fitting(ShaclSparqlTerms.validator, ShaclSparqlTerms.SPARQLAskValidator)?.let { node ->
-            Validator(node, ask = true, queryText(node, SHACL.ask, component))
+            val text = queryText(node, SHACL.ask, component)
+            // askAsSelect leaves a non-ASK query unchanged, so the query form is checked here (spec 4.2.3.2).
+            val form = SparqlLexer.tokenize(text).firstOrNull { t -> QUERY_FORMS.any { t.isWord(it) } }
+            if (form == null || !form.isWord("ASK")) {
+                throw ShapeCompileException("ASK validator $node of constraint component $component must hold a SPARQL ASK query")
+            }
+            Validator(node, ask = true, text)
         }
     }
 
@@ -162,6 +181,16 @@ internal class SparqlComponentCatalog private constructor(
     companion object {
         /** Variable names a parameter cannot take (SHACL 1.2 SPARQL §4.2.1). */
         private val RESERVED = setOf("this", "path", "PATH", "value", "message", "failure")
+
+        /** SPARQL query-form keywords; the first one in an `sh:ask` text must be `ASK`. */
+        private val QUERY_FORMS = listOf("SELECT", "CONSTRUCT", "DESCRIBE", "ASK")
+
+        /**
+         * Upper bound on the constraints one shape gets from one component: the product of the numbers of values of
+         * its parameters. A hostile shapes graph of a few hundred triples could otherwise request ~10^9 combinations
+         * and exhaust memory long before the preparation timeout. A use above the bound is a [ShapeCompileException].
+         */
+        private const val MAX_CONSTRAINTS_PER_COMPONENT_USE = 1024L
 
         fun build(index: ShapeGraphIndex): SparqlComponentCatalog {
             val typed = LinkedHashSet<Iri>()

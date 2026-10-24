@@ -133,6 +133,39 @@ class SparqlConstraintComponentCompileTest {
     }
 
     @Test
+    fun `parameter value product is capped`() {
+        fun shapes(parameters: List<String>): String {
+            val declarations = parameters.joinToString(" , ") { "[ sh:path ex:$it ]" }
+            val values = parameters.joinToString(" ; ") { p -> "ex:$p " + (1..11).joinToString(" , ") { "\"$p$it\"" } }
+            return """
+                ex:C a sh:ConstraintComponent ; sh:parameter $declarations ;
+                  sh:validator [ a sh:SPARQLAskValidator ; sh:ask "ASK { }" ] .
+                ex:S a sh:NodeShape ; sh:targetNode ex:a ; $values .
+            """.trimIndent()
+        }
+        val error = assertThrows(ShapeCompileException::class.java) { compile(shapes(listOf("a", "b", "c"))) }
+        assertTrue("1331" in error.message!!, error.message)
+
+        val components = nodeComponents(shapes(listOf("a", "b")))
+        assertEquals(121, components.size)
+        assertEquals(121, components.map { it.parameters }.toSet().size)
+        assertTrue(components.all { it.parameters.keys == setOf("a", "b") })
+    }
+
+    @Test
+    fun `ask validator must hold an ASK query`() {
+        val shape = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; ex:lang \"en\" .\n"
+        fun component(query: String) =
+            "ex:C a sh:ConstraintComponent ; sh:parameter [ sh:path ex:lang ] ; " +
+                "sh:validator [ a sh:SPARQLAskValidator ; sh:ask \"\"\"$query\"\"\" ] ."
+        assertThrows(ShapeCompileException::class.java) { compile(shape + component("SELECT \$this WHERE { }")) }
+        assertThrows(ShapeCompileException::class.java) { compile(shape + component("CONSTRUCT { } WHERE { }")) }
+        // Declarations and comments may precede the ASK keyword.
+        val ok = nodeComponents(shape + component("# ASK-based\nPREFIX ask: <http://example.com/ask#>\nASK { FILTER (\$value = \$lang) }"))
+        assertTrue(ok.single().ask)
+    }
+
+    @Test
     fun `ill-formed declarations`() {
         val shape = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; ex:lang \"en\" ; ex:x \"1\" ; <http://other.org/x> \"2\" ; ex:value \"v\" .\n"
         val ask = "sh:validator [ a sh:SPARQLAskValidator ; sh:ask \"ASK { }\" ]"
