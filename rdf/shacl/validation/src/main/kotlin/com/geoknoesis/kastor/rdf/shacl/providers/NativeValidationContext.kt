@@ -5,7 +5,6 @@ import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlQueryable
-import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import java.time.Duration
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledShapeGraph
@@ -104,13 +103,6 @@ internal class NativeValidationContext(
      */
     var expressionShapeDepth = 0
 
-    /**
-     * The number of conformance checks of node expressions that the engine could not decide: a final undefined
-     * answer, a shape that did not compile or uses an unsupported feature (R8), a validation error. Each one fails
-     * its expression; a function body whose failure follows one fails the query that called it ([runFunctionBody]).
-     */
-    var undecidedReads = 0L
-
     /** Provisional answers read by function bodies during the queries under way ([ProvisionalStash]). */
     private val provisionalInQuery = ProvisionalStash()
 
@@ -135,7 +127,6 @@ internal class NativeValidationContext(
      * number of nested function calls is limited by the library ([SparqlFunctionDeclarationSet.library]).
      */
     private fun runFunctionBody(body: NodeExpression, function: Iri, arguments: List<RdfTerm?>): RdfTerm? {
-        val undecidedBefore = undecidedReads
         val outcome = try {
             validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
         } catch (e: ProvisionalUndefined) {
@@ -143,11 +134,12 @@ internal class NativeValidationContext(
             provisionalInQuery.stash(e)
             return null
         }
-        if (outcome is NodeExprOutcome.Failure && undecidedReads != undecidedBefore) {
-            // The body failed on a conformance check the engine could not decide, which SPARQL would turn into an
-            // ordinary error (a FILTER dropping its row, say) and so into a definite answer: the query fails instead
-            // ([select] rethrows it).
-            provisionalInQuery.stashFailure(ShaclValidationException("SHACL function ${function.value}: ${outcome.reason}", outcome.cause))
+        if (outcome is NodeExprOutcome.Failure && outcome.undecided) {
+            // The body failed on a conformance check the engine could not decide (a final undefined answer, a shape
+            // that did not compile or uses an unsupported feature (R8), a validation error), which SPARQL would turn
+            // into an ordinary error (a FILTER dropping its row, say) and so into a definite answer: the query fails
+            // instead ([select] rethrows it), and so does a node expression that runs the query, whatever surrounds it.
+            provisionalInQuery.stashFailure(UndecidedConformanceException("SHACL function ${function.value}: ${outcome.reason}", outcome.cause))
         }
         return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
     }

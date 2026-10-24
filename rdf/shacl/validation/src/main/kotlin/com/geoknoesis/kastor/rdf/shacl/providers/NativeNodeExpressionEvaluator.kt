@@ -82,9 +82,23 @@ internal class ProvisionalStash {
 /** The outcome of `evalExpr` (Node Expressions §3): a list of output nodes, or an evaluation failure (§3.3). */
 internal sealed interface NodeExprOutcome {
     data class Nodes(val nodes: List<RdfTerm>) : NodeExprOutcome
-    /** [cause] is the error behind the failure, such as the provider's SPARQL error, when there is one. */
-    data class Failure(val reason: String, val cause: Throwable? = null) : NodeExprOutcome
+    /**
+     * [cause] is the error behind the failure, such as the provider's SPARQL error, when there is one. [undecided] is
+     * true for a failure of a conformance check the engine could not decide ([UndecidedConformanceException]), which
+     * no function absorbs.
+     */
+    data class Failure(val reason: String, val cause: Throwable? = null, val undecided: Boolean = false) : NodeExprOutcome
 }
+
+/**
+ * The validation failure of a conformance check of a node expression that the engine could not decide: a final
+ * undefined answer (R16), a validation error, an ill-formed or unsupported candidate shape (R8). A deliberate deviation
+ * from Node Expressions §3.3 / §5 ("fail closed everywhere"): it is no SPARQL error that `sparql:coalesce`, the
+ * unselected branch of `sparql:if`, `sparql:logical-or` or a SPARQL query calling a function body could absorb, but
+ * stops validation wherever the expression is evaluated. A provisional answer of the recursion solver is no such
+ * failure ([ProvisionalUndefined]).
+ */
+internal class UndecidedConformanceException(message: String, cause: Throwable? = null) : ShaclValidationException(message, cause)
 
 /**
  * The evaluation context of a node expression besides the focus graph: the focus node (null when there is none), the
@@ -122,20 +136,22 @@ internal class NodeExprScope(
  *
  * The shape-based functions validate against the compiled shapes of [ctx] (§3.4): conformance that the engine cannot
  * decide (undefined recursion, an undecided `sh:pattern`), a validation error, and a shape that is not compiled are
- * failures.
+ * failures. All but the last (a node that is not a shape of the shapes graph at all) are undecided failures
+ * ([NodeExprOutcome.Failure.undecided]), which no function absorbs ([UndecidedConformanceException]).
  */
 internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeValidationContext, scope: NodeExprScope): NodeExprOutcome =
     try {
         NodeExprOutcome.Nodes(NodeExpressionEvaluator(this, ctx).eval(expr, scope))
     } catch (f: NodeExprFailure) {
-        NodeExprOutcome.Failure(f.reason, f.cause)
+        NodeExprOutcome.Failure(f.reason, f.cause, f.undecided)
     }
 
 /**
  * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`; Node
  * Expressions §7: `sh:expression`, `sh:nodeByExpression`) for [focus] with the scope [variables]. An evaluation
  * failure is a validation failure ([ShaclValidationException], caused by the failure's cause); a provisional
- * conformance answer is a [ProvisionalUndefined]. [shapeDepth] is the nesting depth of the shape evaluation the
+ * conformance answer is a [ProvisionalUndefined]. A failure of an undecided conformance check is one whatever function
+ * surrounds the check ([UndecidedConformanceException]). [shapeDepth] is the nesting depth of the shape evaluation the
  * expression belongs to ([NativeValidationContext.expressionShapeDepth]). For a
  * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
  * variable is unbound are skipped, and the output nodes are distinct, in solution order.
@@ -188,11 +204,18 @@ internal fun checkNodeExpressionSize(size: Int, ctx: NativeValidationContext, wh
 private fun sizeMessage(ctx: NativeValidationContext, what: String) =
     "SHACL $what exceeded ValidationConfig.maxPathValueNodes=${ctx.data.maxPathValueNodes}"
 
-/** An evaluation failure (§3.3) on its way to [evaluate]; no stack trace, as it is an outcome, not an error. */
-private class NodeExprFailure(val reason: String, cause: Throwable? = null) : RuntimeException(reason, cause, false, false)
+/**
+ * An evaluation failure (§3.3) on its way to [evaluate]; no stack trace, as it is an outcome, not an error. An
+ * [undecided] one (a conformance check the engine could not decide, see [UndecidedConformanceException]) is never
+ * absorbed: it propagates through every function to the evaluating position.
+ */
+private class NodeExprFailure(val reason: String, cause: Throwable? = null, val undecided: Boolean = false) : RuntimeException(reason, cause, false, false)
 
 private class NodeExpressionEvaluator(private val validator: NativeShaclValidator, private val ctx: NativeValidationContext) {
     private fun fail(reason: String, cause: Throwable? = null): Nothing = throw NodeExprFailure(reason, cause)
+
+    /** A failure of a conformance check the engine could not decide, which no function absorbs ([NodeExprFailure.undecided]). */
+    private fun failUndecided(reason: String, cause: Throwable? = null): Nothing = throw NodeExprFailure(reason, cause, undecided = true)
 
     /** [nodes] as an output list: capped, and ticking the budget per node. */
     private fun output(nodes: List<RdfTerm>): List<RdfTerm> {
@@ -351,6 +374,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             try {
                 argument(eval(arg, argScope), "argument $i", function).also { if (it == null) unbound = true }
             } catch (f: NodeExprFailure) {
+                if (f.undecided) throw f
                 if (failure == null) failure = f
                 null
             }
@@ -377,7 +401,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
         // R8: a candidate of a computed shape reference that did not compile.
-        compiled.candidateErrors[shape]?.let { ctx.undecidedReads++; fail("$function: $it") }
+        compiled.candidateErrors[shape]?.let { failUndecided("$function: $it") }
         if (shape !in compiled.referencedNodeShapes && shape !in compiled.referencedPropertyShapes) {
             fail("$function: $shape is not a shape of the shapes graph")
         }
@@ -386,16 +410,14 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
             if (isRunAbort(e)) throw e
-            ctx.undecidedReads++
-            fail("$function: validating $node against $shape failed: ${e.message}", e)
+            failUndecided("$function: validating $node against $shape failed: ${e.message}", e)
         }
         return when (answer) {
             Conformance.CONFORMS -> true
             Conformance.FAILS -> false
             Conformance.UNDEFINED -> {
                 if (ctx.isProvisional(node, shape)) throw ProvisionalUndefined(node, shape)
-                ctx.undecidedReads++
-                fail("$function: the conformance of $node to $shape is undefined")
+                failUndecided("$function: the conformance of $node to $shape is undefined")
             }
         }
     }
@@ -514,7 +536,9 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
 
     /**
      * A SHACL SPARQL function expression (§5, §3.2.2). Every argument is evaluated; one that fails or produces more
-     * than one node is a SPARQL error, and one without output nodes is unbound. Without errors, an unbound argument
+     * than one node is a SPARQL error, and one without output nodes is unbound. Deliberately, an argument that failed on
+     * an undecided conformance check ([NodeExprFailure.undecided]) is no SPARQL error but fails the call, whatever the
+     * function would make of an error ("fail closed everywhere", [UndecidedConformanceException]). Without errors, an unbound argument
      * means no output nodes unless the function handles unbound values
      * ([SparqlFunctionExpressions.handlesUnbound]). The function itself is evaluated by the provider, as
      * `SELECT (<call> AS ?r) WHERE {}` with the argument values pre-bound ([SparqlQueryTemplate]: IRIs and
@@ -536,6 +560,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             val out = try {
                 eval(arg, scope)
             } catch (f: NodeExprFailure) {
+                // Deliberately not a SPARQL error of the argument (§5 would let COALESCE skip it): fail closed.
+                if (f.undecided) throw f
                 null
             }
             when {
@@ -563,11 +589,14 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
     /**
      * Turns the SPARQL error [e] of [function] into a failure caused by [e], unless it is a run abort: the run budget
      * is used up, the provider cancelled or interrupted the query, or no SPARQL engine is available; [e] is then
-     * rethrown.
+     * rethrown. The failure of a query whose function body failed on an undecided conformance check
+     * ([UndecidedConformanceException]) is an undecided failure, which no function absorbs.
      */
     private fun sparqlError(function: String, e: ShaclValidationException): Nothing {
         ctx.checkDeadline()
         if (isRunAbort(e)) throw e
+        // A function body the query called failed on an undecided conformance check ([NativeValidationContext.select]).
+        if (e is UndecidedConformanceException) failUndecided("$function failed: ${e.message}", e)
         fail("$function failed: ${e.message}", e)
     }
 
