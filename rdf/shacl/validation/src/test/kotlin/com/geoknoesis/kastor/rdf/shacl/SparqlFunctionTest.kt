@@ -290,21 +290,27 @@ class SparqlFunctionTest {
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a call is a prefixed name whose prefix is the function namespace`(provider: String) {
-        // ex:concat is ill-formed and unused: the built-in concat( and another namespace's x:concat( do not call it
-        // (the match is textual, so the comment counts as a call when x: is the function's namespace).
+        // ex:concat is ill-formed and unused: the built-in concat( and another namespace's x:concat( do not call it,
+        // and neither does a name in a comment or a string, whatever its namespace.
         val shapes = """
             ex:concat a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''PREFIX x: <urn:x:>
                 SELECT ${d}this ?value WHERE {
                   # x:concat()
+                  BIND ("x:concat()" AS ?unused)
                   BIND (concat("a", "b") AS ?value) }''' ] .
         """
         assertEquals("ab", (validate(provider, "ex:a ex:p 1 .", shapes).violations.single().value as Literal).lexical)
-        // With the function's namespace, the prefixed name is a call (and the ill-formed declaration an error).
-        val called = shapes.replace("<urn:x:>", "<http://example.com/ns#>")
-        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", called) }
-        assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
+        val commentOnly = shapes.replace("<urn:x:>", "<http://example.com/ns#>")
+        assertEquals("ab", (validate(provider, "ex:a ex:p 1 .", commentOnly).violations.single().value as Literal).lexical)
+        // With the function's namespace, the prefixed name is a call (and the ill-formed declaration an error), also
+        // for a prefix name that is not ASCII.
+        for (prefix in listOf("x", "fé")) {
+            val called = commentOnly.replace("BIND (concat(", "BIND ($prefix:concat() AS ?called) BIND (concat(").replace("PREFIX x:", "PREFIX $prefix:")
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", called) }, prefix)
+            assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
+        }
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])

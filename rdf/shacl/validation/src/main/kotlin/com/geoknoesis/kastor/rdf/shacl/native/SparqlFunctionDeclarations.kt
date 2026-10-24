@@ -62,19 +62,13 @@ internal object SparqlFunctionDeclarations {
 
     /**
      * Whether a SPARQL query of the shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr`) may call [function]: its
-     * full IRI occurs in the query text, or a prefixed name `p:local` followed by `(` does whose prefix `p` the
-     * query declares (`PREFIX`, or the `sh:prefixes` / `sh:declare` of the query node) with a namespace that,
-     * followed by `local`, is the IRI. A text match, not a parse: a name in a string or comment counts as well.
+     * IRI is an IRI reference of the query, or a prefixed name `p:local` followed by `(` resolves to it through the
+     * prefixes the query declares (`PREFIX`, or the `sh:prefixes` / `sh:declare` of the query node). The calls are
+     * collected once per index, in one token scan of each query that ticks the budget
+     * ([ShapeGraphIndex.sparqlFunctionCalls]), so asking for any number of functions costs a lookup each. A lexical
+     * match, not a parse: an IRI reference outside a call counts as well, a name in a string or comment does not.
      */
-    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean =
-        index.sparqlQueries.any { query ->
-            query.text.contains(function.value) ||
-                query.prefixes.any { (prefix, namespace) ->
-                    val local = function.value.removePrefix(namespace)
-                    namespace.isNotEmpty() && function.value.startsWith(namespace) && local.isNotEmpty() &&
-                        Regex("(?<![A-Za-z0-9_.:-])" + Regex.escape("$prefix:$local") + "\\s*[(]").containsMatchIn(query.text)
-                }
-        }
+    fun calledFromSparql(function: Iri, index: ShapeGraphIndex): Boolean = function.value in index.sparqlFunctionCalls
 
     /** Subjects with a `sh:bodyExpression` or typed `sh:ListParameterExpressionFunction`, in shapes-graph order. */
     private fun candidates(index: ShapeGraphIndex): Set<RdfResource> {

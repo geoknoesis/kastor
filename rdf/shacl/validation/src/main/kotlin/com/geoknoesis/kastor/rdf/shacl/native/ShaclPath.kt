@@ -11,9 +11,6 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 
-/** A `PREFIX p: <ns>` declaration in a SPARQL query text (case-insensitive keyword; `p` may be empty). */
-private val PREFIX_DECLARATION = Regex("(?i)PREFIX\\s+([A-Za-z][A-Za-z0-9_.-]*)?:\\s*<([^>]*)>")
-
 /**
  * Index of the shapes graph. An RDF graph is a **set** of triples: a provider that hands out the same triple twice
  * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
@@ -59,7 +56,7 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** Custom node expression functions of this shapes graph (§6), collected once per index. */
     val nodeExpressionFunctions: NodeExpressionFunctions by lazy { NodeExpressionFunctions.build(this) }
 
-    /** A SPARQL query of this shapes graph: its text and the prefixes it can use (declared in it or for its node). */
+    /** A SPARQL query of this shapes graph: its text and the prefixes its node declares (`sh:prefixes`, `sh:declare`). */
     class SparqlQueryText(val text: String, val prefixes: Map<String, String>)
 
     /** Every SPARQL query of this shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr` literals), collected once. */
@@ -74,9 +71,54 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
                 } catch (_: ShapeCompileException) {
                     // An ill-formed declaration is reported where the query is compiled.
                 }
-                PREFIX_DECLARATION.findAll(text).forEach { prefixes[it.groupValues[1]] = it.groupValues[2] }
                 SparqlQueryText(text, prefixes)
             }
+    }
+
+    /**
+     * The IRIs that the [sparqlQueries] may call as functions, collected once per index in one scan of each query
+     * ([SparqlLexer] tokens, ticking the budget per query): every IRI reference, and every prefixed name followed by
+     * `(` whose prefix the query declares (a `PREFIX` of its text, which wins, or a declaration of its node), with
+     * the `\` escapes of its local name removed. Prefix names may use any letters (SPARQL PN_PREFIX). Names in
+     * strings and comments are not calls.
+     */
+    val sparqlFunctionCalls: Set<String> by lazy {
+        val out = HashSet<String>()
+        for (query in sparqlQueries) {
+            tick("SPARQL function compilation")
+            val tokens = SparqlLexer.tokenize(query.text).filter { it.significant }
+            val prefixes = HashMap(query.prefixes)
+            for (i in 0 until tokens.size - 2) {
+                val name = tokens[i + 1]
+                if (tokens[i].isWord("PREFIX") && name.kind == SparqlToken.Kind.WORD && name.text.endsWith(":") &&
+                    tokens[i + 2].kind == SparqlToken.Kind.IRI
+                ) {
+                    prefixes[name.text.dropLast(1)] = tokens[i + 2].text.removeSurrounding("<", ">")
+                }
+            }
+            for ((i, token) in tokens.withIndex()) {
+                if (token.kind == SparqlToken.Kind.IRI) {
+                    out.add(token.text.removeSurrounding("<", ">"))
+                } else if (token.kind == SparqlToken.Kind.WORD && ':' in token.text && tokens.getOrNull(i + 1)?.text == "(") {
+                    val namespace = prefixes[token.text.substringBefore(':')] ?: continue
+                    out.add(namespace + unescapeLocalName(token.text.substringAfter(':')))
+                }
+            }
+        }
+        out
+    }
+
+    /** [local] without the `\` of its escapes (SPARQL PN_LOCAL_ESC: `ex:a\-b` is `a-b`). */
+    private fun unescapeLocalName(local: String): String {
+        if ('\\' !in local) return local
+        val out = StringBuilder(local.length)
+        var i = 0
+        while (i < local.length) {
+            if (local[i] == '\\' && i + 1 < local.length) i++
+            out.append(local[i])
+            i++
+        }
+        return out.toString()
     }
 
     /**

@@ -42,6 +42,53 @@ class PreparationBudgetTest {
             assertFailsWith<ShaclValidationException>(phase) { run(expires()) }
         }
     }
+    /** Many ill-formed SHACL functions and many SPARQL queries, each with its own `PREFIX` (SPARQL calls none of them). */
+    private fun functionsAndQueries(n: Int): List<RdfTriple> {
+        val ttl = buildString {
+            append("@prefix sh: <http://www.w3.org/ns/shacl#> .\n@prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .\n")
+            append("@prefix ex: <http://example.com/ns#> .\n")
+            repeat(n) { append("ex:bad$it a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .\n") }
+            repeat(n) {
+                append("ex:S$it a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select \"PREFIX p$it: <urn:p$it:> SELECT \$this WHERE { FILTER (p$it:bad$it()) }\" ] .\n")
+            }
+        }
+        return Rdf.parse(ttl, RdfFormat.TURTLE).getTriples()
+    }
+    @Test fun `finding the SPARQL calls of many ill-formed functions consumes the preparation budget`() {
+        val triples = functionsAndQueries(200)
+        // A tiny budget stops the compilation of such a shapes graph, as any other.
+        assertFailsWith<ShaclValidationException> { ShapesCompiler.compile(triples, ValidationConfig(), expires()) }
+        // The scan of the queries for calls ticks the budget itself: here it is the only work left after the deadline.
+        var expired = false
+        val budget = ValidationBudget(Duration.ofSeconds(1)) { if (expired) 1_000_000_000_000L else 0L }
+        val index = ShapeGraphIndex(triples, budget)
+        assertEquals(200, index.sparqlQueries.size)
+        expired = true
+        val e = assertFailsWith<ShaclValidationException> { SparqlFunctionDeclarations.calledFromSparql(Iri("http://example.com/ns#bad0"), index) }
+        assertTrue("SPARQL function compilation" in e.message.orEmpty(), e.message)
+    }
+    @Test fun `the SPARQL calls of many functions are found in one scan`() {
+        val index = ShapeGraphIndex(functionsAndQueries(2_000))
+        // Each query calls p<i>:bad<i>, which its PREFIX resolves to urn:p<i>:bad<i>, not to an ex: function.
+        repeat(2_000) { assertFalse(SparqlFunctionDeclarations.calledFromSparql(Iri("http://example.com/ns#bad$it"), index)) }
+        assertTrue(SparqlFunctionDeclarations.calledFromSparql(Iri("urn:p1999:bad1999"), index))
+        // So compiling it leaves every ill-formed function out instead of failing.
+        assertTrue(ShapesCompiler.compile(index.triples, ValidationConfig()).functions.isEmpty)
+    }
+    @Test fun `prefixed SPARQL calls are found with any prefix name and local name escapes`() {
+        fun calls(query: String, function: String): Boolean {
+            val ttl = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n<urn:s> sh:select \"\"\"$query\"\"\" ."
+            return SparqlFunctionDeclarations.calledFromSparql(Iri(function), ShapeGraphIndex(Rdf.parse(ttl, RdfFormat.TURTLE).getTriples()))
+        }
+        assertTrue(calls("PREFIX fé: <http://example.com/ns#> SELECT * WHERE { FILTER (fé:f(1)) }", "http://example.com/ns#f"))
+        assertTrue(calls("PREFIX 例: <http://example.com/ns#> SELECT * WHERE { FILTER (例:f (1)) }", "http://example.com/ns#f"))
+        assertTrue(calls("prefix : <http://example.com/ns#> SELECT * WHERE { FILTER (:f\\\\-g()) }", "http://example.com/ns#f-g"))
+        assertTrue(calls("SELECT * WHERE { FILTER (<http://example.com/ns#f>()) }", "http://example.com/ns#f"))
+        // Not a call: no '(' after the name, an undeclared prefix, a string or a comment.
+        assertFalse(calls("PREFIX ex: <http://example.com/ns#> SELECT * WHERE { ?s ex:f ?o }", "http://example.com/ns#f"))
+        assertFalse(calls("SELECT * WHERE { FILTER (ex:f()) }", "http://example.com/ns#f"))
+        assertFalse(calls("SELECT * WHERE { BIND ('<http://example.com/ns#f>()' AS ?x) # <http://example.com/ns#f>()\n }", "http://example.com/ns#f"))
+    }
     @Test fun `cancelled preparation does not populate compiled cache`() {
         val cache = NativeCompileCache()
         assertFailsWith<ShaclValidationException> {
