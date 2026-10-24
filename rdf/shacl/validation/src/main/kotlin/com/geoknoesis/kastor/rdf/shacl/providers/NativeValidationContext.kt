@@ -78,6 +78,8 @@ internal class NativeValidationContext(
         recordedSize += (recording?.size ?: 0) - (previous?.size ?: 0)
     }
     val reportPaths = HashMap<RdfResource, ReportPath>()
+    /** The constraints instantiated from the run's [PropertyConstraint.Dynamic] constraints (SHACL 1.2 Node Expressions §8). */
+    val dynamicInstances = DynamicInstanceCache()
     private val session = lazy {
         SparqlConstraintEvaluator.Session(
             data.graph,

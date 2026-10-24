@@ -1,0 +1,101 @@
+package com.geoknoesis.kastor.rdf.shacl.providers
+
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.RdfResource
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
+import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
+import com.geoknoesis.kastor.rdf.shacl.native.ConstraintInstantiation
+import com.geoknoesis.kastor.rdf.shacl.native.DynamicParameters
+import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
+import com.geoknoesis.kastor.rdf.shacl.native.ParameterShape
+import com.geoknoesis.kastor.rdf.shacl.native.ParameterValue
+import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
+import java.util.IdentityHashMap
+
+/** The most constraint instances a run keeps of its [PropertyConstraint.Dynamic] constraints ([DynamicInstanceCache]). */
+internal const val DYNAMIC_INSTANCE_CACHE_MAX = 4096
+
+/**
+ * The constant constraints a run instantiated from its [PropertyConstraint.Dynamic] constraints, per constraint (by
+ * identity) and resolved parameter values, so that one instance, and what the run caches per instance (pattern
+ * outcomes, say), serves every focus node with the same values. Past [max] entries, instances are built but not stored;
+ * entries are never evicted.
+ */
+internal class DynamicInstanceCache(private val max: Int = DYNAMIC_INSTANCE_CACHE_MAX) {
+    private val instances = IdentityHashMap<PropertyConstraint.Dynamic, HashMap<List<List<RdfTerm>>, Instance>>()
+
+    /** A cached instance; [constraint] is null for "no constraint". */
+    private class Instance(val constraint: PropertyConstraint?)
+
+    var size: Int = 0
+        private set
+
+    fun getOrPut(constraint: PropertyConstraint.Dynamic, values: List<List<RdfTerm>>, build: () -> PropertyConstraint?): PropertyConstraint? {
+        instances[constraint]?.get(values)?.let { return it.constraint }
+        val built = build()
+        if (size < max) {
+            instances.getOrPut(constraint) { HashMap() }[values] = Instance(built)
+            size++
+        }
+        return built
+    }
+}
+
+/**
+ * `evalExpr(expr, data graph, focus, {})` of a computed constraint parameter (SHACL 1.2 Node Expressions §8): the focus
+ * node of the shape, never a value node, and an empty scope, at the shape nesting [depth]. A failure is a validation
+ * failure; outputs are bounded like those of every node expression.
+ */
+internal fun NativeShaclValidator.evaluateComputed(expr: NodeExpression, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): List<RdfTerm> =
+    evalNodeExpression(expr, ctx, focus, emptyMap(), shapeDepth = depth)
+
+/**
+ * The constant constraint [c] stands for at [focus], of [shape]: each computed parameter is evaluated ([evaluateComputed])
+ * and its outputs checked, by number and type, against the parameter; then the constraint is instantiated from the
+ * values ([ConstraintInstantiation.instantiate]), or taken from the run's [NativeValidationContext.dynamicInstances].
+ * Null when the values make no constraint. Any output that breaks the parameter's rules is a validation failure
+ * ([ShaclValidationException]).
+ */
+internal fun NativeShaclValidator.resolveDynamic(
+    c: PropertyConstraint.Dynamic,
+    focus: RdfTerm,
+    ctx: NativeValidationContext,
+    depth: Int,
+    shape: RdfResource,
+): PropertyConstraint? {
+    val values = c.parameters.map { (parameter, value) ->
+        when (value) {
+            is ParameterValue.Constant -> listOf(value.term)
+            is ParameterValue.Computed -> checkedOutputs(parameter, evaluateComputed(value.expr, focus, ctx, depth), focus, shape)
+        }
+    }
+    ctx.budget.tick("dynamic constraint")
+    return ctx.dynamicInstances.getOrPut(c, values) {
+        try {
+            ConstraintInstantiation.instantiate(c.component, c.parameters.keys.zip(values).toMap(), c.extras, config)
+        } catch (e: ShapeCompileException) {
+            throw ShaclValidationException("Dynamic SHACL: ${e.message} (shape ${shape.displayId()}, focus node $focus)", e)
+        }
+    }
+}
+
+/** [outputs] of the computed [parameter], when their number and every node fit it (D6); otherwise a failure. */
+private fun checkedOutputs(parameter: Iri, outputs: List<RdfTerm>, focus: RdfTerm, shape: RdfResource): List<RdfTerm> {
+    val name = DynamicParameters.displayName(parameter)
+    fun fail(problem: String): Nothing =
+        throw ShaclValidationException("Dynamic SHACL: $name of shape ${shape.displayId()} $problem, for focus node $focus")
+    when (DynamicParameters.shapeOf(parameter)) {
+        ParameterShape.SINGLE -> when (outputs.size) {
+            1 -> Unit
+            0 -> fail("produced no nodes; exactly one is required")
+            else -> fail("produced ${outputs.size} nodes; exactly one is required")
+        }
+        ParameterShape.IRI_OR_LIST -> if (outputs.isEmpty()) fail("produced no nodes; at least one is required")
+        ParameterShape.LIST, null -> Unit
+    }
+    for (node in outputs) {
+        ConstraintInstantiation.outputError(parameter, node, outputs.size)?.let { fail("produced the invalid value $node: $it") }
+    }
+    return outputs
+}

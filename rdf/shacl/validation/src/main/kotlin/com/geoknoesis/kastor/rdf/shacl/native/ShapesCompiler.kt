@@ -8,7 +8,6 @@ import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.TripleTerm
-import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
@@ -191,6 +190,21 @@ internal sealed class PropertyConstraint {
      * see through it, since the constraint does not hold for every node.
      */
     data class Deactivatable(val constraint: PropertyConstraint, val deactivatedWhen: List<NodeExpression>) : PropertyConstraint()
+
+    /**
+     * A constraint of [component] with at least one parameter computed by a node expression (SHACL 1.2 Node Expressions
+     * §8, Dynamic SHACL): per focus node, the engine evaluates the expressions in the data graph with the focus node and
+     * an empty scope, and evaluates the constant constraint [ConstraintInstantiation] builds from the outputs. Absent
+     * optional parameters are not keys of [parameters].
+     */
+    data class Dynamic(
+        val component: DynamicComponent,
+        val parameters: Map<Iri, ParameterValue>,
+        val extras: ComponentExtras = ComponentExtras(),
+    ) : PropertyConstraint() {
+        /** The computed parameters' expressions, in parameter order. */
+        val expressions: List<NodeExpression> get() = parameters.values.mapNotNull { (it as? ParameterValue.Computed)?.expr }
+    }
 
     /** The constraint this one guards, if it is [Deactivatable], else itself. */
     fun unwrapped(): PropertyConstraint = if (this is Deactivatable) constraint else this
@@ -1282,9 +1296,18 @@ internal object ShapesCompiler {
             val conditions = reifierDeactivation(subject, triples.mapNotNull { (p, o) -> o?.let { p to it } }, index) ?: return
             constraints.add(if (conditions.isEmpty()) c else PropertyConstraint.Deactivatable(c, conditions))
         }
+        // SHACL 1.2 Node Expressions §8: a constant value is the constant constraint, as ever; a value a node expression
+        // computes is a Dynamic one, instantiated per focus node. Both use the parameter triple for reifier deactivation.
+        fun scalar(component: DynamicComponent, pred: Iri, term: RdfTerm) {
+            when (val value = DynamicParameters.value(subject, pred, term, index)) {
+                is ParameterValue.Constant ->
+                    ConstraintInstantiation.instantiate(component, mapOf(pred to listOf(term)), ComponentExtras(), config)?.let { add(it, pred to term) }
+                is ParameterValue.Computed -> add(PropertyConstraint.Dynamic(component, mapOf(pred to value)), pred to term)
+            }
+        }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
-            atMostOne(SHACL.minCount)?.let { add(PropertyConstraint.MinCount(parseNonNegativeInt(it, "sh:minCount")), SHACL.minCount to it) }
-            atMostOne(SHACL.maxCount)?.let { add(PropertyConstraint.MaxCount(parseNonNegativeInt(it, "sh:maxCount")), SHACL.maxCount to it) }
+            atMostOne(SHACL.minCount)?.let { scalar(DynamicComponent.MIN_COUNT, SHACL.minCount, it) }
+            atMostOne(SHACL.maxCount)?.let { scalar(DynamicComponent.MAX_COUNT, SHACL.maxCount, it) }
         }
         for (dtObj in index.objects(subject, SHACL.datatype)) {
             val override = annotatedConstraintSeverity(subject, SHACL.datatype, dtObj, index)
@@ -1337,14 +1360,14 @@ internal object ShapesCompiler {
             if (kinds.isNotEmpty()) add(PropertyConstraint.NodeKind(kinds.distinct()), SHACL.nodeKind to nk)
         }
         val flagsTerm = atMostOne(SHACL.flags)
-        val flags = flagsTerm?.let { literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
+        val flags = flagsTerm?.let { ConstraintInstantiation.literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
         for (p in index.objects(subject, SHACL.pattern)) {
-            val pat = literalString(p) ?: throw ShapeCompileException("sh:pattern must be a string literal")
+            val pat = ConstraintInstantiation.literalString(p) ?: throw ShapeCompileException("sh:pattern must be a string literal")
             // sh:flags is a parameter of each pattern constraint, so its reifier deactivates all of them.
             add(PropertyConstraint.Pattern(pat, flags, compileShaclPattern(pat, flags)), SHACL.pattern to p, SHACL.flags to flagsTerm)
         }
-        atMostOne(SHACL.minLength)?.let { add(PropertyConstraint.MinLength(parseNonNegativeInt(it, "sh:minLength")), SHACL.minLength to it) }
-        atMostOne(SHACL.maxLength)?.let { add(PropertyConstraint.MaxLength(parseNonNegativeInt(it, "sh:maxLength")), SHACL.maxLength to it) }
+        atMostOne(SHACL.minLength)?.let { scalar(DynamicComponent.MIN_LENGTH, SHACL.minLength, it) }
+        atMostOne(SHACL.maxLength)?.let { scalar(DynamicComponent.MAX_LENGTH, SHACL.maxLength, it) }
         atMostOne(SHACL.`in`)?.let { head ->
             val terms = index.parseRdfList(head)
             terms.forEach { ensureShapeTermAllowed(it, config) }
@@ -1356,18 +1379,18 @@ internal object ShapesCompiler {
         }
         atMostOne(SHACL.languageIn)?.let { head ->
             val langs = index.parseRdfList(head).map {
-                literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals")
+                ConstraintInstantiation.literalString(it) ?: throw ShapeCompileException("sh:languageIn list must be string literals")
             }
             add(PropertyConstraint.LanguageIn(langs), SHACL.languageIn to head)
         }
-        atMostOne(SHACL.uniqueLang)?.let { add(PropertyConstraint.UniqueLang(isLexicallyTrue(it)), SHACL.uniqueLang to it) }
-        atMostOne(SHACL.minListLength)?.let { add(PropertyConstraint.MinListLength(parseNonNegativeInt(it, "sh:minListLength")), SHACL.minListLength to it) }
-        atMostOne(SHACL.maxListLength)?.let { add(PropertyConstraint.MaxListLength(parseNonNegativeInt(it, "sh:maxListLength")), SHACL.maxListLength to it) }
+        atMostOne(SHACL.uniqueLang)?.let { scalar(DynamicComponent.UNIQUE_LANG, SHACL.uniqueLang, it) }
+        atMostOne(SHACL.minListLength)?.let { scalar(DynamicComponent.MIN_LIST_LENGTH, SHACL.minListLength, it) }
+        atMostOne(SHACL.maxListLength)?.let { scalar(DynamicComponent.MAX_LIST_LENGTH, SHACL.maxListLength, it) }
         index.objects(subject, SHACL.memberShape).filterIsInstance<RdfResource>().forEach {
             add(PropertyConstraint.MemberShape(it), SHACL.memberShape to it)
         }
-        atMostOne(SHACL.uniqueMembers)?.let { add(PropertyConstraint.UniqueMembers(isLexicallyTrue(it)), SHACL.uniqueMembers to it) }
-        atMostOne(SHACL.singleLine)?.let { add(PropertyConstraint.SingleLine(isLexicallyTrue(it)), SHACL.singleLine to it) }
+        atMostOne(SHACL.uniqueMembers)?.let { scalar(DynamicComponent.UNIQUE_MEMBERS, SHACL.uniqueMembers, it) }
+        atMostOne(SHACL.singleLine)?.let { scalar(DynamicComponent.SINGLE_LINE, SHACL.singleLine, it) }
         for (rc in index.objects(subject, SHACL.rootClass)) {
             val roots =
                 when (rc) {
@@ -1418,17 +1441,17 @@ internal object ShapesCompiler {
         index.objects(subject, SHACL.disjoint).forEach {
             add(PropertyConstraint.DisjointPath(ShaclPathParser.parse(it, index)), SHACL.disjoint to it)
         }
-        index.objects(subject, SHACL.minInclusive).forEach { add(PropertyConstraint.MinInclusive(it), SHACL.minInclusive to it) }
-        index.objects(subject, SHACL.maxInclusive).forEach { add(PropertyConstraint.MaxInclusive(it), SHACL.maxInclusive to it) }
-        index.objects(subject, SHACL.minExclusive).forEach { add(PropertyConstraint.MinExclusive(it), SHACL.minExclusive to it) }
-        index.objects(subject, SHACL.maxExclusive).forEach { add(PropertyConstraint.MaxExclusive(it), SHACL.maxExclusive to it) }
+        index.objects(subject, SHACL.minInclusive).forEach { scalar(DynamicComponent.MIN_INCLUSIVE, SHACL.minInclusive, it) }
+        index.objects(subject, SHACL.maxInclusive).forEach { scalar(DynamicComponent.MAX_INCLUSIVE, SHACL.maxInclusive, it) }
+        index.objects(subject, SHACL.minExclusive).forEach { scalar(DynamicComponent.MIN_EXCLUSIVE, SHACL.minExclusive, it) }
+        index.objects(subject, SHACL.maxExclusive).forEach { scalar(DynamicComponent.MAX_EXCLUSIVE, SHACL.maxExclusive, it) }
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
             val qualifiedShapes = index.objects(subject, SHACL.qualifiedValueShape).filterIsInstance<RdfResource>()
             val minTerm = atMostOne(SHACL.qualifiedMinCount)
             val maxTerm = atMostOne(SHACL.qualifiedMaxCount)
             val disjointTerm = atMostOne(SHACL.qualifiedValueShapesDisjoint)
-            val min = minTerm?.let { parseNonNegativeInt(it, "sh:qualifiedMinCount") }
-            val max = maxTerm?.let { parseNonNegativeInt(it, "sh:qualifiedMaxCount") }
+            val min = minTerm?.let { ConstraintInstantiation.parseNonNegativeInt(it, "sh:qualifiedMinCount") }
+            val max = maxTerm?.let { ConstraintInstantiation.parseNonNegativeInt(it, "sh:qualifiedMaxCount") }
             val disjoint = disjointTerm?.let { isLexicallyTrue(it) } ?: false
             for (qvs in qualifiedShapes) {
                 val siblings =
@@ -1687,22 +1710,6 @@ internal object ShapesCompiler {
             SHACL.Trace -> SeverityParse(ViolationSeverity.TRACE, null)
             else -> SeverityParse(ViolationSeverity.VIOLATION, i)
         }
-    }
-
-    private fun literalString(term: RdfTerm): String? =
-        when (term) {
-            is Literal -> term.lexical
-            else -> null
-        }
-
-    private fun parseNonNegativeInt(term: RdfTerm, role: String): Int {
-        val lit = term as? TypedLiteral ?: throw ShapeCompileException("$role expects xsd:integer, got $term")
-        if (lit.datatype != XSD.integer && lit.datatype != XSD.nonNegativeInteger && lit.datatype != XSD.long) {
-            throw ShapeCompileException("$role expects integer datatype, got ${lit.datatype}")
-        }
-        val v = lit.lexical.toIntOrNull() ?: throw ShapeCompileException("$role invalid lexical ${lit.lexical}")
-        if (v < 0) throw ShapeCompileException("$role must be non-negative")
-        return v
     }
 }
 

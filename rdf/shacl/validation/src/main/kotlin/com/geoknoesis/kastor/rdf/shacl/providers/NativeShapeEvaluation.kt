@@ -295,6 +295,7 @@ private fun provisionalType(c: PropertyConstraint): ConstraintType =
         is PropertyConstraint.NodeByExpressionComputed -> ConstraintType.NODE_BY_EXPRESSION
         is PropertyConstraint.Sparql -> ConstraintType.SPARQL_CONSTRAINT
         is PropertyConstraint.SparqlComponent -> ConstraintType.SPARQL_CONSTRAINT_COMPONENT
+        is PropertyConstraint.Dynamic -> c.component.type
         else -> ConstraintType.PROPERTY_SHAPE
     }
 

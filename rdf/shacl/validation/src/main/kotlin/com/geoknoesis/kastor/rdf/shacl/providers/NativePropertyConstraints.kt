@@ -107,6 +107,9 @@ internal fun NativeShaclValidator.evaluateConstraint(
             }
         is PropertyConstraint.SparqlComponent ->
             sink.failAll(evaluateSparqlComponent(focus, tpl, values, c, ctx, path != null, firstOnly = !sink.reports))
+        // SHACL 1.2 Node Expressions §8: the constant constraint the computed parameters make for the focus node.
+        is PropertyConstraint.Dynamic ->
+            resolveDynamic(c, focus, ctx, state.depth, currentShape)?.let { evaluateConstraint(focus, tpl, values, it, ctx, state, currentShape, path, sink) }
     }
 }
 
