@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlQueryable
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import java.time.Duration
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledShapeGraph
@@ -101,6 +102,12 @@ internal class NativeValidationContext(
      */
     var expressionShapeDepth = 0
 
+    /**
+     * The number of final undefined conformance answers node expressions have read (each one fails its expression):
+     * a function body whose failure follows one fails the query that called it ([runFunctionBody]).
+     */
+    var undefinedReads = 0L
+
     /** Provisional answers read by function bodies during the queries under way ([ProvisionalStash]). */
     private val provisionalInQuery = ProvisionalStash()
 
@@ -125,12 +132,18 @@ internal class NativeValidationContext(
      * number of nested function calls is limited by the library ([SparqlFunctionDeclarationSet.library]).
      */
     private fun runFunctionBody(body: NodeExpression, function: Iri, arguments: List<RdfTerm?>): RdfTerm? {
+        val undefinedBefore = undefinedReads
         val outcome = try {
             validator.evaluate(body, this, NodeExprScope(function, emptyMap(), arguments, nodeExpressionDepth + 1))
         } catch (e: ProvisionalUndefined) {
             // The query cannot carry it: the whole query's answer is provisional ([select] rethrows it).
             provisionalInQuery.stash(e)
             return null
+        }
+        if (outcome is NodeExprOutcome.Failure && undefinedReads != undefinedBefore) {
+            // The body failed on a final undefined answer, which SPARQL would turn into an ordinary error (a FILTER
+            // dropping its row, say) and so into a definite answer: the query fails instead ([select] rethrows it).
+            provisionalInQuery.stashFailure(ShaclValidationException("SHACL function ${function.value}: ${outcome.reason}", outcome.cause))
         }
         return (outcome as? NodeExprOutcome.Nodes)?.nodes?.singleOrNull()
     }

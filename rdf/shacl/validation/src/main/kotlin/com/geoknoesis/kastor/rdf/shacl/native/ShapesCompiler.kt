@@ -310,7 +310,7 @@ internal object ShapesCompiler {
         val candidateErrors = compileCandidates(index, config, budget, exprShapes, candidates, refNodes, refProps, detected.candidateOnly, ignoredInCandidates)
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
-            recursiveComponents(refNodes, refProps, exprShapes, budget),
+            recursiveComponents(refNodes, refProps, exprShapes, functions, budget),
             (unsupported.keys + ignoredInCandidates).map { "Unsupported SHACL feature ignored: $it" },
             functions,
             candidateErrors,
@@ -472,7 +472,7 @@ internal object ShapesCompiler {
      * and its recursion analysis stay complete and immutable, but tolerantly (R8, see [compileCandidates]); the scan
      * is done once per index and ticks the preparation budget, and the compile loop checks the budget per shape.
      */
-    internal class ExpressionShapes(private val index: ShapeGraphIndex) {
+    internal class ExpressionShapes(val index: ShapeGraphIndex) {
         val iriCandidates: Set<RdfResource> by lazy { shapeCandidates(index, blankNodes = false) }
         val allCandidates: Set<RdfResource> by lazy { shapeCandidates(index, blankNodes = true) }
 
@@ -519,22 +519,36 @@ internal object ShapesCompiler {
         refNodes: Map<RdfResource, CompiledNodeShape>,
         refProps: Map<RdfResource, CompiledPropertyShape>,
         exprShapes: ExpressionShapes,
+        functions: SparqlFunctionDeclarationSet,
         budget: ValidationBudget,
     ): Map<RdfResource, Int> {
+        // A SPARQL query of a shape may call any SHACL SPARQL function, whose node expression body validates against
+        // its shapes while the shape is checked: those shapes are dependencies of every shape that runs SPARQL
+        // (sh:sparql, a SPARQL-based constraint component, a SPARQL node expression). A function body's own queries
+        // may call the others, so the shapes of all bodies are taken, with the candidates of computed shapes.
+        val sparqlBodyShapes: List<RdfResource> = functions.expressionBodies.flatMap { budget.tick("recursion analysis"); exprShapes.of(it) }.distinct()
+        fun runsSparql(constraints: List<PropertyConstraint>, expressions: List<NodeExpression>) =
+            sparqlBodyShapes.isNotEmpty() &&
+                (constraints.any { it is PropertyConstraint.Sparql || it is PropertyConstraint.SparqlComponent } ||
+                    expressions.any { NodeExpressions.runsSparql(it, exprShapes.index) })
         val successors = HashMap<RdfResource, List<RdfResource>>()
         for ((node, ps) in refProps) {
             // The node expressions of sh:values / sh:defaultValue / sh:expression / sh:nodeByExpression are evaluated
             // while checking the shape, so their shapes are dependencies; so are the candidates of a computed
             // sh:nodeByExpression, any of which it can produce.
+            val expressions = listOfNotNull(ps.values, ps.defaultValue) + ps.constraints.mapNotNull { constraintExpression(it) }
             successors[node] = ps.constraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } +
-                ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps)
+                ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps) +
+                (if (runsSparql(ps.constraints, expressions)) sparqlBodyShapes else emptyList())
         }
         // A shape node that is also a property shape is always checked as a property shape (see conformance checks).
         for ((node, cn) in refNodes) {
             if (node in refProps) continue
+            val expressions = cn.nodeConstraints.mapNotNull { constraintExpression(it) }
             successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
                 cn.nodeConstraints.flatMap { constraintRefs(it) + computedRefs(it, exprShapes) } + cn.propertyShapes.map { it.shapeNode } +
-                cn.nodeConstraints.mapNotNull { constraintExpression(it) }.flatMap { exprShapes.of(it) }
+                expressions.flatMap { exprShapes.of(it) } +
+                (if (runsSparql(cn.nodeConstraints, expressions)) sparqlBodyShapes else emptyList())
         }
         val components = stronglyConnectedComponents(successors.keys.toList(), budget) { v -> successors[v].orEmpty().filter { it in successors } }
         val out = HashMap<RdfResource, Int>()

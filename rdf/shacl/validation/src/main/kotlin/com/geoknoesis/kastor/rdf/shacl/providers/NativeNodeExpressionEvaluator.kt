@@ -40,16 +40,26 @@ internal const val MAX_NODE_EXPRESSION_DEPTH = 128
 internal class ProvisionalUndefined(val node: RdfTerm, val shape: RdfResource) : RuntimeException(null, null, false, false)
 
 /**
- * The [ProvisionalUndefined] answers that function bodies read during a SPARQL query, which cannot carry them: each
- * query runs in its own [scoped] block, so that nested queries keep their own, a query that returns rethrows the
- * first one, and a query that throws discards it (it never reaches a later, unrelated query).
+ * The [ProvisionalUndefined] answers that function bodies read during a SPARQL query, which cannot carry them, and
+ * the validation failures of bodies that read a final undefined answer ([stashFailure]): each query runs in its own
+ * [scoped] block, so that nested queries keep their own, a query that returns rethrows the first one (a failure
+ * before a provisional answer), and a query that throws discards it (it never reaches a later, unrelated query).
  */
 internal class ProvisionalStash {
-    private var pending: ProvisionalUndefined? = null
+    private var pending: RuntimeException? = null
 
     /** Records [e] for the query under way (the first one wins). */
     fun stash(e: ProvisionalUndefined) {
         if (pending == null) pending = e
+    }
+
+    /**
+     * Records [e], the validation failure of a function body that read a final undefined conformance answer, for the
+     * query under way: the query's answer cannot be decided (R16), whatever SPARQL makes of the body's error. It
+     * replaces a provisional answer, which the solver would only evaluate again.
+     */
+    fun stashFailure(e: ShaclValidationException) {
+        if (pending !is ShaclValidationException) pending = e
     }
 
     inline fun <T> scoped(query: () -> T): T {
@@ -64,7 +74,7 @@ internal class ProvisionalStash {
     }
 
     /** Replaces the pending answer with [value], returning the previous one. */
-    fun swap(value: ProvisionalUndefined?): ProvisionalUndefined? = pending.also { pending = value }
+    fun swap(value: RuntimeException?): RuntimeException? = pending.also { pending = value }
 }
 
 /** The outcome of `evalExpr` (Node Expressions §3): a list of output nodes, or an evaluation failure (§3.3). */
@@ -379,8 +389,11 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
         return when (answer) {
             Conformance.CONFORMS -> true
             Conformance.FAILS -> false
-            Conformance.UNDEFINED ->
-                if (ctx.isProvisional(node, shape)) throw ProvisionalUndefined(node, shape) else fail("$function: the conformance of $node to $shape is undefined")
+            Conformance.UNDEFINED -> {
+                if (ctx.isProvisional(node, shape)) throw ProvisionalUndefined(node, shape)
+                ctx.undefinedReads++
+                fail("$function: the conformance of $node to $shape is undefined")
+            }
         }
     }
 

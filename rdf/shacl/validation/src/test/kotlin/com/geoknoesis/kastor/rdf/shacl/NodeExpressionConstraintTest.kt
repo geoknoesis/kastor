@@ -422,22 +422,47 @@ class NodeExpressionConstraintTest {
         assertTrue(report.isValid, report.violations.toString())
     }
 
-    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
-    fun `recursion through a SPARQL function body stays bounded`(provider: String) {
-        // The function body validates against ex:S, whose SPARQL constraint calls the function: no static dependency
-        // records it. The nesting of function bodies (nodeExpressionDepth, 128) and the shape depth carried through
-        // the evaluator (maxRecursionDepth) bound it: the innermost call fails, which is a SPARQL error of the
-        // function, so FILTER drops the row at every level and ex:a conforms. A stack overflow would instead be a
-        // ShaclValidationException.
-        val shapes = """
-            ex:f a sh:ListParameterExpressionFunction ;
-              sh:parameter [ sh:path shnex:arg0 ] ;
-              sh:bodyExpression [ shnex:exists [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:p ; shnex:focusNode [ shnex:arg 0 ] ] ] ] .
-            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
-              sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (!<http://example.com/ns#f>(${'$'}this)) }''' ] .
+    /** `ex:f(x)`: some `ex:p` value of `x` conforms to `ex:S`, a function body SPARQL calls. */
+    private val shapeReadingFunction = """
+        ex:f a sh:ListParameterExpressionFunction ;
+          sh:parameter [ sh:path shnex:arg0 ] ;
+          sh:bodyExpression [ shnex:exists [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:p ; shnex:focusNode [ shnex:arg 0 ] ] ] ] .
+    """
+
+    /** Shapes where `ex:S` holds for `x` iff `ex:f(x)` is false, through each way a shape runs SPARQL. */
+    private val sparqlCallingShapes = listOf(
+        // sh:sparql: a result (a violation) when f($this) holds.
+        "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''SELECT ${'$'}this WHERE { FILTER (<http://example.com/ns#f>(${'$'}this)) }''' ] .",
+        // A SPARQL-based constraint component.
         """
-        val report = validate(provider, "ex:a ex:p ex:a .", shapes)
-        assertTrue(report.isValid, report.violations.toString())
+        ex:C a sh:ConstraintComponent ; sh:parameter [ sh:path ex:check ] ;
+          sh:nodeValidator [ a sh:SPARQLSelectValidator ; sh:select '''SELECT ${'$'}this WHERE { FILTER (${'$'}check && <http://example.com/ns#f>(${'$'}this)) }''' ] .
+        ex:S a sh:NodeShape ; sh:targetNode ex:a ; ex:check true .
+        """,
+        // A SPARQL node expression at sh:expression.
+        "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ sh:sparqlExpr '''!<http://example.com/ns#f>(${'$'}this)''' ] .",
+    )
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `paradoxical recursion through a SPARQL function body is undefined`(provider: String) {
+        // ex:a ex:p ex:a: a conforms to S iff f(a) is false iff a does not conform to S. The function body's read of
+        // S is a static dependency of every shape that runs SPARQL, so S is recursive and the solver finds the
+        // answer undefined: a validation failure (R16), not a report cut off at the function call limit.
+        for (shapes in sparqlCallingShapes) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p ex:a .", shapeReadingFunction + shapes) }, shapes)
+            assertTrue("cannot be decided" in error.message.orEmpty() || "undefined" in error.message.orEmpty(), error.message)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `recursion through a SPARQL function body that ends is decided`(provider: String) {
+        for (shapes in sparqlCallingShapes) {
+            // b has no ex:p, so f(b) is false and b conforms; f(a) is then true and a does not.
+            val report = validate(provider, "ex:a ex:p ex:b .", shapeReadingFunction + shapes)
+            assertEquals(listOf(ex("a")), report.violations.map { it.focusNode }, shapes)
+            // A longer chain alternates: n2 conforms, n1 does not, a does.
+            assertTrue(validate(provider, "ex:a ex:p ex:n1 . ex:n1 ex:p ex:n2 .", shapeReadingFunction + shapes).isValid, shapes)
+        }
     }
 
     @Test

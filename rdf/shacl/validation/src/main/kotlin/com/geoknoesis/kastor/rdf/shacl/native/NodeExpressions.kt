@@ -205,6 +205,17 @@ internal object NodeExpressions {
     }
 
     /**
+     * Whether [expr] runs a SPARQL query anywhere in its tree (a SPARQL node expression, `sh:select` /
+     * `sh:sparqlExpr`), custom function bodies included as for [shapeRefs]. Such a query may call any SHACL SPARQL
+     * function of the shapes graph ([SparqlFunctionDeclarationSet]).
+     */
+    fun runsSparql(expr: NodeExpression, index: ShapeGraphIndex): Boolean {
+        var found = false
+        walk(expr, index) { e -> if (e is NodeExpression.Select) found = true }
+        return found
+    }
+
+    /**
      * Visits every node of [expr] once, in syntax order, iteratively (constant stack, shared subtrees once), and the
      * compiled bodies of the custom functions it calls after the call's arguments.
      */
