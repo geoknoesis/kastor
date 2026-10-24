@@ -151,9 +151,11 @@ internal fun NativeShaclValidator.validateUniqueValuesForShape(
     ctx: NativeValidationContext,
     capacity: Int,
 ): Pair<List<ValidationViolation>, Long> {
+    // A computed parameter is evaluated for every focus node, however many targets there are: a failed evaluation is
+    // a failure (§3.4).
+    if (shape.uniqueValuesForParameter != null) return validateDynamicUniqueValuesFor(shape, focusNodes, focusOnly, ctx, capacity)
     val targets = focusNodes.filterIsInstance<RdfResource>()
     if (targets.size < 2) return emptyList<ValidationViolation>() to 0L
-    if (shape.uniqueValuesForParameter != null) return validateDynamicUniqueValuesFor(shape, targets, focusOnly, ctx, capacity)
     val props = shape.uniqueValuesForProps
     val groups = LinkedHashMap<List<List<String>>, MutableList<RdfResource>>()
     for (t in targets) {
@@ -188,7 +190,7 @@ private fun uniqueValuesKey(target: RdfResource, props: List<Iri>, ctx: NativeVa
     props.map { p -> ctx.data.objects(target, p).map { shaclRdfTermFingerprint(it) }.sorted() }.takeUnless { key -> key.all { it.isEmpty() } }
 
 /** Whether the shape, or a reifier of its `sh:uniqueValuesFor` triple, is deactivated for [node] (Core §3.1.6). */
-private fun NativeShaclValidator.uniqueValuesForDeactivated(shape: CompiledNodeShape, node: RdfResource, ctx: NativeValidationContext): Boolean {
+private fun NativeShaclValidator.uniqueValuesForDeactivated(shape: CompiledNodeShape, node: RdfTerm, ctx: NativeValidationContext): Boolean {
     val conditions = listOfNotNull(shape.deactivatedWhen) + shape.reifierConditions.uniqueValuesFor
     return conditions.any { deactivates(it, node, ctx, 0) }
 }
@@ -199,25 +201,32 @@ private fun NativeShaclValidator.uniqueValuesForDeactivated(shape: CompiledNodeS
  */
 internal fun NativeShaclValidator.resolveUniqueValuesFor(focus: RdfTerm, shape: CompiledNodeShape, ctx: NativeValidationContext): List<Iri> {
     val parameter = checkNotNull(shape.uniqueValuesForParameter) { "sh:uniqueValuesFor of ${shape.shapeNode} is not computed" }
+    // Depth 0, outside the recursion solver, as the deactivation conditions of sh:uniqueValuesFor are evaluated.
     return checkedOutputs(SHACL.uniqueValuesFor, evaluateComputed(parameter.expr, focus, ctx, 0), focus, shape.shapeNode).map { it as Iri }
 }
 
-/** [validateUniqueValuesForShape] for a computed `sh:uniqueValuesFor`: each focus node is compared on its own properties. */
+/**
+ * [validateUniqueValuesForShape] for a computed `sh:uniqueValuesFor`: each focus node is compared on its own properties.
+ * The parameter is resolved for every active focus node, literals and lone targets included, so that a failed
+ * evaluation fails the run whatever the targets; only resources have keys to compare.
+ */
 private fun NativeShaclValidator.validateDynamicUniqueValuesFor(
     shape: CompiledNodeShape,
-    targets: List<RdfResource>,
+    focusNodes: List<RdfTerm>,
     focusOnly: RdfResource?,
     ctx: NativeValidationContext,
     capacity: Int,
 ): Pair<List<ValidationViolation>, Long> {
     // The focus nodes with a result to find, and their properties; the order of the properties does not matter.
     val byProps = LinkedHashMap<List<Iri>, MutableList<RdfResource>>()
-    for (focus in targets) {
+    for (focus in focusNodes) {
         if (focusOnly != null && focus != focusOnly) continue
         if (uniqueValuesForDeactivated(shape, focus, ctx)) continue
         val props = resolveUniqueValuesFor(focus, shape, ctx).distinct().sortedBy { it.value }
-        byProps.getOrPut(props) { ArrayList() }.add(focus)
+        if (focus is RdfResource) byProps.getOrPut(props) { ArrayList() }.add(focus)
     }
+    val targets = focusNodes.filterIsInstance<RdfResource>()
+    if (targets.size < 2) return emptyList<ValidationViolation>() to 0L
     val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
     val duplicates = ArrayList<Pair<RdfResource, Int>>()
     for ((props, foci) in byProps) {

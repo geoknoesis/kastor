@@ -872,6 +872,26 @@ class DynamicShaclTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a dynamic sh uniqueValuesFor is evaluated whatever the number of targets`(provider: String) {
+        // One target has no other to share a key with, but its parameter is still evaluated: a failure is a failure (§3.4).
+        val computed = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ."
+        assertTrue(validate(provider, "ex:a ex:keys ex:k ; ex:k 1 .", computed).violations.isEmpty())
+        val cases = listOf(
+            computed to "ex:a ex:k 1 .",
+            computed to "ex:a ex:keys \"k\" .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:uniqueValuesFor [] ." to "ex:a ex:k 1 .",
+            // A literal focus node has no key, but its parameter is evaluated too.
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" , ex:a , ex:b ; sh:uniqueValuesFor [ shnex:pathValues ex:keys ] ." to
+                "ex:a ex:keys ex:k . ex:b ex:keys ex:k .",
+        )
+        for ((shapes, data) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, data, shapes) }, "$shapes / $data")
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "sh:uniqueValuesFor" in message, "$shapes / $data: $message")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `validateClosedShapes=false also skips dynamic sh closed`(provider: String) {
         // "maybe" would fail the run, so sh:closed is not even evaluated.
         val shapes = closedShape("[ shnex:pathValues ex:mode ]", targets = "ex:a")
