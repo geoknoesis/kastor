@@ -38,7 +38,7 @@ internal fun violation(
         resultPathTriples = path?.triples ?: emptyList(),
         resultMessages = messages,
         sourceConstraint = sourceConstraint,
-        sourceConstraintComponent = sourceConstraintComponent,
+        sourceConstraintComponent = sourceConstraintComponent?.value,
         resultAnnotations = resultAnnotations,
     )
 

@@ -74,7 +74,7 @@ class ValidationReportRdfTest {
                 constraint = ShaclConstraint(constraintType = ConstraintType.SPARQL_CONSTRAINT),
                 focusNode = Iri("${ex}a"),
                 message = "m",
-                sourceConstraintComponent = Iri("${ex}C"),
+                sourceConstraintComponent = "${ex}C",
                 resultAnnotations = mapOf(Iri("${ex}time") to listOf(com.geoknoesis.kastor.rdf.string("t"))),
             )
         val triples = roundTrip(

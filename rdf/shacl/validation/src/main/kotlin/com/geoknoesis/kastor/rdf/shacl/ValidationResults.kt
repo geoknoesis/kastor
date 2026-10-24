@@ -111,7 +111,7 @@ data class ValidationViolation(
      * `sh:sourceConstraintComponent` when it is not implied by [constraint] (a SPARQL-based constraint component);
      * when non-null it replaces the component derived from the constraint type.
      */
-    val sourceConstraintComponent: Iri? = null,
+    val sourceConstraintComponent: String? = null,
     /** SHACL-SPARQL result annotations (`sh:resultAnnotation`): property to values, emitted on the `sh:ValidationResult`. */
     val resultAnnotations: Map<Iri, List<RdfTerm>> = emptyMap(),
 ) {

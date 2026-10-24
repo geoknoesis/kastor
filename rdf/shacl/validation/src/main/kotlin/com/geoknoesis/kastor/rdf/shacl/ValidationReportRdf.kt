@@ -79,7 +79,7 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
         row - SHACL.resultMessage - v.message
     }
     v.shapeUri?.let { parseReportShapeRef(it) }?.let { row - SHACL.sourceShape - it }
-    (v.sourceConstraintComponent ?: v.constraint.constraintType.toSourceConstraintComponentIri())?.let { cc ->
+    (v.sourceConstraintComponent?.let { Iri(it) } ?: v.constraint.constraintType.toSourceConstraintComponentIri())?.let { cc ->
         row - SHACL.sourceConstraintComponent - cc
     }
     val pathNode = v.resultPathNode
