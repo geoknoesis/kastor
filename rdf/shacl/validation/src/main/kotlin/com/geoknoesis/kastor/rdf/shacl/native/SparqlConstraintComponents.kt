@@ -50,6 +50,9 @@ internal class SparqlComponentCatalog private constructor(
         fun validator(propertyShape: Boolean): Validator? = validators.getOrPut(propertyShape) { selectValidator(iri, propertyShape) }
     }
 
+    /** Whether [predicate] is the path of a parameter of one of the components. */
+    fun isParameterPath(predicate: Iri): Boolean = predicate in byPath
+
     fun constraintsFor(shape: RdfResource, propertyShape: Boolean, path: ShaclPath?): List<PropertyConstraint.SparqlComponent> {
         val candidates = index.predicates(shape).flatMapTo(LinkedHashSet()) { byPath[it].orEmpty() }
         if (candidates.isEmpty()) return emptyList()

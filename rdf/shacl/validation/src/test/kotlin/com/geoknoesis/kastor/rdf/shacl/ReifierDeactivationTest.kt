@@ -334,4 +334,47 @@ class ReifierDeactivationTest {
             assertTrue(report.isValid, "$shapes: ${report.violations}")
         }
     }
+
+    @Test
+    fun `the at most one reifier rule is checked on every parameter triple of a constraint`() {
+        // The constant true on sh:pattern deactivates the constraint; its sh:flags triple is still checked.
+        val twoReifiers = prop("sh:pattern \"^z\" {| sh:deactivated true |} ; sh:flags \"m\"") + """
+            ex:r1 rdf:reifies <<( ex:P sh:flags "m" )>> ; sh:deactivated false .
+            ex:r2 rdf:reifies <<( ex:P sh:flags "m" )>> ; sh:deactivated false .
+        """
+        val twoValues = prop("sh:pattern \"^z\" {| sh:deactivated true |} ; sh:flags \"m\" {| sh:deactivated false , \"false\" |}")
+        for ((shapes, message) in listOf(twoReifiers to "at most one reifier", twoValues to "at most one value")) {
+            val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p \"a\" .", shapes) }
+            val compile = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<ShapeCompileException>().firstOrNull()
+            assertTrue(compile != null && message in compile.message.orEmpty(), "$message: $error")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a reifier's sh deactivated on a triple that is no constraint parameter has no effect and is reported as a warning`(provider: String) {
+        val data = "ex:a ex:p 1 ; ex:skip true . ex:b ex:p 1 ."
+        for (shapes in listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a {| sh:deactivated true |} , ex:b ; sh:class ex:C .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property ex:P . ex:P sh:path ex:p $perFocus ; sh:maxCount 0 .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:message \"m\" {| sh:deactivated true |} ; sh:class ex:C .",
+        )) {
+            val report = validate(provider, data, shapes)
+            assertEquals(setOf(ex("a"), ex("b")), report.violations.map { it.focusNode }.toSet(), shapes)
+            assertTrue(report.warnings.any { "has no effect" in it.message && "sh:deactivated" in it.message }, "$shapes: ${report.warnings}")
+            assertTrue(report.warnings.none { "Unsupported" in it.message }, "$shapes: ${report.warnings}")
+            assertEquals(false, report.isValid)
+        }
+    }
+
+    @Test
+    fun `a shape only an ignored reifier expression reads does not fail the run`() {
+        // ex:Z (no shape type, no target) is read only by the sh:deactivated of a reifier of a target triple, which has
+        // no effect: its unsupported sh:target is not inspected. Neither is a value that is no node expression.
+        for (expression in listOf("[ shnex:conformsToShape ( [ shnex:var \"focusNode\" ] ex:Z ) ]", "[ ex:undeclared 1 ]")) {
+            val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a {| sh:deactivated $expression |} ; sh:class ex:C .\n" +
+                "ex:Z sh:target [ a ex:CustomTarget ] ."
+            val report = validate("jena", "ex:a ex:p 1 .", shapes)
+            assertEquals(listOf(ex("a")), report.violations.map { it.focusNode }, expression)
+        }
+    }
 }

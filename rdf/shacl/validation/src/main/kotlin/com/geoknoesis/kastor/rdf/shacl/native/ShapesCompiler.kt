@@ -314,6 +314,12 @@ internal data class CompiledShapeGraph(
      * validating against one is an evaluation failure.
      */
     val candidateErrors: Map<RdfResource, String> = emptyMap(),
+    /**
+     * Report warnings about constructs of the compiled shapes that have no effect: the `sh:deactivated` of a reifier
+     * of a triple that is no constraint parameter ([ShapesCompiler.isParameterPredicate]). They are no unsupported
+     * features.
+     */
+    val shapeWarnings: List<String> = emptyList(),
 )
 
 internal object ShapesCompiler {
@@ -385,7 +391,58 @@ internal object ShapesCompiler {
             (unsupported.keys + ignoredInCandidates).map { "Unsupported SHACL feature ignored: $it" },
             functions,
             candidateErrors,
+            ineffectiveReifierDeactivations(index, refNodes.keys + refProps.keys, budget),
         )
+    }
+
+    /**
+     * The constraint parameters (SHACL 1.2 Core §3.1.1) of the core components, as predicates of a shape: a reifier of
+     * a triple with one of these, or with the path of a parameter of a SPARQL-based component, deactivates the
+     * constraints that use the triple (§3.1.6).
+     */
+    private val coreParameterPredicates: Set<Iri> by lazy {
+        setOf(
+            SHACL.`class`, SHACL.datatype, SHACL.nodeKind, SHACL.minCount, SHACL.maxCount,
+            SHACL.minExclusive, SHACL.minInclusive, SHACL.maxExclusive, SHACL.maxInclusive,
+            SHACL.minLength, SHACL.maxLength, SHACL.pattern, SHACL.flags, SHACL.languageIn, SHACL.uniqueLang,
+            SHACL.equals, SHACL.disjoint, SHACL.lessThan, SHACL.lessThanOrEquals, SHACL.subsetOf,
+            SHACL.`not`, SHACL.`and`, SHACL.`or`, SHACL.xone, SHACL.node, SHACL.nodeByExpression, SHACL.`property`,
+            SHACL.qualifiedValueShape, SHACL.qualifiedMinCount, SHACL.qualifiedMaxCount, SHACL.qualifiedValueShapesDisjoint,
+            SHACL.closed, SHACL.ignoredProperties, SHACL.hasValue, SHACL.`in`, SHACL.sparql, shExpression,
+            SHACL.someValue, SHACL.shape, SHACL.singleLine, SHACL.rootClass, SHACL.memberShape,
+            SHACL.minListLength, SHACL.maxListLength, SHACL.uniqueMembers,
+            SHACL.reifierShape, SHACL.reificationRequired, SHACL.uniqueValuesFor,
+        )
+    }
+
+    /**
+     * Whether a triple of a shape with [predicate] declares a constraint parameter, so that a reifier's
+     * `sh:deactivated` on it deactivates the constraints that use it (SHACL 1.2 Core §3.1.6). On any other triple
+     * (targets, `sh:path`, `sh:message`, `sh:severity`, `sh:values`…) it has no effect.
+     */
+    internal fun isParameterPredicate(predicate: Iri, index: ShapeGraphIndex): Boolean =
+        predicate in coreParameterPredicates || index.sparqlComponents.isParameterPath(predicate)
+
+    /**
+     * One warning per reifier with `sh:deactivated` of a triple of one of [shapes] that is no constraint parameter
+     * ([isParameterPredicate]): the spec gives it no meaning there, so it is ignored.
+     */
+    private fun ineffectiveReifierDeactivations(index: ShapeGraphIndex, shapes: Collection<RdfResource>, budget: ValidationBudget): List<String> {
+        val out = ArrayList<String>()
+        for (shape in shapes) {
+            for (p in index.predicates(shape)) {
+                if (isParameterPredicate(p, index)) continue
+                for (o in index.objects(shape, p)) {
+                    budget.tick("shape compilation")
+                    for (r in index.reifiersForClaim(RdfTriple(shape, p, o))) {
+                        if (index.objects(r, SHACL.deactivated).isNotEmpty()) {
+                            out.add("sh:deactivated on a reifier of non-parameter triple $shape $p $o has no effect")
+                        }
+                    }
+                }
+            }
+        }
+        return out
     }
 
     /**
@@ -780,8 +837,10 @@ internal object ShapesCompiler {
             for (c in index.objects(shape, SHACL.sparql)) {
                 if (c is RdfResource) index.objects(c, SHACL.deactivated).forEach { expression(it, computedShape = false) }
             }
-            // So is the sh:deactivated of a reifier of one of the shape's triples (Core §3.1.6).
+            // So is the sh:deactivated of a reifier of one of the shape's parameter triples (Core §3.1.6). On any other
+            // triple it has no effect, so the shapes it reads are not validated against.
             for (p in index.predicates(shape)) {
+                if (!isParameterPredicate(p, index)) continue
                 for (o in index.objects(shape, p)) {
                     budget.tick("feature detection")
                     for (r in index.reifiersForClaim(RdfTriple(shape, p, o))) index.objects(r, SHACL.deactivated).forEach { expression(it, computedShape = false) }
@@ -839,10 +898,12 @@ internal object ShapesCompiler {
         for (t in index.triples) {
             budget.tick("feature detection")
             if (t.predicate == ShaclSparqlTerms.bodyExpression && t.subject is Iri) functions.add(t.subject as Iri)
-            // A reifier deactivates the constraint of the triple it reifies, whose subject is a shape.
-            // So does a SPARQL-based constraint, the value of sh:sparql of a shape.
+            // A reifier deactivates the constraint of the parameter triple it reifies, whose subject is a shape (on
+            // another triple it has no effect, so it is not inspected). So does a SPARQL-based constraint, the value of
+            // sh:sparql of a shape.
             val owner = if (t.predicate == SHACL.deactivated) {
-                val reified = index.objects(t.subject, RDF.reifies).filterIsInstance<TripleTerm>().map { it.triple.subject } +
+                val reified = index.objects(t.subject, RDF.reifies).filterIsInstance<TripleTerm>()
+                    .filter { isParameterPredicate(it.triple.predicate, index) }.map { it.triple.subject } +
                     index.subjects(SHACL.sparql, t.subject)
                 reified.firstOrNull { it in shapes } ?: reified.firstOrNull { it in candidateShapes } ?: t.subject
             } else {
@@ -1538,15 +1599,18 @@ internal object ShapesCompiler {
      * compile error. A blank node that is no node expression is reported by feature detection and deactivates nothing.
      */
     private fun reifierDeactivation(subject: RdfResource, triples: List<Pair<Iri, RdfTerm>>, index: ShapeGraphIndex): List<NodeExpression>? {
-        val out = ArrayList<NodeExpression>()
-        for ((predicate, obj) in triples) {
+        // Every triple is checked before a constant true leaves the constraint out.
+        val deactivating = triples.mapNotNull { (predicate, obj) ->
             val reifiers = index.reifiersForClaim(RdfTriple(subject, predicate, obj)).filter { index.objects(it, SHACL.deactivated).isNotEmpty() }
             if (reifiers.size > 1) {
                 throw ShapeCompileException(
                     "The triple $subject $predicate $obj has ${reifiers.size} reifiers with sh:deactivated; it can have at most one reifier with a value for sh:deactivated",
                 )
             }
-            val reifier = reifiers.singleOrNull() ?: continue
+            reifiers.singleOrNull()?.also { deactivatedValues(it, index) }
+        }
+        val out = ArrayList<NodeExpression>()
+        for (reifier in deactivating) {
             if (isDeactivated(reifier, index)) return null
             deactivationExpression(reifier, index)?.let { out.add(it) }
         }

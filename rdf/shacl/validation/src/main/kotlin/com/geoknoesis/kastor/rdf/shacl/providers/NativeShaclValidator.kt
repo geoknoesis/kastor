@@ -398,7 +398,7 @@ internal class NativeShaclValidator(
             // ValidationConfig.includeWarnings = false leaves the report-level warnings out; results are unaffected.
             val warnings =
                 if (config.includeWarnings) {
-                    (importWarnings + compiled.unsupportedFeatureWarnings + targetWarnings).map { ValidationWarning(it) }
+                    (importWarnings + compiled.unsupportedFeatureWarnings + compiled.shapeWarnings + targetWarnings).map { ValidationWarning(it) }
                 } else {
                     emptyList()
                 }
