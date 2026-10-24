@@ -6,8 +6,14 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
+import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.shacl.providers.ProvisionalStash
+import com.geoknoesis.kastor.rdf.shacl.providers.ProvisionalUndefined
+import com.geoknoesis.kastor.rdf.shacl.providers.UndecidedConformanceException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
@@ -54,6 +60,8 @@ class NodeExpressionFailClosedTest {
     private fun assertStops(provider: String, shapes: String, data: String = this.data) {
         val error = assertThrows(ShaclValidationException::class.java, { validate(provider, data, paradox + shapes) }, shapes)
         assertTrue("undefined" in error.message.orEmpty() || "cannot be decided" in error.message.orEmpty(), "$shapes: ${error.message}")
+        // Typed as undecided, wherever it is thrown.
+        assertTrue(error is UndecidedConformanceException, "$shapes: ${error.javaClass.name}")
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
@@ -101,6 +109,7 @@ class NodeExpressionFailClosedTest {
         val positions = listOf(
             // sh:values, sh:targetNode, sh:nodeByExpression.
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:v ; sh:values $absorbed ; sh:datatype xsd:string ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:v ; sh:defaultValue $absorbed ; sh:datatype xsd:string ] .",
             "ex:S a sh:NodeShape ; sh:targetNode [ sparql:coalesce ( [ shnex:conformsToShape ( ex:a ex:P ) ] ex:a ) ] ; sh:class ex:C .",
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression [ sparql:coalesce ( [ sparql:if ( $check ex:T ex:T ) ] ex:T ) ] . ex:T sh:class ex:C .",
             // sh:deactivated of a node shape, a property shape, a SPARQL-based constraint and a reifier.
@@ -139,6 +148,32 @@ class NodeExpressionFailClosedTest {
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ sh:sparqlExpr '''<http://example.com/ns#h>(${d}this)''' ] .",
         )
         for (s in shapes) assertStops(provider, f + s)
+    }
+
+    @Test
+    fun `an undecided failure stashed by a query that throws is thrown with the query error suppressed`() {
+        val stash = ProvisionalStash()
+        val failure = UndecidedConformanceException("undecided")
+        val provider = IllegalStateException("provider")
+        val thrown = assertThrows(UndecidedConformanceException::class.java) {
+            stash.scoped<Unit> { stash.stashFailure(failure); throw provider }
+        }
+        assertSame(failure, thrown)
+        assertSame(provider, thrown.suppressed.single())
+        // A provisional answer is still discarded with the query, and nothing leaks into the next query.
+        val provisional = ProvisionalUndefined(Iri("http://example.com/ns#a"), Iri("http://example.com/ns#S"))
+        assertSame(provider, assertThrows(IllegalStateException::class.java) { stash.scoped<Unit> { stash.stash(provisional); throw provider } })
+        assertEquals("next", stash.scoped { "next" })
+        // An inner query's failure does not reach the outer one, which keeps its own.
+        val outer = UndecidedConformanceException("outer")
+        val error = assertThrows(UndecidedConformanceException::class.java) {
+            stash.scoped<Unit> {
+                stash.stashFailure(outer)
+                runCatching { stash.scoped<Unit> { stash.stashFailure(failure); throw provider } }
+                throw IllegalStateException("outer provider")
+            }
+        }
+        assertSame(outer, error)
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])

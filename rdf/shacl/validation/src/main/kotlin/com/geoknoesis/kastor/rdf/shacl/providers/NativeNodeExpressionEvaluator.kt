@@ -43,8 +43,9 @@ internal class ProvisionalUndefined(val node: RdfTerm, val shape: RdfResource) :
  * The [ProvisionalUndefined] answers that function bodies read during a SPARQL query, which cannot carry them, and
  * the validation failures of bodies that failed on a conformance check the engine could not decide ([stashFailure]):
  * each query runs in its own [scoped] block, so that nested queries keep their own, a query that returns rethrows
- * the first one (a failure before a provisional answer), and a query that throws discards it (it never reaches a
- * later, unrelated query).
+ * the first one (a failure before a provisional answer), and a query that throws discards a provisional answer (it
+ * never reaches a later, unrelated query) but not a failure: the failure is thrown instead, with the query's own error
+ * suppressed, so that a provider error cannot hide an undecided check.
  */
 internal class ProvisionalStash {
     private var pending: RuntimeException? = null
@@ -67,7 +68,16 @@ internal class ProvisionalStash {
     inline fun <T> scoped(query: () -> T): T {
         val outer = swap(null)
         try {
-            val result = query()
+            val result = try {
+                query()
+            } catch (e: Exception) {
+                val pending = swap(null)
+                if (pending is ShaclValidationException && pending !== e) {
+                    pending.addSuppressed(e)
+                    throw pending
+                }
+                throw e
+            }
             swap(null)?.let { throw it }
             return result
         } finally {
@@ -150,8 +160,8 @@ internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeVali
  * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`; Node
  * Expressions §7: `sh:expression`, `sh:nodeByExpression`) for [focus] with the scope [variables]. An evaluation
  * failure is a validation failure ([ShaclValidationException], caused by the failure's cause); a provisional
- * conformance answer is a [ProvisionalUndefined]. A failure of an undecided conformance check is one whatever function
- * surrounds the check ([UndecidedConformanceException]). [shapeDepth] is the nesting depth of the shape evaluation the
+ * conformance answer is a [ProvisionalUndefined]. A failure of an undecided conformance check is an
+ * [UndecidedConformanceException], whatever function surrounds the check. [shapeDepth] is the nesting depth of the shape evaluation the
  * expression belongs to ([NativeValidationContext.expressionShapeDepth]). For a
  * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
  * variable is unbound are skipped, and the output nodes are distinct, in solution order.
@@ -172,7 +182,8 @@ internal fun NativeShaclValidator.evalNodeExpression(
     }
     return when (outcome) {
         is NodeExprOutcome.Nodes -> outcome.nodes
-        is NodeExprOutcome.Failure -> throw ShaclValidationException(outcome.reason, outcome.cause)
+        is NodeExprOutcome.Failure ->
+            throw if (outcome.undecided) UndecidedConformanceException(outcome.reason, outcome.cause) else ShaclValidationException(outcome.reason, outcome.cause)
     }
 }
 
