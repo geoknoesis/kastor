@@ -7,6 +7,8 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
+import com.geoknoesis.kastor.rdf.shacl.native.DynamicParameters
+import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -104,6 +106,7 @@ class ReifierDeactivationTest {
         Case("nodeByExpression (IRI)", prop("sh:nodeByExpression ex:N {D}"), "{F} ex:p {V} ."),
         Case("nodeByExpression (computed)", prop("sh:nodeByExpression ( ex:N ) {D}"), "{F} ex:p {V} ."),
         Case("someValue", prop("sh:someValue ex:N {D}"), "{F} ex:p {V} ."),
+        Case("shape", prop("sh:shape ex:N {D}"), "{F} ex:p {V} ."),
         Case("qualifiedValueShape", prop("sh:qualifiedValueShape ex:N {D} ; sh:qualifiedMinCount 1"), "{F} ex:p {V} ."),
         Case("qualifiedMinCount", prop("sh:qualifiedValueShape ex:N ; sh:qualifiedMinCount 1 {D}"), "{F} ex:p {V} ."),
         Case("qualifiedValueShapesDisjoint", prop("sh:qualifiedValueShape ex:N ; sh:qualifiedMinCount 1 ; sh:qualifiedValueShapesDisjoint false {D}"), "{F} ex:p {V} ."),
@@ -128,6 +131,7 @@ class ReifierDeactivationTest {
         Case("SPARQL-based constraint component", prop("ex:badp 1 {D}"), "{F} ex:p 1 ."),
         // Node shapes.
         Case("node shape: node", node("sh:node ex:N {D}"), "{F} ex:p 1 ."),
+        Case("node shape: shape", node("sh:shape ex:N {D}"), "{F} ex:p 1 ."),
         Case("node shape: nodeByExpression", node("sh:nodeByExpression ex:N {D}"), "{F} ex:p 1 ."),
         Case("node shape: class", node("sh:class ex:C {D}"), "{F} ex:p 1 ."),
         Case("node shape: datatype", node("sh:datatype xsd:string {D}"), "{F} ex:p 1 ."),
@@ -211,6 +215,41 @@ class ReifierDeactivationTest {
         )) {
             assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 ; ex:k 1 . ex:b ex:k 1 .", shapes) }, shapes)
         }
+    }
+
+    /** The predicate of the triple of [shapes] that carries `{D}`, such as `sh:minCount` in `ex:P sh:path ex:p ; sh:minCount 2 {D}`. */
+    private fun annotatedPredicate(shapes: String): Iri {
+        val name = shapes.substringBefore("{D}").substringAfterLast(" ; ").trim().substringBefore(' ')
+        return when {
+            name.startsWith("sh:") -> Iri("http://www.w3.org/ns/shacl#" + name.removePrefix("sh:"))
+            name.startsWith("ex:") -> ex(name.removePrefix("ex:"))
+            else -> error("unexpected annotated predicate $name")
+        }
+    }
+
+    /**
+     * The hand-kept list of core constraint parameters ([ShapesCompiler.coreParameterPredicates]) is exactly the set of
+     * predicates whose triples the cases above deactivate, and contains every parameter Dynamic SHACL may compute. A
+     * parameter missing from the list would still be deactivated by the compiler, but its reifier would be reported
+     * as having no effect, and the shapes its expression reads would escape feature detection.
+     */
+    @Test
+    fun `the core parameter list matches the parameters a reifier deactivates`() {
+        val problems = ArrayList<String>()
+        val covered = LinkedHashSet<Iri>()
+        for (case in cases) {
+            val predicate = annotatedPredicate(case.shapes)
+            // A parameter of a SPARQL-based component is one by its declaration, not by the core list.
+            if (predicate.value.startsWith("http://www.w3.org/ns/shacl#")) covered.add(predicate)
+            val data = "ex:a ex:skip true .\n" + listOf("a", "b").joinToString("\n") { f -> case.data.replace("{F}", "ex:$f").replace("{V}", "ex:${f}_v") }
+            val report = validate("jena", data, case.shapes.replace("{D}", "{| sh:deactivated true |}"))
+            report.warnings.filter { "has no effect" in it.message }.forEach { problems.add("${case.name}: ${it.message}") }
+        }
+        assertTrue(problems.isEmpty(), problems.joinToString("\n"))
+        val listed = ShapesCompiler.coreParameterPredicates
+        assertEquals(emptySet<Iri>(), covered - listed, "deactivated, but not in coreParameterPredicates")
+        assertEquals(emptySet<Iri>(), listed - covered, "in coreParameterPredicates, but no case shows that a reifier deactivates it")
+        assertEquals(emptySet<Iri>(), DynamicParameters.predicates - listed, "computable (Dynamic SHACL), but not in coreParameterPredicates")
     }
 
     // --- recursion: a shape read by a reifier's expression is a negative dependency -------------------------------------

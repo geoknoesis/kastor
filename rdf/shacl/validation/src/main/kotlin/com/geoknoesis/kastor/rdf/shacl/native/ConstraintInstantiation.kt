@@ -26,7 +26,10 @@ internal data class ComponentExtras(
  */
 internal object ConstraintInstantiation {
 
-    /** Builds the constant constraint; throws ShapeCompileException on an ill-typed value. Null = no constraint. */
+    /**
+     * Builds the constant constraint; throws ShapeCompileException on an ill-typed value. Null = no constraint. For
+     * computed values, `resolveDynamic` wraps that error in a "Dynamic SHACL: …" ShaclValidationException.
+     */
     @Suppress("UNUSED_PARAMETER")
     fun instantiate(component: DynamicComponent, values: Map<Iri, List<RdfTerm>>, extras: ComponentExtras, config: ValidationConfig): PropertyConstraint? {
         fun single(): RdfTerm = values[component.parameters.single()]?.singleOrNull()

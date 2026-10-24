@@ -92,7 +92,8 @@ private fun checkedOutputs(parameter: Iri, outputs: List<RdfTerm>, focus: RdfTer
             else -> fail("produced ${outputs.size} nodes; exactly one is required")
         }
         ParameterShape.IRI_OR_LIST -> if (outputs.isEmpty()) fail("produced no nodes; at least one is required")
-        ParameterShape.LIST, null -> Unit
+        ParameterShape.LIST -> Unit
+        null -> error("$name is not a dynamic parameter")
     }
     for (node in outputs) {
         ConstraintInstantiation.outputError(parameter, node, outputs.size)?.let { fail("produced the invalid value $node: $it") }

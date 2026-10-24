@@ -414,7 +414,7 @@ internal object ShapesCompiler {
      * a triple with one of these, or with the path of a parameter of a SPARQL-based component, deactivates the
      * constraints that use the triple (§3.1.6).
      */
-    private val coreParameterPredicates: Set<Iri> by lazy {
+    internal val coreParameterPredicates: Set<Iri> by lazy {
         setOf(
             SHACL.`class`, SHACL.datatype, SHACL.nodeKind, SHACL.minCount, SHACL.maxCount,
             SHACL.minExclusive, SHACL.minInclusive, SHACL.maxExclusive, SHACL.maxInclusive,
@@ -795,6 +795,15 @@ internal object ShapesCompiler {
             true
         }
 
+    /**
+     * True when [term], the value of a constraint parameter Dynamic SHACL may compute (§8), is a call `[ fn ( … ) ]`
+     * of a function the engine does not know: an expression it cannot evaluate, so an unsupported feature like one at
+     * any other expression position. Any other blank node that is no node expression is not one at all, and makes the
+     * shapes graph ill-formed ([DynamicParameters.value]).
+     */
+    private fun isUnsupportedParameterExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
+        term is BlankNode && callPredicate(term, index) != null && !isSupportedExpression(term, index)
+
     private val shapeReferencePredicates: List<Iri> by lazy {
         listOf(
             SHACL.`property`, SHACL.node, SHACL.`not`, SHACL.qualifiedValueShape, SHACL.someValue, SHACL.memberShape,
@@ -808,8 +817,8 @@ internal object ShapesCompiler {
     /**
      * [roots] and every node reachable from them through shape-valued parameters (a constant `sh:nodeByExpression`
      * IRI included) and through the shapes of the node expressions at `sh:values`, `sh:defaultValue`, `sh:targetNode`,
-     * `sh:expression` and `sh:nodeByExpression` ([NodeExpressions.shapeRefs]). The candidates of computed shape
-     * references are not followed: [Reach.needsCandidates] tells whether there are any.
+     * `sh:expression`, `sh:nodeByExpression` and the computed constraint parameters ([NodeExpressions.shapeRefs]).
+     * The candidates of computed shape references are not followed: [Reach.needsCandidates] tells whether there are any.
      */
     private fun shapeReachableNodes(
         index: ShapeGraphIndex,
@@ -866,8 +875,10 @@ internal object ShapesCompiler {
         return Reach(out, needsCandidates)
     }
 
+    /** Shape predicates whose values may be node expressions, including the parameters Dynamic SHACL computes (§8). */
     private val expressionPositions: List<Iri> by lazy {
-        listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode, shExpression, SHACL.deactivated)
+        listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode, shExpression, SHACL.deactivated) +
+            DynamicParameters.predicates
     }
 
     /**
@@ -964,6 +975,8 @@ internal object ShapesCompiler {
                 "sh:targetNode with a node expression on ${t.subject}" to expression(t.obj)
             t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
                 "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
+            t.predicate in DynamicParameters.predicates && isUnsupportedParameterExpression(t.obj, index) ->
+                "${DynamicParameters.displayName(t.predicate)} node expression on ${t.subject}" to expression(t.obj)
             // SHACL 1.2 Core §3.1.6: the sh:deactivated of a shape, or of a reifier of a parameter triple (one
             // constraint), may be any node expression.
             t.predicate == SHACL.deactivated && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
@@ -1006,14 +1019,16 @@ internal object ShapesCompiler {
         if (c.unwrapped() is PropertyConstraint.NodeByExpressionComputed) exprShapes.allCandidates else emptyList()
 
     /**
-     * The node expressions [c] evaluates: `sh:expression`, a computed `sh:nodeByExpression`, the non-constant
-     * `sh:deactivated` of a SPARQL-based constraint, and the non-constant `sh:deactivated` of the reifiers of its
-     * parameter triples ([PropertyConstraint.Deactivatable]).
+     * The node expressions [c] evaluates: `sh:expression`, a computed `sh:nodeByExpression`, the computed parameters of
+     * a [PropertyConstraint.Dynamic] (SHACL 1.2 Node Expressions §8), the non-constant `sh:deactivated` of a
+     * SPARQL-based constraint, and the non-constant `sh:deactivated` of the reifiers of its parameter triples
+     * ([PropertyConstraint.Deactivatable]).
      */
     internal fun constraintExpressions(c: PropertyConstraint): List<NodeExpression> =
         when (c) {
             is PropertyConstraint.Expression -> listOf(c.expr)
             is PropertyConstraint.NodeByExpressionComputed -> listOf(c.expr)
+            is PropertyConstraint.Dynamic -> c.expressions
             is PropertyConstraint.Sparql -> listOfNotNull(c.deactivatedWhen)
             is PropertyConstraint.Deactivatable -> c.deactivatedWhen + constraintExpressions(c.constraint)
             else -> emptyList()
@@ -1299,6 +1314,8 @@ internal object ShapesCompiler {
         // SHACL 1.2 Node Expressions §8: a constant value is the constant constraint, as ever; a value a node expression
         // computes is a Dynamic one, instantiated per focus node. Both use the parameter triple for reifier deactivation.
         fun scalar(component: DynamicComponent, pred: Iri, term: RdfTerm) {
+            // An unsupported expression (see detectUnsupportedFeatures), ignored with a warning, has no constraint.
+            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(term, index)) return
             when (val value = DynamicParameters.value(subject, pred, term, index)) {
                 is ParameterValue.Constant ->
                     ConstraintInstantiation.instantiate(component, mapOf(pred to listOf(term)), ComponentExtras(), config)?.let { add(it, pred to term) }

@@ -52,6 +52,9 @@ class DynamicShaclTest {
     @Suppress("unused")
     private fun validateSelf(provider: String, ttl: String) = g(ttl).let { NativeShaclValidator(ValidationConfig.default()) { repository(provider) }.validate(it, it) }
 
+    private fun unsupported(error: Throwable): Set<UnsupportedShaclFeature> =
+        generateSequence(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first().features
+
     /** A property shape on ex:path ex:v with [body], for the focus node ex:a. */
     private fun prop(body: String) = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:v ; $body ] ."
 
@@ -104,7 +107,9 @@ class DynamicShaclTest {
         assertEquals(ConstraintType.MAX_COUNT, v.constraint.constraintType)
         // The scope is empty: the variable "value" is unbound, so the parameter has no output node.
         val byValue = "ex:S a sh:NodeShape ; sh:targetNode ex:f ; sh:property [ sh:path ex:item ; sh:maxCount [ shnex:var \"value\" ] ] ."
-        assertThrows(ShaclValidationException::class.java) { validate(provider, data, byValue) }
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, data, byValue) }
+        val message = error.message.orEmpty()
+        assertTrue("Dynamic SHACL" in message && "sh:maxCount" in message && "no nodes" in message, message)
     }
 
     // --- output rules (D6) ----------------------------------------------------------------------------------------------
@@ -148,7 +153,117 @@ class DynamicShaclTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a dynamic failure inside sh not stays a failure`(provider: String) {
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:not [ sh:property [ sh:path ex:p ; sh:minCount [ shnex:pathValues ex:none ] ] ] ."
-        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+        val message = error.message.orEmpty()
+        assertTrue("Dynamic SHACL" in message && "no nodes" in message, message)
+        assertTrue(generateSequence<Throwable>(error) { it.cause }.none { it is ShapeCompileException }, error.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a dynamic parameter on a node shape reads the focus node`(provider: String) {
+        val inclusive = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:maxInclusive [ shnex:pathValues ex:lim ] ."
+        val v = validate(provider, "ex:a ex:lim 3 .", inclusive).violations.single()
+        assertEquals(ex("a") to ex("a"), v.focusNode to v.value)
+        assertEquals(ConstraintType.MAX_INCLUSIVE, v.constraint.constraintType)
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:b ex:lim 3 .", inclusive) }
+        val message = error.message.orEmpty()
+        assertTrue("Dynamic SHACL" in message && "sh:maxInclusive" in message && "no nodes" in message, message)
+        // The IRIs ex:a and ex:b are 23 characters long: the limit read from each focus node decides.
+        val length = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:maxLength [ shnex:pathValues ex:lim ] ."
+        val report = validate(provider, "ex:a ex:lim 100 . ex:b ex:lim 5 .", length)
+        assertEquals(listOf(ex("b") to ConstraintType.MAX_LENGTH), report.violations.map { it.focusNode to it.constraint.constraintType })
+    }
+
+    // --- shape closure, recursion and detection -------------------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a parameter expression's shapes are compiled`(provider: String) {
+        // ex:Big is reachable only from the expression at sh:maxCount: every part must be big.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:c ; sh:property [ sh:path ex:part ;
+              sh:maxCount [ shnex:count [ shnex:filterShape ex:Big ; shnex:nodes [ shnex:pathValues ex:part ] ] ] ] .
+            ex:Big sh:property [ sh:path ex:size ; sh:minInclusive 10 ] .
+        """
+        val data = "ex:a ex:part ex:p1 , ex:p2 . ex:c ex:part ex:p1 , ex:p3 . ex:p1 ex:size 20 . ex:p2 ex:size 30 . ex:p3 ex:size 1 ."
+        val v = validate(provider, data, shapes).violations.single()
+        assertEquals(ex("c") to ConstraintType.MAX_COUNT, v.focusNode to v.constraint.constraintType)
+    }
+
+    /** ex:S counts the ex:p values that conform to ex:S itself: a non-monotone read of ex:S (R16). */
+    private val selfCount = """
+        ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ;
+          sh:minCount [ shnex:count [ shnex:filterShape ex:S ; shnex:nodes [ shnex:pathValues ex:p ] ] ] ] .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a data cycle through a parameter expression is a failure`(provider: String) {
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p ex:a .", selfCount) }
+        assertTrue("undefined" in error.message.orEmpty(), error.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an acyclic recursive read through a parameter expression is decided`(provider: String) {
+        // ex:b has no ex:p, so it conforms; ex:a has one value, ex:b, so sh:minCount 1 holds.
+        assertTrue(validate(provider, "ex:a ex:p ex:b .", selfCount).violations.isEmpty())
+        // Every ex:p value must conform to ex:S2 (sh:maxCount = the number that do): ex:c fails ex:bad, so ex:b and
+        // then ex:a fail.
+        val allConform = """
+            ex:S2 a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:bad ; sh:maxCount 0 ] ;
+              sh:property [ sh:path ex:p ; sh:maxCount [ shnex:count [ shnex:filterShape ex:S2 ; shnex:nodes [ shnex:pathValues ex:p ] ] ] ] .
+        """
+        val report = validate(provider, "ex:a ex:p ex:b . ex:b ex:p ex:c . ex:c ex:bad 1 .", allConform)
+        assertTrue(report.violations.none { it.isUndefinedRecursion }, report.violations.toString())
+        assertEquals(listOf(ex("a") to ConstraintType.MAX_COUNT), report.violations.map { it.focusNode to it.constraint.constraintType })
+        assertTrue(validate(provider, "ex:a ex:p ex:b . ex:b ex:p ex:c .", allConform).violations.isEmpty())
+    }
+
+    @Test
+    fun `an unsupported feature inside a shape reached only through a parameter expression is detected`() {
+        val shapes = prop("sh:minCount [ shnex:count [ shnex:filterShape ex:Hidden ; shnex:nodes [ shnex:pathValues ex:v ] ] ]") +
+            "\nex:Hidden sh:target [ a ex:CustomTarget ] ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", shapes) }
+        assertEquals(setOf(UnsupportedShaclFeature.CUSTOM_TARGET), unsupported(error))
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:a ex:v 1 .", shapes, ignore)
+        assertTrue(report.warnings.any { "Unsupported SHACL feature ignored" in it.message && "sh:target" in it.message }, report.warnings.toString())
+    }
+
+    @Test
+    fun `a call of an undeclared function at a dynamic parameter is an unsupported feature`() {
+        val shapes = prop("sh:minCount [ ex:undeclared ( 1 ) ]")
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:v 1 .", shapes) }
+        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported(error))
+        assertTrue("sh:minCount" in error.message.orEmpty(), error.message)
+        // Ignored, the parameter has no constraint.
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val report = validate("jena", "ex:b ex:v 1 .", shapes, ignore)
+        assertTrue(report.warnings.any { "Unsupported SHACL feature ignored" in it.message && "sh:minCount" in it.message }, report.warnings.toString())
+        assertTrue(report.violations.isEmpty(), report.violations.toString())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a dynamic parameter in a recursive shape reports provisional answers as undefined, not violations`(provider: String) {
+        // ex:S is recursive (sh:node through ex:p, and the expression's read of ex:T, which is ex:S). While the solver
+        // iterates, the conformance of ex:b and ex:c is provisional: the dynamic sh:maxCount must not turn it into a
+        // violation. Decided: ex:b conforms, ex:c fails ex:S (ex:bad), so one of the two ex:q values is a T: maxCount 1.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:node ex:S ] ;
+              sh:property [ sh:path ex:bad ; sh:maxCount 0 ] ;
+              sh:property [ sh:path ex:q ; sh:maxCount [ shnex:count [ shnex:filterShape ex:T ; shnex:nodes [ shnex:pathValues ex:q ] ] ] ] .
+            ex:T sh:node ex:S .
+        """
+        val report = validate(provider, "ex:a ex:p ex:b ; ex:q ex:b , ex:c . ex:c ex:bad 1 .", shapes)
+        assertTrue(report.violations.none { it.isUndefinedRecursion }, report.violations.toString())
+        assertEquals(listOf(ex("a") to ConstraintType.MAX_COUNT), report.violations.map { it.focusNode to it.constraint.constraintType })
+        // ex:b fails ex:S too: no value is a T, so sh:maxCount 0 fails, and so does the sh:node.
+        val worse = validate(provider, "ex:a ex:p ex:b ; ex:q ex:b , ex:c . ex:b ex:bad 1 . ex:c ex:bad 1 .", shapes)
+        assertTrue(worse.violations.none { it.isUndefinedRecursion }, worse.violations.toString())
+        assertEquals(
+            setOf(ex("a") to ConstraintType.MAX_COUNT, ex("a") to ConstraintType.NODE),
+            worse.violations.map { it.focusNode to it.constraint.constraintType }.toSet(),
+            worse.violations.toString(),
+        )
     }
 
     // --- recognition (D4) -----------------------------------------------------------------------------------------------
