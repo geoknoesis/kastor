@@ -114,8 +114,8 @@ internal fun NativeShaclValidator.countConstraintEvaluationSlots(shape: Compiled
     val perFocus = shape.nodeConstraints.size.toLong() +
         shape.propertyShapes.sumOf { it.constraints.size.toLong() + it.logicalParts.size } +
         shape.logicalParts.size + shape.nodeRefs.size + shape.nodeByExpressionRefs.size +
-        if (config.validateClosedShapes && shape.closed != ClosedMode.NONE) 1 else 0
+        if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null)) 1 else 0
     var slots = focusCount * perFocus
-    if (shape.uniqueValuesForProps.isNotEmpty()) slots += 1
+    if (shape.uniqueValuesForProps.isNotEmpty() || shape.uniqueValuesForParameter != null) slots += 1
     return slots
 }

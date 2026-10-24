@@ -80,11 +80,14 @@ internal fun NativeShaclValidator.resolveDynamic(
     }
 }
 
+/** The failure of the computed [parameter] of [shape] at [focus]: its outputs break the parameter's rules (D6). */
+internal fun dynamicParameterFailure(parameter: Iri, shape: RdfResource, focus: RdfTerm, problem: String): Nothing =
+    throw ShaclValidationException("Dynamic SHACL: ${DynamicParameters.displayName(parameter)} of shape ${shape.displayId()} $problem, for focus node $focus")
+
 /** [outputs] of the computed [parameter], when their number and every node fit it (D6); otherwise a failure. */
-private fun checkedOutputs(parameter: Iri, outputs: List<RdfTerm>, focus: RdfTerm, shape: RdfResource): List<RdfTerm> {
+internal fun checkedOutputs(parameter: Iri, outputs: List<RdfTerm>, focus: RdfTerm, shape: RdfResource): List<RdfTerm> {
     val name = DynamicParameters.displayName(parameter)
-    fun fail(problem: String): Nothing =
-        throw ShaclValidationException("Dynamic SHACL: $name of shape ${shape.displayId()} $problem, for focus node $focus")
+    fun fail(problem: String): Nothing = dynamicParameterFailure(parameter, shape, focus, problem)
     when (DynamicParameters.shapeOf(parameter)) {
         ParameterShape.SINGLE -> when (outputs.size) {
             1 -> Unit

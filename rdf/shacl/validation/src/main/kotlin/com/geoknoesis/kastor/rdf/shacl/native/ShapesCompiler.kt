@@ -292,6 +292,18 @@ internal data class CompiledNodeShape(
     val closedAllowedPredicates: Set<Iri> = emptySet(),
     /** Per focus node deactivation of parameter triples by reifiers, other than [nodeConstraints]: see [ReifierConditions]. */
     val reifierConditions: ReifierConditions = ReifierConditions.NONE,
+    /**
+     * A computed `sh:closed` (SHACL 1.2 Node Expressions §8), resolved per focus node to a [ClosedMode]; [closed] is then
+     * [ClosedMode.NONE].
+     */
+    val closedParameter: ParameterValue.Computed? = null,
+    /**
+     * A computed `sh:ignoredProperties` (§8), whose outputs are ignored besides [ignoredProperties]; only when the shape
+     * may be closed ([closed] or [closedParameter]).
+     */
+    val ignoredParameter: ParameterValue.Computed? = null,
+    /** A computed `sh:uniqueValuesFor` (§8), resolved per focus node; [uniqueValuesForProps] is then empty. */
+    val uniqueValuesForParameter: ParameterValue.Computed? = null,
 )
 
 /**
@@ -643,7 +655,8 @@ internal object ShapesCompiler {
 
     /** The node expressions [cn] evaluates apart from its constraints' and its targets' (see the other overload). */
     private fun shapeExpressions(cn: CompiledNodeShape): List<NodeExpression> =
-        listOfNotNull(cn.deactivatedWhen) + cn.logicalParts.flatMap { it.deactivatedWhen } + cn.reifierConditions.expressions()
+        listOfNotNull(cn.deactivatedWhen) + cn.logicalParts.flatMap { it.deactivatedWhen } + cn.reifierConditions.expressions() +
+            listOfNotNull(cn.closedParameter, cn.ignoredParameter, cn.uniqueValuesForParameter).map { it.expr }
 
     /** The shapes [expr] of [index] can validate against ([ExpressionShapes]), for expressions evaluated outside validation. */
     fun expressionShapes(expr: NodeExpression, index: ShapeGraphIndex): Set<RdfResource> = ExpressionShapes(index).of(expr)
@@ -1202,14 +1215,30 @@ internal object ShapesCompiler {
         val closedConditions = reifierDeactivation(
             subject, closedTerms.map { SHACL.closed to it } + ignoredTerms.map { SHACL.ignoredProperties to it }, index,
         )
+        // SHACL 1.2 Node Expressions §8: either parameter may be computed. Null = an unsupported expression ignored with
+        // a warning, which leaves the constraint out.
+        val closedValues = closedTerms.map { parameterValue(subject, SHACL.closed, it, index, config) }
+        val ignoredValues = ignoredTerms.map { parameterValue(subject, SHACL.ignoredProperties, it, index, config) }
+        val closedComputed = closedValues.filterIsInstance<ParameterValue.Computed>()
+        if (closedComputed.isNotEmpty() && closedTerms.size > 1) {
+            throw ShapeCompileException("Shape $subject has ${closedTerms.size} values for sh:closed; a computed sh:closed must be the only one")
+        }
+        val ignoredComputed = ignoredValues.filterIsInstance<ParameterValue.Computed>()
+        if (ignoredComputed.size > 1) {
+            throw ShapeCompileException("Shape $subject has ${ignoredComputed.size} computed sh:ignoredProperties values; at most one is allowed")
+        }
+        val closedActive = closedConditions != null && closedValues.none { it == null } && ignoredValues.none { it == null }
+        val closedParameter = closedComputed.singleOrNull()?.takeIf { closedActive }
         val closedMode =
             when {
-                closedConditions == null -> ClosedMode.NONE
+                !closedActive || closedParameter != null -> ClosedMode.NONE
                 closedTerms.contains(SHACL.ByTypes) -> ClosedMode.BY_TYPES
                 closedTerms.any { isLexicallyTrue(it) } -> ClosedMode.TRUE
                 else -> ClosedMode.NONE
             }
-        val ignored = ignoredTerms.flatMap { term ->
+        val closedMayApply = closedMode != ClosedMode.NONE || closedParameter != null
+        // The constant values, checked whatever sh:closed is, as ever.
+        val ignored = ignoredTerms.zip(ignoredValues).filter { it.second is ParameterValue.Constant }.flatMap { (term, _) ->
             when (term) {
                 is Iri -> listOf(term)
                 is BlankNode -> index.parseRdfList(term).filterIsInstance<Iri>()
@@ -1226,7 +1255,15 @@ internal object ShapesCompiler {
         val nodeConstraints = compileConstraints(subject, index, config, ConstraintFlavor.NODE_SCALAR, null)
         val uniqueValuesForConditions =
             reifierDeactivation(subject, index.objects(subject, SHACL.uniqueValuesFor).map { SHACL.uniqueValuesFor to it }, index)
-        val uniqueValuesForProps = parseUniqueValuesFor(subject, index).takeIf { uniqueValuesForConditions != null }.orEmpty()
+        // A computed value (§8) is resolved per focus node; null = an unsupported expression ignored with a warning.
+        val uniqueValuesForValue = uniqueValuesForValue(subject, index, config)
+        val uniqueValuesForParameter = (uniqueValuesForValue as? ParameterValue.Computed)?.takeIf { uniqueValuesForConditions != null }
+        val uniqueValuesForProps =
+            if (uniqueValuesForValue is ParameterValue.Constant) {
+                parseUniqueValuesFor(subject, index).takeIf { uniqueValuesForConditions != null }.orEmpty()
+            } else {
+                emptyList()
+            }
 
         return CompiledNodeShape(
             deactivatedWhen = deactivationExpression(subject, index),
@@ -1247,9 +1284,13 @@ internal object ShapesCompiler {
             closedAllowedPredicates = closedAllowedPredicates,
             reifierConditions = ReifierConditions(
                 links = links,
-                closed = closedConditions.orEmpty().takeIf { closedMode != ClosedMode.NONE }.orEmpty(),
-                uniqueValuesFor = uniqueValuesForConditions.orEmpty().takeIf { uniqueValuesForProps.isNotEmpty() }.orEmpty(),
+                closed = closedConditions.orEmpty().takeIf { closedMayApply }.orEmpty(),
+                uniqueValuesFor = uniqueValuesForConditions.orEmpty()
+                    .takeIf { uniqueValuesForProps.isNotEmpty() || uniqueValuesForParameter != null }.orEmpty(),
             ),
+            closedParameter = closedParameter,
+            ignoredParameter = ignoredComputed.singleOrNull()?.takeIf { closedMayApply },
+            uniqueValuesForParameter = uniqueValuesForParameter,
         )
     }
 
@@ -1324,14 +1365,7 @@ internal object ShapesCompiler {
             val conditions = reifierDeactivation(subject, triples.mapNotNull { (p, o) -> o?.let { p to it } }, index) ?: return
             constraints.add(if (conditions.isEmpty()) c else PropertyConstraint.Deactivatable(c, conditions))
         }
-        // The value of the parameter [pred] (SHACL 1.2 Node Expressions §8), or null for an unsupported expression (see
-        // detectUnsupportedFeatures) ignored with a warning: the constraints that take it are left out.
-        fun valueOf(pred: Iri, term: RdfTerm): ParameterValue? =
-            if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)) {
-                null
-            } else {
-                DynamicParameters.value(subject, pred, term, index)
-            }
+        fun valueOf(pred: Iri, term: RdfTerm): ParameterValue? = parameterValue(subject, pred, term, index, config)
         // A component with several parameters, from their [values] (absent ones are not keys): the constant constraint
         // when every value is a constant, else a Dynamic one. [triples] are its parameter triples, for reifier
         // deactivation.
@@ -1551,6 +1585,25 @@ internal object ShapesCompiler {
             add(c, *c.parameterTriples.toTypedArray())
         }
         return constraints
+    }
+
+    /**
+     * The value [term] of the parameter [pred] of [subject] (SHACL 1.2 Node Expressions §8, [DynamicParameters.value]),
+     * or null for an unsupported expression (see detectUnsupportedFeatures) ignored with a warning: the constraints that
+     * take it are left out.
+     */
+    private fun parameterValue(subject: RdfResource, pred: Iri, term: RdfTerm, index: ShapeGraphIndex, config: ValidationConfig): ParameterValue? =
+        if (config.unsupportedFeatures == UnsupportedFeatureHandling.IGNORE_WITH_WARNING && isUnsupportedParameterExpression(pred, term, index)) {
+            null
+        } else {
+            DynamicParameters.value(subject, pred, term, index)
+        }
+
+    /** The `sh:uniqueValuesFor` of [subject], if any ([parameterValue]); at most one is allowed. */
+    private fun uniqueValuesForValue(subject: RdfResource, index: ShapeGraphIndex, config: ValidationConfig): ParameterValue? {
+        val values = index.objects(subject, SHACL.uniqueValuesFor)
+        if (values.size > 1) throw ShapeCompileException("Shape $subject has several sh:uniqueValuesFor values; at most one is allowed")
+        return values.firstOrNull()?.let { parameterValue(subject, SHACL.uniqueValuesFor, it, index, config) }
     }
 
     private fun parseUniqueValuesFor(subject: RdfResource, index: ShapeGraphIndex): List<Iri> {

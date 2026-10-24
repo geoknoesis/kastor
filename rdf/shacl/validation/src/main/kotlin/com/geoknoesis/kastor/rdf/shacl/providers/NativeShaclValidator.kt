@@ -355,7 +355,7 @@ internal class NativeShaclValidator(
                     undecidedTargets = undecided
                 }
                 record(if (focusOnly == null) undecidedTargets else undecidedTargets.filter { it.focusNode == focusOnly })
-                if (shape.uniqueValuesForProps.isNotEmpty()) {
+                if (shape.uniqueValuesForProps.isNotEmpty() || shape.uniqueValuesForParameter != null) {
                     val (rows, count) = validateUniqueValuesForShape(shape, allFocusNodes, focusOnly, ctx, config.maxViolations - violations.size)
                     violations.addAll(rows)
                     totalResults += count

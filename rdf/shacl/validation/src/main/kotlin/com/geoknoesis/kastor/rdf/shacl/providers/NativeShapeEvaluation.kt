@@ -88,10 +88,19 @@ internal fun NativeShaclValidator.validateNodeShape(
         if (sink.stop) return
     }
 
-    if (config.validateClosedShapes && shape.closed != ClosedMode.NONE && focus is RdfResource &&
+    // The reifiers' deactivation first, then the computed parameters (SHACL 1.2 Node Expressions §8), if any.
+    if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null) && focus is RdfResource &&
         !reifierDeactivated(reifiers.closed, focus, tpl, ConstraintType.CLOSED, ctx, state, sink)
     ) {
-        sink.failAll(validateClosed(focus, shape, tpl, ctx, firstOnly = !sink.reports))
+        val resolved = try {
+            resolveClosed(focus, shape, ctx, state.depth)
+        } catch (e: ProvisionalUndefined) {
+            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.CLOSED, null, e.node, e.shape)
+            null
+        }
+        if (resolved != null && resolved.first != ClosedMode.NONE) {
+            sink.failAll(validateClosed(focus, shape, resolved.first, resolved.second, tpl, ctx, firstOnly = !sink.reports))
+        }
     }
 }
 

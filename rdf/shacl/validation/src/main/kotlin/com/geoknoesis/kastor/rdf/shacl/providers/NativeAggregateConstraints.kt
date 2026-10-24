@@ -1,32 +1,73 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.SHACL
+import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.native.ClosedMode
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.constraintStub
+import com.geoknoesis.kastor.rdf.shacl.native.isLexicallyTrue
 import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
 
-/** The results of a closed shape; with [firstOnly] (the answer is all that is needed) only the first one. */
+/**
+ * The `sh:closed` mode and the ignored properties of [shape] at [focus]: the constants, or the values its computed
+ * `sh:closed` and `sh:ignoredProperties` produce (SHACL 1.2 Node Expressions §8), evaluated with the focus node at the
+ * shape nesting [depth]. A computed `sh:closed` must produce exactly one node, `true` (TRUE), another `xsd:boolean`
+ * (NONE) or `sh:ByTypes` (BY_TYPES); the outputs of a computed `sh:ignoredProperties`, evaluated only when the shape is
+ * closed, must be IRIs, and are ignored with the constant ones. Any other output is a validation failure.
+ */
+internal fun NativeShaclValidator.resolveClosed(
+    focus: RdfResource,
+    shape: CompiledNodeShape,
+    ctx: NativeValidationContext,
+    depth: Int,
+): Pair<ClosedMode, Set<Iri>> {
+    val mode = shape.closedParameter?.let { parameter ->
+        val node = checkedOutputs(SHACL.closed, evaluateComputed(parameter.expr, focus, ctx, depth), focus, shape.shapeNode).single()
+        when {
+            isLexicallyTrue(node) -> ClosedMode.TRUE
+            node == SHACL.ByTypes -> ClosedMode.BY_TYPES
+            // R5: only "true"^^xsd:boolean is true; "false", "0" and "1" are well-typed and not true.
+            node is Literal && node.datatype == XSD.boolean && node.lexical in BOOLEAN_LEXICALS -> ClosedMode.NONE
+            else -> dynamicParameterFailure(
+                SHACL.closed, shape.shapeNode, focus, "produced the invalid value $node: sh:closed expects true, false or sh:ByTypes",
+            )
+        }
+    } ?: shape.closed
+    val computed = shape.ignoredParameter
+    if (mode == ClosedMode.NONE || computed == null) return mode to shape.ignoredProperties
+    val outputs = checkedOutputs(SHACL.ignoredProperties, evaluateComputed(computed.expr, focus, ctx, depth), focus, shape.shapeNode)
+    return mode to (shape.ignoredProperties + outputs.map { it as Iri })
+}
+
+private val BOOLEAN_LEXICALS = setOf("true", "false", "1", "0")
+
+/**
+ * The results of a closed shape, of the [mode] and the [ignored] properties [resolveClosed] gives; with [firstOnly]
+ * (the answer is all that is needed) only the first one.
+ */
 internal fun validateClosed(
     focus: RdfResource,
     shape: CompiledNodeShape,
+    mode: ClosedMode,
+    ignored: Set<Iri>,
     tpl: ResultTemplate,
     ctx: NativeValidationContext,
     firstOnly: Boolean,
 ): List<ValidationViolation> {
     val allowed = mutableSetOf<Iri>()
-    allowed.addAll(shape.ignoredProperties)
-    if (shape.closed == ClosedMode.BY_TYPES || RDF.type in shape.ignoredProperties) {
+    allowed.addAll(ignored)
+    if (mode == ClosedMode.BY_TYPES || RDF.type in ignored) {
         allowed.add(RDF.type)
     }
-    when (shape.closed) {
+    when (mode) {
         // SHACL §4.8.1: the IRIs used as sh:path of every sh:property value (deactivated ones included).
         ClosedMode.TRUE -> allowed.addAll(shape.closedAllowedPredicates)
         ClosedMode.BY_TYPES -> allowed.addAll(collectClosedByTypesProperties(focus, ctx))
@@ -97,6 +138,11 @@ private fun collectClosedByTypesProperties(focus: RdfResource, ctx: NativeValida
  * or of a reifier of its `sh:uniqueValuesFor` triple has no result (SHACL 1.2 Core §3.1.6: deactivated shapes and
  * constraints are ignored), but it stays one of the targets the keys are compared with: the
  * constraint is about the target set, which deactivation does not change.
+ *
+ * A computed `sh:uniqueValuesFor` (SHACL 1.2 Node Expressions §8) gives each focus node V its own properties
+ * ([resolveUniqueValuesFor]): V has a result when another target has the same values as V for all of them. The keys
+ * are built in one pass over the targets per distinct property list. Deactivation is checked before the properties
+ * are resolved.
  */
 internal fun NativeShaclValidator.validateUniqueValuesForShape(
     shape: CompiledNodeShape,
@@ -105,14 +151,14 @@ internal fun NativeShaclValidator.validateUniqueValuesForShape(
     ctx: NativeValidationContext,
     capacity: Int,
 ): Pair<List<ValidationViolation>, Long> {
-    val props = shape.uniqueValuesForProps
     val targets = focusNodes.filterIsInstance<RdfResource>()
     if (targets.size < 2) return emptyList<ValidationViolation>() to 0L
+    if (shape.uniqueValuesForParameter != null) return validateDynamicUniqueValuesFor(shape, targets, focusOnly, ctx, capacity)
+    val props = shape.uniqueValuesForProps
     val groups = LinkedHashMap<List<List<String>>, MutableList<RdfResource>>()
     for (t in targets) {
         ctx.budget.tick("uniqueValuesFor")
-        val key = props.map { p -> ctx.data.objects(t, p).map { shaclRdfTermFingerprint(it) }.sorted() }
-        if (key.all { it.isEmpty() }) continue
+        val key = uniqueValuesKey(t, props, ctx) ?: continue
         groups.getOrPut(key) { mutableListOf() }.add(t)
     }
     val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
@@ -121,10 +167,7 @@ internal fun NativeShaclValidator.validateUniqueValuesForShape(
     for (nodes in groups.values) {
         if (nodes.size < 2) continue
         val candidates = if (focusOnly == null) nodes else nodes.filter { it == focusOnly }
-        // The shape's own deactivation, and that of a reifier of its sh:uniqueValuesFor triple (Core §3.1.6).
-        val conditions = listOfNotNull(shape.deactivatedWhen) + shape.reifierConditions.uniqueValuesFor
-        val duplicates =
-            if (conditions.isEmpty()) candidates else candidates.filterNot { node -> conditions.any { deactivates(it, node, ctx, 0) } }
+        val duplicates = candidates.filterNot { uniqueValuesForDeactivated(shape, it, ctx) }
         count += duplicates.size
         for (node in duplicates) {
             ctx.budget.tick("uniqueValuesFor")
@@ -138,4 +181,73 @@ internal fun NativeShaclValidator.validateUniqueValuesForShape(
         }
     }
     return rows to count
+}
+
+/** The composite key of [target] for [props]: the values of each, compared as RDF terms; null when it has none. */
+private fun uniqueValuesKey(target: RdfResource, props: List<Iri>, ctx: NativeValidationContext): List<List<String>>? =
+    props.map { p -> ctx.data.objects(target, p).map { shaclRdfTermFingerprint(it) }.sorted() }.takeUnless { key -> key.all { it.isEmpty() } }
+
+/** Whether the shape, or a reifier of its `sh:uniqueValuesFor` triple, is deactivated for [node] (Core §3.1.6). */
+private fun NativeShaclValidator.uniqueValuesForDeactivated(shape: CompiledNodeShape, node: RdfResource, ctx: NativeValidationContext): Boolean {
+    val conditions = listOfNotNull(shape.deactivatedWhen) + shape.reifierConditions.uniqueValuesFor
+    return conditions.any { deactivates(it, node, ctx, 0) }
+}
+
+/**
+ * The properties a computed `sh:uniqueValuesFor` of [shape] gives [focus] (SHACL 1.2 Node Expressions §8): its outputs,
+ * at least one, all IRIs; anything else is a validation failure.
+ */
+internal fun NativeShaclValidator.resolveUniqueValuesFor(focus: RdfTerm, shape: CompiledNodeShape, ctx: NativeValidationContext): List<Iri> {
+    val parameter = checkNotNull(shape.uniqueValuesForParameter) { "sh:uniqueValuesFor of ${shape.shapeNode} is not computed" }
+    return checkedOutputs(SHACL.uniqueValuesFor, evaluateComputed(parameter.expr, focus, ctx, 0), focus, shape.shapeNode).map { it as Iri }
+}
+
+/** [validateUniqueValuesForShape] for a computed `sh:uniqueValuesFor`: each focus node is compared on its own properties. */
+private fun NativeShaclValidator.validateDynamicUniqueValuesFor(
+    shape: CompiledNodeShape,
+    targets: List<RdfResource>,
+    focusOnly: RdfResource?,
+    ctx: NativeValidationContext,
+    capacity: Int,
+): Pair<List<ValidationViolation>, Long> {
+    // The focus nodes with a result to find, and their properties; the order of the properties does not matter.
+    val byProps = LinkedHashMap<List<Iri>, MutableList<RdfResource>>()
+    for (focus in targets) {
+        if (focusOnly != null && focus != focusOnly) continue
+        if (uniqueValuesForDeactivated(shape, focus, ctx)) continue
+        val props = resolveUniqueValuesFor(focus, shape, ctx).distinct().sortedBy { it.value }
+        byProps.getOrPut(props) { ArrayList() }.add(focus)
+    }
+    val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
+    val duplicates = ArrayList<Pair<RdfResource, Int>>()
+    for ((props, foci) in byProps) {
+        // One pass over the targets per property list: how many targets share each key.
+        val keys = HashMap<RdfResource, List<List<String>>>()
+        val counts = HashMap<List<List<String>>, Int>()
+        for (t in targets) {
+            ctx.budget.tick("uniqueValuesFor")
+            val key = uniqueValuesKey(t, props, ctx) ?: continue
+            keys[t] = key
+            counts.merge(key, 1, Int::plus)
+        }
+        for (focus in foci) {
+            val shared = keys[focus]?.let { counts.getValue(it) } ?: continue
+            if (shared >= 2) duplicates.add(focus to shared)
+        }
+    }
+    // In target order, as for constant properties.
+    val order = HashMap<RdfResource, Int>().apply { targets.forEachIndexed { i, t -> putIfAbsent(t, i) } }
+    duplicates.sortBy { order.getValue(it.first) }
+    val rows = ArrayList<ValidationViolation>()
+    for ((node, shared) in duplicates) {
+        ctx.budget.tick("uniqueValuesFor")
+        if (rows.size >= capacity) break
+        rows.add(
+            violation(
+                node, tpl, constraintStub(ConstraintType.UNIQUE_VALUES_FOR),
+                "sh:uniqueValuesFor: composite key shared with ${shared - 1} other target(s)",
+            ),
+        )
+    }
+    return rows to duplicates.size.toLong()
 }

@@ -62,7 +62,20 @@ internal enum class DynamicComponent(val type: ConstraintType, val parameters: L
 /** Recognises computed parameter values (SHACL 1.2 Node Expressions §8). */
 internal object DynamicParameters {
     private val shapes: Map<Iri, ParameterShape> by lazy {
-        DynamicComponent.entries.flatMap { c -> c.parameters.map { it to c.shape } }.toMap()
+        DynamicComponent.entries.flatMap { c -> c.parameters.map { it to c.shape } }.toMap() + nodeShapeParameters
+    }
+
+    /**
+     * The parameters of node shapes that may be computed, which make no [PropertyConstraint]: `sh:closed` (D2: a
+     * single node, `true`, `false` or `sh:ByTypes`), `sh:ignoredProperties` (a list) and `sh:uniqueValuesFor` (an IRI or
+     * a list). The engine resolves them itself (`resolveClosed`, `resolveUniqueValuesFor`).
+     */
+    private val nodeShapeParameters: Map<Iri, ParameterShape> by lazy {
+        mapOf(
+            SHACL.closed to ParameterShape.SINGLE,
+            SHACL.ignoredProperties to ParameterShape.LIST,
+            SHACL.uniqueValuesFor to ParameterShape.IRI_OR_LIST,
+        )
     }
 
     /** How the outputs of a computed value of [predicate] make its value; null when [predicate] cannot be computed. */

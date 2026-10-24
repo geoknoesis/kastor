@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
+import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
@@ -778,5 +779,183 @@ class DynamicShaclTest {
         val report = validate("jena", "ex:a ex:a ex:x . ex:x ex:b 1 .", shapes, ignore)
         assertTrue(report.warnings.any { "sh:reificationRequired" in it.message }, report.warnings.toString())
         assertTrue(report.violations.isEmpty(), report.violations.toString())
+    }
+
+    // --- node-shape parameters: sh:closed, sh:ignoredProperties, sh:uniqueValuesFor --------------------------------------
+
+    /** A node shape on [targets], with the property ex:p, closed by [closed]; ex:strict and ex:mode are ignored. */
+    private fun closedShape(closed: String, extra: String = "", targets: String = "ex:a , ex:b") =
+        "ex:S a sh:NodeShape ; sh:targetNode $targets ; sh:property [ sh:path ex:p ] ; sh:closed $closed ; " +
+            "sh:ignoredProperties ( ex:strict ex:mode ) $extra ."
+
+    /** The focus node and the disallowed predicate of each sh:closed result of [report]. */
+    private fun closedResults(report: ValidationReport): List<Pair<RdfTerm?, String?>> {
+        assertTrue(report.violations.all { it.constraint.constraintType == ConstraintType.CLOSED }, report.violations.toString())
+        return report.violations.map { it.focusNode to it.constraint.path }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh closed`(provider: String) {
+        val strict = closedShape("[ shnex:if [ sparql:bound ( [ shnex:pathValues ex:strict ] ) ] ; shnex:then true ; shnex:else false ]")
+        val report = validate(provider, "ex:a ex:strict true ; ex:p 1 ; ex:q 2 . ex:b ex:p 1 ; ex:q 2 .", strict)
+        assertEquals(listOf(ex("a") to ex("q").value), closedResults(report))
+        // sh:ByTypes from the data: the type ex:T of ex:a is the target class of ex:TS, which declares ex:q; rdf:type is
+        // allowed. ex:b is not closed (false), ex:c is closed (true).
+        val byTypes = closedShape("[ shnex:pathValues ex:mode ]", targets = "ex:a , ex:b , ex:c") +
+            "\nex:T a rdfs:Class . ex:TS a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:q ] ."
+        val data = "ex:a a ex:T ; ex:mode sh:ByTypes ; ex:q 1 ; ex:r 2 . ex:b ex:mode false ; ex:r 2 . ex:c ex:mode true ; ex:p 1 ; ex:q 1 ."
+        assertEquals(setOf(ex("a") to ex("r").value, ex("c") to ex("q").value), closedResults(validate(provider, data, byTypes)).toSet())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh closed rejects other values`(provider: String) {
+        val shapes = closedShape("[ shnex:pathValues ex:mode ]", targets = "ex:a")
+        for (bad in listOf("\"maybe\"", "ex:iri", "\"true\"", "1")) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:mode $bad .", shapes) }, bad)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "sh:closed" in message && "invalid value" in message, "$bad: $message")
+        }
+        for ((data, count) in listOf("ex:a ex:p 1 ." to "no nodes", "ex:a ex:mode true , false ." to "2 nodes")) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, data, shapes) }, data)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "sh:closed" in message && count in message, "$data: $message")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh ignoredProperties`(provider: String) {
+        // The members of the constant lists and the outputs of the expression are ignored; no output is the empty list.
+        val shapes = closedShape("true", "; sh:ignoredProperties ( ex:extraAllowed ) , [ shnex:pathValues ex:extraAllowed ]")
+        val data = "ex:a ex:p 1 ; ex:extraAllowed ex:q ; ex:q 1 ; ex:r 1 . ex:b ex:p 1 ; ex:q 1 ."
+        assertEquals(setOf(ex("a") to ex("r").value, ex("b") to ex("q").value), closedResults(validate(provider, data, shapes)).toSet())
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:extraAllowed \"q\" .", shapes) }
+        val message = error.message.orEmpty()
+        assertTrue("Dynamic SHACL" in message && "sh:ignoredProperties" in message && "invalid value" in message, message)
+        // With sh:closed computed, both are evaluated per focus node.
+        val both = closedShape("[ shnex:pathValues ex:mode ]", "; sh:ignoredProperties [ shnex:pathValues ex:extraAllowed ]")
+        val bothData = "ex:a ex:mode true ; ex:extraAllowed ex:q ; ex:q 1 ; ex:r 1 . ex:b ex:mode false ; ex:r 1 ."
+        assertEquals(
+            listOf(ex("a") to ex("extraAllowed").value, ex("a") to ex("r").value),
+            closedResults(validate(provider, bothData, both)).sortedBy { it.second },
+        )
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `dynamic sh uniqueValuesFor`(provider: String) {
+        // Each focus node is compared, on its own properties, with every other target. Under [k1], ex:a shares "x" with
+        // ex:b; under [k1, k2], ex:b shares ("x", "3") with no one; under [k2], ex:e shares "2" with ex:c only. ex:c is
+        // deactivated per focus node by the reifier, but stays a target the others are compared with. ex:d, deactivated
+        // too, has no properties: deactivation is checked before they are resolved, so that does not fail.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor _:e {| sh:deactivated [ shnex:pathValues ex:skip ] |} .
+            _:e shnex:pathValues ex:keys .
+        """
+        val data = """
+            ex:a a ex:T ; ex:keys ex:k1 ; ex:k1 "x" ; ex:k2 "1" .
+            ex:b a ex:T ; ex:keys ex:k1 , ex:k2 ; ex:k1 "x" ; ex:k2 "3" .
+            ex:c a ex:T ; ex:keys ex:k2 ; ex:k1 "y" ; ex:k2 "2" ; ex:skip true .
+            ex:e a ex:T ; ex:keys ex:k2 ; ex:k2 "2" .
+            ex:d a ex:T ; ex:skip true .
+        """
+        val report = validate(provider, data, shapes)
+        assertEquals(setOf(ex("a"), ex("e")), report.violations.map { it.focusNode }.toSet(), report.violations.toString())
+        assertEquals(2, report.violations.size, report.violations.toString())
+        assertTrue(report.violations.all { it.constraint.constraintType == ConstraintType.UNIQUE_VALUES_FOR }, report.violations.toString())
+        // No output, or a member that is no IRI, fails.
+        for (bad in listOf("", "ex:keys \"k1\" ;")) {
+            val error = assertThrows(ShaclValidationException::class.java, {
+                validate(provider, "ex:a a ex:T ; $bad ex:k1 1 . ex:b a ex:T ; ex:keys ex:k1 ; ex:k1 1 .", shapes)
+            }, bad)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && "sh:uniqueValuesFor" in message, "$bad: $message")
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `validateClosedShapes=false also skips dynamic sh closed`(provider: String) {
+        // "maybe" would fail the run, so sh:closed is not even evaluated.
+        val shapes = closedShape("[ shnex:pathValues ex:mode ]", targets = "ex:a")
+        val report = validate(provider, "ex:a ex:mode \"maybe\" ; ex:q 1 .", shapes, ValidationConfig(validateClosedShapes = false))
+        assertTrue(report.violations.isEmpty(), report.violations.toString())
+    }
+
+    @Test
+    fun `a reifier deactivates a dynamic sh closed before it is evaluated`() {
+        // The sh:closed value "maybe" of ex:b would fail; a reifier of either triple deactivates the check first.
+        val data = "ex:a ex:mode true ; ex:q 1 . ex:b ex:mode \"maybe\" ; ex:skip true ; ex:q 1 ."
+        val reifier = "{| sh:deactivated [ shnex:pathValues ex:skip ] |}"
+        for ((closed, ignored) in listOf("_:m $reifier" to "", "_:m" to reifier)) {
+            val shapes = """
+                ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:closed $closed ; sh:ignoredProperties ( ex:mode ex:skip ) $ignored .
+                _:m shnex:pathValues ex:mode .
+            """
+            assertEquals(listOf(ex("a") to ex("q").value), closedResults(validate("jena", data, shapes)), shapes)
+        }
+    }
+
+    @Test
+    fun `the constant parameters of a dynamic sh closed are checked without focus nodes`() {
+        // No target: only the compiler can reject them.
+        val cases = listOf(
+            "sh:closed [ shnex:pathValues ex:m ] ; sh:ignoredProperties [ rdf:first ex:p ]" to "Ill-formed RDF list",
+            "sh:closed [ shnex:pathValues ex:m ] , true" to "sh:closed",
+            "sh:closed true ; sh:ignoredProperties [ shnex:pathValues ex:i ] , [ shnex:pathValues ex:j ]" to "sh:ignoredProperties",
+            "sh:uniqueValuesFor [ shnex:pathValues ex:k ] , ex:k" to "sh:uniqueValuesFor",
+        )
+        for ((body, message) in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:v 1 .", "ex:S a sh:NodeShape ; $body .") }, body)
+            val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+            assertTrue(causes.any { it is ShapeCompileException && message in it.message.orEmpty() }, "$body: $error")
+        }
+    }
+
+    @Test
+    fun `node-shape parameter expressions follow the detection split`() {
+        val ignore = ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)
+        val data = "ex:a ex:p 1 ; ex:q 1 . ex:b ex:p 1 ; ex:q 1 ."
+        val calls = listOf(
+            "sh:closed [ ex:undeclared ( true ) ]",
+            "sh:closed true ; sh:ignoredProperties [ ex:undeclared ( ex:q ) ]",
+            "sh:uniqueValuesFor [ ex:undeclared ( ex:p ) ]",
+        )
+        for (body in calls) {
+            val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; $body ."
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", data, shapes) }, body)
+            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported(error), body)
+            // Ignored, the constraint that uses it is left out, and the warning says so.
+            val report = validate("jena", data, shapes, ignore)
+            assertTrue(report.violations.isEmpty(), "$body: ${report.violations}")
+            assertTrue(report.warnings.any { "the constraints that use it are left out" in it.message }, "$body: ${report.warnings}")
+        }
+        for (body in listOf("sh:closed [ ex:foo 1 ]", "sh:closed true ; sh:ignoredProperties [ ex:foo 1 ]", "sh:uniqueValuesFor [ ex:foo 1 ]")) {
+            for (config in listOf(ValidationConfig.default(), ignore)) {
+                val error = assertThrows(ShaclValidationException::class.java, {
+                    validate("jena", data, "ex:S a sh:NodeShape ; sh:targetNode ex:a ; $body .", config)
+                }, body)
+                val causes = generateSequence<Throwable>(error) { it.cause }.toList()
+                assertTrue(causes.any { it is ShapeCompileException && "neither a constant nor a node expression" in it.message.orEmpty() }, "$body: $error")
+                assertTrue(causes.none { it is UnsupportedShaclFeatureException }, "$body: $error")
+            }
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `node-shape parameter expressions have their shapes compiled`(provider: String) {
+        // ex:Strict and ex:Keyed are reachable only from the expressions.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:property [ sh:path ex:p ] ; sh:ignoredProperties ( ex:strict ) ;
+              sh:closed [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Strict ) ] .
+            ex:Strict sh:property [ sh:path ex:strict ; sh:minCount 1 ] .
+            ex:U a sh:NodeShape ; sh:targetNode ex:a , ex:b ;
+              sh:uniqueValuesFor [ shnex:if [ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:Keyed ) ] ; shnex:then ex:p ; shnex:else ex:q ] .
+            ex:Keyed sh:property [ sh:path ex:strict ; sh:minCount 1 ] .
+        """
+        val report = validate(provider, "ex:a ex:strict 1 ; ex:p 1 ; ex:q 1 . ex:b ex:p 1 ; ex:q 2 .", shapes)
+        assertEquals(
+            setOf(ex("a") to ConstraintType.CLOSED, ex("a") to ConstraintType.UNIQUE_VALUES_FOR),
+            report.violations.map { it.focusNode to it.constraint.constraintType }.toSet(),
+            report.violations.toString(),
+        )
+        assertEquals(2, report.violations.size, report.violations.toString())
     }
 }

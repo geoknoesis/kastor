@@ -160,6 +160,11 @@ internal object ConstraintInstantiation {
                 if (node is Literal && node.datatype == XSD.string) null else "sh:languageIn expects string literals, got $node"
             // Any node may be a member; triple terms are checked by instantiate (allowTripleTermsInShapeParameters).
             SHACL.`in` -> null
+            // The node-shape parameters, which the engine resolves itself: their members are predicates.
+            SHACL.ignoredProperties, SHACL.uniqueValuesFor ->
+                if (node is Iri) null else "${DynamicParameters.displayName(parameter)} expects IRIs, got $node"
+            // true, false or sh:ByTypes: resolveClosed maps the value, and rejects any other.
+            SHACL.closed -> null
             else -> "${DynamicParameters.displayName(parameter)} cannot be computed"
         }
 
