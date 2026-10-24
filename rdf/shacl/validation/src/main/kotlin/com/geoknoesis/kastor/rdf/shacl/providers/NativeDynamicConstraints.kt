@@ -13,6 +13,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
 import com.geoknoesis.kastor.rdf.shacl.native.ParameterShape
 import com.geoknoesis.kastor.rdf.shacl.native.ParameterValue
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
+import com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate
 import java.util.IdentityHashMap
 
 /** The most constraint instances a run keeps of its [PropertyConstraint.Dynamic] constraints ([DynamicInstanceCache]). */
@@ -135,6 +136,9 @@ internal fun NativeShaclValidator.resolveComponentParameters(
             value is BlankNode -> "a blank node, which the declaration ${parameter.declaration} rules out"
             value is TripleTerm && !config.allowTripleTermsInShapeParameters ->
                 "a triple term, which requires ValidationConfig.allowTripleTermsInShapeParameters=true"
+            // Iri() already refuses these characters; kept so no provider is ever handed an IRI SPARQL cannot write.
+            value is Iri && SparqlQueryTemplate.renderIri(value.value) == null ->
+                "an IRI that cannot be written in a SPARQL query"
             else ->
                 parameter.nodeKinds.firstOrNull { kinds -> kinds.none { matchesNodeKind(value, it) } }
                     ?.let { kinds -> "not of node kind ${kinds.joinToString { it.value }}, as the declaration ${parameter.declaration} requires" }

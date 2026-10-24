@@ -186,7 +186,8 @@ internal class SparqlQueryTemplate private constructor(
                         if (value != null) providerBindings[part.name] = value
                     } else {
                         when (part.context) {
-                            Context.PLAIN -> text.append(rendered)
+                            // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
+                            Context.PLAIN -> text.append(rendered).append(if (value is LangString) " " else "")
                             Context.PROJECTION -> text.append('(').append(rendered).append(" AS ?__kastor_prebound_").append(part.ordinal).append(')')
                             Context.GROUP_OR_ORDER -> text.append('(').append(rendered).append(')')
                         }

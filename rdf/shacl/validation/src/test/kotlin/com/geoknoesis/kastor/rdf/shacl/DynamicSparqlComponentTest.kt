@@ -162,6 +162,36 @@ class DynamicSparqlComponentTest {
         assertTrue(validate(provider, "ex:a ex:age 1 ; ex:limit ex:x .", iriOnly).isValid)
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a computed triple term needs allowTripleTermsInShapeParameters and is then a provider binding`(provider: String) {
+        // The ASK holds when the value node has the computed triple term as its ex:q: unbound, $tt would match anything.
+        val shapes = """
+            ex:TripleComponent a sh:ConstraintComponent ; sh:parameter [ sh:path ex:tt ; sh:nodeKind sh:TripleTerm ] ;
+              sh:validator [ a sh:SPARQLAskValidator ; sh:ask "ASK { ?value <http://example.com/ns#q> ${d}tt }" ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property ex:P . ex:P sh:path ex:v ; ex:tt [ shnex:pathValues ex:t ] .
+        """
+        val data = "ex:a ex:t <<( ex:s ex:p ex:o )>> ; ex:v ex:b , ex:c . ex:b ex:q <<( ex:s ex:p ex:o )>> . ex:c ex:q ex:x ."
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, data, shapes) }
+        val message = error.message.orEmpty()
+        assertTrue("Dynamic SHACL" in message && "triple term" in message && "allowTripleTermsInShapeParameters" in message, message)
+        val allowed = validate(provider, data, shapes, ValidationConfig(allowTripleTermsInShapeParameters = true))
+        assertEquals(listOf(ex("a") to ex("c")), allowed.violations.map { it.focusNode to it.value })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a computed IRI that SPARQL cannot write is a validation failure`(provider: String) {
+        // Kastor's Iri refuses what renderIri refuses, so such an IRI fails while the expression is evaluated; either
+        // way the run fails with a ShaclValidationException, never a provider's IllegalArgumentException.
+        val shapes = """
+            ex:IriComponent a sh:ConstraintComponent ; sh:parameter [ sh:path ex:ref ; sh:nodeKind sh:IRI ] ;
+              sh:validator [ a sh:SPARQLAskValidator ; sh:ask "ASK { FILTER (BOUND(${d}ref)) }" ] .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property ex:P .
+            ex:P sh:path ex:v ; ex:ref [ sparql:iri ( [ sparql:concat ( "http://example.com/a b{c" ) ] ) ] .
+        """
+        val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:v 1 .", shapes) }
+        assertTrue("sparql:iri" in error.message.orEmpty(), error.toString())
+    }
+
     // --- recognition -----------------------------------------------------------------------------------------------------
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
@@ -360,6 +390,16 @@ class DynamicSparqlComponentTest {
      */
     private fun structure(text: String): List<String> =
         SparqlLexer.tokenize(text).filter { it.significant }.map { if (it.kind == SparqlToken.Kind.STRING) "STRING" else "${it.kind}:${it.text}" }
+
+    @Test
+    fun `a language tag written into a plain slot ends before the template text that follows`() {
+        val template = SparqlQueryTemplate.compile("SELECT ?x WHERE { BIND (${d}p-1 AS ?x) }", setOf("p"))
+        val (text, bindings) = template.bind(mapOf("p" to LangString("a", "en")))
+        assertTrue(bindings.isEmpty())
+        assertTrue("\"a\"@en -1" in text, text)
+        // Without the space, the tag would read en-1.
+        assertTrue("@en-1" !in text, text)
+    }
 
     @Test
     fun `a computed value is written into the query as one string term under every reading`() {
