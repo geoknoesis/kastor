@@ -216,7 +216,9 @@ internal const val SOURCE_CONSTRAINT_TRIPLES_CONTEXT_KEY: String = "sourceConstr
  * time it is asked, and keeps them, so all the reports and results of a run fetch each blank node once, and in total
  * no more than the shapes graph [shapesTriples]. The writer follows the blank-node objects itself, one node at a time.
  * Thread-safe (a report can be written from several threads). Two instances are equal when their shapes graphs are,
- * so that results stay comparable across runs.
+ * so that results stay comparable across runs. Comparing results compares their handles, so equality is cheap: the
+ * same instance or the same graph is equal at once, and otherwise the content hash of each graph, computed once,
+ * tells most different graphs apart before their triples are compared.
  */
 internal class SourceConstraintTriples(
     private val shapesTriples: List<RdfTriple>,
@@ -230,10 +232,15 @@ internal class SourceConstraintTriples(
     @Synchronized
     fun of(node: BlankNode): List<RdfTriple> = described.getOrPut(node) { describe(node) }
 
-    override fun equals(other: Any?): Boolean =
-        other is SourceConstraintTriples && (other.shapesTriples === shapesTriples || other.shapesTriples == shapesTriples)
+    /** The content hash of [shapesTriples], computed once. */
+    private val contentHash: Int by lazy { shapesTriples.hashCode() }
 
-    override fun hashCode(): Int = shapesTriples.size
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            other is SourceConstraintTriples &&
+            (other.shapesTriples === shapesTriples || (other.contentHash == contentHash && other.shapesTriples == shapesTriples))
+
+    override fun hashCode(): Int = contentHash
 
     override fun toString(): String = "SourceConstraintTriples(${shapesTriples.size} shapes graph triples)"
 }
