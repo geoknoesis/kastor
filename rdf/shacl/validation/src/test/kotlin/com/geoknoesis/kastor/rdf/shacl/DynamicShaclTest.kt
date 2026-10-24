@@ -604,7 +604,6 @@ class DynamicShaclTest {
         // No target: no focus node is ever reached, so only the compiler can reject the constant half.
         val cases = listOf(
             "sh:pattern ex:iri ; sh:flags [ shnex:pathValues ex:f ]" to "sh:pattern must be a string literal",
-            "sh:pattern \"(\" ; sh:flags [ shnex:pathValues ex:f ]" to "Invalid sh:pattern",
             "sh:pattern [ shnex:pathValues ex:p ] ; sh:flags \"z\"" to "Unsupported sh:flags character",
         )
         for ((body, message) in cases) {
@@ -612,6 +611,18 @@ class DynamicShaclTest {
             val causes = generateSequence<Throwable>(error) { it.cause }.toList()
             assertTrue(causes.any { it is ShapeCompileException && message in it.message.orEmpty() }, "$body: $error")
         }
+        // Whether a constant pattern compiles depends on the computed flags: "(" is invalid, except under q, which
+        // quotes it. It is compiled per focus node, with the resolved flags.
+        fun quoted(targets: String) =
+            "ex:S a sh:NodeShape ; $targets sh:property [ sh:path ex:v ; sh:pattern \"(\" ; sh:flags [ shnex:pathValues ex:f ] ] ."
+        // Without focus nodes, the shapes graph is accepted.
+        assertTrue(validate("jena", "ex:a ex:v 1 .", quoted("")).isValid)
+        val report = validate("jena", "ex:a ex:f \"q\" ; ex:v \"x(y\" . ex:b ex:f \"q\" ; ex:v \"xy\" .", quoted("sh:targetNode ex:a , ex:b ;"))
+        assertEquals(listOf(ex("b") to ConstraintType.PATTERN), report.violations.map { it.focusNode to it.constraint.constraintType })
+        val unquoted = assertThrows(ShaclValidationException::class.java) {
+            validate("jena", "ex:a ex:f \"\" ; ex:v \"x\" .", quoted("sh:targetNode ex:a ;"))
+        }
+        assertTrue("Dynamic SHACL" in unquoted.message.orEmpty() && "Invalid sh:pattern" in unquoted.message.orEmpty(), unquoted.message)
     }
 
     @Test

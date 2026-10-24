@@ -1405,11 +1405,11 @@ internal object ShapesCompiler {
             for (p in index.objects(subject, SHACL.pattern)) {
                 val patternValue = valueOf(SHACL.pattern, p) ?: continue
                 // A constant half of a Dynamic pattern is checked here, with the constant messages, whether or not a
-                // focus node is ever reached: a constant pattern must be a string literal that compiles (read without
-                // flags), and constant flags must be supported.
+                // focus node is ever reached: constant flags must be supported, and a constant pattern must be a string
+                // literal. Whether the pattern compiles depends on the computed flags (q, x): it is compiled per focus
+                // node, with the resolved flags.
                 if (patternValue is ParameterValue.Constant && flagsValue is ParameterValue.Computed) {
-                    val pat = ConstraintInstantiation.literalString(patternValue.term) ?: throw ShapeCompileException("sh:pattern must be a string literal")
-                    compileShaclPattern(pat, null)
+                    ConstraintInstantiation.literalString(patternValue.term) ?: throw ShapeCompileException("sh:pattern must be a string literal")
                 }
                 if (patternValue is ParameterValue.Computed && flagsValue is ParameterValue.Constant) {
                     compileShaclPattern("", ConstraintInstantiation.literalString(flagsValue.term))
