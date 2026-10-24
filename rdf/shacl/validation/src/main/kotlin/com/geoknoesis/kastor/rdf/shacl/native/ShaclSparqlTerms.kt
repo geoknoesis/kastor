@@ -28,6 +28,8 @@ internal object ShaclSparqlTerms {
     val sparqlExpr = term("sparqlExpr")
     val ListParameterExpressionFunction = term("ListParameterExpressionFunction")
     val NamedParameterExpressionFunction = term("NamedParameterExpressionFunction")
+    val ListParameterExpression = term("ListParameterExpression")
+    val NamedParameterExpression = term("NamedParameterExpression")
     val keyParameter = term("keyParameter")
     val bodyExpression = term("bodyExpression")
     val ShapesGraph = term("ShapesGraph")

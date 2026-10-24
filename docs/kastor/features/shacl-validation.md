@@ -218,7 +218,7 @@ A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated 
 SHACL 1.2 node expressions (Node Expressions spec) are supported in full:
 
 - **The `shnex:` library:** constants, empty expressions (an empty blank node `[]`), list expressions (an RDF list), `shnex:var`, `shnex:pathValues`, `shnex:exists`, `shnex:if`, `shnex:distinct`, `shnex:intersection`, `shnex:concat`, `shnex:remove`, `shnex:filterShape`, `shnex:limit`, `shnex:offset`, `shnex:orderBy`, `shnex:flatMap`, `shnex:findFirst`, `shnex:matchAll`, `shnex:count`, `shnex:min`, `shnex:max`, `shnex:sum`, `shnex:instancesOf`, `shnex:nodesMatching` and `shnex:conformsToShape`.
-- **`sparql:<name>` functions** (spec section 5), custom functions with named parameters or list parameters (`shnex:arg`), and the SPARQL expressions `sh:select` / `sh:sparqlExpr`.
+- **`sparql:<name>` functions** (spec section 5), custom functions with named parameters or list parameters (`shnex:arg`), and the SPARQL expressions `sh:select` / `sh:sparqlExpr`. As spec Appendix A requires, a custom function used in a node expression must be a SHACL instance of `sh:NamedParameterExpressionFunction` and a SHACL subclass of `sh:NamedParameterExpression` (or of `sh:ListParameterExpressionFunction` and `sh:ListParameterExpression`), for example `ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression`. Without the subclass, a call of the function is no node expression, which is reported as `NODE_EXPRESSION`. A function that is only called from SPARQL needs just the type.
 
 They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by two constraint components: `sh:expression` (`sh:ExpressionConstraintComponent`) and a computed `sh:nodeByExpression`.
 

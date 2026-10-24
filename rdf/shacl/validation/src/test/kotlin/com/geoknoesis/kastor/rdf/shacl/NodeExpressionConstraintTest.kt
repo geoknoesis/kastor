@@ -747,6 +747,30 @@ class NodeExpressionConstraintTest {
     }
 
     @Test
+    fun `a custom function must be a SHACL subclass of its expression class`() {
+        // Appendix A (CustomListParameterFunction-syntax, CustomNamedParameterFunction-syntax): a SHACL instance of
+        // sh:ListParameterExpressionFunction / sh:NamedParameterExpressionFunction and a SHACL subclass of
+        // sh:ListParameterExpression / sh:NamedParameterExpression. Without the subclass, a call is no node expression.
+        val list = "ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] ."
+        val named = "ex:G a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:g ; sh:keyParameter true ] ; sh:bodyExpression true ."
+        val calls = listOf(
+            list to "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ ex:f ( true ) ] .",
+            named to "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ ex:g 1 ] .",
+        )
+        for ((declaration, shape) in calls) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:p 1 .", declaration + " " + shape) }, declaration)
+            val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
+            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features, declaration)
+        }
+        // With the subclass (directly or through another class), the call is evaluated.
+        val listSub = list.replace(" ; sh:bodyExpression", " ; rdfs:subClassOf ex:MyExpressions ; sh:bodyExpression") +
+            " ex:MyExpressions rdfs:subClassOf sh:ListParameterExpression ."
+        assertTrue(validate("jena", "ex:a ex:p 1 .", listSub + " " + calls[0].second).isValid)
+        val namedSub = named.replace(" ; sh:bodyExpression", " ; rdfs:subClassOf sh:NamedParameterExpression ; sh:bodyExpression")
+        assertTrue(validate("jena", "ex:a ex:p 1 .", namedSub + " " + calls[1].second).isValid)
+    }
+
+    @Test
     fun `constant sh deactivated is unchanged`() {
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true ; sh:class ex:C ."
         assertTrue(validate("jena", "ex:a ex:p 1 .", shapes).isValid)

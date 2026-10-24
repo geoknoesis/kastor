@@ -222,7 +222,7 @@ class NodeExpressionEvaluationLibraryTest {
 
     /** §6.1 Example 25. */
     private val average = """
-        ex:AverageExpression a sh:NamedParameterExpressionFunction ;
+        ex:AverageExpression a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ;
           rdfs:subClassOf sh:NamedParameterExpression ;
           sh:parameter ex:AverageExpression-average ;
           sh:bodyExpression [ sparql:divide ( [ shnex:sum [ shnex:arg ex:average ] ] [ shnex:count [ shnex:arg ex:average ] ] ) ] .
@@ -231,14 +231,14 @@ class NodeExpressionEvaluationLibraryTest {
 
     /** A named parameter function that outputs the nodes of its key argument twice, then those of `ex:extra`. */
     private val twice = """
-        ex:Twice a sh:NamedParameterExpressionFunction ;
+        ex:Twice a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ;
           sh:parameter [ sh:path ex:twice ; sh:keyParameter true ] , [ sh:path ex:extra ] ;
           sh:bodyExpression [ shnex:concat ( [ shnex:arg ex:twice ] [ shnex:arg ex:twice ] [ shnex:arg ex:extra ] ) ] .
     """
 
     /** §6.2 Example 27. */
     private val spacedConcat = """
-        ex:spacedConcat a sh:ListParameterExpressionFunction ;
+        ex:spacedConcat a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ;
           rdfs:subClassOf sh:ListParameterExpression ;
           sh:bodyExpression [ sparql:concat ( [ shnex:arg 0 ] " " [ shnex:arg 1 ] ) ] ;
           sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg1 ] .
@@ -275,10 +275,10 @@ class NodeExpressionEvaluationLibraryTest {
         assertEquals(emptyList<RdfTerm>(), nodes(concat("""[] "c"""")))
         assertFailure(concat("""[] ( "a" "b" )"""), "more than one")
         // The body sees the arguments only, not the scope variables of the call.
-        val leak = """ex:leak a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ shnex:var "x" ] 1 ) ] ."""
+        val leak = """ex:leak a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:concat ( [ shnex:var "x" ] 1 ) ] ."""
         assertEquals(listOf(int(1)), nodes(eval("ex:holder ex:expr [ ex:leak () ] . $leak", variables = mapOf("x" to int(9)))))
         // §6.2: a body with more than one output node is a failure.
-        val pair = "ex:pair a sh:ListParameterExpressionFunction ; sh:bodyExpression ( 1 2 ) ."
+        val pair = "ex:pair a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression ( 1 2 ) ."
         assertFailure(eval("ex:holder ex:expr [ ex:pair () ] . $pair"), "more than one")
     }
 
@@ -289,26 +289,26 @@ class NodeExpressionEvaluationLibraryTest {
         assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ shnex:arg ex:p ] .")))
         // List arguments are nodes, returned as constants; an index without an argument has no output nodes.
         val pick = """
-            ex:first a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] .
-            ex:third a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 2 ] .
-            ex:named a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg ex:p ] .
+            ex:first a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:arg 0 ] .
+            ex:third a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:arg 2 ] .
+            ex:named a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:arg ex:p ] .
         """
         assertEquals(listOf(ex("a")), nodes(eval("ex:holder ex:expr [ ex:first ( ex:a 2 ) ] . $pick")))
         assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:third ( ex:a 2 ) ] . $pick")))
         assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:named ( ex:a ) ] . $pick")))
         // A positional arg in a named parameter function has no output nodes either.
-        val named = "ex:N a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:n ; sh:keyParameter true ] ; sh:bodyExpression [ shnex:arg 0 ] ."
+        val named = "ex:N a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path ex:n ; sh:keyParameter true ] ; sh:bodyExpression [ shnex:arg 0 ] ."
         assertEquals(emptyList<RdfTerm>(), nodes(eval("ex:holder ex:expr [ ex:n 1 ] . $named")))
         // Arguments stay in scope in the nested expressions of the body.
-        val nested = "ex:rep a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:count [ shnex:flatMap [ shnex:arg 0 ] ; shnex:nodes ( 1 2 ) ] ] ."
+        val nested = "ex:rep a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:count [ shnex:flatMap [ shnex:arg 0 ] ; shnex:nodes ( 1 2 ) ] ] ."
         assertEquals(listOf(int(2)), nodes(eval("ex:holder ex:expr [ ex:rep ( 5 ) ] . $nested")))
     }
 
     @Test
     fun `recursive custom function fails at the depth limit`() {
         val loops = """
-            ex:loop a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:loop () ] .
-            ex:Rec a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:rec ; sh:keyParameter true ] ;
+            ex:loop a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:loop () ] .
+            ex:Rec a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path ex:rec ; sh:keyParameter true ] ;
               sh:bodyExpression [ ex:rec [ shnex:arg ex:rec ] ] .
         """
         assertFailure(eval("ex:holder ex:expr [ ex:loop () ] . $loops"), "nested more than")
@@ -324,7 +324,7 @@ class NodeExpressionEvaluationLibraryTest {
         // until the depth cap fails them: about 2^63 evaluation steps without output, path or SPARQL work.
         val ttl = """
             ex:holder ex:expr [ ex:f () ] .
-            ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:f ( [ ex:f () ] [ ex:f () ] ) ] .
+            ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:f ( [ ex:f () ] [ ex:f () ] ) ] .
         """
         val graph = Rdf.parse(prefixes + "\n" + ttl, RdfFormat.TURTLE)
         val expr = graph.find(ex("holder"), ex("expr"), null).single().obj
@@ -343,7 +343,7 @@ class NodeExpressionEvaluationLibraryTest {
         val next = "[ shnex:pathValues ex:next ; shnex:focusNode [ shnex:arg 0 ] ]"
         val ttl = """
             ex:holder ex:expr [ ex:dbl ( ex:c0 ) ] .
-            ex:dbl a sh:ListParameterExpressionFunction ; sh:bodyExpression [
+            ex:dbl a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [
               shnex:if [ shnex:exists $next ] ;
               shnex:then [ shnex:concat ( [ ex:dbl ( $next ) ] [ ex:dbl ( $next ) ] ) ] ;
               shnex:else [] ] .
@@ -362,12 +362,12 @@ class NodeExpressionEvaluationLibraryTest {
     @Test
     fun `an ill-formed custom function is an error only where it is used`() {
         val bad = """
-            ex:Bad a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:bad ; sh:keyParameter true ] , [ sh:name "no path" ] ;
+            ex:Bad a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path ex:bad ; sh:keyParameter true ] , [ sh:name "no path" ] ;
               sh:bodyExpression 1 .
-            ex:NoBody a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:noBody ; sh:keyParameter true ] .
-            ex:twoBodies a sh:ListParameterExpressionFunction ; sh:bodyExpression 1 , 2 .
-            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
-            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
+            ex:NoBody a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path ex:noBody ; sh:keyParameter true ] .
+            ex:twoBodies a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression 1 , 2 .
+            ex:badBody a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:usesBad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:badBody () ] .
         """
         assertEquals(listOf(int(2)), nodes(eval("ex:holder ex:expr [ shnex:count ( 1 2 ) ] . $bad")))
         for (use in listOf("[ ex:bad 1 ]", "[ ex:noBody 1 ]", "[ ex:twoBodies () ]", "[ ex:badBody () ]", "[ ex:usesBad () ]", "[ shnex:count [ ex:bad 1 ] ]")) {
@@ -378,8 +378,8 @@ class NodeExpressionEvaluationLibraryTest {
     @Test
     fun `shapes used only in custom function bodies are compiled`() {
         val functions = """
-            ex:ints a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:count [ shnex:filterShape ex:Int ; shnex:nodes ( 1 2.5 3 ) ] ] .
-            ex:Wrap a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path ex:wrap ; sh:keyParameter true ] ;
+            ex:ints a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:count [ shnex:filterShape ex:Int ; shnex:nodes ( 1 2.5 3 ) ] ] .
+            ex:Wrap a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path ex:wrap ; sh:keyParameter true ] ;
               sh:bodyExpression [ ex:ints () ] .
             ex:Int sh:datatype xsd:integer .
         """

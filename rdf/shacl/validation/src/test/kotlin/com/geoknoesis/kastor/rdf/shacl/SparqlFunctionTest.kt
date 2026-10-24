@@ -66,7 +66,7 @@ class SparqlFunctionTest {
     }
 
     private val spacedConcat = """
-        ex:spacedConcat a sh:ListParameterExpressionFunction ;
+        ex:spacedConcat a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ;
           sh:bodyExpression [ sh:sparqlExpr "CONCAT(${d}arg0, ' ', ${d}arg1)" ] ;
           sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg1 ] .
     """
@@ -96,9 +96,9 @@ class SparqlFunctionTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a body with zero or several results is an error`(provider: String) {
         val functions = """
-            ex:several a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { VALUES ?x { 1 2 } }" ] .
-            ex:none a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { FILTER (false) }" ] .
-            ex:one a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { VALUES ?x { 1 UNDEF } }" ] .
+            ex:several a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { VALUES ?x { 1 2 } }" ] .
+            ex:none a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { FILTER (false) }" ] .
+            ex:one a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:select "SELECT ?x WHERE { VALUES ?x { 1 UNDEF } }" ] .
         """
         assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#several>())"))
         assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#none>())"))
@@ -109,8 +109,8 @@ class SparqlFunctionTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `this is the function IRI and functions call each other`(provider: String) {
         val functions = """
-            ex:self a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:sparqlExpr "STR(${d}this)" ] .
-            ex:wrap a sh:ListParameterExpressionFunction ;
+            ex:self a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:sparqlExpr "STR(${d}this)" ] .
+            ex:wrap a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ;
               sh:bodyExpression [ sh:sparqlExpr "CONCAT('[', <http://example.com/ns#self>(), ']')" ] .
         """
         assertEquals("[http://example.com/ns#self]", valueOf(provider, functions, "<http://example.com/ns#wrap>()"))
@@ -119,13 +119,13 @@ class SparqlFunctionTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `recursive functions end at the depth limit`(provider: String) {
         val functions = """
-            ex:loop a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:sparqlExpr "<http://example.com/ns#loop>()" ] .
+            ex:loop a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:sparqlExpr "<http://example.com/ns#loop>()" ] .
         """
         assertEquals(null, valueOf(provider, functions, "STR(<http://example.com/ns#loop>())"))
     }
 
     private fun constantFunction(value: String) = """
-        ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ sh:sparqlExpr "'$value'" ] .
+        ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ sh:sparqlExpr "'$value'" ] .
         ex:S a sh:NodeShape ; sh:targetNode ex:a ;
           sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#f>() AS ?value) }''' ] .
     """
@@ -184,15 +184,15 @@ class SparqlFunctionTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `shnex bodies called from SPARQL`(provider: String) {
         val functions = """
-            ex:spaced a sh:ListParameterExpressionFunction ;
+            ex:spaced a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ;
               sh:bodyExpression [ sparql:concat ( [ shnex:arg 0 ] " " [ shnex:arg 1 ] ) ] ;
               sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg1 ] .
-            ex:self a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:var "focusNode" ] .
-            ex:constant a sh:ListParameterExpressionFunction ; sh:bodyExpression "c" .
-            ex:several a sh:ListParameterExpressionFunction ; sh:bodyExpression ( 1 2 ) .
-            ex:none a sh:ListParameterExpressionFunction ; sh:bodyExpression [] .
-            ex:failing a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:pathValues ex:p ; shnex:focusNode ( 1 2 ) ] .
-            ex:opt a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ; sh:optional true ] ;
+            ex:self a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:var "focusNode" ] .
+            ex:constant a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression "c" .
+            ex:several a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression ( 1 2 ) .
+            ex:none a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [] .
+            ex:failing a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:pathValues ex:p ; shnex:focusNode ( 1 2 ) ] .
+            ex:opt a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:parameter [ sh:path shnex:arg0 ; sh:optional true ] ;
               sh:bodyExpression [ shnex:count [ shnex:arg 0 ] ] .
         """
         // A shnex: body evaluates SPARQL function expressions with nested queries.
@@ -213,7 +213,7 @@ class SparqlFunctionTest {
     fun `recursion through shnex bodies ends at the depth limit`(provider: String) {
         // Each level counts the solutions of a query that calls the function again: the deepest call is an error.
         val functions = """
-            ex:rec a sh:ListParameterExpressionFunction ;
+            ex:rec a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ;
               sh:bodyExpression [ shnex:count [ sh:select "SELECT ?x WHERE { BIND (<http://example.com/ns#rec>() AS ?x) }" ] ] .
         """
         assertEquals("1", valueOf(provider, functions, "STR(<http://example.com/ns#rec>())"))
@@ -226,7 +226,7 @@ class SparqlFunctionTest {
         repository(provider).use { repo ->
             repo.transaction { editDefaultGraph().addTriples(g("ex:a ex:p 1 .").getTriples()) }
             val shapes = """
-                ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( "one" ) ] .
+                ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:concat ( "one" ) ] .
                 ex:S a sh:NodeShape ; sh:targetNode ex:a ;
                   sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#f>() AS ?value) }''' ] .
             """
@@ -239,7 +239,7 @@ class SparqlFunctionTest {
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a function whose body is no node expression is reported when SPARQL calls it`(provider: String) {
         val shapes = """
-            ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:unknown 1 ] .
+            ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:unknown 1 ] .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (<http://example.com/ns#f>() AS ?value) }''' ] .
         """
@@ -249,7 +249,7 @@ class SparqlFunctionTest {
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `an ill-formed shnex body is an error only when SPARQL calls the function`(provider: String) {
-        val bad = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] ."
+        val bad = "ex:bad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] ."
         val unused = """
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''SELECT ${d}this ?value WHERE { BIND (1 AS ?value) }''' ] .
@@ -272,18 +272,18 @@ class SparqlFunctionTest {
             """
         }
         val chain = """
-            ex:B a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:usesBad () ] .
-            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
-            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:B a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:usesBad () ] .
+            ex:usesBad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:badBody () ] .
+            ex:badBody a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
         """
         val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", chain + call("B")) }
         assertNotNull(error.causeOfType<ShapeCompileException>(), error.toString())
         // An unused function whose body calls two ill-formed functions leaves no error behind for a valid one.
         val leftover = """
-            ex:A a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
-            ex:bad1 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
-            ex:bad2 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
-            ex:B a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( "ok" ) ] .
+            ex:A a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
+            ex:bad1 a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:bad2 a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
+            ex:B a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:concat ( "ok" ) ] .
         """
         assertEquals("ok", (validate(provider, "ex:a ex:p 1 .", leftover + call("B")).violations.single().value as Literal).lexical)
     }
@@ -293,7 +293,7 @@ class SparqlFunctionTest {
         // ex:concat is ill-formed and unused: the built-in concat( and another namespace's x:concat( do not call it,
         // and neither does a name in a comment or a string, whatever its namespace.
         val shapes = """
-            ex:concat a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:concat a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
             ex:S a sh:NodeShape ; sh:targetNode ex:a ;
               sh:sparql [ sh:select '''PREFIX x: <urn:x:>
                 SELECT ${d}this ?value WHERE {
@@ -329,11 +329,11 @@ class SparqlFunctionTest {
         for (query in queries) {
             val shape = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:select '''$query''' ] ."
             // An ill-formed declaration that the query calls is an error.
-            val illFormed = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .\n"
+            val illFormed = "ex:bad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .\n"
             val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", illFormed + shape) }, query)
             assertNotNull(error.causeOfType<ShapeCompileException>(), "$query: $error")
             // A body that is no node expression is reported.
-            val opaque = "ex:bad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:unknown 1 ] .\n"
+            val opaque = "ex:bad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:unknown 1 ] .\n"
             val e = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", opaque + shape) }, query)
             assertEquals(setOf(UnsupportedShaclFeature.SHACL_FUNCTION), e.causeOfType<UnsupportedShaclFeatureException>()?.features, "$query: $e")
         }
@@ -345,11 +345,11 @@ class SparqlFunctionTest {
         // back to k when that call is an error. Every call of either kind counts towards MAX_FUNCTION_DEPTH (16):
         // the top query calls n(0) (1), s(1) (2), n(1) (3), ..., n(7) (15), s(8) (16), and n(8) is an error.
         val functions = """
-            ex:n a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ;
+            ex:n a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:parameter [ sh:path shnex:arg0 ] ;
               sh:bodyExpression [ sparql:coalesce (
                 [ sh:select "SELECT ?x WHERE { BIND (<http://example.com/ns#s>(${d}arg0 + 1) AS ?x) }" ]
                 [ shnex:arg 0 ] ) ] .
-            ex:s a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ;
+            ex:s a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:parameter [ sh:path shnex:arg0 ] ;
               sh:bodyExpression [ sh:sparqlExpr "<http://example.com/ns#n>(${d}arg0)" ] .
         """
         assertEquals("7", valueOf(provider, functions, "STR(<http://example.com/ns#n>(0))"))
@@ -366,11 +366,11 @@ class SparqlFunctionTest {
         """
         val body = """sh:bodyExpression [ sh:sparqlExpr "1" ]"""
         val cases = listOf(
-            """[] a sh:ListParameterExpressionFunction ; $body .""",
-            """ex:f a sh:ListParameterExpressionFunction ; $body , [ sh:sparqlExpr "2" ] .""",
-            """ex:f a sh:ListParameterExpressionFunction ; $body ; sh:parameter [ sh:path shnex:first ] .""",
-            """ex:f a sh:ListParameterExpressionFunction ; $body ; sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg2 ] .""",
-            """ex:f a sh:ListParameterExpressionFunction ; $body ;
+            """[] a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; $body .""",
+            """ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; $body , [ sh:sparqlExpr "2" ] .""",
+            """ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; $body ; sh:parameter [ sh:path shnex:first ] .""",
+            """ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; $body ; sh:parameter [ sh:path shnex:arg0 ] , [ sh:path shnex:arg2 ] .""",
+            """ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; $body ;
                  sh:parameter [ sh:path shnex:arg0 ; sh:optional true ] , [ sh:path shnex:arg1 ] .""",
         )
         for (declaration in cases) {
@@ -378,7 +378,7 @@ class SparqlFunctionTest {
             assertNotNull(error.causeOfType<ShapeCompileException>(), "$declaration: $error")
         }
         val rebinding = """
-            ex:f a sh:ListParameterExpressionFunction ; sh:parameter [ sh:path shnex:arg0 ] ;
+            ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:parameter [ sh:path shnex:arg0 ] ;
               sh:bodyExpression [ sh:select "SELECT ?x { BIND (1 AS ?arg0) }" ] .
         """
         val error = assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", rebinding + use) }

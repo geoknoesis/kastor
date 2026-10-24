@@ -219,6 +219,30 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     fun reifiersForClaim(claim: RdfTriple): List<RdfResource> = reifiers[claim] ?: emptyList()
 
     /** SHACL instance test in the shapes graph: `rdf:type/rdfs:subClassOf*` reaches [cls]. */
+    /**
+     * Whether [node] is a SHACL subclass of [cls] (SHACL 1.2 Core: a sequence of one or more `rdfs:subClassOf` triples
+     * leads from [node] to [cls]). Each class is visited once, so cycles terminate.
+     */
+    fun isSubClassOf(node: RdfResource, cls: Iri): Boolean {
+        val seen = HashSet<RdfTerm>()
+        val queue = ArrayDeque<RdfTerm>(objects(node, com.geoknoesis.kastor.rdf.vocab.RDFS.subClassOf))
+        while (queue.isNotEmpty()) {
+            val c = queue.removeFirst()
+            if (c == cls) return true
+            if (c is RdfResource && seen.add(c)) queue.addAll(objects(c, com.geoknoesis.kastor.rdf.vocab.RDFS.subClassOf))
+        }
+        return false
+    }
+
+    /**
+     * Whether [function] is a custom list parameter function of Node Expressions §6.2 (Appendix A,
+     * CustomListParameterFunction-syntax): a SHACL instance of `sh:ListParameterExpressionFunction` and a SHACL subclass
+     * of `sh:ListParameterExpression`.
+     */
+    fun isCustomListFunction(function: RdfResource): Boolean =
+        isInstanceOf(function, ShaclSparqlTerms.ListParameterExpressionFunction) &&
+            isSubClassOf(function, ShaclSparqlTerms.ListParameterExpression)
+
     fun isInstanceOf(node: RdfResource, cls: Iri): Boolean {
         val seen = HashSet<RdfTerm>()
         val queue = ArrayDeque<RdfTerm>(objects(node, RDF.type))

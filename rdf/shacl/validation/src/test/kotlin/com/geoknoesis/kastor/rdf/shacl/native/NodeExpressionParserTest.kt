@@ -104,7 +104,7 @@ class NodeExpressionParserTest {
         assertEquals(NodeExpression.SparqlCall("abs", listOf(int(-42))), bare)
         assertEquals(bare, expression("ex:holder ex:expr [ sparql:abs ( -42 ) ] ."))
         assertEquals(NodeExpression.SparqlCall("now", emptyList()), expression("ex:holder ex:expr [ sparql:now () ] ."))
-        val f = "ex:f a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:arg 0 ] ."
+        val f = "ex:f a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:arg 0 ] ."
         assertEquals(
             NodeExpression.CustomList(ex("f"), listOf(NodeExpression.ListExpr(listOf(int(1), int(2))))),
             expression("$f ex:holder ex:expr [ ex:f ( ( 1 2 ) ) ] ."),
@@ -201,7 +201,7 @@ class NodeExpressionParserTest {
             }
         }
         // A custom key parameter may not collide with a built-in one.
-        val clash = "ex:H a sh:NamedParameterExpressionFunction ; sh:parameter [ sh:path shnex:count ; sh:keyParameter true ] ."
+        val clash = "ex:H a sh:NamedParameterExpressionFunction ; rdfs:subClassOf sh:NamedParameterExpression ; sh:parameter [ sh:path shnex:count ; sh:keyParameter true ] ."
         assertThrows(ShapeCompileException::class.java) { expression("$clash ex:holder ex:expr [ shnex:count [] ] .") }
     }
 
@@ -221,12 +221,12 @@ class NodeExpressionParserTest {
     fun `an ill-formed function reached through other bodies fails every compile over the index`() {
         val ttl = """
             ex:holder ex:expr [ ex:usesBad () ] , [ ex:ok () ] .
-            ex:usesBad a sh:ListParameterExpressionFunction ; sh:bodyExpression [ ex:badBody () ] .
-            ex:badBody a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
-            ex:unused a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
-            ex:bad1 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
-            ex:bad2 a sh:ListParameterExpressionFunction ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
-            ex:ok a sh:ListParameterExpressionFunction ; sh:bodyExpression 1 .
+            ex:usesBad a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ ex:badBody () ] .
+            ex:badBody a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:unused a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:concat ( [ ex:bad1 () ] [ ex:bad2 () ] ) ] .
+            ex:bad1 a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -1 ; shnex:nodes () ] .
+            ex:bad2 a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression [ shnex:limit -2 ; shnex:nodes () ] .
+            ex:ok a sh:ListParameterExpressionFunction ; rdfs:subClassOf sh:ListParameterExpression ; sh:bodyExpression 1 .
         """
         val index = ShapeGraphIndex(Rdf.parse(header + "\n" + ttl, RdfFormat.TURTLE).getTriples())
         val (usesBad, ok) = index.objects(ex("holder"), ex("expr")).partition { index.objects(it as com.geoknoesis.kastor.rdf.RdfResource, ex("usesBad")).isNotEmpty() }

@@ -90,7 +90,7 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
     private fun isListFunction(predicate: Iri): Boolean =
         predicate == NodeExpressionVocabulary.conformsToShape ||
             predicate.value.startsWith(ShaclSparqlTerms.SPARQL_NAMESPACE) ||
-            index.isInstanceOf(predicate, ShaclSparqlTerms.ListParameterExpressionFunction)
+            index.isCustomListFunction(predicate)
 
     /** §4.1.3: a non-empty SHACL list whose members are all constants. */
     private fun listExpression(node: BlankNode, predicates: Set<Iri>): NodeExpression {
@@ -346,8 +346,10 @@ internal class NamedParameterFunction(val iri: Iri, val parameters: Set<Iri>, va
 
 /**
  * The custom node expression functions of a shapes graph (§6): the SHACL instances of
- * `sh:NamedParameterExpressionFunction`, found by their key parameters, and of `sh:ListParameterExpressionFunction`,
- * found by their IRI (the list parameter property). One catalog per [ShapeGraphIndex].
+ * `sh:NamedParameterExpressionFunction` that are SHACL subclasses of `sh:NamedParameterExpression`, found by their key
+ * parameters, and of `sh:ListParameterExpressionFunction` that are SHACL subclasses of `sh:ListParameterExpression`
+ * ([ShapeGraphIndex.isCustomListFunction]), found by their IRI (the list parameter property), as Appendix A requires.
+ * One catalog per [ShapeGraphIndex].
  *
  * A declaration is checked only when an expression references the function, so an ill-formed function that nothing
  * uses does not make the shapes graph ill-formed: a named parameter function must be an IRI whose parameters each
@@ -543,7 +545,13 @@ internal class NodeExpressionFunctions private constructor(
             val byKey = LinkedHashMap<Iri, MutableList<RdfResource>>()
             for (candidate in candidates) {
                 index.tick("node expression function compilation")
-                if (!index.isInstanceOf(candidate, ShaclSparqlTerms.NamedParameterExpressionFunction)) continue
+                // Appendix A (CustomNamedParameterFunction-syntax): a SHACL instance of
+                // sh:NamedParameterExpressionFunction and a SHACL subclass of sh:NamedParameterExpression.
+                if (!index.isInstanceOf(candidate, ShaclSparqlTerms.NamedParameterExpressionFunction) ||
+                    !index.isSubClassOf(candidate, ShaclSparqlTerms.NamedParameterExpression)
+                ) {
+                    continue
+                }
                 for (parameter in index.objects(candidate, SHACL.parameter)) {
                     index.tick("node expression function compilation")
                     val p = parameter as? RdfResource ?: continue
@@ -562,7 +570,7 @@ internal class NodeExpressionFunctions private constructor(
                 key == RDF.first || key == RDF.rest -> "list expressions"
                 key.value.startsWith(ShaclSparqlTerms.SHNEX_NAMESPACE) -> "the built-in node expression functions"
                 key.value.startsWith(ShaclSparqlTerms.SPARQL_NAMESPACE) -> "the SPARQL function expressions"
-                index.isInstanceOf(key, ShaclSparqlTerms.ListParameterExpressionFunction) -> "custom list parameter function $key"
+                index.isCustomListFunction(key) -> "custom list parameter function $key"
                 else -> null
             }
     }
