@@ -222,6 +222,21 @@ A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated 
 
 Constant IRI and literal values also work at `sh:values` and `sh:defaultValue`. The value nodes of a property shape are the path values plus the `sh:values` outputs, and `sh:defaultValue` applies when that set is empty. Both are allowed only on predicate paths. An IRI node that carries `sh:select` / `sh:sparqlExpr` and is used there is ill-formed.
 
+#### SPARQL functions
+
+A `sh:ListParameterExpressionFunction` whose `sh:bodyExpression` is a `sh:select` or `sh:sparqlExpr` can be called, by its IRI, from any SHACL-SPARQL query (spec section 7). The engine compiles each declaration and sends the compiled functions with every SHACL-SPARQL query. Jena and RDF4J make them visible to that one query only; no global function registry is ever modified, and a declaration cannot redefine a built-in function (the built-in wins).
+
+- **Parameters:** `shnex:arg0`, `shnex:arg1`, ... form a contiguous run starting at 0, and an optional parameter (`sh:optional true`) cannot be followed by a mandatory one. Otherwise the shapes graph is ill-formed (`ShapeCompileException`).
+- **Body:** `$this` is the function IRI and `$arg<i>` holds each argument. An argument that is absent or failed to evaluate stays unbound if its parameter is optional; otherwise the call is an error.
+- **Errors:** a blank-node argument, too many arguments, and a body with no result or several results are errors, as is a call to an unknown function IRI. A function error is an ordinary SPARQL error: `BIND` leaves its variable unbound and `FILTER` is false. It never fails validation.
+- **Nesting:** functions can call each other, up to 16 levels deep (`MAX_FUNCTION_DEPTH`); a deeper call is an error, so recursion terminates. Nested queries are sandboxed like the outer one (no `SERVICE`, no `java:`) and run on the calling query's dataset; their own `FROM` can only select graphs inside it. A timeout stops the whole query.
+
+Limits:
+- On RDF4J, work that reads no statements (a `VALUES` cross product, a catastrophic `REGEX`) is not interrupted within a row; top-level RDF4J queries have the same limit. Jena checks cancellation per binding.
+- On RDF4J, only stores created by Kastor's factories evaluate custom functions. When the shapes graph declares functions, validation therefore always runs on the private in-memory copy (see below), not in place on your repository.
+- Parameter constraints (`sh:datatype`, ...) and `sh:defaultValue` are not enforced, as the spec says.
+- Function bodies written as `shnex:` node expressions (spec section 7.1, such as the W3C `instanceCount` example) are not supported: see `SHACL_FUNCTION` below.
+
 #### Where queries run
 
 When you validate a SPARQL-capable dataset, such as a repository passed to `validateDataset`, queries run on it **in place** only if the dataset lists **no named graphs**. Otherwise the engine copies the data graph into a private in-memory repository once per validation run, and all SPARQL constraints of that run share the copy. This also happens when validating a plain graph. The reason is that a query without a dataset clause may see more than the default graph: on RDF4J it sees the union of all contexts. SHACL-SPARQL constraints must see exactly the data graph that the other constraints validate. Each kind of fallback is logged once per dataset class. The copy is not reused across runs; to validate a large graph repeatedly, validate a repository without named graphs in place.
@@ -259,11 +274,11 @@ The native engine recognises some SHACL constructs that it cannot evaluate. By d
 | `SPARQL_CONSTRAINT_COMPONENT` | None: SPARQL-based constraint components are supported (see above). The category is kept for compatibility |
 | `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: `shnex:` and other non-SPARQL node expressions at `sh:values`, `sh:defaultValue` and `sh:targetNode`, `sh:expression`, non-constant `sh:deactivated`, and any blank-node `sh:nodeByExpression` value (a SPARQL one is reported as `SPARQL_NODE_EXPRESSION`) |
 | `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values or as blank-node `sh:nodeByExpression` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are supported |
-| `SHACL_FUNCTION` | SHACL 1.2 functions (`sh:bodyExpression`, `sh:ListParameterExpressionFunction`) called from a SPARQL query (spec section 7) |
+| `SHACL_FUNCTION` | SHACL 1.2 functions whose `sh:bodyExpression` is a `shnex:` node expression (spec section 7.1), called from a SPARQL query. Functions with a `sh:select` / `sh:sparqlExpr` body are supported (see above) |
 | `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
 | `REIFIER_CONSTRAINT_ON_COMPLEX_PATH` | `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a predicate IRI (the engine only knows which triples a predicate path traverses) |
 
-`sh:sparql` constraints, SPARQL-based constraint components and SPARQL node expressions at `sh:targetNode`, `sh:values` and `sh:defaultValue` (see above) are supported.
+`sh:sparql` constraints, SPARQL-based constraint components, SPARQL node expressions at `sh:targetNode`, `sh:values` and `sh:defaultValue`, and SPARQL functions with a SPARQL body (see above) are supported.
 
 In the failure, `ShaclValidationException` wraps an `UnsupportedShaclFeatureException`. Its message names each offending construct, and its `features` property lists the categories:
 
@@ -303,8 +318,8 @@ python scripts/fetch-conformance-data.py --only shacl
 ```
 
 The task fails instead of skipping when the suite is missing, and every case is executed. The default `test` task runs the same harness against the bundled fixture when the checkout is missing; a missing manifest, a manifest without `sht:Validate` entries or one without an approved case fails the test rather than skipping it, unless `-PshaclW3cAllowMissingData=true` opts out. Manifest rows that are not approved are skipped unless `-PshaclW3cIncludeNonApproved=true`. The harness checks failures strictly:
-- The deviations are real feature gaps, kept visible on purpose: SHACL 1.2 node expression constraints (`sh:expression`) and SHACL functions called from SPARQL (spec section 7) need an expression evaluator and a function provider that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
-- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 4: 1 node expression and 3 SHACL functions.
+- The deviations are real feature gaps, kept visible on purpose: SHACL 1.2 node expression constraints (`sh:expression`) and SHACL functions with a `shnex:` body (spec section 7.1) need an expression evaluator that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
+- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 2: 1 node expression (`node-expr/constraints/expression-001`) and 1 SHACL function (`sparql/functions/instanceCount-example`, a `shnex:` body).
 - Spec overrides in `W3cKnownDeviations` are approved cases whose expected result contradicts the normative SHACL 1.2 text. The engine follows the text, and the case must validate without failing. There is 1: `unsupported-sparql-002` expects any `VALUES` to fail, but SHACL 1.2 Appendix A only forbids `VALUES` that mentions a pre-bound variable.
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
 - `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.

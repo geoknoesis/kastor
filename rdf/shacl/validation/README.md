@@ -76,8 +76,11 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   result (`?value`, `?path`, `sh:message` templates `{?var}` / `{$var}`, `sh:resultAnnotation`). Queries using MINUS
   or SERVICE, a VALUES that mentions a pre-bound variable, or `AS` re-binding one are rejected; the provider also
   refuses SERVICE on its own parse. SPARQL-based constraint components and `sh:select` / `sh:sparqlExpr` node
-  expressions (at `sh:targetNode`, `sh:values`, `sh:defaultValue`) are supported; SHACL functions called from SPARQL
-  and `shnex:` expressions are not.
+  expressions (at `sh:targetNode`, `sh:values`, `sh:defaultValue`) are supported; SHACL functions with a `sh:select` /
+  `sh:sparqlExpr` body (spec section 7) are callable from any SHACL-SPARQL query, per query and never registered
+  globally (built-ins cannot be redefined; nesting is limited to 16 levels; a call error is a SPARQL error, not a
+  validation failure; on RDF4J only Kastor-created stores evaluate them, so such shapes validate on the private copy).
+  Functions with a `shnex:` body and `shnex:` expressions are not supported.
 - **Reports.** `toShaclValidationReportRdf()` exports complete `sh:resultPath` structures, `sh:message` values
   (with language tags) as `sh:resultMessage`, `sh:sourceConstraint`, and `sh:value` only for components that
   define it. Kastor extension triples (`KastorShaclVocabulary`, namespace `https://kastor.geoknoesis.com/ns/shacl#`)
@@ -86,6 +89,6 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   warnings (`ksh:warning`). The vocabulary document ships in the JAR:
   `/com/geoknoesis/kastor/rdf/shacl/kastor-shacl.ttl` (`KastorShaclVocabulary.VOCABULARY_RESOURCE`).
 - **W3C conformance.** `Shacl12NativeConformanceTest` runs the SHACL 1.2 test suite (core, node-expr, sparql) when
-  `test-data/w3c-shacl12` is present and compares result graphs up to blank-node isomorphism. Unsupported cases are
+  `test-data/w3c-shacl12` is present and compares result graphs up to blank-node isomorphism. Unsupported cases (2: `expression-001`, `instanceCount-example`) are
   listed with justifications in `W3cKnownDeviations`. A case fails when the engine emits an undecided result
   (`ksh:resultStatus`) where the expected report has a definite one.
