@@ -103,23 +103,25 @@ class NativeReauditSemanticsTest {
         )
     }
 
-    @Test fun `node expressions in sh values sh expression and sh targetNode fail`() {
-        assertUnsupported(
-            "ex:a a ex:P .",
-            "ex:S a sh:PropertyShape ; sh:targetClass ex:P ; sh:path ex:q ; sh:values [ shnex:count [ shnex:pathValues ex:q ] ] ; sh:minCount 1 .",
-        )
-        assertUnsupported("ex:a a ex:P .", "ex:S a sh:NodeShape ; sh:targetClass ex:P ; sh:expression false .")
-        assertUnsupported(
-            "ex:a a ex:P .",
-            "ex:S a sh:NodeShape ; sh:targetNode [ shnex:concat ( ex:a ex:b ) ] ; sh:class ex:Q .",
-        )
+    @Test fun `node expressions in sh values sh expression and sh targetNode are evaluated`() {
+        // The count of no ex:q values is the value node 0.
+        val values = "ex:S a sh:PropertyShape ; sh:targetClass ex:P ; sh:path ex:q ; sh:values [ shnex:count [ shnex:pathValues ex:q ] ] ; sh:minCount 1 ."
+        assertTrue(validate("ex:a a ex:P .", values).isValid)
+        val expression = validate("ex:a a ex:P .", "ex:S a sh:NodeShape ; sh:targetClass ex:P ; sh:expression false .").violations.single()
+        assertEquals(ConstraintType.EXPRESSION, expression.constraint.constraintType)
+        val targets = validate("ex:a a ex:P .", "ex:S a sh:NodeShape ; sh:targetNode [ shnex:concat ( ex:a ex:b ) ] ; sh:class ex:Q .")
+        assertEquals(setOf(ex("a"), ex("b")), targets.violations.map { it.focusNode }.toSet())
     }
 
-    @Test fun `sh nodeByExpression over a computed expression fails`() {
-        assertUnsupported(
-            "ex:a a ex:P .",
-            "ex:S a sh:NodeShape ; sh:targetClass ex:P ; sh:nodeByExpression [ sh:select \"SELECT ?s WHERE { }\" ] .",
-        )
+    @Test fun `sh nodeByExpression over a computed expression is evaluated`() {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetClass ex:P ; sh:nodeByExpression [ sh:select "SELECT ?s WHERE { BIND (<http://example.org/T> AS ?s) }" ] .
+            ex:T a sh:NodeShape ; sh:class ex:Q .
+        """
+        val v = validate("ex:a a ex:P .", shapes).violations.single()
+        assertEquals(ConstraintType.NODE_BY_EXPRESSION, v.constraint.constraintType)
+        assertEquals(ex("T"), v.sourceConstraint)
+        assertTrue(validate("ex:a a ex:P , ex:Q .", shapes).isValid)
     }
 
     @Test fun `sh nodeByExpression with a shape IRI is checked for every value of a property shape`() {

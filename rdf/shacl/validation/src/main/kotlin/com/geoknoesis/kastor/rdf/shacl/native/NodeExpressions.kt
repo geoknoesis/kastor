@@ -18,12 +18,6 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
  * as parsed by [NodeExpressions.compile]. Children are node expressions themselves; evaluation is separate.
  */
 internal sealed class NodeExpression {
-    /**
-     * Whether validation positions (`sh:values`, `sh:defaultValue`, `sh:targetNode`, function bodies) evaluate this
-     * kind of expression yet: only [Constant] and [Select]. The others parse but stay reported as unsupported.
-     */
-    val supportedInValidation: Boolean get() = this is Constant || this is Select
-
     /** An IRI, literal or triple term; evaluates to itself (§3.1). */
     data class Constant(val term: RdfTerm) : NodeExpression()
 
@@ -235,15 +229,6 @@ internal object NodeExpressions {
     }
 
     /**
-     * The expression of [term] at a validation position when validation evaluates it
-     * ([NodeExpression.supportedInValidation]), else null so that the position stays reported as unsupported.
-     * Kinds validation does not evaluate are not parsed at all: an ill-formed one is reported as unsupported as
-     * well, not as a compile error, and costs no preparation budget.
-     */
-    fun compileForValidation(term: RdfTerm, index: ShapeGraphIndex, preBound: Set<String> = PRE_BOUND): NodeExpression? =
-        compileSparqlOrConstant(term, index, preBound)?.takeIf { it.supportedInValidation }
-
-    /**
      * Compiles [term] when it is a constant or a SPARQL expression, or returns null for any other blank node.
      * Ill-formed SPARQL expressions throw [ShapeCompileException], pre-binding violations
      * [SparqlPreBindingRestrictionException].
@@ -287,8 +272,8 @@ internal object NodeExpressions {
 
     /**
      * The expression of the optional `sh:values` / `sh:defaultValue` [predicate] of property shape [shape]: at most
-     * one value (SHACL 1.2 Core §3.3), and only on a predicate [path]. Null when absent or not an expression
-     * validation evaluates ([compileForValidation]).
+     * one value (SHACL 1.2 Core §3.3), and only on a predicate [path]. Null when absent, or when the value is a blank
+     * node that is no node expression at all ([compile]; the shapes compiler reports it as an unsupported feature).
      */
     fun compileParameter(shape: RdfResource, predicate: Iri, path: ShaclPath, index: ShapeGraphIndex): NodeExpression? {
         val values = index.objects(shape, predicate)
@@ -298,7 +283,7 @@ internal object NodeExpressions {
         if (path !is ShaclPath.Predicate) {
             throw ShapeCompileException("Property shape $shape has sh:$name, which needs a predicate path as sh:path")
         }
-        return compileForValidation(values.single(), index)
+        return compile(values.single(), index)
     }
 
     private fun singleString(node: RdfResource, predicate: Iri, index: ShapeGraphIndex): String {

@@ -133,7 +133,7 @@ internal object SparqlFunctionDeclarations {
             add("this")
             optional.indices.forEach { add("arg$it") }
         }
-        (NodeExpressions.compileForValidation(bodies.single(), index, preBound) as? NodeExpression.Select)?.let {
+        (NodeExpressions.compileSparqlOrConstant(bodies.single(), index, preBound) as? NodeExpression.Select)?.let {
             return SparqlFunctionDeclarationSet.Declaration(iri, optional, it)
         }
         return NodeExpressions.compile(bodies.single(), index, preBound)?.let { SparqlFunctionDeclarationSet.Declaration(iri, optional, it) }

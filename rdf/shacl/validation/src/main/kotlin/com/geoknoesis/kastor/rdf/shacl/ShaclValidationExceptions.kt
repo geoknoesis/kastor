@@ -38,15 +38,18 @@ enum class UnsupportedShaclFeature {
     SPARQL_CONSTRAINT_COMPONENT,
 
     /**
-     * SHACL 1.2 node expressions that are not SPARQL expressions (`shnex:` expressions at `sh:values`,
-     * `sh:defaultValue` and `sh:targetNode`), `sh:expression` constraints, and blank-node `sh:nodeByExpression` values.
+     * SHACL 1.2 node expressions the engine cannot evaluate: a non-constant `sh:deactivated`, and a blank node at a
+     * node expression position (`sh:values`, `sh:defaultValue`, `sh:targetNode`, `sh:expression`,
+     * `sh:nodeByExpression`) that is no node expression of the library, such as a call of a function the shapes graph
+     * does not declare. Every well-formed node expression of SHACL 1.2 Node Expressions is evaluated at these
+     * positions.
      */
     NODE_EXPRESSION,
 
     /**
      * SHACL 1.2 SPARQL node expressions (`sh:select` / `sh:sparqlExpr`) the engine cannot evaluate: those used as
-     * `sh:targetWhere` or `sh:nodeByExpression` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are
-     * supported.
+     * `sh:targetWhere` values. At every node expression position (`sh:targetNode`, `sh:values`, `sh:defaultValue`,
+     * `sh:expression`, `sh:nodeByExpression`) they are supported.
      */
     SPARQL_NODE_EXPRESSION,
 

@@ -36,8 +36,11 @@ internal data class Targets(
      * `isTargetNodeExpression`).
      */
     val callShapedTargets: Map<BlankNode, Iri> = emptyMap(),
-    /** SPARQL node expressions among the `sh:targetNode` values (SHACL 1.2 SPARQL §6); `$this` is the shape node. */
-    val targetNodeExpressions: List<NodeExpression.Select> = emptyList(),
+    /**
+     * The `sh:targetNode` values that are computed node expressions (SHACL 1.2 Core §3.1.3.1): their output nodes for
+     * the shape as focus node are targets.
+     */
+    val targetNodeExpressions: List<NodeExpression> = emptyList(),
 )
 
 internal sealed class NodeLogicalPart {
@@ -87,6 +90,17 @@ internal sealed class PropertyConstraint {
     data class Node(val nestedShape: RdfResource) : PropertyConstraint()
     /** SHACL 1.2 `sh:nodeByExpression` on a property shape whose value is a shape IRI (a constant node expression). */
     data class NodeByExpression(val nestedShape: RdfResource) : PropertyConstraint()
+    /**
+     * SHACL 1.2 `sh:nodeByExpression` (Node Expressions §7.2) whose value [node] is not a shape IRI: each value node
+     * must conform to every output node of [expr] evaluated with the value node as focus node, which must be a shape.
+     */
+    data class NodeByExpressionComputed(val node: RdfTerm, val expr: NodeExpression) : PropertyConstraint()
+    /**
+     * SHACL 1.2 `sh:expression` (Node Expressions §7.1): [expr] must produce exactly `( true )` for each value node,
+     * evaluated with the focus node and the scope variable `value`. [node] is the `sh:expression` value, reported as
+     * `sh:sourceConstraint`.
+     */
+    data class Expression(val node: RdfTerm, val expr: NodeExpression) : PropertyConstraint()
     data class EqualsPath(val otherPath: ShaclPath) : PropertyConstraint()
     data class DisjointPath(val otherPath: ShaclPath) : PropertyConstraint()
     data class LessThanPath(val otherPath: ShaclPath) : PropertyConstraint()
@@ -208,8 +222,9 @@ internal data class CompiledNodeShape(
  * Compiled shapes graph. Every shape reachable from a top-level shape (via `sh:node`, `sh:and`/`sh:or`/`sh:xone`/
  * `sh:not`, `sh:qualifiedValueShape`, `sh:shape`, `sh:someValue`, `sh:memberShape`, `sh:reifierShape`,
  * `sh:nodeByExpression`, `sh:targetWhere`, `sh:property`, and the shapes of the node expressions at `sh:values`,
- * `sh:defaultValue` and `sh:targetNode` ([NodeExpressions.shapeRefs])) is compiled exactly once — including
- * deactivated and constraint-free shapes, to which every node conforms.
+ * `sh:defaultValue`, `sh:targetNode`, `sh:expression` and `sh:nodeByExpression` ([NodeExpressions.shapeRefs])) is
+ * compiled exactly once — including deactivated and constraint-free shapes, to which every node conforms. So is every
+ * candidate of a computed shape reference that compiles ([CompiledShapeGraph.candidateErrors] has the others).
  */
 internal data class CompiledShapeGraph(
     /** Top-level, active shapes (targets are evaluated for these). */
@@ -231,6 +246,12 @@ internal data class CompiledShapeGraph(
      * run carries the run's [SparqlFunctionDeclarationSet.library].
      */
     val functions: SparqlFunctionDeclarationSet = SparqlFunctionDeclarationSet.EMPTY,
+    /**
+     * Shapes that only a computed shape reference can name (R8: the candidates of [ShapesCompiler.ExpressionShapes])
+     * and that cannot be compiled, or use an unsupported feature, mapped to the reason. They do not fail the run;
+     * validating against one is an evaluation failure.
+     */
+    val candidateErrors: Map<RdfResource, String> = emptyMap(),
 )
 
 internal object ShapesCompiler {
@@ -255,7 +276,8 @@ internal object ShapesCompiler {
         val nodeShapeSubjects = findNodeShapes(index, budget)
         val extraRoots = expressionShapes(index).toList()
         val exprShapes = ExpressionShapes(index)
-        val unsupported = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, exprShapes, budget)
+        val detected = detectUnsupportedFeatures(index, nodeShapeSubjects, extraRoots, exprShapes, budget)
+        val unsupported = detected.strict
         if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
             throw UnsupportedShaclFeatureException(
                 "Unsupported SHACL feature(s) for the native engine: ${unsupported.keys.joinToString("; ")}. " +
@@ -276,65 +298,186 @@ internal object ShapesCompiler {
 
         val refNodes = LinkedHashMap<RdfResource, CompiledNodeShape>(byNode)
         val refProps = LinkedHashMap<RdfResource, CompiledPropertyShape>()
-        val pending = ArrayDeque<RdfResource>()
-        fun visitProperty(ps: CompiledPropertyShape) {
-            if (refProps.putIfAbsent(ps.shapeNode, ps) != null) return
-            ps.constraints.forEach { pending.addAll(constraintRefs(it)) }
-            ps.logicalParts.forEach { pending.addAll(it.operandRefs()) }
-            // Groundwork for when ruling R1 is lifted (Task 6): validation positions hold only Constant/Select today.
-            pending.addAll(exprShapes.of(ps))
-            ps.nestedPropertyShapes.forEach { visitProperty(it) }
-        }
-        fun visitNode(cn: CompiledNodeShape) {
-            pending.addAll(cn.nodeRefs)
-            pending.addAll(cn.nodeByExpressionRefs)
-            pending.addAll(cn.targetWhereRefs)
-            cn.logicalParts.forEach { pending.addAll(it.operandRefs()) }
-            cn.nodeConstraints.forEach { pending.addAll(constraintRefs(it)) }
-            // Groundwork for when ruling R1 is lifted (Task 6), as for sh:values above.
-            cn.targets.targetNodeExpressions.forEach { pending.addAll(exprShapes.of(it)) }
-            cn.propertyShapes.forEach { visitProperty(it) }
-        }
-        compiled.forEach { visitNode(it) }
-        pending.addAll(extraRoots)
+        val candidates = CandidateQueue(exprShapes)
+        val referenced = ShapeClosure(index, config, budget, exprShapes, candidates, refNodes, refProps)
+        compiled.forEach { referenced.visitNode(it) }
+        referenced.add(extraRoots)
         // The shapes of the node expression bodies of the functions SPARQL queries may call.
-        functions.expressionBodies.forEach { pending.addAll(exprShapes.of(it)) }
-        while (pending.isNotEmpty()) {
-            budget.check("shape compilation")
-            val ref = pending.removeFirst()
-            if (ref in refProps || ref in refNodes) continue
-            if (index.objects(ref, SHACL.path).isNotEmpty()) {
-                visitProperty(compilePropertyShape(ref, index, config))
-            } else {
-                val cn = compileNodeShape(ref, index, config)
-                refNodes[ref] = cn
-                visitNode(cn)
-            }
-        }
+        functions.expressionBodies.forEach { referenced.addExpression(it) }
+        referenced.run()
+        val candidateErrors = compileCandidates(index, config, budget, exprShapes, candidates, refNodes, refProps, detected.candidateOnly)
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, exprShapes, budget),
             unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
             functions,
+            candidateErrors,
         )
     }
 
     /**
-     * The shapes a node expression of [index] can validate against, which the compiler must therefore compile:
-     * its [NodeExpressions.shapeRefs], and, when it computes a `shnex:conformsToShape` shape
-     * ([NodeExpressions.computesShapes]), every IRI of the shapes graph that is a shape ([shapeCandidates]), since the
-     * computed IRI is only known at evaluation time. They are compiled up front, not on demand, so that the compiled
-     * graph and its recursion analysis stay complete and immutable; the scan is done once per index and ticks the
-     * preparation budget, and the compile loop checks the budget per shape.
+     * The candidates of computed shape references that the shapes graph needs ([CandidateQueue]), compiled tolerantly
+     * (R8): a candidate whose closure (the shapes it references) does not compile, or uses an unsupported feature
+     * ([candidateOnly], under [UnsupportedFeatureHandling.FAIL]), is left out and mapped to the reason, so that an
+     * unrelated ill-formed shape fails only an expression that validates against it. A candidate that compiles is
+     * added to [refNodes] / [refProps] with its closure.
+     */
+    private fun compileCandidates(
+        index: ShapeGraphIndex,
+        config: ValidationConfig,
+        budget: ValidationBudget,
+        exprShapes: ExpressionShapes,
+        candidates: CandidateQueue,
+        refNodes: MutableMap<RdfResource, CompiledNodeShape>,
+        refProps: MutableMap<RdfResource, CompiledPropertyShape>,
+        candidateOnly: Map<RdfResource, String>,
+    ): Map<RdfResource, String> {
+        val errors = LinkedHashMap<RdfResource, String>()
+        val failOnUnsupported = config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL
+        while (candidates.queue.isNotEmpty()) {
+            budget.check("shape compilation")
+            val candidate = candidates.queue.removeFirst()
+            if (candidate in refNodes || candidate in refProps) continue
+            val closure = ShapeClosure(
+                index, config, budget, exprShapes, candidates, LinkedHashMap(), LinkedHashMap(), refNodes, refProps,
+            ) { shape ->
+                errors[shape]?.let { throw ShapeCompileException(it) }
+                if (failOnUnsupported) {
+                    candidateOnly[shape]?.let { throw ShapeCompileException("Shape $shape uses unsupported SHACL feature(s): $it") }
+                }
+            }
+            try {
+                closure.add(listOf(candidate))
+                closure.run()
+            } catch (e: ShapeCompileException) {
+                errors[candidate] = "shape $candidate cannot be validated against: ${e.message}"
+                continue
+            }
+            closure.nodes.forEach { (k, v) -> refNodes.putIfAbsent(k, v) }
+            closure.props.forEach { (k, v) -> refProps.putIfAbsent(k, v) }
+        }
+        return errors
+    }
+
+    /**
+     * The candidates of computed shape references ([ExpressionShapes.iriCandidates], [ExpressionShapes.allCandidates]),
+     * queued once each when a compiled shape needs them, for [compileCandidates].
+     */
+    private class CandidateQueue(private val exprShapes: ExpressionShapes) {
+        val queue = ArrayDeque<RdfResource>()
+        private val seen = HashSet<RdfResource>()
+        private var iris = false
+        private var all = false
+
+        /** The IRI candidates: a computed `shnex:conformsToShape` shape (§4.5.3) is an IRI. */
+        fun wantIris() {
+            if (iris || all) return
+            iris = true
+            exprShapes.iriCandidates.forEach { if (seen.add(it)) queue.add(it) }
+        }
+
+        /** Every candidate: the outputs of a computed `sh:nodeByExpression` (§7.2) are IRIs or blank nodes. */
+        fun wantAll() {
+            if (all) return
+            all = true
+            exprShapes.allCandidates.forEach { if (seen.add(it)) queue.add(it) }
+        }
+    }
+
+    /**
+     * Compiles the shapes added to it and every shape they reference ([constraintRefs], logical operands, nested
+     * property shapes, the shapes of node expressions) into [nodes] / [props], skipping the shapes of [baseNodes] /
+     * [baseProps]. [check] runs before a shape is compiled here. A node expression that computes its shapes queues
+     * the candidates in [candidates] instead of compiling them.
+     */
+    private class ShapeClosure(
+        private val index: ShapeGraphIndex,
+        private val config: ValidationConfig,
+        private val budget: ValidationBudget,
+        private val exprShapes: ExpressionShapes,
+        private val candidates: CandidateQueue,
+        val nodes: MutableMap<RdfResource, CompiledNodeShape>,
+        val props: MutableMap<RdfResource, CompiledPropertyShape>,
+        private val baseNodes: Map<RdfResource, CompiledNodeShape> = emptyMap(),
+        private val baseProps: Map<RdfResource, CompiledPropertyShape> = emptyMap(),
+        private val check: (RdfResource) -> Unit = {},
+    ) {
+        private val pending = ArrayDeque<RdfResource>()
+
+        fun add(refs: Collection<RdfResource>) {
+            pending.addAll(refs)
+        }
+
+        fun addExpression(expr: NodeExpression) {
+            pending.addAll(exprShapes.strict(expr))
+            if (exprShapes.computes(expr)) candidates.wantIris()
+        }
+
+        private fun addConstraint(c: PropertyConstraint) {
+            pending.addAll(constraintRefs(c))
+            constraintExpression(c)?.let { addExpression(it) }
+            if (c is PropertyConstraint.NodeByExpressionComputed) candidates.wantAll()
+        }
+
+        fun visitProperty(ps: CompiledPropertyShape) {
+            if (ps.shapeNode in props || ps.shapeNode in baseProps) return
+            check(ps.shapeNode)
+            props[ps.shapeNode] = ps
+            ps.constraints.forEach { addConstraint(it) }
+            ps.logicalParts.forEach { pending.addAll(it.operandRefs()) }
+            listOfNotNull(ps.values, ps.defaultValue).forEach { addExpression(it) }
+            ps.nestedPropertyShapes.forEach { visitProperty(it) }
+        }
+
+        fun visitNode(cn: CompiledNodeShape) {
+            pending.addAll(cn.nodeRefs)
+            pending.addAll(cn.nodeByExpressionRefs)
+            pending.addAll(cn.targetWhereRefs)
+            cn.logicalParts.forEach { pending.addAll(it.operandRefs()) }
+            cn.nodeConstraints.forEach { addConstraint(it) }
+            cn.targets.targetNodeExpressions.forEach { addExpression(it) }
+            cn.propertyShapes.forEach { visitProperty(it) }
+        }
+
+        fun run() {
+            while (pending.isNotEmpty()) {
+                budget.check("shape compilation")
+                val ref = pending.removeFirst()
+                if (ref in props || ref in nodes || ref in baseProps || ref in baseNodes) continue
+                check(ref)
+                if (index.objects(ref, SHACL.path).isNotEmpty()) {
+                    visitProperty(compilePropertyShape(ref, index, config))
+                } else {
+                    val cn = compileNodeShape(ref, index, config)
+                    nodes[ref] = cn
+                    visitNode(cn)
+                }
+            }
+        }
+    }
+
+    /**
+     * The shapes a node expression of [index] can validate against, which the compiler must therefore compile: its
+     * [NodeExpressions.shapeRefs] ([strict]: compiled like any referenced shape), and, when it computes a
+     * `shnex:conformsToShape` shape ([computes]), every IRI of the shapes graph that is a shape ([iriCandidates]),
+     * since the computed IRI is only known at evaluation time. A computed `sh:nodeByExpression` can produce any shape,
+     * IRI or blank node ([allCandidates]). Candidates are compiled up front, not on demand, so that the compiled graph
+     * and its recursion analysis stay complete and immutable, but tolerantly (R8, see [compileCandidates]); the scan
+     * is done once per index and ticks the preparation budget, and the compile loop checks the budget per shape.
      */
     internal class ExpressionShapes(private val index: ShapeGraphIndex) {
-        private val candidates: Set<RdfResource> by lazy { shapeCandidates(index) }
+        val iriCandidates: Set<RdfResource> by lazy { shapeCandidates(index, blankNodes = false) }
+        val allCandidates: Set<RdfResource> by lazy { shapeCandidates(index, blankNodes = true) }
 
-        fun of(expr: NodeExpression): Set<RdfResource> =
-            if (NodeExpressions.computesShapes(expr, index)) NodeExpressions.shapeRefs(expr, index) + candidates else NodeExpressions.shapeRefs(expr, index)
+        fun strict(expr: NodeExpression): Set<RdfResource> = NodeExpressions.shapeRefs(expr, index)
 
-        /** The shapes of the `sh:values` and `sh:defaultValue` node expressions of [ps]. */
-        fun of(ps: CompiledPropertyShape): List<RdfResource> = listOfNotNull(ps.values, ps.defaultValue).flatMap { of(it) }
+        fun computes(expr: NodeExpression): Boolean = NodeExpressions.computesShapes(expr, index)
+
+        fun of(expr: NodeExpression): Set<RdfResource> = if (computes(expr)) strict(expr) + iriCandidates else strict(expr)
+
+        /** The shapes of the node expressions [ps] evaluates: `sh:values`, `sh:defaultValue` and its constraints'. */
+        fun of(ps: CompiledPropertyShape): List<RdfResource> =
+            (listOfNotNull(ps.values, ps.defaultValue) + ps.constraints.mapNotNull { constraintExpression(it) }).flatMap { of(it) }
     }
 
     /** The shapes [expr] of [index] can validate against ([ExpressionShapes]), for expressions evaluated outside validation. */
@@ -349,14 +492,16 @@ internal object ShapesCompiler {
     }
 
     /**
-     * The IRIs of [index] that are shapes: instances of a shape class, or subjects of a shape parameter, `sh:path`,
-     * `sh:deactivated` or a target. Only IRIs, as a computed `shnex:conformsToShape` shape must be one (§4.5.3).
+     * The resources of [index] that are shapes: instances of a shape class, or subjects of a shape parameter,
+     * `sh:path`, `sh:deactivated` or a target. Only IRIs unless [blankNodes], as a computed `shnex:conformsToShape`
+     * shape must be one (§4.5.3).
      */
-    private fun shapeCandidates(index: ShapeGraphIndex): Set<RdfResource> {
+    private fun shapeCandidates(index: ShapeGraphIndex, blankNodes: Boolean): Set<RdfResource> {
         val out = LinkedHashSet<RdfResource>()
         for (t in index.triples) {
             index.tick("shape discovery")
-            val subject = t.subject as? Iri ?: continue
+            val subject = t.subject
+            if (subject !is Iri && !(blankNodes && subject is BlankNode)) continue
             if (t.predicate in shapeMarkers || (t.predicate == RDF.type && t.obj in shapeClasses)) out.add(subject)
         }
         return out
@@ -371,7 +516,9 @@ internal object ShapesCompiler {
     ): Map<RdfResource, Int> {
         val successors = HashMap<RdfResource, List<RdfResource>>()
         for ((node, ps) in refProps) {
-            // sh:values / sh:defaultValue are evaluated while checking the shape, so their shapes are dependencies.
+            // The node expressions of sh:values / sh:defaultValue / sh:expression / sh:nodeByExpression are evaluated
+            // while checking the shape, so their shapes are dependencies. The outputs of a computed sh:nodeByExpression
+            // are not known statically: those checks are nested ones, bounded by ValidationConfig.maxRecursionDepth.
             successors[node] = ps.constraints.flatMap { constraintRefs(it) } +
                 ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode } + exprShapes.of(ps)
         }
@@ -379,7 +526,8 @@ internal object ShapesCompiler {
         for ((node, cn) in refNodes) {
             if (node in refProps) continue
             successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
-                cn.nodeConstraints.flatMap { constraintRefs(it) } + cn.propertyShapes.map { it.shapeNode }
+                cn.nodeConstraints.flatMap { constraintRefs(it) } + cn.propertyShapes.map { it.shapeNode } +
+                cn.nodeConstraints.mapNotNull { constraintExpression(it) }.flatMap { exprShapes.of(it) }
         }
         val components = stronglyConnectedComponents(successors.keys.toList(), budget) { v -> successors[v].orEmpty().filter { it in successors } }
         val out = HashMap<RdfResource, Int>()
@@ -408,17 +556,18 @@ internal object ShapesCompiler {
 
     /**
      * Blank node `sh:targetNode` values. In SHACL 1.2 the values of `sh:targetNode` are node expressions: an IRI or
-     * a literal is a constant, a blank node is a computed expression. The engine evaluates no computed expression,
-     * and a blank node of the shapes graph can only denote a node of the data graph when both graphs share it (the
-     * same graph validated against itself, or shapes discovered from the data). The rule is therefore:
+     * a literal is a constant, a blank node is a computed expression. A blank node of the shapes graph can only
+     * denote a node of the data graph when both graphs share it (the same graph validated against itself, or shapes
+     * discovered from the data). The rule is therefore:
      *
      * 1. **Compile time (this function).** The blank node is a node expression, whatever the data graph is, when its
      *    own triples use vocabulary that has **no reading as data**: a SPARQL expression (`sh:select`,
      *    `sh:sparqlExpr`, the SHACL SPARQL expression types), the SHACL node-expression (`shnex:`) or SPARQL
      *    function (`sparql:`) namespaces as predicate or type, or a single call `[ ex:fn ( … ) ]` of a function
      *    **declared** in the shapes graph (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or described with SHACL
-     *    function vocabulary such as `sh:parameter`). It is reported per [ValidationConfig.unsupportedFeatures]
-     *    (W3C `sparql/targets/targetNode-select-001` validates such a shapes graph against itself).
+     *    function vocabulary such as `sh:parameter`). It is evaluated when it compiles ([NodeExpressions.compile]),
+     *    else reported per [ValidationConfig.unsupportedFeatures] (W3C `sparql/targets/targetNode-select-001`
+     *    validates such a shapes graph against itself).
      * 2. **Validation time.** Any other blank node — a plain one, an RDF list cell, one that carries `sh:`
      *    predicates or a SHACL type (a shape used as data), a call-shaped one `[ ex:fn ( … ) ]` with `ex:fn`
      *    undeclared — is an **ordinary target when it is a node of the data graph**, regardless of its predicates.
@@ -453,13 +602,14 @@ internal object ShapesCompiler {
     }
 
     /**
-     * True when [term] compiles as a node expression that validation evaluates
-     * ([NodeExpressions.compileForValidation]). An ill-formed one counts as supported: the compiler reports it with its
-     * own error where the expression is used (a deactivated shape never compiles its expressions).
+     * True when [term] compiles as a node expression ([NodeExpressions.compile]): a constant, a SPARQL expression, or
+     * any expression of the library. An ill-formed one counts as supported: the compiler reports it with its own error
+     * where the expression is used (a deactivated shape never compiles its expressions). A blank node that is no node
+     * expression at all (such as a call of an undeclared function) is not.
      */
     private fun isSupportedExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
         try {
-            NodeExpressions.compileForValidation(term, index) != null
+            NodeExpressions.compile(term, index) != null
         } catch (_: ShapeCompileException) {
             true
         }
@@ -467,30 +617,46 @@ internal object ShapesCompiler {
     private val shapeReferencePredicates: List<Iri> by lazy {
         listOf(
             SHACL.`property`, SHACL.node, SHACL.`not`, SHACL.qualifiedValueShape, SHACL.someValue, SHACL.memberShape,
-            SHACL.shape, SHACL.reifierShape, SHACL.nodeByExpression, SHACL.targetWhere,
+            SHACL.shape, SHACL.reifierShape, SHACL.targetWhere,
         )
     }
 
+    /** Shapes reachable from some roots ([shapeReachableNodes]), and which candidates their computed shape references need. */
+    private class Reach(val shapes: Set<RdfResource>, val needsCandidates: Boolean)
+
     /**
-     * Declared and implicit shapes, [extraRoots], and every node reachable from them through shape-valued parameters
-     * and through the shapes of the node expressions at `sh:values`, `sh:defaultValue` and `sh:targetNode`
-     * ([expressionShapeRefs]).
+     * [roots] and every node reachable from them through shape-valued parameters (a constant `sh:nodeByExpression`
+     * IRI included) and through the shapes of the node expressions at `sh:values`, `sh:defaultValue`, `sh:targetNode`,
+     * `sh:expression` and `sh:nodeByExpression` ([NodeExpressions.shapeRefs]). The candidates of computed shape
+     * references are not followed: [Reach.needsCandidates] tells whether there are any.
      */
     private fun shapeReachableNodes(
         index: ShapeGraphIndex,
-        nodeShapes: List<RdfResource>,
-        extraRoots: List<RdfResource>,
+        roots: Collection<RdfResource>,
         exprShapes: ExpressionShapes,
         budget: ValidationBudget,
-    ): Set<RdfResource> {
+    ): Reach {
         val out = LinkedHashSet<RdfResource>()
         val pending = ArrayDeque<RdfResource>()
+        var needsCandidates = false
         fun visit(term: RdfTerm) {
             if (term is RdfResource && out.add(term)) pending.add(term)
         }
-        nodeShapes.forEach(::visit)
-        extraRoots.forEach(::visit)
-        index.subjects(RDF.type, SHACL.PropertyShape).forEach(::visit)
+        /** The shapes of the node expression [term]; constants and SPARQL expressions reference none. */
+        fun expression(term: RdfTerm, computedShape: Boolean) {
+            if (term !is BlankNode) return
+            if (computedShape) needsCandidates = true
+            if (isNodeExpression(term, index)) return
+            // An ill-formed expression references none: the compiler reports it.
+            val expr = try {
+                NodeExpressions.compile(term, index)
+            } catch (_: ShapeCompileException) {
+                null
+            } ?: return
+            exprShapes.strict(expr).forEach(::visit)
+            if (exprShapes.computes(expr)) needsCandidates = true
+        }
+        roots.forEach(::visit)
         while (pending.isNotEmpty()) {
             budget.tick("feature detection")
             val shape = pending.removeFirst()
@@ -499,36 +665,29 @@ internal object ShapesCompiler {
                 // Malformed lists are reported by the compiler itself.
                 index.objects(shape, p).forEach { head -> runCatching { index.parseRdfList(head) }.getOrDefault(emptyList()).forEach(::visit) }
             }
-            // Groundwork for when ruling R1 is lifted (Task 6): no shape refs at these positions today.
-            for (p in expressionPositions) index.objects(shape, p).forEach { term -> expressionShapeRefs(term, index, exprShapes).forEach(::visit) }
+            for (p in expressionPositions) index.objects(shape, p).forEach { expression(it, computedShape = false) }
+            // An IRI is a constant shape reference; any other value computes its shapes.
+            index.objects(shape, SHACL.nodeByExpression).forEach { if (it is Iri) visit(it) else expression(it, computedShape = true) }
         }
-        return out
+        return Reach(out, needsCandidates)
     }
 
-    private val expressionPositions: List<Iri> by lazy { listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode) }
+    private val expressionPositions: List<Iri> by lazy { listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue, SHACL.targetNode, shExpression) }
 
     /**
-     * The shapes the node expression [term] references ([NodeExpressions.shapeRefs]), when validation evaluates it
-     * ([NodeExpressions.compileForValidation]). Constants and SPARQL expressions reference none and are not parsed
-     * here; an ill-formed expression references none either (the compiler reports it).
+     * Unsupported constructs: [strict] of the shapes the run validates against, by description, and [candidateOnly]:
+     * those of shapes that only a computed shape reference can name, by shape (R8).
      */
-    private fun expressionShapeRefs(term: RdfTerm, index: ShapeGraphIndex, exprShapes: ExpressionShapes): Set<RdfResource> {
-        if (term !is BlankNode || isNodeExpression(term, index)) return emptySet()
-        val expr = try {
-            NodeExpressions.compileForValidation(term, index)
-        } catch (_: ShapeCompileException) {
-            null
-        }
-        return expr?.let { exprShapes.of(it) } ?: emptySet()
-    }
+    private class Detected(val strict: Map<String, UnsupportedShaclFeature>, val candidateOnly: Map<RdfResource, String>)
 
     /**
      * Recognised SHACL constructs the native engine cannot evaluate. They are reported instead of silently
-     * compiling to something that always conforms (or targets every node): SHACL 1.2 node expressions (`sh:values`,
-     * `sh:expression`, SPARQL expressions as `sh:targetWhere` / `sh:targetNode` values, computed
-     * `sh:nodeByExpression` values) and `sh:target`.
-     * Node-expression positions are only inspected on shape-reachable nodes, so data triples that share the shapes
-     * graph (`validate(g, g)`, discovered shapes graphs) are never mistaken for expressions.
+     * compiling to something that always conforms (or targets every node): blank nodes at node expression positions
+     * that are no node expression, non-constant `sh:deactivated`, SPARQL expressions as `sh:targetWhere` values,
+     * and `sh:target`. Node-expression positions are only inspected on shape-reachable nodes, so data triples that
+     * share the shapes graph (`validate(g, g)`, discovered shapes graphs) are never mistaken for expressions. The
+     * shapes only the candidates of computed shape references reach do not fail the run: their constructs are
+     * [Detected.candidateOnly], which fails an expression that validates against such a shape.
      */
     private fun detectUnsupportedFeatures(
         index: ShapeGraphIndex,
@@ -536,36 +695,32 @@ internal object ShapesCompiler {
         extraRoots: List<RdfResource>,
         exprShapes: ExpressionShapes,
         budget: ValidationBudget,
-    ): Map<String, UnsupportedShaclFeature> {
+    ): Detected {
         val out = LinkedHashMap<String, UnsupportedShaclFeature>()
+        val candidateOnly = LinkedHashMap<RdfResource, String>()
         val functions = LinkedHashSet<Iri>()
-        val shapes = shapeReachableNodes(index, nodeShapes, extraRoots, exprShapes, budget)
+        val reach = shapeReachableNodes(index, nodeShapes + extraRoots + index.subjects(RDF.type, SHACL.PropertyShape), exprShapes, budget)
+        val shapes = reach.shapes
+        val candidateShapes =
+            if (reach.needsCandidates) shapeReachableNodes(index, exprShapes.allCandidates - shapes, exprShapes, budget).shapes - shapes else emptySet()
         fun expression(term: RdfTerm) =
             if (isNodeExpression(term, index)) UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION else UnsupportedShaclFeature.NODE_EXPRESSION
         for (t in index.triples) {
             budget.tick("feature detection")
-            when {
-                t.predicate == ShaclSparqlTerms.bodyExpression && t.subject is Iri -> functions.add(t.subject as Iri)
-                t.subject !in shapes -> Unit
-                t.predicate == ShaclSparqlTerms.values && !isSupportedExpression(t.obj, index) ->
-                    out["sh:values node expression on ${t.subject}"] = expression(t.obj)
-                t.predicate == ShaclSparqlTerms.defaultValue && !isSupportedExpression(t.obj, index) ->
-                    out["sh:defaultValue node expression on ${t.subject}"] = expression(t.obj)
-                t.predicate == shExpression -> out["sh:expression constraint on ${t.subject}"] = expression(t.obj)
-                t.predicate == shTarget ->
-                    out["sh:target (SPARQL-based or custom target) on ${t.subject}"] = UnsupportedShaclFeature.CUSTOM_TARGET
-                t.predicate == SHACL.targetWhere && isNodeExpression(t.obj, index) ->
-                    out["sh:targetWhere with a SPARQL node expression on ${t.subject}"] = UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION
-                t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) && !isSupportedExpression(t.obj, index) ->
-                    out["sh:targetNode with a node expression on ${t.subject}"] = expression(t.obj)
-                t.predicate == SHACL.nodeByExpression && t.obj is BlankNode ->
-                    out["sh:nodeByExpression with a computed node expression on ${t.subject}"] = expression(t.obj)
-                (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && isLexicallyTrue(t.obj))) &&
-                    hasNonPredicatePath(t.subject, index) -> {
-                    val parameter = if (t.predicate == SHACL.reifierShape) "sh:reifierShape" else "sh:reificationRequired"
-                    out["$parameter on the non-predicate path of ${t.subject} (reifier constraints need a predicate IRI as sh:path)"] =
-                        UnsupportedShaclFeature.REIFIER_CONSTRAINT_ON_COMPLEX_PATH
-                }
+            if (t.predicate == ShaclSparqlTerms.bodyExpression && t.subject is Iri) functions.add(t.subject as Iri)
+            // A reifier deactivates the constraint of the triple it reifies, whose subject is a shape.
+            val owner = if (t.predicate == SHACL.deactivated) {
+                val reified = index.objects(t.subject, RDF.reifies).filterIsInstance<TripleTerm>().map { it.triple.subject }
+                reified.firstOrNull { it in shapes } ?: reified.firstOrNull { it in candidateShapes } ?: t.subject
+            } else {
+                t.subject
+            }
+            if (owner !in shapes && owner !in candidateShapes) continue
+            val (description, feature) = unsupportedFeature(t, index, ::expression) ?: continue
+            if (owner in shapes) {
+                out[description] = feature
+            } else {
+                candidateOnly[owner] = candidateOnly[owner]?.let { "$it; $description" } ?: description
             }
         }
         // Functions whose body is a SPARQL or other node expression are evaluated (SparqlFunctionDeclarations). A
@@ -577,8 +732,41 @@ internal object ShapesCompiler {
                 out["SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query"] = UnsupportedShaclFeature.SHACL_FUNCTION
             }
         }
-        return out
+        return Detected(out, candidateOnly)
     }
+
+    /** The unsupported construct the shape triple [t] declares, as a description and its category, or null. */
+    private fun unsupportedFeature(
+        t: RdfTriple,
+        index: ShapeGraphIndex,
+        expression: (RdfTerm) -> UnsupportedShaclFeature,
+    ): Pair<String, UnsupportedShaclFeature>? =
+        when {
+            t.predicate == ShaclSparqlTerms.values && !isSupportedExpression(t.obj, index) ->
+                "sh:values node expression on ${t.subject}" to expression(t.obj)
+            t.predicate == ShaclSparqlTerms.defaultValue && !isSupportedExpression(t.obj, index) ->
+                "sh:defaultValue node expression on ${t.subject}" to expression(t.obj)
+            t.predicate == shExpression && !isSupportedExpression(t.obj, index) ->
+                "sh:expression constraint on ${t.subject}" to expression(t.obj)
+            t.predicate == shTarget ->
+                "sh:target (SPARQL-based or custom target) on ${t.subject}" to UnsupportedShaclFeature.CUSTOM_TARGET
+            t.predicate == SHACL.targetWhere && isNodeExpression(t.obj, index) ->
+                "sh:targetWhere with a SPARQL node expression on ${t.subject}" to UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION
+            t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) && !isSupportedExpression(t.obj, index) ->
+                "sh:targetNode with a node expression on ${t.subject}" to expression(t.obj)
+            t.predicate == SHACL.nodeByExpression && t.obj is BlankNode && !isSupportedExpression(t.obj, index) ->
+                "sh:nodeByExpression with a computed node expression on ${t.subject}" to expression(t.obj)
+            // SHACL 1.2 Core §3.1.6: only the constants true and false are evaluated.
+            t.predicate == SHACL.deactivated && t.obj is BlankNode ->
+                "non-constant sh:deactivated (a node expression) on ${t.subject}" to UnsupportedShaclFeature.NODE_EXPRESSION
+            (t.predicate == SHACL.reifierShape || (t.predicate == SHACL.reificationRequired && isLexicallyTrue(t.obj))) &&
+                hasNonPredicatePath(t.subject, index) -> {
+                val parameter = if (t.predicate == SHACL.reifierShape) "sh:reifierShape" else "sh:reificationRequired"
+                "$parameter on the non-predicate path of ${t.subject} (reifier constraints need a predicate IRI as sh:path)" to
+                    UnsupportedShaclFeature.REIFIER_CONSTRAINT_ON_COMPLEX_PATH
+            }
+            else -> null
+        }
 
     /**
      * True for an active property shape whose `sh:path` is not a predicate IRI. `sh:reifierShape` and
@@ -601,6 +789,14 @@ internal object ShapesCompiler {
             is PropertyConstraint.Shape -> listOf(c.nestedShape)
             is PropertyConstraint.ReifierShape -> listOf(c.nestedShape)
             else -> emptyList()
+        }
+
+    /** The node expression [c] evaluates (`sh:expression`, a computed `sh:nodeByExpression`), if any. */
+    internal fun constraintExpression(c: PropertyConstraint): NodeExpression? =
+        when (c) {
+            is PropertyConstraint.Expression -> c.expr
+            is PropertyConstraint.NodeByExpressionComputed -> c.expr
+            else -> null
         }
 
     internal val resourceOrdering: Comparator<RdfResource> = Comparator { a, b ->
@@ -663,7 +859,7 @@ internal object ShapesCompiler {
             SHACL.`in`, SHACL.hasValue, SHACL.minInclusive, SHACL.maxInclusive, SHACL.minExclusive, SHACL.maxExclusive,
             SHACL.minLength, SHACL.maxLength, SHACL.languageIn, SHACL.sparql, SHACL.equals, SHACL.disjoint,
             SHACL.shape, SHACL.rootClass, SHACL.singleLine, SHACL.minListLength, SHACL.maxListLength,
-            SHACL.memberShape, SHACL.uniqueMembers, SHACL.someValue,
+            SHACL.memberShape, SHACL.uniqueMembers, SHACL.someValue, shExpression,
         )
     }
 
@@ -687,9 +883,10 @@ internal object ShapesCompiler {
                 emptyList()
             }
         val targetNodeValues = index.objects(subject, SHACL.targetNode)
+        // An expression that does not compile (no node expression at all) is reported as unsupported.
         val targetNodeExpressions = targetNodeValues
             .filter { isTargetNodeExpression(it, index) }
-            .mapNotNull { NodeExpressions.compileForValidation(it, index) as? NodeExpression.Select }
+            .mapNotNull { NodeExpressions.compile(it, index) }
         val targetNodes = targetNodeValues
             .filterNot { isTargetNodeExpression(it, index) }
             .onEach { ensureShapeTermAllowed(it, config) }
@@ -766,7 +963,7 @@ internal object ShapesCompiler {
 
         val logicalParts = compileLogicalParts(subject, index)
         val nodeRefsOnShape = index.objects(subject, SHACL.node).filterIsInstance<RdfResource>()
-        // Blank node values are computed node expressions (reported as unsupported); IRIs are constant shape references.
+        // IRIs are constant shape references; other values are computed (PropertyConstraint.NodeByExpressionComputed).
         val nodeByExpressionRefs = index.objects(subject, SHACL.nodeByExpression).filterIsInstance<Iri>()
         val nodeConstraints = compileConstraints(subject, index, config, ConstraintFlavor.NODE_SCALAR, null)
         val uniqueValuesForProps = parseUniqueValuesFor(subject, index)
@@ -946,6 +1143,15 @@ internal object ShapesCompiler {
             index.objects(subject, SHACL.lessThanOrEquals).forEach {
                 constraints.add(PropertyConstraint.LessThanOrEqualsPath(ShaclPathParser.parse(it, index)))
             }
+        }
+        // SHACL 1.2 Node Expressions §7: any shape. A value that is no node expression at all is reported as an
+        // unsupported feature (see detectUnsupportedFeatures) and has no constraint.
+        for (term in index.objects(subject, shExpression)) {
+            NodeExpressions.compile(term, index)?.let { constraints.add(PropertyConstraint.Expression(term, it)) }
+        }
+        for (term in index.objects(subject, SHACL.nodeByExpression)) {
+            if (term is Iri) continue // A constant shape reference: PropertyConstraint.NodeByExpression / nodeByExpressionRefs.
+            NodeExpressions.compile(term, index)?.let { constraints.add(PropertyConstraint.NodeByExpressionComputed(term, it)) }
         }
         index.objects(subject, SHACL.equals).forEach {
             constraints.add(PropertyConstraint.EqualsPath(ShaclPathParser.parse(it, index)))

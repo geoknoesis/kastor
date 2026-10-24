@@ -33,6 +33,7 @@ internal fun ConstraintType.toSourceConstraintComponentIri(): Iri? =
         ConstraintType.MAX_EXCLUSIVE -> shCc("MaxExclusiveConstraintComponent")
         ConstraintType.NODE -> shCc("NodeConstraintComponent")
         ConstraintType.NODE_BY_EXPRESSION -> shCc("NodeByExpressionConstraintComponent")
+        ConstraintType.EXPRESSION -> shCc("ExpressionConstraintComponent")
         ConstraintType.NOT -> shCc("NotConstraintComponent")
         ConstraintType.AND -> shCc("AndConstraintComponent")
         ConstraintType.OR -> shCc("OrConstraintComponent")

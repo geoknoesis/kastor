@@ -5,8 +5,6 @@ import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
-import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
-import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -208,19 +206,15 @@ class NodeExpressionParserTest {
     }
 
     @Test
-    fun `validation positions keep only constants and SPARQL expressions until evaluation exists`() {
-        val index = ShapeGraphIndex(Rdf.parse("$header\nex:holder ex:expr [ shnex:count [] ] , [ shnex:count 1 ; shnex:sum 2 ] .", RdfFormat.TURTLE).getTriples())
-        for (term in index.objects(ex("holder"), ex("expr"))) assertNull(NodeExpressions.compileForValidation(term, index))
-        assertTrue(NodeExpression.Constant(ex("a")).supportedInValidation)
-        assertTrue(!NodeExpression.Empty.supportedInValidation)
-        // Well-formed or not, a shnex: expression at sh:values stays an unsupported feature, never a compile error.
-        for (values in listOf("[ shnex:count [] ]", "[ shnex:limit -1 ; shnex:nodes [] ]")) {
-            val shapes = "$header\nex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values $values ] ."
-            val e = assertThrows(UnsupportedShaclFeatureException::class.java) {
-                ShapesCompiler.compile(Rdf.parse(shapes, RdfFormat.TURTLE).getTriples(), ValidationConfig.default())
-            }
-            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features, values)
-        }
+    fun `validation positions accept the whole library`() {
+        fun compile(values: String) = ShapesCompiler.compile(
+            Rdf.parse("$header\nex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values $values ] .", RdfFormat.TURTLE).getTriples(),
+            ValidationConfig.default(),
+        )
+        val ps = compile("[ shnex:count [] ]").referencedPropertyShapes.values.single()
+        assertEquals(NodeExpression.Count(NodeExpression.Empty), ps.values)
+        // An ill-formed shnex: expression at sh:values is a compile error, not an unsupported feature.
+        assertThrows(ShapeCompileException::class.java) { compile("[ shnex:limit -1 ; shnex:nodes [] ]") }
     }
 
     @Test

@@ -84,14 +84,19 @@ internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeVali
     }
 
 /**
- * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`) for
- * [focus] with an empty scope. An evaluation failure is a validation failure ([ShaclValidationException], caused by
- * the failure's cause). For a
+ * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`; Node
+ * Expressions §7: `sh:expression`, `sh:nodeByExpression`) for [focus] with the scope [variables]. An evaluation
+ * failure is a validation failure ([ShaclValidationException], caused by the failure's cause). For a
  * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
  * variable is unbound are skipped, and the output nodes are distinct, in solution order.
  */
-internal fun NativeShaclValidator.evalNodeExpression(expr: NodeExpression, ctx: NativeValidationContext, focus: RdfTerm?): List<RdfTerm> =
-    when (val outcome = evaluate(expr, ctx, NodeExprScope(focus, emptyMap(), emptyList(), 0))) {
+internal fun NativeShaclValidator.evalNodeExpression(
+    expr: NodeExpression,
+    ctx: NativeValidationContext,
+    focus: RdfTerm?,
+    variables: Map<String, RdfTerm> = emptyMap(),
+): List<RdfTerm> =
+    when (val outcome = evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0))) {
         is NodeExprOutcome.Nodes -> outcome.nodes
         is NodeExprOutcome.Failure -> throw ShaclValidationException(outcome.reason, outcome.cause)
     }
@@ -306,6 +311,8 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      */
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
+        // R8: a candidate of a computed shape reference that did not compile.
+        compiled.candidateErrors[shape]?.let { fail("$function: $it") }
         if (shape !in compiled.referencedNodeShapes && shape !in compiled.referencedPropertyShapes) {
             fail("$function: $shape is not a shape of the shapes graph")
         }

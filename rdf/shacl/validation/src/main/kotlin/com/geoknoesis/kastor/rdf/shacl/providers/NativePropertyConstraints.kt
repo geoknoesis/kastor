@@ -5,9 +5,11 @@ import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
@@ -78,6 +80,10 @@ internal fun NativeShaclValidator.evaluateConstraint(
             evaluateNestedShape(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Qualified ->
             evaluateQualified(focus, tpl, values, c, ctx, state, sink)
+        is PropertyConstraint.Expression ->
+            evaluateExpression(focus, tpl, values, c, ctx, sink)
+        is PropertyConstraint.NodeByExpressionComputed ->
+            evaluateComputedNodeByExpression(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
         is PropertyConstraint.ReifierShape,
         is PropertyConstraint.ReificationRequired,
@@ -448,6 +454,75 @@ private fun NativeShaclValidator.evaluateQualified(
             sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MAX_COUNT, null, u.first, u.second)
         }
     }
+}
+
+/**
+ * `sh:expression` (Node Expressions §7.1): one result per value node `v` for which the expression, evaluated with the
+ * focus node and the scope `{ "value": v }`, does not produce exactly the term `"true"^^xsd:boolean` (R5: not `"1"`,
+ * and not several nodes). An evaluation failure is a validation failure ([evalNodeExpression]).
+ */
+private fun NativeShaclValidator.evaluateExpression(
+    focus: RdfTerm,
+    tpl: ResultTemplate,
+    values: List<RdfTerm>,
+    c: PropertyConstraint.Expression,
+    ctx: NativeValidationContext,
+    sink: Sink,
+) {
+    eachValue(values, sink) { v ->
+        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v))
+        if (out.size != 1 || TrueLiteral != out.single()) {
+            val produced = if (out.size > 3) "${out.size} nodes" else out.joinToString(prefix = "( ", postfix = " )")
+            tpl.add(focus, sink, ConstraintType.EXPRESSION, "sh:expression produced $produced instead of ( true ) for value $v", v, sourceConstraint = c.node)
+        }
+    }
+}
+
+/**
+ * A computed `sh:nodeByExpression` (Node Expressions §7.2): each value node `v` must conform to every output node of
+ * the expression evaluated with `v` as focus node. An output that is not a shape of the shapes graph, a candidate
+ * shape that does not compile (R8), an evaluation failure, and a conformance check that fails or stays undefined are
+ * validation failures ("A failure MUST be produced"); a non-conforming value node is a result whose
+ * `sh:sourceConstraint` is the shape. Inside the recursion solver of the shape's own component an undefined answer is
+ * a provisional one, which the solver settles ([Sink.undefinedAnswer]).
+ */
+private fun NativeShaclValidator.evaluateComputedNodeByExpression(
+    focus: RdfTerm,
+    tpl: ResultTemplate,
+    values: List<RdfTerm>,
+    c: PropertyConstraint.NodeByExpressionComputed,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+) {
+    eachValue(values, sink) { v ->
+        for (output in evalNodeExpression(c.expr, ctx, v)) {
+            if (sink.stop) return
+            val shape = computedShape(output, ctx)
+            when (conformance(v, shape, ctx, state)) {
+                Conformance.FAILS ->
+                    tpl.add(focus, sink, ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${shape.displayId()}", v, sourceConstraint = shape)
+                Conformance.UNDEFINED -> {
+                    val solver = ctx.solver
+                    if (solver == null || ctx.compiled.recursiveComponents[shape] != solver.component) {
+                        throw ShaclValidationException("sh:nodeByExpression: whether ${displayTerm(v)} conforms to ${shape.displayId()} cannot be decided")
+                    }
+                    sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, shape)
+                }
+                Conformance.CONFORMS -> Unit
+            }
+        }
+    }
+}
+
+/** The output node [term] of a computed `sh:nodeByExpression` as a compiled shape, else a validation failure. */
+private fun computedShape(term: RdfTerm, ctx: NativeValidationContext): RdfResource {
+    val compiled = ctx.compiled
+    compiled.candidateErrors[term]?.let { throw ShaclValidationException("sh:nodeByExpression: $it") }
+    if (term !is RdfResource || (term !in compiled.referencedNodeShapes && term !in compiled.referencedPropertyShapes)) {
+        throw ShaclValidationException("sh:nodeByExpression: the output node ${displayTerm(term)} is not a shape of the shapes graph")
+    }
+    return term
 }
 
 private fun ResultTemplate.add(

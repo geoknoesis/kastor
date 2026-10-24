@@ -105,19 +105,21 @@ class NodeExpressionCompileTest {
     }
 
     @Test
-    fun `shnex expressions stay unsupported`() {
-        val index = ShapeGraphIndex(triples("ex:holder ex:expr [ shnex:count [ shnex:pathValues ex:q ] ] ."))
-        assertNull(NodeExpressions.compileForValidation(index.objects(ex("holder"), ex("expr")).single(), index))
-        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ shnex:count [ shnex:pathValues ex:q ] ] ] ."
-        val e = assertThrows(UnsupportedShaclFeatureException::class.java) { compile(shapes) }
-        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features)
+    fun `shnex expressions compile at values and default value`() {
+        for (predicate in listOf("sh:values", "sh:defaultValue")) {
+            val p = propertyShape("ex:P a sh:PropertyShape ; sh:targetNode ex:a ; sh:path ex:p ; $predicate [ shnex:count [ shnex:pathValues ex:q ] ] .")
+            val expr = if (predicate == "sh:values") p.values else p.defaultValue
+            assertTrue(expr is NodeExpression.Count, "$predicate: $expr")
+        }
     }
 
     @Test
-    fun `shnex default value is reported and never silently ignored`() {
-        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:defaultValue [ shnex:count [ shnex:pathValues ex:q ] ] ] ."
-        val e = assertThrows(UnsupportedShaclFeatureException::class.java) { compile(shapes) }
-        assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features)
+    fun `a blank node that is no node expression is reported and never silently ignored`() {
+        for (predicate in listOf("sh:values", "sh:defaultValue", "sh:expression")) {
+            val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; $predicate [ ex:undeclared 1 ] ] ."
+            val e = assertThrows(UnsupportedShaclFeatureException::class.java, { compile(shapes) }, predicate)
+            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), e.features, predicate)
+        }
     }
 
     @Test
@@ -180,7 +182,7 @@ class NodeExpressionCompileTest {
         """.trimIndent()
         val targets = compile(shapes).referencedNodeShapes.getValue(ex("ChildShape")).targets
         assertEquals(1, targets.targetNodeExpressions.size)
-        assertEquals("person", targets.targetNodeExpressions.single().variable)
+        assertEquals("person", (targets.targetNodeExpressions.single() as NodeExpression.Select).variable)
         assertTrue(targets.targetNodes.none { it is BlankNode })
     }
 

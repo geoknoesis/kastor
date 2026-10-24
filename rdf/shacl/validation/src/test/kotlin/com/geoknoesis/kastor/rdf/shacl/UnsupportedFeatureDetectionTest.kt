@@ -75,7 +75,7 @@ class UnsupportedFeatureDetectionTest {
         val cases = listOf(
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ sh:path ex:q ] ] .",
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:node ex:T ] . ex:T sh:expression [ sh:path ex:q ] .",
-            "ex:S a sh:NodeShape ; sh:targetNode [ shnex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode [ a shnex:ConcatExpression ; ex:extra 1 ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .",
             "ex:S a sh:NodeShape ; sh:targetNode [ ex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] . ex:concat a sh:SPARQLFunction .",
             "ex:S a sh:NodeShape ; sh:targetNode [ ex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] . ex:concat sh:parameter [ sh:path ex:x ] .",
         )
@@ -88,15 +88,13 @@ class UnsupportedFeatureDetectionTest {
     // --- blank node sh:targetNode values ---------------------------------------------------------------------------
 
     @Test fun `a SPARQL function call in the sparql namespace is a node expression`() {
+        // Evaluated, whether or not the blank node is a data node: its output "ab" is the target.
         val shapes = """ex:S a sh:NodeShape ; sh:targetNode [ sparql:concat ( "a" "b" ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] ."""
         for (run in listOf<() -> ValidationReport>({ validateSeparate(shapes) }, { validateSelf("$shapes\n$separateData") })) {
-            val error = assertThrows(ShaclValidationException::class.java) { run() }
-            assertTrue(error.message.orEmpty().contains("Unsupported SHACL feature"), error.message)
-            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), (error.cause as UnsupportedShaclFeatureException).features)
+            val report = run()
+            assertEquals(listOf("ab"), report.violations.map { (it.focusNode as com.geoknoesis.kastor.rdf.Literal).lexical })
+            assertTrue(report.warnings.isEmpty(), report.warnings.toString())
         }
-        val report = validateSeparate(shapes, ignore)
-        assertTrue(report.isValid)
-        assertTrue(report.warnings.single().message.contains("sh:targetNode"), report.warnings.toString())
     }
 
     @Test fun `a call-shaped blank node target that cannot be a data node is an unsupported node expression`() {
@@ -162,8 +160,8 @@ class UnsupportedFeatureDetectionTest {
     @Test fun `expression-only vocabulary stays a node expression even when the blank node is a data node`() {
         // sh:select / sh:sparqlExpr, the shnex: and sparql: namespaces and calls of declared functions have no reading
         // as data: W3C sparql/targets/targetNode-select-001 validates such a shapes graph against itself.
+        // (A well-formed one, such as [ shnex:pathValues ex:q ], is evaluated: NodeExpressionConstraintTest.)
         val cases = mapOf(
-            "[ shnex:pathValues ex:q ]" to UnsupportedShaclFeature.NODE_EXPRESSION,
             "[ a shnex:PathValuesExpression ; ex:q 1 ]" to UnsupportedShaclFeature.NODE_EXPRESSION,
         )
         for ((target, feature) in cases) {

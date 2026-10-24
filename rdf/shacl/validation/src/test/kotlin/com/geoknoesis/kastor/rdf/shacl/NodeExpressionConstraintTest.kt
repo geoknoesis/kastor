@@ -1,0 +1,381 @@
+package com.geoknoesis.kastor.rdf.shacl
+
+import com.geoknoesis.kastor.rdf.BlankNode
+import com.geoknoesis.kastor.rdf.FalseLiteral
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfConfig
+import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.RdfRepository
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TypedLiteral
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
+import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
+import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.vocab.SHACL
+import com.geoknoesis.kastor.rdf.vocab.XSD
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+
+/**
+ * SHACL 1.2 Node Expressions §7 (`sh:expression`, computed `sh:nodeByExpression`) and the full node expression
+ * library at the validation positions `sh:values`, `sh:defaultValue` and `sh:targetNode`.
+ */
+class NodeExpressionConstraintTest {
+
+    private val prefixes = """
+        @prefix sh: <http://www.w3.org/ns/shacl#> .
+        @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+        @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
+        @prefix sparql: <http://www.w3.org/ns/sparql#> .
+        @prefix ex: <http://example.com/ns#> .
+    """.trimIndent()
+
+    private fun g(ttl: String) = Rdf.parse(prefixes + "\n" + ttl, RdfFormat.TURTLE)
+    private fun ex(local: String) = Iri("http://example.com/ns#$local")
+    private fun int(n: Int) = TypedLiteral(n.toString(), XSD.integer)
+
+    private fun repository(provider: String): RdfRepository =
+        when (provider) {
+            "jena" -> JenaProvider().createRepository("memory", RdfConfig())
+            else -> Rdf4jProvider().createRepository("memory", RdfConfig())
+        }
+
+    private fun validate(provider: String, data: String, shapes: String, config: ValidationConfig = ValidationConfig.default()) =
+        NativeShaclValidator(config) { repository(provider) }.validate(g(data), g(shapes))
+
+    /** The shapes graph validated against itself, as the W3C cases do. */
+    private fun validateSelf(provider: String, ttl: String) = g(ttl).let { NativeShaclValidator(ValidationConfig.default()) { repository(provider) }.validate(it, it) }
+
+    // --- sh:expression (§7.1) ---------------------------------------------------------------------------------------
+
+    private val iban = """
+        ex:AccountShape a sh:NodeShape ; sh:targetClass ex:Account ; sh:property ex:AccountShape-ibanNumber .
+        ex:AccountShape-ibanNumber a sh:PropertyShape ;
+            sh:path ex:ibanNumber ;
+            sh:datatype xsd:string ;
+            sh:message "IBAN numbers must start with the country code, in upper-case letters." ;
+            sh:expression [
+                sparql:strstarts (
+                    [ shnex:var "value" ]
+                    [ sparql:ucase ( [ shnex:pathValues ( ex:country ex:code ) ] ) ]
+                )
+            ] .
+    """
+
+    private val accounts = """
+        ex:ValidGermanAccount a ex:Account ; ex:ibanNumber "DE123456..." ; ex:country ex:Germany .
+        ex:InvalidGermanAccount a ex:Account ; ex:ibanNumber "DE987654..." ; ex:country ex:Estonia .
+        ex:Estonia a ex:Country ; ex:code "ee" .
+        ex:Germany a ex:Country ; ex:code "de" .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `spec example 29 checks IBAN numbers against the country code`(provider: String) {
+        val report = validate(provider, accounts, iban)
+        val v = report.violations.single()
+        assertEquals(ex("InvalidGermanAccount"), v.focusNode)
+        assertEquals(TypedLiteral("DE987654...", XSD.string), v.value)
+        assertEquals(ConstraintType.EXPRESSION, v.constraint.constraintType)
+        assertEquals(Iri(SHACL.namespace + "ExpressionConstraintComponent"), ConstraintType.EXPRESSION.toSourceConstraintComponentIri())
+        assertTrue(v.sourceConstraint is BlankNode, "sh:sourceConstraint is the expression: ${v.sourceConstraint}")
+        assertEquals(listOf("IBAN numbers must start with the country code, in upper-case letters."), v.resultMessages.map { it.lexical })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `W3C expression-001 sh expression false at a node shape`(provider: String) {
+        val report = validateSelf(
+            provider,
+            """
+            ex:InvalidInstance rdf:type ex:TestShape ; rdfs:label "Invalid instance" .
+            ex:TestShape rdf:type rdfs:Class , sh:NodeShape ; rdfs:label "Test shape" ; sh:expression false .
+            """,
+        )
+        val v = report.violations.single()
+        assertEquals(ex("InvalidInstance"), v.focusNode)
+        assertEquals(ex("InvalidInstance"), v.value)
+        assertEquals(FalseLiteral, v.sourceConstraint)
+        assertEquals(ConstraintType.EXPRESSION, v.constraint.constraintType)
+        assertEquals("http://example.com/ns#TestShape", v.shapeUri)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `only exactly the term true passes an expression constraint`(provider: String) {
+        // R5: "1"^^xsd:boolean is not the term true; ( true true ) and ( ) are not the list ( true ).
+        val outputs = mapOf(
+            "true" to true,
+            "\"true\"^^xsd:boolean" to true,
+            "\"1\"^^xsd:boolean" to false,
+            "( true true )" to false,
+            "[]" to false,
+            "\"true\"" to false,
+        )
+        for ((expr, passes) in outputs) {
+            val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression $expr ."
+            val report = validate(provider, "ex:a ex:p 1 .", shapes)
+            assertEquals(passes, report.isValid, "$expr: ${report.violations}")
+            if (!passes) assertEquals(ConstraintType.EXPRESSION, report.violations.single().constraint.constraintType, expr)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an expression constraint gives one result per failing value node`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:expression [ sparql:less-than ( [ shnex:var "value" ] 5 ) ] ] .
+        """
+        val report = validate(provider, "ex:a ex:p 1 , 7 , 9 .", shapes)
+        assertEquals(setOf<RdfTerm>(int(7), int(9)), report.violations.map { it.value }.toSet())
+        assertTrue(report.violations.all { it.focusNode == ex("a") && it.constraint.constraintType == ConstraintType.EXPRESSION })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `the focus node of an expression constraint on a property shape is the shape's focus node`(provider: String) {
+        // §7.1: evalExpr($expr, data graph, focusNode, {"value": v}).
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:expression [ sparql:equals ( [ shnex:var "focusNode" ] ex:a ) ] ] .
+        """
+        assertTrue(validate(provider, "ex:a ex:p ex:b , ex:c .", shapes).isValid)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an expression constraint works inside sh not and sh or`(provider: String) {
+        val small = """[ sh:path ex:p ; sh:expression [ sparql:less-than ( [ shnex:var "value" ] 5 ) ] ]"""
+        val not = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:not $small ."
+        val notReport = validate(provider, "ex:a ex:p 1 . ex:b ex:p 9 .", not)
+        assertEquals(listOf(ex("a")), notReport.violations.map { it.focusNode })
+        assertEquals(ConstraintType.NOT, notReport.violations.single().constraint.constraintType)
+
+        val or = "ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:or ( $small [ sh:path ex:p ; sh:hasValue 9 ] ) ."
+        val orReport = validate(provider, "ex:a ex:p 1 . ex:b ex:p 7 .", or)
+        assertEquals(listOf(ex("b")), orReport.violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a failing expression constraint fails validation`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:expression [ sparql:abs ( ( 1 2 ) ) ] ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+        // Also when the expression is only checked for conformance (inside sh:not).
+        val nested = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:not [ sh:expression [ sparql:abs ( ( 1 2 ) ) ] ] ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", nested) }
+    }
+
+    // --- sh:nodeByExpression (§7.2) ---------------------------------------------------------------------------------
+
+    private val dataCubeShapes = """
+        ex:dsd1-shape a sh:NodeShape ;
+            sh:property [ sh:path ex:refTime ; sh:datatype xsd:date ; sh:minCount 1 ; sh:maxCount 1 ] ;
+            sh:property [ sh:path ex:quantity ; sh:datatype xsd:integer ; sh:minCount 1 ; sh:maxCount 1 ; sh:minInclusive 0 ] .
+        ex:ObservationShape a sh:NodeShape ;
+            sh:targetClass ex:Observation ;
+            sh:nodeByExpression [ shnex:pathValues ( ex:dataSet ex:structure ex:hasShape ) ] .
+    """
+
+    private val observations = """
+        ex:dsd1 ex:hasShape ex:dsd1-shape .
+        ex:dataset1 ex:structure ex:dsd1 .
+        ex:o1 a ex:Observation ; ex:dataSet ex:dataset1 ; ex:refTime "2024-01-01"^^xsd:date ; ex:quantity 3 .
+        ex:o2 a ex:Observation ; ex:dataSet ex:dataset1 ; ex:refTime "2024-01-02"^^xsd:date ; ex:quantity -1 .
+        ex:o3 a ex:Observation .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `spec example 30 validates observations against the shape of their structure`(provider: String) {
+        val report = validate(provider, observations, dataCubeShapes)
+        val v = report.violations.single()
+        assertEquals(ex("o2"), v.focusNode)
+        assertEquals(ex("o2"), v.value)
+        assertEquals(ConstraintType.NODE_BY_EXPRESSION, v.constraint.constraintType)
+        assertEquals(ex("dsd1-shape"), v.sourceConstraint)
+        assertEquals("http://example.com/ns#ObservationShape", v.shapeUri)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `computed nodeByExpression on a property shape checks every value node`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:nodeByExpression [ shnex:pathValues ex:shape ] ] .
+            ex:Named a sh:NodeShape ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+        """
+        val data = "ex:a ex:p ex:b , ex:c . ex:b ex:shape ex:Named ; ex:name \"b\" . ex:c ex:shape ex:Named ."
+        val v = validate(provider, data, shapes).violations.single()
+        assertEquals(ex("a"), v.focusNode)
+        assertEquals(ex("c"), v.value)
+        assertEquals(ConstraintType.NODE_BY_EXPRESSION, v.constraint.constraintType)
+        assertEquals(ex("Named"), v.sourceConstraint)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a computed nodeByExpression output that is not a shape fails validation`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression [ shnex:pathValues ex:shape ] ."
+        for (data in listOf("ex:a ex:shape ex:NotAShape .", "ex:a ex:shape \"literal\" .")) {
+            assertThrows(ShaclValidationException::class.java, { validate(provider, data, shapes) }, data)
+        }
+        // No output nodes: nothing to conform to.
+        assertTrue(validate(provider, "ex:a ex:p 1 .", shapes).isValid)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `computed nodeByExpression inside sh not is checked for conformance`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ; sh:not [ sh:nodeByExpression [ shnex:pathValues ex:shape ] ] .
+            ex:Named a sh:NodeShape ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+        """
+        val data = "ex:a ex:shape ex:Named ; ex:name \"a\" . ex:b ex:shape ex:Named ."
+        assertEquals(listOf(ex("a")), validate(provider, data, shapes).violations.map { it.focusNode })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `W3C nodeByExpression-001 a constant shape IRI behaves like sh node`(provider: String) {
+        val report = validateSelf(
+            provider,
+            """
+            ex:AssignedToShape a sh:NodeShape ;
+              sh:property [ sh:path ex:email ; sh:maxCount 1 ; sh:minCount 1 ] ;
+              sh:property [ sh:path ex:lastName ; sh:maxCount 1 ; sh:minCount 1 ] .
+            ex:Issue a rdfs:Class , sh:NodeShape ; sh:property ex:Issue-assignedTo .
+            ex:Issue-assignedTo sh:path ex:assignedTo ; sh:nodeByExpression ex:AssignedToShape .
+            ex:Issue_1 a ex:Issue ; ex:assignedTo ex:Anon .
+            ex:Issue_2 a ex:Issue ; ex:assignedTo ex:John .
+            ex:John ex:email "john@doe.com" ; ex:lastName "Doe" .
+            """,
+        )
+        val v = report.violations.single()
+        assertEquals(ex("Issue_1"), v.focusNode)
+        assertEquals(ex("AssignedToShape"), v.sourceConstraint)
+    }
+
+    // --- validation positions with the full library -----------------------------------------------------------------
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `failing sh values expression fails validation`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:q ; sh:values [ sparql:abs ( ( 1 2 ) ) ] ] ."
+        assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:p 1 .", shapes) }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `shnex at sh values and sh targetNode`(provider: String) {
+        val values = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:q ; sh:values [ shnex:count [ shnex:pathValues ex:p ] ] ; sh:hasValue 3 ; sh:maxCount 1 ] .
+        """
+        assertTrue(validate(provider, "ex:a ex:p 1 , 2 , 3 .", values).isValid)
+        assertEquals(ConstraintType.HAS_VALUE, validate(provider, "ex:a ex:p 1 , 2 .", values).violations.single().constraint.constraintType)
+
+        val target = "ex:S a sh:NodeShape ; sh:targetNode [ shnex:instancesOf ex:C ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] ."
+        val report = validate(provider, "ex:a a ex:C . ex:b a ex:D . ex:D rdfs:subClassOf ex:C . ex:c a ex:C ; ex:p 1 . ex:z ex:q 1 .", target)
+        assertEquals(setOf<RdfTerm>(ex("a"), ex("b")), report.violations.map { it.focusNode }.toSet())
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `shnex default value`(provider: String) {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b ;
+              sh:property [ sh:path ex:q ; sh:defaultValue [ shnex:count [ shnex:pathValues ex:p ] ] ; sh:minInclusive 1 ] .
+        """
+        // ex:a has no ex:q, so its value node is the count of ex:p (0); ex:b has ex:q 5.
+        val report = validate(provider, "ex:b ex:q 5 .", shapes)
+        assertEquals(listOf(ex("a")), report.violations.map { it.focusNode })
+        assertEquals(int(0), report.violations.single().value)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a shape referenced only by an expression is compiled`(provider: String) {
+        // ex:Big is no shape of its own (no type, no target): only the expressions name it.
+        val big = "ex:Big sh:minInclusive 10 ."
+        val values = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:q ; sh:values [ shnex:filterShape ex:Big ; shnex:nodes ( 1 20 30 ) ] ; sh:minCount 2 ; sh:maxCount 2 ] .
+            $big
+        """
+        assertTrue(validate(provider, "ex:a ex:p 1 .", values).isValid)
+
+        val expression = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:expression [ shnex:exists [ shnex:filterShape ex:Big ; shnex:nodes [ shnex:var "value" ] ] ] ] .
+            $big
+        """
+        assertEquals(listOf<RdfTerm?>(int(3)), validate(provider, "ex:a ex:p 3 , 12 .", expression).violations.map { it.value })
+
+        val nodeBy = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:nodeByExpression [ shnex:if [ shnex:exists [ shnex:filterShape ex:Big ; shnex:nodes ( 1 ) ] ] ; shnex:else ex:Small ] ] .
+            ex:Small sh:maxInclusive 5 .
+            $big
+        """
+        assertEquals(listOf<RdfTerm?>(int(12)), validate(provider, "ex:a ex:p 3 , 12 .", nodeBy).violations.map { it.value })
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an expression constraint may validate against its own shape`(provider: String) {
+        // ex:S is recursive through its sh:expression: each ex:next value must conform to ex:S, and have an ex:name.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:name ; sh:minCount 1 ] ;
+              sh:property [ sh:path ex:next ; sh:expression [ shnex:conformsToShape ( [ shnex:var "value" ] ex:S ) ] ] .
+        """
+        assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c . ex:c ex:name 3 .", shapes).isValid)
+        val report = validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c .", shapes)
+        assertEquals(listOf<RdfTerm?>(ex("b")), report.violations.map { it.value })
+        // A cycle in the data: every node conforms (greatest fixpoint).
+        assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", shapes).isValid)
+    }
+
+    // --- R8: candidate shapes of computed shape references ----------------------------------------------------------
+
+    private val unrelatedBadShapes = """
+        ex:Good a sh:NodeShape ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+        ex:Malformed sh:datatype "not a datatype IRI" .
+        ex:Unsupported sh:nodeKind sh:IRI ; sh:expression [ ex:undeclaredFunction 1 ] .
+    """
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `an unrelated malformed or unsupported shape does not break a computed shape reference`(provider: String) {
+        val nodeBy = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:nodeByExpression [ shnex:pathValues ex:shape ] .\n$unrelatedBadShapes"
+        val conformsTo = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:expression [ shnex:conformsToShape ( [ shnex:var "focusNode" ] [ shnex:pathValues ex:shape ] ) ] .
+            $unrelatedBadShapes
+        """
+        for (shapes in listOf(nodeBy, conformsTo)) {
+            // Unused: the bad shapes are never validated against.
+            assertTrue(validate(provider, "ex:a ex:shape ex:Good ; ex:name \"a\" .", shapes).isValid, shapes)
+            assertEquals(1, validate(provider, "ex:a ex:shape ex:Good .", shapes).violations.size, shapes)
+            // Used: an evaluation failure, which is a validation failure.
+            for (bad in listOf("Malformed", "Unsupported")) {
+                val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:shape ex:$bad .", shapes) }, "$bad: $shapes")
+                assertTrue(error.message.orEmpty().contains(bad), "$bad: ${error.message}")
+            }
+        }
+    }
+
+    // --- still unsupported ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `non-constant sh deactivated stays unsupported`() {
+        val cases = listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ; sh:class ex:C .",
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:minCount 2 ; sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] ] .",
+            // A reifier deactivating one constraint (SHACL 1.2 Core §3.1.6).
+            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:class ex:C {| sh:deactivated [ shnex:exists [ shnex:pathValues ex:p ] ] |} .",
+        )
+        for (shapes in cases) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:p 1 .", shapes) }, shapes)
+            val unsupported = generateSequence<Throwable>(error) { it.cause }.filterIsInstance<UnsupportedShaclFeatureException>().first()
+            assertEquals(setOf(UnsupportedShaclFeature.NODE_EXPRESSION), unsupported.features, shapes)
+        }
+    }
+
+    @Test
+    fun `constant sh deactivated is unchanged`() {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true ; sh:class ex:C ."
+        assertTrue(validate("jena", "ex:a ex:p 1 .", shapes).isValid)
+    }
+}

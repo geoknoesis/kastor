@@ -150,14 +150,8 @@ class Shacl12NativeConformanceTest {
 internal object W3cKnownDeviations {
     class Deviation(val category: UnsupportedShaclFeature, val reason: String)
 
-    private val NODE_EXPRESSIONS = Deviation(
-        UnsupportedShaclFeature.NODE_EXPRESSION,
-        "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine",
-    )
-
-    private val deviations: Map<String, Deviation> = linkedMapOf(
-        "node-expr/constraints/expression-001.ttl" to NODE_EXPRESSIONS,
-    )
+    /** Empty: the native engine implements every feature the approved W3C SHACL 1.2 suite uses. */
+    private val deviations: Map<String, Deviation> = linkedMapOf()
 
     /**
      * Approved cases whose expected result contradicts the normative SHACL 1.2 text, mapped to the reason. The engine

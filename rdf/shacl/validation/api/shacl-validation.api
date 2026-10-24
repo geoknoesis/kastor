@@ -21,6 +21,7 @@ public final class com/geoknoesis/kastor/rdf/shacl/ConstraintType : java/lang/En
 	public static final field DATATYPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
 	public static final field DISJOINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
 	public static final field EQUALS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field EXPRESSION Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
 	public static final field FLAGS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
 	public static final field HAS_VALUE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
 	public static final field IN Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
