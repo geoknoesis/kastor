@@ -33,7 +33,12 @@ and is kept as is; it was never published to Maven Central.
   narrowing, and gets no `sh:uniqueValuesFor` result for it. A second `sh:deactivated` value next to `true` is a
   compile error. A reifier of a parameter triple deactivates the constraints that use it (Core 3.1.6), with the
   constant `true` (before, only on `sh:property` and `sh:datatype` triples) or a node expression evaluated per focus
-  node, for every constraint kind; a triple with two reifiers carrying `sh:deactivated` is a compile error.
+  node, for every constraint kind; a triple with two reifiers carrying `sh:deactivated` is a compile error, checked
+  on every parameter triple of the constraint, and so is a reifier with two values (engine strictness). One reifier
+  expression producing `true` deactivates the constraint even when another one of the same constraint is still
+  undecided by recursion. A reifier's `sh:deactivated` on a triple that is no constraint parameter (a target,
+  `sh:path`, `sh:message`, ...) has no effect and now gives a report warning; the shapes it reads are no longer
+  inspected for unsupported features.
   Report RDF holds a deep copy of a blank-node `sh:sourceConstraint`, written lazily by
   `toShaclValidationReportRdf()` with each blank node once per report (validation itself copies nothing). Relative
   IRIs in SPARQL queries are resolved in linear time, on the preparation budget. Custom node expression functions must be SHACL subclasses of
