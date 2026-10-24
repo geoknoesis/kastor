@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.shacl.*
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
+import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
@@ -121,6 +122,48 @@ class PreparationBudgetTest {
         assertTrue(calledBy("BASE <rel> SELECT * WHERE { FILTER (<#g>()) }", f))
         // A relative IRI that is not called does not.
         assertFalse(calledBy("SELECT * WHERE { ?s <p> ?o }", f))
+    }
+    /** A `sh:select` that calls an IRI of about 1 MB: many `a/` segments, then as many `../` (resolving to `<urn:x:/f>`). */
+    private fun hugeIriQuery(): List<RdfTriple> {
+        val segments = 250_000
+        val iri = "http://example.com/" + "a/".repeat(segments) + "../".repeat(segments) + "./".repeat(segments / 4) + "ns#f"
+        val ttl = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n<urn:s> sh:select \"\"\"SELECT * WHERE { FILTER (<$iri>()) }\"\"\" ."
+        return Rdf.parse(ttl, RdfFormat.TURTLE).getTriples()
+    }
+    @Test fun `a huge IRI with dot segments is resolved in linear time`() {
+        val triples = hugeIriQuery()
+        val started = System.nanoTime()
+        assertTimeoutPreemptively(Duration.ofSeconds(20)) {
+            assertTrue(SparqlFunctionDeclarations.calledFromSparql(Iri("http://example.com/ns#f"), ShapeGraphIndex(triples)))
+        }
+        assertTrue(System.nanoTime() - started < 20_000_000_000L)
+    }
+    @Test fun `resolving a huge IRI consumes the preparation budget`() {
+        val triples = hugeIriQuery()
+        var expired = false
+        val budget = ValidationBudget(Duration.ofSeconds(1)) { if (expired) 1_000_000_000_000L else 0L }
+        val index = ShapeGraphIndex(triples, budget)
+        assertEquals(1, index.sparqlQueries.size)
+        expired = true
+        val e = assertFailsWith<ShaclValidationException> {
+            assertTimeoutPreemptively(Duration.ofSeconds(20)) { SparqlFunctionDeclarations.calledFromSparql(Iri("http://example.com/ns#f"), index) }
+        }
+        assertTrue("SPARQL function compilation" in e.message.orEmpty(), e.message)
+    }
+    @Test fun `dot segments are removed as RFC 3986 specifies`() {
+        // RFC 3986 5.4.1 / 5.4.2 examples, base http://a/b/c/d;p?q.
+        val base = "http://a/b/c/d;p?q"
+        val cases = mapOf(
+            "g" to "http://a/b/c/g", "./g" to "http://a/b/c/g", "g/" to "http://a/b/c/g/", "/g" to "http://a/g",
+            "?y" to "http://a/b/c/d;p?y", "g?y" to "http://a/b/c/g?y", "#s" to "http://a/b/c/d;p?q#s", "." to "http://a/b/c/",
+            "./" to "http://a/b/c/", ".." to "http://a/b/", "../" to "http://a/b/", "../g" to "http://a/b/g", "../.." to "http://a/",
+            "../../" to "http://a/", "../../g" to "http://a/g", "../../../g" to "http://a/g", "../../../../g" to "http://a/g",
+            "/./g" to "http://a/g", "/../g" to "http://a/g", "g." to "http://a/b/c/g.", ".g" to "http://a/b/c/.g", "g.." to "http://a/b/c/g..",
+            "..g" to "http://a/b/c/..g", "./../g" to "http://a/b/g", "./g/." to "http://a/b/c/g/", "g/./h" to "http://a/b/c/g/h",
+            "g/../h" to "http://a/b/c/h", "g;x=1/./y" to "http://a/b/c/g;x=1/y", "g;x=1/../y" to "http://a/b/c/y", "" to "http://a/b/c/d;p?q",
+            "http://x/a/./b/../c" to "http://x/a/c", "http://x/a/b" to "http://x/a/b", "urn:a:b/../c" to "urn:/c",
+        )
+        for ((reference, expected) in cases) assertEquals(expected, resolveIri(base, reference), reference)
     }
     @Test fun `cancelled preparation does not populate compiled cache`() {
         val cache = NativeCompileCache()
