@@ -242,6 +242,8 @@ class DynamicSparqlComponentTest {
             "sh:nodeKind ( sh:IRI sh:BlankNode )", "sh:nodeKind sh:BlankNodeOrIRI", "sh:nodeKind sh:BlankNodeOrLiteral",
             "sh:nodeKind sh:BlankNode", "sh:class ex:K", "sh:hasValue 1", "sh:singleLine true", "sh:in ( 1 [] )",
             "sh:name \"x\"", "sh:datatype [ shnex:pathValues ex:dt ]", "sh:minLength [ shnex:pathValues ex:n ]",
+            // An empty constant list at sh:nodeKind or sh:datatype makes no constraint, so it rules nothing out.
+            "sh:nodeKind ()", "sh:datatype ()",
         )
         for (row in rows) {
             val c = components(declaration(row)).single()

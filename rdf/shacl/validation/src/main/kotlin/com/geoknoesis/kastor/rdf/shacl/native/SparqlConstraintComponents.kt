@@ -115,10 +115,12 @@ internal class SparqlComponentCatalog private constructor(
         }
         fun iris(v: RdfTerm): List<Iri>? =
             if (v is Iri && v != RDF.nil) listOf(v) else members(v)?.takeIf { m -> m.all { it is Iri } }?.map { it as Iri }
-        val nodeKinds = constants(SHACL.nodeKind).mapNotNull(::iris)
-        val datatypes = constants(SHACL.datatype).mapNotNull(::iris)
+        // An empty constant list at sh:nodeKind or sh:datatype makes no constraint (ConstraintInstantiation), so it rules
+        // out nothing, and it must not count as a declaration that every blank node violates.
+        val nodeKinds = constants(SHACL.nodeKind).mapNotNull(::iris).filter { it.isNotEmpty() }
+        val datatypes = constants(SHACL.datatype).mapNotNull(::iris).filter { it.isNotEmpty() }
         val blankExcluding =
-            nodeKinds.any { kinds -> kinds.all { it in NON_BLANK_KINDS } } ||
+            nodeKinds.any { kinds -> kinds.isNotEmpty() && kinds.all { it in NON_BLANK_KINDS } } ||
                 datatypes.isNotEmpty() ||
                 constants(SHACL.`in`).any { v -> members(v)?.none { it is BlankNode } == true } ||
                 LITERAL_ONLY.any { p -> constants(p).any { it is Literal } } ||
