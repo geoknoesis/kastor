@@ -87,7 +87,7 @@ data class ValidationConfig(
     /**
      * What the native engine does with SHACL features it recognises but cannot evaluate (non-constant
      * `sh:deactivated`, blank nodes at node expression positions that are no node expression, SPARQL node expressions
-     * used as `sh:targetWhere` values, SHACL functions without a node expression body called from SPARQL,
+     * used as `sh:targetWhere` values, SHACL functions called from SPARQL that have no node expression body,
      * SPARQL-based targets). SHACL-SPARQL constraints, constraint components, the SHACL 1.2 node expressions at
      * `sh:targetNode` / `sh:values` / `sh:defaultValue`, the `sh:expression` and `sh:nodeByExpression` constraints, and
      * SHACL functions are supported.

@@ -54,8 +54,9 @@ enum class UnsupportedShaclFeature {
     SPARQL_NODE_EXPRESSION,
 
     /**
-     * SHACL 1.2 functions whose `sh:bodyExpression` is a `shnex:` node expression (spec section 7.1), called from
-     * SPARQL queries. Functions with a `sh:select` / `sh:sparqlExpr` body are supported.
+     * SHACL 1.2 functions that SPARQL queries call but the engine cannot compile: not a
+     * `sh:ListParameterExpressionFunction`, or a `sh:bodyExpression` that is no node expression at all. Functions
+     * with a `sh:select` / `sh:sparqlExpr` or `shnex:` body are supported.
      */
     SHACL_FUNCTION,
 

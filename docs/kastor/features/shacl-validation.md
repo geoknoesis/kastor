@@ -213,21 +213,37 @@ A `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is evaluated 
 - **Parameters:** parameter values are pre-bound. A shape with several values for a parameter yields one constraint per combination, up to 1024 combinations per shape and component; more than that makes the shapes graph ill-formed.
 - **Results:** results report `sh:sourceConstraintComponent` as the component IRI. The message comes from the validator, else the component, else the shape, with `{$param}` substitution.
 
-#### SPARQL node expressions
+#### Node expressions
 
-`sh:select` and `sh:sparqlExpr` are supported:
+SHACL 1.2 node expressions (Node Expressions spec) are supported in full:
 
-- at `sh:targetNode`, with `$this` bound to the shape node;
-- at `sh:values` and `sh:defaultValue`, with `$this` bound to the focus node.
+- **The `shnex:` library:** constants, `shnex:empty`, `shnex:var`, `shnex:list`, `shnex:pathValues`, `shnex:exists`, `shnex:if`, `shnex:distinct`, `shnex:intersection`, `shnex:concat`, `shnex:remove`, `shnex:filterShape`, `shnex:limit`, `shnex:offset`, `shnex:orderBy`, `shnex:flatMap`, `shnex:findFirst`, `shnex:matchAll`, `shnex:count`, `shnex:min`, `shnex:max`, `shnex:sum`, `shnex:instancesOf`, `shnex:nodesMatching` and `shnex:conformsToShape`.
+- **`sparql:<name>` functions** (spec section 5), custom functions with named parameters or list parameters (`shnex:arg`), and the SPARQL expressions `sh:select` / `sh:sparqlExpr`.
 
-Constant IRI and literal values also work at `sh:values` and `sh:defaultValue`. The value nodes of a property shape are the path values plus the `sh:values` outputs, and `sh:defaultValue` applies when that set is empty. Both are allowed only on predicate paths. An IRI node that carries `sh:select` / `sh:sparqlExpr` and is used there is ill-formed.
+They are accepted at `sh:values`, `sh:defaultValue` and `sh:targetNode`, and by two constraint components: `sh:expression` (`sh:ExpressionConstraintComponent`) and a computed `sh:nodeByExpression`.
+
+- **Positions:** at `sh:targetNode`, `$this` is bound to the shape node; at `sh:values` and `sh:defaultValue` it is bound to the focus node. At `sh:targetNode`, list and empty expressions still follow the data-node rule (see "Blank node `sh:targetNode` values" below).
+- **Values:** the value nodes of a property shape are the path values plus the `sh:values` outputs, and `sh:defaultValue` applies when that set is empty. Both are allowed only on predicate paths. Constant IRI and literal values work too. An IRI node that carries `sh:select` / `sh:sparqlExpr` and is used there is ill-formed.
+- **`sh:expression`:** it is evaluated with the shape's focus node and the scope `{value: v}` (spec section 7.1). `shnex:if`, `shnex:matchAll` and `sh:expression` compare against the term `"true"^^xsd:boolean`, so `"1"^^xsd:boolean` does not count as true.
+- **Failures:** an evaluation failure during validation fails validation with `ShaclValidationException`. An ill-formed expression is a `ShapeCompileException`.
+- **Term equality:** `shnex:distinct`, `shnex:intersection` and `shnex:remove` compare terms exactly, so `"01"` and `"1"` are different.
+- **`sparql:` functions:** each call is one query evaluated by the SPARQL provider, so SPARQL error and unbound handling come from the provider. An argument that fails or yields several outputs is a SPARQL error, injected as `(1/0)`; `sparql:bound` of a failing argument is a failure. `sparql:encode` is `ENCODE_FOR_URI` and takes exactly one argument (the two-argument example of the spec table is not accepted). `shnex:sum` also uses the provider, so it may trigger the private data copy (see [where queries run](#where-queries-run)).
+- **Shape-based expressions:** `shnex:filterShape`, `shnex:findFirst`, `shnex:matchAll`, `shnex:nodesMatching` and `shnex:conformsToShape` use the engine's conformance check. An undecided (final) conformance is a failure. A shape read from a node expression is treated as non-monotone, so a data cycle through such a read is undecided and fails validation. A computed shape IRI may name any shape of the shapes graph, including a deactivated one (every node conforms to it). Unrelated malformed shapes do not fail the run unless they are used.
+
+Limits:
+- Expression nesting is capped at 128 levels.
+- Nested SPARQL and custom function calls share a cap of 16.
+- Every intermediate list is capped at `ValidationConfig.maxPathValueNodes`.
+- Every evaluation step ticks the run budget, so the validation timeout bounds everything.
+
+Known deviation: `sh:sourceConstraint` of an `sh:expression` or `sh:nodeByExpression` result is the expression node, not the deep copy that spec sections 7.1 and 7.2 describe.
 
 #### SPARQL functions
 
-A `sh:ListParameterExpressionFunction` whose `sh:bodyExpression` is a `sh:select` or `sh:sparqlExpr` can be called, by its IRI, from any SHACL-SPARQL query (spec section 7). The engine compiles each declaration and sends the compiled functions with every SHACL-SPARQL query. Jena and RDF4J make them visible to that one query only; no global function registry is ever modified, and a declaration cannot redefine a built-in function (the built-in wins).
+A `sh:ListParameterExpressionFunction` whose `sh:bodyExpression` is a `sh:select`, a `sh:sparqlExpr` or a `shnex:` node expression can be called, by its IRI, from any SHACL-SPARQL query (spec section 7). The engine compiles each declaration and sends the compiled functions with every SHACL-SPARQL query. Jena and RDF4J make them visible to that one query only; no global function registry is ever modified, and a declaration cannot redefine a built-in function (the built-in wins).
 
 - **Parameters:** `shnex:arg0`, `shnex:arg1`, ... form a contiguous run starting at 0, and an optional parameter (`sh:optional true`) cannot be followed by a mandatory one. Otherwise the shapes graph is ill-formed (`ShapeCompileException`).
-- **Body:** `$this` is the function IRI and `$arg<i>` holds each argument. An argument that is absent or failed to evaluate stays unbound if its parameter is optional; otherwise the call is an error.
+- **Body:** in a SPARQL body, `$this` is the function IRI and `$arg<i>` holds each argument. A `shnex:` body is evaluated as a node expression with the arguments as its parameters. An argument that is absent or failed to evaluate stays unbound if its parameter is optional; otherwise the call is an error.
 - **Errors:** a blank-node argument, too many arguments, and a body with no result or several results are errors, as is a call to an unknown function IRI. A function error is an ordinary SPARQL error: `BIND` leaves its variable unbound and `FILTER` is false. It never fails validation.
 - **Nesting:** functions can call each other, up to 16 levels deep (`MAX_FUNCTION_DEPTH`); a deeper call is an error, so recursion terminates. Nested queries are sandboxed like the outer one (no `SERVICE`, no `java:`) and run on the calling query's dataset; their own `FROM` can only select graphs inside it. A timeout stops the whole query. Time is the only bound on how many nested calls a query can make (fan-out); SHACL queries always run under the validation timeout.
 
@@ -235,7 +251,7 @@ Limits:
 - On RDF4J, work that reads no statements (a `VALUES` cross product, a catastrophic `REGEX`) is not interrupted within a row; top-level RDF4J queries have the same limit. Jena checks cancellation per binding.
 - On RDF4J, only stores created by Kastor's factories evaluate custom functions.
 - Parameter constraints (`sh:datatype`, ...) and `sh:defaultValue` are not enforced, as the spec says.
-- Function bodies written as `shnex:` node expressions (spec section 7.1, such as the W3C `instanceCount` example) are not supported: see `SHACL_FUNCTION` below.
+- A function that is not a `sh:ListParameterExpressionFunction`, or whose body is no node expression at all, cannot be called from SPARQL: see `SHACL_FUNCTION` below.
 
 #### Where queries run
 
@@ -272,13 +288,13 @@ The native engine recognises some SHACL constructs that it cannot evaluate. By d
 | `UnsupportedShaclFeature` | Constructs |
 |---------------------------|------------|
 | `SPARQL_CONSTRAINT_COMPONENT` | None: SPARQL-based constraint components are supported (see above). The category is kept for compatibility |
-| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: `shnex:` and other non-SPARQL node expressions at `sh:values`, `sh:defaultValue` and `sh:targetNode`, `sh:expression`, non-constant `sh:deactivated`, and any blank-node `sh:nodeByExpression` value (a SPARQL one is reported as `SPARQL_NODE_EXPRESSION`) |
-| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values or as blank-node `sh:nodeByExpression` values. At `sh:targetNode`, `sh:values` and `sh:defaultValue` they are supported |
-| `SHACL_FUNCTION` | SHACL 1.2 functions whose `sh:bodyExpression` is a `shnex:` node expression (spec section 7.1), called from a SPARQL query. Functions with a `sh:select` / `sh:sparqlExpr` body are supported (see above) |
+| `NODE_EXPRESSION` | SHACL 1.2 node expressions the engine cannot evaluate: a non-constant `sh:deactivated`, and a blank node at a node expression position (`sh:values`, `sh:defaultValue`, `sh:targetNode`, `sh:expression`, `sh:nodeByExpression`) that is no node expression of the library, such as a call of a function the shapes graph does not declare |
+| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) used as `sh:targetWhere` values. At every node expression position (`sh:targetNode`, `sh:values`, `sh:defaultValue`, `sh:expression`, `sh:nodeByExpression`) they are supported |
+| `SHACL_FUNCTION` | SHACL 1.2 functions that a SPARQL query calls but the engine cannot compile: not a `sh:ListParameterExpressionFunction`, or a `sh:bodyExpression` that is no node expression at all. Functions with a `sh:select` / `sh:sparqlExpr` or `shnex:` body are supported (see above) |
 | `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
 | `REIFIER_CONSTRAINT_ON_COMPLEX_PATH` | `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a predicate IRI (the engine only knows which triples a predicate path traverses) |
 
-`sh:sparql` constraints, SPARQL-based constraint components, SPARQL node expressions at `sh:targetNode`, `sh:values` and `sh:defaultValue`, and SPARQL functions with a SPARQL body (see above) are supported.
+`sh:sparql` constraints, SPARQL-based constraint components, node expressions and SPARQL functions (see above) are supported. Still unsupported are a non-constant `sh:deactivated` (`NODE_EXPRESSION`) and SPARQL node expressions at `sh:targetWhere` (`SPARQL_NODE_EXPRESSION`).
 
 In the failure, `ShaclValidationException` wraps an `UnsupportedShaclFeatureException`. Its message names each offending construct, and its `features` property lists the categories:
 
@@ -297,9 +313,9 @@ Detection only inspects declared and implicit shapes, plus the nodes reachable f
 
 **Blank node `sh:targetNode` values.** In SHACL 1.2 the values of `sh:targetNode` are node expressions: an IRI or a literal is a constant, a blank node is a computed expression. A blank node of the shapes graph can only denote a data node when the two graphs share it (the same graph validated against itself, or shapes discovered from the data). The engine therefore applies this rule:
 
-1. A blank node whose own triples use vocabulary that has no reading as data is a node expression (`NODE_EXPRESSION` / `SPARQL_NODE_EXPRESSION`), whatever the data graph is: a SPARQL expression (`sh:select`, `sh:sparqlExpr`), the `shnex:` or `sparql:` namespaces as predicate or type (`shnex:pathValues`, `sparql:concat ( … )`), or a call `[ ex:fn ( … ) ]` of a function declared in the shapes graph.
+1. A blank node whose own triples use vocabulary that has no reading as data is a node expression, evaluated whatever the data graph is: a SPARQL expression (`sh:select`, `sh:sparqlExpr`), the `shnex:` or `sparql:` namespaces as predicate or type (`shnex:pathValues`, `sparql:concat ( … )`), or a call `[ ex:fn ( … ) ]` of a function declared in the shapes graph.
 2. Any other blank node is an **ordinary target if it is a node of the data graph**, regardless of its predicates: a plain node, an RDF list cell, a node that carries `sh:` predicates or a SHACL type (a shape used as data), or a call-shaped node whose function is not declared.
-3. Otherwise it can never be a focus node, and the shape would silently go unvalidated. It is reported as an unsupported `NODE_EXPRESSION`, like the expressions of rule 1: a failure by default, a report warning with `IGNORE_WITH_WARNING`. This is the same for every such blank node, whatever its triples look like.
+3. Otherwise it can never be a focus node, and the shape would silently go unvalidated. It is reported as an unsupported `NODE_EXPRESSION`: a failure by default, a report warning with `IGNORE_WITH_WARNING`. This is the same for every such blank node, whatever its triples look like.
 
 ### Configuration options that are rejected or have no effect
 
@@ -318,9 +334,9 @@ python scripts/fetch-conformance-data.py --only shacl
 ```
 
 The task fails instead of skipping when the suite is missing, and every case is executed. The default `test` task runs the same harness against the bundled fixture when the checkout is missing; a missing manifest, a manifest without `sht:Validate` entries or one without an approved case fails the test rather than skipping it, unless `-PshaclW3cAllowMissingData=true` opts out. Manifest rows that are not approved are skipped unless `-PshaclW3cIncludeNonApproved=true`. The harness checks failures strictly:
-- The deviations are real feature gaps, kept visible on purpose: SHACL 1.2 node expression constraints (`sh:expression`) and SHACL functions with a `shnex:` body (spec section 7.1) need an expression evaluator that the engine does not have, and the SHACL 1.2 drafts they come from are still changing. They fail with a categorised error instead of passing silently.
-- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 2: 1 node expression (`node-expr/constraints/expression-001`) and 1 SHACL function (`sparql/functions/instanceCount-example`, a `shnex:` body).
-- Spec overrides in `W3cKnownDeviations` are approved cases whose expected result contradicts the normative SHACL 1.2 text. The engine follows the text, and the case must validate without failing. There is 1: `unsupported-sparql-002` expects any `VALUES` to fail, but SHACL 1.2 Appendix A only forbids `VALUES` that mentions a pre-bound variable.
+- All 144 `sht:EvalNodeExpr` cases and all `sht:Validate` cases pass on the default provider (Jena). `W3cKnownDeviations` holds 0 unsupported-feature deviations; a deviation would need an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category.
+- Spec overrides are approved cases whose expected result contradicts the normative SHACL 1.2 text. The engine follows the text. There is 1 in `W3cKnownDeviations`: `unsupported-sparql-002` expects any `VALUES` to fail, but SHACL 1.2 Appendix A only forbids `VALUES` that mentions a pre-bound variable. The node expression harness lists 1 ill-formed case: `node-expr/shnex-sparql/hasLang.ttl` calls `sparql:hasLang` with 2 arguments, but the spec table and SPARQL 1.2 define 1, so Kastor treats the call as ill-formed (`ShapeCompileException`).
+- On RDF4J 5.3, some SPARQL 1.2 functions are missing (`hasLang`, `hasLangdir`, `langdir`, `strlangdir`, `sameValue`, `isTriple`, `triple`, `subject`, `predicate`, `object`), and a `sparql:` call of one fails there. RDF4J also returns different lexical forms for some numeric results (`ceil`, `floor`, `round`, `divide`, `seconds`).
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
 - `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.
 - Result graphs are compared after removing the `ksh:` triples, so an undecided result would look like a failure. A case therefore fails if the engine emits any result with a `ksh:resultStatus` (undefined recursion, pattern timeout, pattern too complex), unless the case is listed with a reason in `W3cKnownDeviations`. No case is listed: the engine decides every constraint of the suite.
