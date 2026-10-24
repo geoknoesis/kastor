@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.jena
 
 import org.apache.jena.graph.Node
 import org.apache.jena.query.Query
+import org.apache.jena.query.QueryExecutionDatasetBuilder
 import org.apache.jena.sparql.ARQConstants
 import org.apache.jena.sparql.algebra.Algebra
 import org.apache.jena.sparql.algebra.Op
@@ -19,6 +20,12 @@ import org.apache.jena.sparql.expr.ExprFunctionOp
 import org.apache.jena.sparql.expr.ExprVisitor
 import org.apache.jena.sparql.expr.ExprVisitorBase
 import org.apache.jena.sparql.expr.aggregate.Aggregator
+import org.apache.jena.sparql.function.Function
+import org.apache.jena.sparql.function.FunctionFactory
+import org.apache.jena.sparql.function.FunctionRegistry
+import org.apache.jena.sparql.pfunction.PropertyFunctionFactory
+import org.apache.jena.sparql.pfunction.PropertyFunctionRegistry
+import org.apache.jena.sparql.service.ServiceExecutorRegistry
 
 /**
  * Checks a parsed [com.geoknoesis.kastor.rdf.SandboxedSelectQuery] on the algebra Jena evaluates, so no second parser
@@ -29,6 +36,29 @@ import org.apache.jena.sparql.expr.aggregate.Aggregator
 internal object JenaQuerySandbox {
 
     fun check(query: Query) = check(Algebra.compile(query))
+
+    /**
+     * Runs a sandboxed query with registries that cannot reach outside the store, whatever IRI the query computes at
+     * run time (ARQ's `CALL(iri, …)` builds a function IRI from data, which [check] cannot see): functions and
+     * property functions with a `java:` IRI are not found, so no class is loaded, and SERVICE has no executor.
+     */
+    fun restrict(builder: QueryExecutionDatasetBuilder): QueryExecutionDatasetBuilder = builder
+        .set(ARQConstants.registryFunctions, NoJavaFunctions(FunctionRegistry.get()))
+        .set(ARQConstants.registryPropertyFunctions, NoJavaPropertyFunctions(PropertyFunctionRegistry.get()))
+        .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
+
+    private class NoJavaFunctions(private val base: FunctionRegistry) : FunctionRegistry() {
+        override fun get(uri: String): FunctionFactory? = getFunctionFactory(uri)
+        override fun getFunctionFactory(uri: String): FunctionFactory? = if (isJava(uri)) null else base.getFunctionFactory(uri)
+        override fun getFunction(uri: String): Function? = if (isJava(uri)) null else base.getFunction(uri)
+        override fun isRegistered(uri: String): Boolean = !isJava(uri) && base.isRegistered(uri)
+    }
+
+    private class NoJavaPropertyFunctions(private val base: PropertyFunctionRegistry) : PropertyFunctionRegistry() {
+        override fun get(uri: String): PropertyFunctionFactory? = if (isJava(uri)) null else base.get(uri)
+        override fun manages(uri: String): Boolean = !isJava(uri) && base.manages(uri)
+        override fun isRegistered(uri: String): Boolean = !isJava(uri) && base.isRegistered(uri)
+    }
 
     private fun check(op: Op) {
         val exprs = object : ExprVisitorBase() {

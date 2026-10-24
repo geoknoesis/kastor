@@ -1019,7 +1019,7 @@ class JenaRepository private constructor(
 
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withRead {
         val parsed = parseSelect(query)
-        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(parsed, queryDataset()) }
+        val exec = queryOperation(query.sparql) { execution(query, parsed).build() }
         exec.use { consumeRows(it, query.sparql, consume) }
     }
 
@@ -1031,6 +1031,12 @@ class JenaRepository private constructor(
         val parsed = queryOperation(query.sparql) { QueryFactory.create(query.sparql) }
         if (query is SandboxedSelectQuery) JenaQuerySandbox.check(parsed)
         return parsed
+    }
+
+    /** An execution of [parsed] over the query dataset, restricted ([JenaQuerySandbox.restrict]) for a sandboxed [query]. */
+    private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query): org.apache.jena.query.QueryExecutionDatasetBuilder {
+        val builder = QueryExecution.dataset(queryDataset()).query(parsed)
+        return if (query is SandboxedSelectQuery) JenaQuerySandbox.restrict(builder) else builder
     }
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
@@ -1064,7 +1070,7 @@ class JenaRepository private constructor(
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
             bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
-            QueryExecution.dataset(queryDataset()).query(parsed).substitution(initial)
+            execution(query, parsed).substitution(initial)
                 .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
         }
         // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation).

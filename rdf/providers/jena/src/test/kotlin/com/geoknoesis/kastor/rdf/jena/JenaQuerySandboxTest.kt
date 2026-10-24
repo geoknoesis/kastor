@@ -5,9 +5,11 @@ import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.junit.jupiter.api.Test
@@ -55,6 +57,21 @@ class JenaQuerySandboxTest {
     fun `service and java code are refused before evaluation`(sparql: String) {
         assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
         assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
+    }
+
+    @Test
+    fun `a function IRI computed at run time cannot load a java class`() {
+        val probe = "java:" + SandboxProbeFunction::class.java.name
+        val (head, tail) = probe.substring(0, 5) to probe.substring(5)
+        val sparql = "SELECT ?x WHERE { <urn:a> <urn:p> ?o BIND (CALL(IRI(CONCAT(\"$head\", \"$tail\")), ?o) AS ?x) }"
+        val before = SandboxProbeFunction.instances.get()
+        // Not refused statically (no constant java: IRI), but the function is not found, so ?x stays unbound.
+        assertEquals(listOf(null), bound(sparql).map { it.get("x") })
+        assertEquals(listOf(null), plain(sparql).map { it.get("x") })
+        assertEquals(before, SandboxProbeFunction.instances.get())
+        // The same query outside the sandbox does load the class: the probe would detect a regression.
+        repository.withSelectRows(SparqlSelectQuery(sparql)) { it.toList() }
+        assertTrue(SandboxProbeFunction.instances.get() > before)
     }
 
     @Test
