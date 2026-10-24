@@ -311,6 +311,7 @@ private fun propertyValueNodes(focus: RdfTerm, ps: CompiledPropertyShape, ctx: N
     val pathValues = PathEvaluator.evaluate(focus, ps.path, ctx.data)
     val valuesExpr = ps.values
     var values = if (valuesExpr == null) pathValues else distinctShaclTerms(pathValues + evalNodeExpression(valuesExpr, ctx, focus))
+    checkNodeExpressionSize(values.size, ctx, "value node computation")
     val defaultExpr = ps.defaultValue
     if (values.isEmpty() && defaultExpr != null) values = evalNodeExpression(defaultExpr, ctx, focus)
     return values

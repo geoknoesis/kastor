@@ -36,8 +36,8 @@ class NodeExpressionEvaluationTest {
             else -> Rdf4jProvider().createRepository("memory", RdfConfig())
         }
 
-    private fun validate(provider: String, data: String, shapes: String) =
-        NativeShaclValidator(ValidationConfig.default()) { repository(provider) }.validate(g(data), g(shapes))
+    private fun validate(provider: String, data: String, shapes: String, config: ValidationConfig = ValidationConfig.default()) =
+        NativeShaclValidator(config) { repository(provider) }.validate(g(data), g(shapes))
 
     private val ontology = """
         <http://example.com/ns> a owl:Ontology ;
@@ -155,5 +155,32 @@ class NodeExpressionEvaluationTest {
               sh:property [ sh:path ex:p ; sh:values [ sh:sparqlExpr "1 +" ] ] .
         """
         assertThrows(ShaclValidationException::class.java) { validate(provider, "ex:a ex:q 1 .", shapes) }
+    }
+
+    private val threeNodes = """sh:select '''SELECT ?v { { BIND (1 AS ?v) } UNION { BIND (2 AS ?v) } UNION { BIND (3 AS ?v) } }'''"""
+
+    private fun assertCapped(provider: String, data: String, shapes: String) {
+        val e = assertThrows(ShaclValidationException::class.java) {
+            validate(provider, data, shapes, ValidationConfig(maxPathValueNodes = 2))
+        }
+        assertTrue(e.message!!.contains("maxPathValueNodes=2"), e.message)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `sh values select is capped by maxPathValueNodes`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ $threeNodes ] ] ."
+        assertCapped(provider, "ex:a ex:q 1 .", shapes)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `path values plus sh values are capped by maxPathValueNodes`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values 3 ] ."
+        assertCapped(provider, "ex:a ex:p 1, 2 .", shapes)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `targetNode select is capped by maxPathValueNodes`(provider: String) {
+        val shapes = "ex:S a sh:NodeShape ; sh:targetNode [ $threeNodes ] ; sh:property [ sh:path ex:p ; sh:minCount 0 ] ."
+        assertCapped(provider, "ex:a ex:q 1 .", shapes)
     }
 }
