@@ -302,7 +302,9 @@ internal class NativeShaclValidator(
             // Distinct focus nodes validated against at least one shape (ValidationStatistics.validatedResources).
             val validatedFocusNodes = HashSet<TermKey>()
             // The shapes graph that blank-node sh:sourceConstraint values are deep-copied from, when a report is written.
-            val sourceConstraintTriples = SourceConstraintTriples(compiled.index.triples) { compiled.index.ownTriples(it) }
+            // The handle outlives the run in the report: it captures the shapes index only, not the compiled graph.
+            val shapesIndex = compiled.index
+            val sourceConstraintTriples = SourceConstraintTriples(shapesIndex.triples) { shapesIndex.ownTriples(it) }
             fun record(results: List<ValidationViolation>) {
                 // Strict mode: a constraint that undefined recursion leaves undecided fails the validation. The check
                 // is made on the results that are reported, not where they are built: the solver also builds results
