@@ -157,6 +157,20 @@ class NodeExpressionCompileTest {
     }
 
     @Test
+    fun `values and defaultValue on a shape without sh path are ill-formed`() {
+        // SHACL 1.2 Core 3.3: only property shapes with a predicate path have sh:values / sh:defaultValue.
+        for (predicate in listOf("sh:values", "sh:defaultValue")) {
+            for (value in listOf("ex:x", "[ sh:select \"SELECT ?v WHERE { BIND (1 AS ?v) }\" ]")) {
+                assertThrows(ShapeCompileException::class.java, {
+                    compile("ex:S a sh:NodeShape ; sh:targetNode ex:a ; $predicate $value .")
+                }, "$predicate $value")
+            }
+            // A deactivated shape is not compiled, so it is not checked either.
+            compile("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:deactivated true ; $predicate ex:x .")
+        }
+    }
+
+    @Test
     fun `targetNode select is a target expression`() {
         val shapes = """
             ex:ChildShape a sh:NodeShape ;

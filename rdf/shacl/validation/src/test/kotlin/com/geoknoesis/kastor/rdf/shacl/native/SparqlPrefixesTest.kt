@@ -125,6 +125,17 @@ class SparqlPrefixesTest {
     }
 
     @Test
+    fun `sh prefix must be a SPARQL PN_PREFIX`() {
+        fun declaring(label: String) = "ex:C sh:prefixes ex:P .\nex:P sh:declare [ sh:prefix \"$label\" ; sh:namespace \"http://p/\" ] ."
+        for (bad in listOf("a\\nb", "a b", "a:b", "a\\\"b", "a'b", "a.", "1a", "_a", "-a", ".a", "a#b", "a<b")) {
+            assertThrows(ShapeCompileException::class.java, { collect(declaring(bad)) }, "label '$bad'")
+        }
+        for (good in listOf("ex", "", "a.b", "a-b_c1", "été", "a·b")) {
+            assertEquals(mapOf(good to "http://p/"), collect(declaring(good)), "label '$good'")
+        }
+    }
+
+    @Test
     fun `graph-level scan is cached per index and stops at the preparation budget`() {
         val ttl = (0 until 300).joinToString("\n") {
             "ex:G$it a sh:ShapesGraph ; sh:declare [ sh:prefix \"p$it\" ; sh:namespace \"http://p$it/\" ] ."

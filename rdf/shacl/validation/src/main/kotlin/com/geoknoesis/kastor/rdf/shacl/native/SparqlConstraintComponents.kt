@@ -6,7 +6,6 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
-import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
@@ -82,12 +81,9 @@ internal class SparqlComponentCatalog private constructor(
         } else {
             SparqlQueryTemplate.substitutePath(validator.text, path?.let { { ShapesCompiler.renderSparqlPath(it) } })
         }
-        SparqlQueryTemplate.restrictionViolation(body, preBound)?.let { what ->
-            throw SparqlPreBindingRestrictionException(
-                "Validator ${validator.node} of constraint component ${component.iri} uses $what, which is not supported with pre-bound variables",
-            )
-        }
-        val template = SparqlQueryTemplate.compile(validator.prologue + body, preBound)
+        val template = SparqlQueryTemplate.compileRestricted(
+            validator.prologue, body, preBound, "Validator ${validator.node} of constraint component ${component.iri}",
+        )
         val messages = validator.messages.ifEmpty { index.objects(component.iri, SHACL.message).filterIsInstance<Literal>() }
         // One constraint per combination of the values of the parameters the shape has; absent optional ones stay unbound.
         // The number of combinations is checked before any is built: memory, not only time, must stay bounded.

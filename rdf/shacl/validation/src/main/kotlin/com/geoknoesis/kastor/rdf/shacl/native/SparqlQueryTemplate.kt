@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 
 /** Lexical token of a SPARQL query: enough structure to rewrite variables safely (not a full parser). */
 internal class SparqlToken(val kind: Kind, val text: String) {
@@ -261,6 +262,22 @@ internal class SparqlQueryTemplate private constructor(
         }
 
         /**
+         * Compiles [prologue] + [body] after checking the pre-binding restrictions ([restrictionViolation]) on the
+         * body alone and again on the full query, so text joined from several shapes-graph values (prefix
+         * declarations, query) cannot smuggle a forbidden construct past the check. [subject] names the query in the
+         * [SparqlPreBindingRestrictionException] message.
+         */
+        fun compileRestricted(prologue: String, body: String, preBound: Set<String>, subject: String): SparqlQueryTemplate {
+            val query = prologue + body
+            for (text in listOf(body, query)) {
+                restrictionViolation(text, preBound)?.let { what ->
+                    throw SparqlPreBindingRestrictionException("$subject uses $what, which is not supported with pre-bound variables")
+                }
+            }
+            return compile(query, preBound)
+        }
+
+        /**
          * Replaces every `$PATH` / `?PATH` variable token (outside strings, IRIs and comments) with the rendered
          * path. A null [rendered] (node shapes) leaves the variable unbound and the query unchanged.
          */
@@ -327,6 +344,28 @@ internal class SparqlQueryTemplate private constructor(
 
         private fun isNcNameChar(c: Char) =
             c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c.code == 0xB7 || c.code in 0x300..0x36F || c.code in 0x203F..0x2040
+
+        /**
+         * Whether [label] is a SPARQL PN_PREFIX (or empty), so `PREFIX label: <ns>` is one well-formed declaration:
+         * a PN_CHARS_BASE, then PN_CHARS or `.`, not ending in `.`.
+         */
+        fun isPrefixLabel(label: String): Boolean {
+            if (label.isEmpty()) return true
+            val codePoints = label.codePoints().toArray()
+            return isPnCharsBase(codePoints.first()) && codePoints.last() != '.'.code &&
+                codePoints.drop(1).all { it == '.'.code || isPnChars(it) }
+        }
+
+        /** SPARQL PN_CHARS_BASE. */
+        private fun isPnCharsBase(c: Int): Boolean =
+            c in 'A'.code..'Z'.code || c in 'a'.code..'z'.code || c in 0xC0..0xD6 || c in 0xD8..0xF6 || c in 0xF8..0x2FF ||
+                c in 0x370..0x37D || c in 0x37F..0x1FFF || c in 0x200C..0x200D || c in 0x2070..0x218F || c in 0x2C00..0x2FEF ||
+                c in 0x3001..0xD7FF || c in 0xF900..0xFDCF || c in 0xFDF0..0xFFFD || c in 0x10000..0xEFFFF
+
+        /** SPARQL PN_CHARS: PN_CHARS_BASE, `_`, `-`, digits, U+00B7, U+0300..U+036F, U+203F..U+2040. */
+        private fun isPnChars(c: Int): Boolean =
+            isPnCharsBase(c) || c == '_'.code || c == '-'.code || c in '0'.code..'9'.code || c == 0xB7 ||
+                c in 0x300..0x36F || c in 0x203F..0x2040
 
         /** Whether [name] is a SPARQL VARNAME, so `?name` is a legal variable. */
         fun isVarName(name: String): Boolean =

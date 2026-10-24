@@ -76,4 +76,15 @@ class SparqlResultAnnotationTest {
             assertTrue(e.cause is ShapeCompileException, "cause was ${e.cause}")
         }
     }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `annotation property cannot be a SHACL term`(provider: String) {
+        // An sh: property (e.g. sh:focusNode) would overwrite the structure of the validation result.
+        for (property in listOf("sh:focusNode", "sh:resultMessage", "sh:somethingElse")) {
+            val e = assertThrows(ShaclValidationException::class.java) {
+                validate(provider, data, shapes("sh:annotationProperty $property ; sh:annotationVarName \"time\""))
+            }
+            assertTrue(e.cause is ShapeCompileException, "cause was ${e.cause}")
+        }
+    }
 }

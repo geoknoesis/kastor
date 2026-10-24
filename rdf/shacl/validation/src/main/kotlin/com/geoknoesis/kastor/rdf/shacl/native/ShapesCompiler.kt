@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
@@ -17,7 +18,6 @@ import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedFeatureHandling
-import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
@@ -638,6 +638,14 @@ internal object ShapesCompiler {
             )
         }
 
+        // SHACL 1.2 Core 3.3: sh:values / sh:defaultValue belong to property shapes with a predicate path.
+        for (predicate in listOf(ShaclSparqlTerms.values, ShaclSparqlTerms.defaultValue)) {
+            if (index.objects(subject, predicate).isNotEmpty()) {
+                val name = predicate.value.substringAfter(SHACL.namespace)
+                throw ShapeCompileException("Shape $subject has sh:$name, which needs a property shape with a predicate path as sh:path")
+            }
+        }
+
         // Property shapes have their own severity (default sh:Violation); they never inherit the node shape's.
         val linkedPropShapes =
             index.objects(subject, SHACL.`property`)
@@ -962,20 +970,23 @@ internal object ShapesCompiler {
 
     private fun compileSparqlConstraint(node: RdfResource, index: ShapeGraphIndex, path: ShaclPath?): PropertyConstraint.Sparql? {
         if (isDeactivated(node, index)) return null
-        val text = (index.objects(node, SHACL.select).singleOrNull() as? Literal)?.lexical
-            ?: throw ShapeCompileException("SPARQL constraint $node must have exactly one sh:select string literal")
+        val select = index.objects(node, SHACL.select).singleOrNull() as? Literal
+        if (select == null || select is LangString || select.datatype != XSD.string) {
+            throw ShapeCompileException("SPARQL constraint $node must have exactly one xsd:string sh:select")
+        }
+        val text = select.lexical
         // $PATH is replaced only as a variable token, never inside strings, IRIs or comments.
         // On a node shape $PATH stays unbound.
         val body = SparqlQueryTemplate.substitutePath(text, path?.let { { renderSparqlPath(it) } })
-        SparqlQueryTemplate.restrictionViolation(body, SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND)?.let { what ->
-            throw SparqlPreBindingRestrictionException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
-        }
-        val query = SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)) + body
+        val template = SparqlQueryTemplate.compileRestricted(
+            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)), body,
+            SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND, "SPARQL constraint $node",
+        )
         val severityIris = index.objects(node, SHACL.severity).filterIsInstance<Iri>()
         val sev = if (severityIris.isEmpty()) null else parseSeverityValues(severityIris, ViolationSeverity.VIOLATION)
         return PropertyConstraint.Sparql(
             constraintNode = node,
-            template = SparqlQueryTemplate.compile(query, SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND),
+            template = template,
             messages = index.objects(node, SHACL.message).filterIsInstance<Literal>(),
             severity = sev?.level,
             severityCustomIri = sev?.customIri,

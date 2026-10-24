@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
+import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
 
 /**
@@ -20,6 +21,10 @@ internal fun compileResultAnnotations(node: RdfResource, index: ShapeGraphIndex)
         if (annotation !is RdfResource) throw ShapeCompileException("sh:resultAnnotation of $node must be an IRI or blank node")
         val property = index.objects(annotation, ShaclSparqlTerms.annotationProperty).singleOrNull() as? Iri
             ?: throw ShapeCompileException("sh:resultAnnotation $annotation must have exactly one sh:annotationProperty IRI")
+        // The annotation is written onto the result: a SHACL term (e.g. sh:focusNode) would corrupt the report.
+        if (property.value.startsWith(SHACL.namespace)) {
+            throw ShapeCompileException("sh:annotationProperty of $annotation must not be in the SHACL namespace: <${property.value}>")
+        }
         val names = index.objects(annotation, ShaclSparqlTerms.annotationVarName)
         if (names.size > 1) throw ShapeCompileException("sh:resultAnnotation $annotation has more than one sh:annotationVarName")
         val variable = names.singleOrNull()?.let { name ->

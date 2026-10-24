@@ -57,9 +57,13 @@ internal object SparqlPrefixes {
         return out
     }
 
-    /** `PREFIX p: <ns>` lines for [prefixes]; a namespace that cannot be written as a SPARQL IRI is ill-formed. */
+    /**
+     * `PREFIX p: <ns>` lines for [prefixes]; a prefix that is not a SPARQL PN_PREFIX or a namespace that cannot be
+     * written as a SPARQL IRI is ill-formed.
+     */
     fun prologue(prefixes: Map<String, String>): String =
         prefixes.entries.joinToString("") { (p, ns) ->
+            if (!SparqlQueryTemplate.isPrefixLabel(p)) throw ShapeCompileException("sh:prefix \"$p\" is not a valid SPARQL prefix name")
             val namespace = SparqlQueryTemplate.renderIri(ns)
                 ?: throw ShapeCompileException("sh:namespace <$ns> of prefix '$p' is not a valid SPARQL IRI")
             "PREFIX $p: $namespace\n"
@@ -83,6 +87,10 @@ internal object SparqlPrefixes {
                 throw ShapeCompileException("sh:namespace of $d must be an xsd:string or xsd:anyURI literal: $namespaceTerm")
             }
             val prefix = prefixTerm.lexical
+            // The label is written verbatim into the query prologue: anything but a PN_PREFIX could inject query text.
+            if (!SparqlQueryTemplate.isPrefixLabel(prefix)) {
+                throw ShapeCompileException("sh:prefix of $d is not a valid SPARQL prefix name: \"$prefix\"")
+            }
             val namespace = namespaceTerm.lexical
             val existing = out.putIfAbsent(prefix, namespace)
             if (existing != null && existing != namespace) {
