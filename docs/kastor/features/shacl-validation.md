@@ -236,7 +236,7 @@ Limits:
 - Every intermediate list is capped at `ValidationConfig.maxPathValueNodes`.
 - Every evaluation step ticks the run budget, so the validation timeout bounds everything.
 
-The `sh:sourceConstraint` of an `sh:expression` result is the expression, and that of an `sh:nodeByExpression` result is the shape. When it is a blank node, `toShaclValidationReportRdf()` writes its deep copy (spec sections 7.1 and 7.2, SHACL 1.2 Core "Deep Copy"): its triples and those of the blank nodes they reach, RDF lists included, with blank node labels of the report's own. The triples are in `ValidationViolation.context["sourceConstraintTriples"]`. A copy is bounded by the run budget and by 100,000 triples; a larger one fails validation.
+The `sh:sourceConstraint` of an `sh:expression` result is the expression, and that of an `sh:nodeByExpression` result is the shape. When it is a blank node, `toShaclValidationReportRdf()` writes its deep copy (spec sections 7.1 and 7.2, SHACL 1.2 Core "Deep Copy"): its triples and those of the blank nodes they reach, RDF lists included, with blank node labels of the report's own. The triples are in `ValidationViolation.context["sourceConstraintTriples"]`. Copying is bounded by the run budget and, for all the copies of a run together, by 100,000 triples or twice the size of the shapes graph, whichever is larger. Expressions that share no structure stay within that bound; many expressions that share a large structure fail validation instead of copying it again for each.
 
 #### SPARQL functions
 

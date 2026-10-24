@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
-import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Dataset
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Rdf
@@ -302,7 +301,7 @@ internal class NativeShaclValidator(
             // Distinct focus nodes validated against at least one shape (ValidationStatistics.validatedResources).
             val validatedFocusNodes = HashSet<TermKey>()
             // Deep copies of blank-node sh:sourceConstraint values, by node (shared by the results that name one).
-            val sourceConstraintCopies = HashMap<BlankNode, List<RdfTriple>>()
+            val sourceConstraintCopies = SourceConstraintCopies(compiled.index.triples.size)
             fun record(results: List<ValidationViolation>) {
                 // Strict mode: a constraint that undefined recursion leaves undecided fails the validation. The check
                 // is made on the results that are reported, not where they are built: the solver also builds results

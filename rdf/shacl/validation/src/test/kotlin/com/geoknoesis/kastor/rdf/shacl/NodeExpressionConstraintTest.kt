@@ -213,6 +213,28 @@ class NodeExpressionConstraintTest {
         assertTrue(sources.none { it in resultNodes })
     }
 
+    @Test
+    fun `deep copies of many expressions that share a large structure are bounded for the whole run`() {
+        // 60 distinct expressions share _:count, whose list has 5,000 members (10,000 triples): each copy is under
+        // the per-copy limit, but together they would copy 600,000 triples from a shapes graph of about 11,000.
+        val members = (1..5_000).joinToString(" ")
+        val shapes = buildString {
+            append("_:count shnex:count ( $members ) .\n")
+            append("ex:S a sh:NodeShape ; sh:targetNode ex:a")
+            repeat(60) { append(" ;\n  sh:property [ sh:path ex:p ; sh:expression [ sparql:equals ( _:count -$it ) ] ]") }
+            append(" .\n")
+        }
+        val started = System.nanoTime()
+        val error = assertThrows(ShaclValidationException::class.java) { validate("jena", "ex:a ex:p 1 .", shapes) }
+        assertTrue("sh:sourceConstraint" in error.message.orEmpty(), error.message)
+        assertTrue(System.nanoTime() - started < 60_000_000_000L)
+        // One such expression is copied in full.
+        val one = "_:count shnex:count ( $members ) .\nex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:expression [ sparql:equals ( _:count -1 ) ] ] ."
+        val rdf = validate("jena", "ex:a ex:p 1 .", one).toShaclValidationReportRdf()
+        val source = rdf.getTriples().single { it.predicate == SHACL.sourceConstraint }.obj
+        assertEquals(10_006, deepCopyIn(rdf, source).size)
+    }
+
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `the deep copy of a cyclic blank node shape terminates`(provider: String) {
         // The shapes graph is its own data graph, so the expression can output the blank node shape itself; the shape
