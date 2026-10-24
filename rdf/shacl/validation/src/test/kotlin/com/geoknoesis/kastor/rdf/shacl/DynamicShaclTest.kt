@@ -793,6 +793,33 @@ class DynamicShaclTest {
         }
     }
 
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `computed sh closed and sh reificationRequired are evaluated for literal focus nodes`(provider: String) {
+        // A literal has no properties to close and no triples to reify, but a failed evaluation still fails the run
+        // (§3.4), as for sh:uniqueValuesFor and the Core constraints.
+        val failing = listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:closed [ shnex:pathValues ex:mode ] ." to "sh:closed",
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:closed [ shnex:var \"focusNode\" ] ." to "sh:closed",
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:closed true ; sh:ignoredProperties [ shnex:var \"focusNode\" ] ." to
+                "sh:ignoredProperties",
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:property [ sh:path ex:p ; sh:reificationRequired [ shnex:pathValues ex:req ] ] ." to
+                "sh:reificationRequired",
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:property [ sh:path ex:p ; sh:reifierShape ex:RS ; sh:reificationRequired [ shnex:var \"focusNode\" ] ] ." to
+                "sh:reificationRequired",
+        )
+        for ((shapes, parameter) in failing) {
+            val error = assertThrows(ShaclValidationException::class.java, { validate(provider, "ex:a ex:p 1 .", shapes) }, shapes)
+            val message = error.message.orEmpty()
+            assertTrue("Dynamic SHACL" in message && parameter in message, "$shapes: $message")
+        }
+        // Evaluations that succeed leave nothing to check on a literal.
+        val passing = listOf(
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:closed ( true ) ; sh:ignoredProperties [ shnex:pathValues ex:mode ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode \"lit\" ; sh:property [ sh:path ex:p ; sh:reificationRequired ( true ) ] .",
+        )
+        for (shapes in passing) assertTrue(validate(provider, "ex:a ex:p 1 .", shapes).violations.isEmpty(), shapes)
+    }
+
     @Test
     fun `dynamic sh reificationRequired on a complex path is reported`() {
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ( ex:a ex:b ) ; sh:reificationRequired [ shnex:pathValues ex:none ] ] ."

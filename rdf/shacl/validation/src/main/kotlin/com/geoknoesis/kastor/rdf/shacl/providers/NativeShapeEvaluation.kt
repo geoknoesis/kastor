@@ -88,8 +88,11 @@ internal fun NativeShaclValidator.validateNodeShape(
         if (sink.stop) return
     }
 
-    // The reifiers' deactivation first, then the computed parameters (SHACL 1.2 Node Expressions §8), if any.
-    if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null) && focus is RdfResource &&
+    // The reifiers' deactivation first, then the computed parameters (SHACL 1.2 Node Expressions §8), if any. These are
+    // evaluated for a literal focus node too, so that a failed evaluation fails the run (§3.4), though a literal has no
+    // properties to close.
+    val closedComputed = shape.closedParameter != null || shape.ignoredParameter != null
+    if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null) && (focus is RdfResource || closedComputed) &&
         !reifierDeactivated(reifiers.closed, focus, tpl, ConstraintType.CLOSED, ctx, state, sink)
     ) {
         val resolved = try {
@@ -98,7 +101,7 @@ internal fun NativeShaclValidator.validateNodeShape(
             sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.CLOSED, null, e.node, e.shape)
             null
         }
-        if (resolved != null && resolved.first != ClosedMode.NONE) {
+        if (resolved != null && resolved.first != ClosedMode.NONE && focus is RdfResource) {
             sink.failAll(validateClosed(focus, shape, resolved.first, resolved.second, tpl, ctx, firstOnly = !sink.reports))
         }
     }
@@ -374,20 +377,28 @@ internal fun NativeShaclValidator.validatePropertyShape(
         }
     }
     val reifierConstraints = ps.constraints.filter { it.unwrapped().isReifierConstraint() }
-    if (focus is RdfResource && reifierConstraints.isNotEmpty()) {
-        sink.unit { s ->
-            // The constraints a reifier deactivates for the focus node are left out (SHACL 1.2 Core §3.1.6).
-            val active = reifierConstraints.mapNotNull { c ->
-                val guarded =
-                    if (c is PropertyConstraint.Deactivatable) {
-                        c.constraint.takeUnless { reifierDeactivated(c.deactivatedWhen, focus, tpl, ConstraintType.REIFIER_SHAPE, ctx, state, s) }
-                    } else {
-                        c
-                    }
-                // SHACL 1.2 Node Expressions §8: a computed sh:reificationRequired, resolved for the focus node once the
-                // constraint is known to be active.
-                if (guarded is PropertyConstraint.Dynamic) resolveReification(guarded, focus, ps, tpl, ctx, state, s) else guarded
+    // The constraints a reifier deactivates for the focus node are left out (SHACL 1.2 Core §3.1.6); a computed
+    // sh:reificationRequired (SHACL 1.2 Node Expressions §8) is resolved for the focus node once the constraint is known
+    // to be active.
+    fun active(constraints: List<PropertyConstraint>, s: Sink): List<PropertyConstraint> = constraints.mapNotNull { c ->
+        val guarded =
+            if (c is PropertyConstraint.Deactivatable) {
+                c.constraint.takeUnless { reifierDeactivated(c.deactivatedWhen, focus, tpl, ConstraintType.REIFIER_SHAPE, ctx, state, s) }
+            } else {
+                c
             }
+        if (guarded is PropertyConstraint.Dynamic) resolveReification(guarded, focus, ps, tpl, ctx, state, s) else guarded
+    }
+    if (focus !is RdfResource) {
+        // A literal has no triples to reify, but the computed parameters are evaluated, so that a failed evaluation
+        // fails the run (§3.4).
+        val computed = reifierConstraints.filter { c ->
+            (if (c is PropertyConstraint.Deactivatable) c.constraint else c) is PropertyConstraint.Dynamic
+        }
+        if (computed.isNotEmpty()) sink.unit { s -> active(computed, s) }
+    } else if (reifierConstraints.isNotEmpty()) {
+        sink.unit { s ->
+            val active = active(reifierConstraints, s)
             validateReifierPropertyConstraints(
                 focus = focus,
                 tpl = tpl,

@@ -24,7 +24,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
  * closed, must be IRIs, and are ignored with the constant ones. Any other output is a validation failure.
  */
 internal fun NativeShaclValidator.resolveClosed(
-    focus: RdfResource,
+    focus: RdfTerm,
     shape: CompiledNodeShape,
     ctx: NativeValidationContext,
     depth: Int,
