@@ -780,6 +780,31 @@ class NodeExpressionConstraintTest {
     }
 
     @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `sh targetWhere candidates are not narrowed by a shape deactivated per focus node`(provider: String) {
+        // ex:n is no ex:C and no literal, but ex:W is deactivated for it, so it conforms to ex:W and is a target of ex:T.
+        val skip = "sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ]"
+        val target = "ex:T a sh:NodeShape ; sh:targetWhere ex:W ; sh:property [ sh:path ex:skip ; sh:maxCount 0 ] ."
+        val data = "ex:n ex:skip 1 . ex:c a ex:C ; ex:q 2 ."
+        for (membership in listOf("sh:class ex:C", "sh:datatype xsd:integer", "sh:nodeKind sh:Literal")) {
+            val shapes = "$target ex:W a sh:NodeShape ; $membership ; $skip ."
+            assertEquals(listOf(ex("n")), validate(provider, data, shapes).violations.map { it.focusNode }, membership)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `sh uniqueValuesFor reports no result for a focus node the shape is deactivated for`(provider: String) {
+        // ex:a and ex:b share their key; the shape is deactivated for ex:a, which still makes ex:b a duplicate.
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a , ex:b , ex:c ; sh:uniqueValuesFor ( ex:id ) ;
+              sh:deactivated [ shnex:exists [ shnex:pathValues ex:skip ] ] .
+        """
+        val data = "ex:a ex:id 1 ; ex:skip 1 . ex:b ex:id 1 . ex:c ex:id 2 ."
+        val report = validate(provider, data, shapes)
+        assertEquals(listOf(ex("b")), report.violations.map { it.focusNode })
+        assertTrue(!report.isValid)
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
     fun `a SPARQL constraint is deactivated for the focus nodes whose expression is true`(provider: String) {
         // SHACL 1.2 SPARQL: evalExpr(expr, data graph, focus node, {}) producing true deactivates the constraint.
         val select = "sh:select '''SELECT ${'$'}this WHERE { FILTER NOT EXISTS { ${'$'}this <http://example.com/ns#ok> ?x } }'''"

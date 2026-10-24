@@ -88,10 +88,13 @@ internal fun NativeShaclValidator.computeFocusNodes(shape: CompiledNodeShape, ct
 /**
  * `sh:targetWhere` candidates: every node of the data graph (subjects and objects), narrowed to class instances
  * when the membership shape requires a class, and without the nodes its `sh:nodeKind` / `sh:datatype` exclude.
+ * A membership shape with a non-constant `sh:deactivated` is not narrowed: it conforms for every node it is
+ * deactivated for (SHACL 1.2 Core §3.1.6), whatever its constraints exclude.
  */
 private fun targetWhereCandidates(tw: RdfResource, ctx: NativeValidationContext): Collection<RdfTerm> {
-    val constraints =
-        if (tw in ctx.compiled.referencedPropertyShapes) emptyList() else ctx.compiled.referencedNodeShapes[tw]?.nodeConstraints.orEmpty()
+    val membership = if (tw in ctx.compiled.referencedPropertyShapes) null else ctx.compiled.referencedNodeShapes[tw]
+    if (membership?.deactivatedWhen != null) return ctx.data.allNodes()
+    val constraints = membership?.nodeConstraints.orEmpty()
     constraints.firstNotNullOfOrNull { c -> (c as? PropertyConstraint.Class)?.iri }?.let { return ctx.data.instancesMatchingTargetClass(it).toList() }
     val kinds = constraints.filterIsInstance<PropertyConstraint.NodeKind>()
     val literalKinds = setOf(SHACL.Literal, SHACL.BlankNodeOrLiteral, SHACL.IRIOrLiteral)

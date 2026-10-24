@@ -92,8 +92,12 @@ private fun collectClosedByTypesProperties(focus: RdfResource, ctx: NativeValida
  * target whose key is shared with at least one other target yields exactly one result, without `sh:value`
  * (W3C `uniqueValuesFor-001` … `-005`). The total is counted per group and at most [capacity] result rows are
  * materialized, so large duplicate groups stay linear.
+ *
+ * A focus node for which the shape is deactivated by a non-constant `sh:deactivated` has no result (SHACL 1.2 Core
+ * §3.1.6: deactivated shapes are ignored), but it stays one of the targets the keys are compared with: the
+ * constraint is about the target set, which deactivation does not change.
  */
-internal fun validateUniqueValuesForShape(
+internal fun NativeShaclValidator.validateUniqueValuesForShape(
     shape: CompiledNodeShape,
     focusNodes: List<RdfTerm>,
     focusOnly: RdfResource?,
@@ -115,7 +119,10 @@ internal fun validateUniqueValuesForShape(
     var count = 0L
     for (nodes in groups.values) {
         if (nodes.size < 2) continue
-        val duplicates = if (focusOnly == null) nodes else nodes.filter { it == focusOnly }
+        val candidates = if (focusOnly == null) nodes else nodes.filter { it == focusOnly }
+        val deactivatedWhen = shape.deactivatedWhen
+        val duplicates =
+            if (deactivatedWhen == null) candidates else candidates.filterNot { deactivates(deactivatedWhen, it, ctx, 0) }
         count += duplicates.size
         for (node in duplicates) {
             ctx.budget.tick("uniqueValuesFor")
