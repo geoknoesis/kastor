@@ -62,6 +62,7 @@ class BundledShapeSeverityTest {
                 @prefix owl: <http://www.w3.org/2002/07/owl#> .
                 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
                 ex:A a owl:Class ; rdfs:comment "a" .
+                ex:B a owl:Class ; rdfs:comment "b" ; rdfs:label "B"@en , "Bee"@en .
                 ex:p a owl:ObjectProperty ; rdfs:label "p" ; rdfs:domain ex:A .
                 """.trimIndent(),
                 RdfFormat.TURTLE,
@@ -70,6 +71,11 @@ class BundledShapeSeverityTest {
             checker.check(data).findings.associate { it.violation.message to it.violation.severity }
         assertEquals(ViolationSeverity.WARNING, bySeverity["Class has no rdfs:label."], "findings: $bySeverity")
         assertEquals(ViolationSeverity.WARNING, bySeverity["Object property has no rdfs:range."], "findings: $bySeverity")
+        assertEquals(
+            ViolationSeverity.WARNING,
+            bySeverity["Class has more than one rdfs:label with the same language tag."],
+            "findings: $bySeverity",
+        )
     }
 
     private fun RdfGraph.objectOf(subject: RdfResource, predicate: Iri) = find(subject, predicate, null).firstOrNull()?.obj

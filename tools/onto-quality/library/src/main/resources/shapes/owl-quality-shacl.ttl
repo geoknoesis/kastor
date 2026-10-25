@@ -329,8 +329,10 @@ oqsh:ClassLabelUniqueLangShape
     rdfs:comment    "Mirrors SKOS S14 for owl:Class. Two same-language labels on one entity are almost always an authoring mistake." ;
     sh:targetClass  owl:Class ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Warning ;
                       sh:uniqueLang true ;
-                      sh:message "Class has more than one rdfs:label with the same language tag." ] .
+                      sh:message "Class has more than one rdfs:label with the same language tag." ] ;
+    sh:severity     sh:Warning .
 
 # =============================================================================
 #                  C. PROPERTY DECLARATIONS  (P11, P19, P27)
