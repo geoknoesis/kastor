@@ -23,6 +23,10 @@ and is kept as is; it was never published to Maven Central.
   logged warning, so `diff` printed `ISOMORPHIC` and exited 0 for two JSON-LD datasets that differed in a named
   graph, `parse` under-counted, and `to-turtle` printed only the default graph instead of refusing the input. Every
   input is now read as a dataset; a graph format simply has no named graphs.
+- **Security (`rdf-cli`):** error messages escape control and bidirectional formatting characters as `\uXXXX`. A
+  parse error quotes the offending input, so a file could write terminal escape sequences (or forge a line) on
+  stderr. Tests also pin that an RDF/XML external entity reads no local file and that a JSON-LD context named by URL
+  is refused without a connection.
 - **Fixed (`rdf-sparql`):** `maxResponseBytes` bounded the bytes of a buffered `select` but not the heap of its
   decoded rows: a 31 MB response of empty rows retained about 900 MB. Decoding now shares what repeats across rows
   (variable names, the name set of rows that bind the same variables, datatype IRIs, language tags; rows that bind
