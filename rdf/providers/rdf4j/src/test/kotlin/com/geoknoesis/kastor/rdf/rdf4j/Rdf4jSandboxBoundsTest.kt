@@ -89,6 +89,35 @@ class Rdf4jSandboxBoundsTest {
         assertLimited("SELECT ?t40 { ${doublings(40, seed = "<urn:a>", step = { "$triple($it, <urn:p>, $it)" })} }")
     }
 
+    /**
+     * RDF4J's join optimizer is exponential in the length of a chain of triple-term expressions (it plans them as joins),
+     * so a query may have at most 16 of them; a chain within that bound is planned and evaluated at once. (A triple
+     * term computed by `rdf:Statement` is bounded in size, see the chain test above.)
+     */
+    @Test
+    fun `triple-term expressions are bounded in number`() {
+        plain("SELECT ?t14 { ${doublings(14, seed = "<urn:a>", step = { "<<$it <urn:p> $it>>" })} }")
+        val started = System.nanoTime()
+        assertThrows(IllegalArgumentException::class.java) {
+            plain("SELECT ?t40 { ${doublings(40, seed = "<urn:a>", step = { "<<$it <urn:p> $it>>" })} }")
+        }
+        assertTrue(Duration.ofNanos(System.nanoTime() - started) < Duration.ofSeconds(5))
+    }
+
+    @Test
+    fun `group concat and concat of IRIs are bounded`() {
+        val values = (1..64).joinToString(" ")
+        assertLimited("SELECT (STRLEN(GROUP_CONCAT(?i)) AS ?n) { ${doublings(20)} BIND (IRI(CONCAT(\"urn:\", SUBSTR(?x20, 1, 4000000))) AS ?i) VALUES ?a { $values } VALUES ?b { $values } }")
+        assertLimited("SELECT ?i { ${doublings(23)} BIND (IRI(CONCAT(\"urn:\", ?x23)) AS ?i) }")
+    }
+
+    @Test
+    fun `property-path closures are bounded in number`() {
+        val many = (1..70).joinToString("/") { "<urn:p>*" }
+        assertThrows(IllegalArgumentException::class.java) { plain("SELECT * { <urn:a> $many ?o }") }
+        assertEquals(3, plain("SELECT * { <urn:a> <urn:p>* ?o }").size)
+    }
+
     @ParameterizedTest
     @ValueSource(strings = [
         "SELECT * { <urn:a> <urn:p> ?o FILTER (BOMB) }",

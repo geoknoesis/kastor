@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.query.algebra.Coalesce
 import org.eclipse.rdf4j.query.algebra.Datatype
 import org.eclipse.rdf4j.query.algebra.FunctionCall
 import org.eclipse.rdf4j.query.algebra.GroupConcat
-import org.eclipse.rdf4j.query.algebra.IRIFunction
 import org.eclipse.rdf4j.query.algebra.If
 import org.eclipse.rdf4j.query.algebra.Label
 import org.eclipse.rdf4j.query.algebra.Lang
@@ -127,7 +126,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     /** Fails with [SandboxLimitException] when calling the built-in [iri] of [cost] on [args] would exceed a limit. */
     fun precheck(cost: Rdf4jCost, iri: String, args: List<Value>) {
         when (cost) {
-            Rdf4jCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { label(it).toLong() }, iri)
+            Rdf4jCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { text(it) }, iri)
             Rdf4jCost.CASE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 3L, iri)
             Rdf4jCost.ENCODE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 9L, iri)
             Rdf4jCost.XSD_CAST -> args.firstOrNull()?.let { SandboxLimits.checkNumericLexical(label(it), iri) }
@@ -222,13 +221,17 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     }
 
     private fun count(value: Value) {
-        val total = groupConcat.addAndGet(label(value) + 1L)
+        val total = groupConcat.addAndGet(text(value) + 1L)
         if (total > SandboxLimits.MAX_GROUP_CONCAT_LENGTH) {
             throw SandboxLimitException("GROUP_CONCAT would accumulate more than ${SandboxLimits.MAX_GROUP_CONCAT_LENGTH} characters")
         }
     }
 
     private fun label(value: Value): Int = if (value is Literal) value.label.length else 0
+
+    /** The length of the text `GROUP_CONCAT` or `CONCAT` would use for [value]: its string value, of any kind of term. */
+    private fun text(value: Value): Long =
+        if (value is Triple) text(value.subject) + text(value.predicate) + text(value.`object`) else value.stringValue().length.toLong()
 
     private fun Literal.isIntegerValued() = (coreDatatype as? CoreDatatype.XSD)?.isIntegerDatatype == true
 
@@ -249,7 +252,8 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         const val MAX_TRIPLE_TERM_NODES = 4096
 
         fun copying(expr: ValueExpr): Boolean = when (expr) {
-            is Str, is Label, is Lang, is Datatype, is Namespace, is LocalName, is IRIFunction, is If, is Coalesce -> true
+            // IRI() resolves against a base, so it is checked like any computation.
+            is Str, is Label, is Lang, is Datatype, is Namespace, is LocalName, is If, is Coalesce -> true
             is FunctionCall -> Rdf4jCost.ofFunction(expr.uri) == Rdf4jCost.COPYING
             else -> false
         }

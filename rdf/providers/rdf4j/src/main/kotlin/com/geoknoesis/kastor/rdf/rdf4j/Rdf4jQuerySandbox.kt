@@ -48,9 +48,24 @@ internal object Rdf4jQuerySandbox {
         return parsed
     }
 
+    /**
+     * Most property-path closures (`*`, `+`) one sandboxed query may have, as Jena bounds the size of a path. RDF4J
+     * expands the other path operators into joins and unions, whose rows and statement reads check the deadline.
+     */
+    const val MAX_PATH_CLOSURES: Int = 64
+
+    /**
+     * Most triple-term patterns and expressions (`<< s p o >>`) one sandboxed query may have: RDF4J's join optimizer
+     * takes time exponential in the nesting of the joins they create (a chain of 40 `BIND(<< ?t :p ?t >> AS ?u)` kept
+     * it busy for minutes while it planned the query, before any deadline check could run).
+     */
+    const val MAX_TRIPLE_TERMS: Int = 16
+
     /** Why a sandboxed query whose algebra is [expr] is refused (see [check]); null when it is not. */
     fun refusal(expr: org.eclipse.rdf4j.query.algebra.QueryModelNode): String? {
         var refused: String? = null
+        var closures = 0
+        var tripleTerms = 0
         expr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
             override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) {
                 val ref = node.serviceRef
@@ -59,6 +74,29 @@ internal object Rdf4jQuerySandbox {
 
             override fun meet(node: org.eclipse.rdf4j.query.algebra.AggregateFunctionCall) {
                 refused = refused ?: "A sandboxed query may not use the custom aggregate <${node.iri}>"
+            }
+
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.TripleRef) {
+                tripleTerm()
+                super.meet(node)
+            }
+
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.ValueExprTripleRef) {
+                tripleTerm()
+                super.meet(node)
+            }
+
+            fun tripleTerm() {
+                if (++tripleTerms > MAX_TRIPLE_TERMS) {
+                    refused = refused ?: "A sandboxed query may not use more than $MAX_TRIPLE_TERMS triple-term patterns or expressions"
+                }
+            }
+
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) {
+                if (++closures > MAX_PATH_CLOSURES) {
+                    refused = refused ?: "A sandboxed query may not use more than $MAX_PATH_CLOSURES property-path closures (* and +)"
+                }
+                super.meet(node)
             }
         })
         return refused
