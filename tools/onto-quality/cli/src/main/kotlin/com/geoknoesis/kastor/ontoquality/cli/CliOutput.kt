@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.ontoquality.cli
 
 import com.geoknoesis.kastor.ontoquality.PitfallReference
+import com.geoknoesis.kastor.ontoquality.QualityFinding
 import com.geoknoesis.kastor.ontoquality.QualityReport
 import com.geoknoesis.kastor.ontoquality.MarkdownReportOptions
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
@@ -9,6 +10,9 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TrueLiteral
+import com.geoknoesis.kastor.rdf.bnode
 import com.geoknoesis.kastor.rdf.jena.JenaBridge
 import com.geoknoesis.kastor.rdf.shacl.toShaclValidationReportRdf
 import com.github.ajalt.clikt.core.parse
@@ -92,12 +96,43 @@ internal fun emitReport(
             "text" -> explained?.describeText() ?: report.describeText()
             "markdown" -> explained?.describeMarkdown(markdownOptions) ?: report.describeMarkdown(markdownOptions)
             "json" -> findingsToJson(report, explained)
-            "turtle" -> JenaBridge.toString(report.underlying.toShaclValidationReportRdf(), "TURTLE")
+            "turtle" -> turtleReport(report)
             else -> throw usageError("Unknown --format $formatOpt (expected text|markdown|json|turtle)")
         }
     writeOutput(text, outputOpt, stdout)
 }
 
+
+/** Namespace of the onto-qa report annotations on the SHACL validation report node (the bundled `oqsh:` namespace). */
+internal const val ONTO_QA_REPORT_NAMESPACE = "http://example.org/owl-quality-shacl#"
+
+/** `oqsh:reportTruncated true` on the report node: the engine returned fewer results than it produced (`--max-findings`). */
+internal val REPORT_TRUNCATED = Iri("${ONTO_QA_REPORT_NAMESPACE}reportTruncated")
+
+/** The SHACL validation report in Turtle; a truncated report carries [REPORT_TRUNCATED] on its report node. */
+internal fun turtleReport(report: QualityReport): String {
+    val node = bnode("ValidationReport")
+    val rdf = report.underlying.toShaclValidationReportRdf(node)
+    if (!report.truncated) return JenaBridge.toString(rdf, "TURTLE")
+    val marked = JenaBridge.createEmptyModel()
+    marked.addTriples(rdf.getTriples())
+    marked.addTriple(RdfTriple(node, REPORT_TRUNCATED, TrueLiteral))
+    return JenaBridge.toString(marked, "TURTLE")
+}
+
+/**
+ * The stderr notice for a [QualityReport.truncated] report ([maxFindings] is `--max-findings`): never silent, and
+ * it names the status the run ends with.
+ */
+internal fun warnIfTruncated(report: QualityReport, maxFindings: Int?, err: (String) -> Unit) {
+    if (!report.truncated) return
+    val limit = maxFindings?.let { "--max-findings $it" } ?: "the validator limit"
+    err(
+        "onto-qa: warning: the report is truncated: $limit stopped the validator after ${report.findings.size} finding(s) and more " +
+            "exist. The run exits $EXIT_FINDINGS because the dropped findings may reach --severity; raise or drop --max-findings " +
+            "to see them all.",
+    )
+}
 
 private val reportJson = Json { prettyPrint = true }
 
@@ -118,6 +153,8 @@ internal fun findingsToJson(
 ): String {
     val root =
         buildJsonObject {
+            // A truncated report lists a prefix of the findings (--max-findings); a consumer must not take it as complete.
+            put("truncated", report.truncated)
             putJsonArray("findings") {
                 for (f in report.findings) {
                     addJsonObject {
@@ -129,6 +166,9 @@ internal fun findingsToJson(
                         put("pitfall", pitfallLabel(f.pitfall))
                         put("tier", f.tier.name)
                         put("focusNode", focusNodeToString(f.violation.focusNode, f.blankNodeKeys))
+                        // The result path (its IRIs, or the key of a complex path) and value, as in the text report.
+                        put("resultPath", resultPathToString(f))
+                        put("value", f.violation.value?.let { focusNodeToString(it, f.blankNodeKeys) })
                     }
                 }
             }
@@ -156,6 +196,13 @@ internal fun findingsToJson(
             }
         }
     return reportJson.encodeToString(JsonObject.serializer(), root)
+}
+
+/** The result path of [finding]: its steps joined by ` / `, or the key of a complex (blank-node) path; null when it has none. */
+private fun resultPathToString(finding: QualityFinding): String? {
+    val steps = finding.violation.path.orEmpty()
+    if (steps.isNotEmpty()) return steps.joinToString(" / ") { focusNodeToString(it, finding.blankNodeKeys) }
+    return finding.violation.resultPathNode?.let { focusNodeToString(it, finding.blankNodeKeys) }
 }
 
 /** Blank nodes use their known stable key (see [com.geoknoesis.kastor.ontoquality.QualityFinding.blankNodeKeys]). */

@@ -1,0 +1,24 @@
+# False-positive corpus: OWL 2 punning that OWL 2 DL allows. An IRI may name a class and an individual
+# (metamodelling: ex:Eagle is a class of birds and an instance of ex:Species), and a class and an object
+# property. No detector may report a violation; the polysemy and metamodelling smells are advisory.
+@prefix ex:   <https://w3id.org/kastor/fp/taxa#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<https://w3id.org/kastor/fp/taxa> a owl:Ontology ;
+    rdfs:label "Taxa"@en ; rdfs:comment "Species as classes and as individuals."@en ;
+    dct:creator <https://orcid.org/0000-0002-1825-0097> ; dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    dcat:contactPoint <mailto:taxa@example.org> ; owl:versionInfo "1.0" .
+
+ex:Species a owl:Class ; rdfs:label "Species"@en ; rdfs:comment "A species of living things."@en ; skos:example "Eagle"@en .
+ex:Bird a owl:Class ; rdfs:label "Bird"@en ; rdfs:comment "A feathered animal."@en ; skos:example "an eagle"@en .
+ex:Eagle a owl:Class , owl:NamedIndividual , ex:Species ;
+    rdfs:label "Eagle"@en ; rdfs:comment "Birds of prey of the family Accipitridae."@en ;
+    rdfs:subClassOf ex:Bird ; ex:conservationStatus "least concern" .
+ex:conservationStatus a owl:DatatypeProperty ; rdfs:label "conservation status"@en ;
+    rdfs:comment "The IUCN status of a species."@en ; rdfs:domain ex:Species ; rdfs:range xsd:string .
+ex:harriet a ex:Eagle ; rdfs:label "Harriet"@en .

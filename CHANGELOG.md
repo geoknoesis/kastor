@@ -291,6 +291,79 @@ entries are regrouped under those kind headings.
 - **Docs:** the annotation reference lists the ontology generation fields (including `validationAnnotations` and
   its dependency) and `replaceInGraph`; the `GraphStateCache` `DETACHED` KDoc describes the wait it can do.
 
+### Round twelve
+
+#### onto-quality (onto-qa, benchmarks)
+
+- **Fixed (P1): `onto-qa` no longer drops findings silently.** The CLI built its validator with the library default
+  `ValidationConfig.maxViolations` of 1,000, so on a large ontology every finding after the first thousand (in engine
+  order, not the most severe) disappeared, and `check` could exit 0 with violations dropped. The CLI now asks for every
+  result. New **`--max-findings N`** caps them explicitly; a report cut by it says so on stderr, in the text and
+  Markdown reports, in JSON (`"truncated": true`) and in Turtle (`oqsh:reportTruncated true` on the report node), and
+  the run exits **1** (the dropped findings may reach `--severity`). Library: `QualityReport.truncated` (new), and
+  `QualityChecker` logs a warning (logger `…QualityChecker.truncation`) for a truncated report.
+- **Fixed: the text report names the entity.** Each finding is followed by its focus node (blank nodes by their stable
+  key), result path and value; JSON findings gain `resultPath` and `value`; the Markdown category list names the focus
+  node, and the Markdown digest without metrics says how many warning and info findings it does not list.
+- **Fixed: `sh:severity` declared twice.** The `dct:creator` shape of `OntologyMetadataShape` had both `sh:Warning`
+  and `sh:Info`, so the finding's severity depended on index order and changed with `--reasoner`. It is a Warning;
+  `BundledShapeSeverityTest` now fails on any shape with more than one `sh:severity`, `sh:path` or `sh:deactivated`, and
+  on any active targeted node shape without exactly one `sh:severity`.
+- **Changed: detector severities follow a written policy** (library README): Violation for logical errors and SKOS
+  integrity conditions, Warning for likely mistakes and declaration gaps, Info for conventions.
+  - P34/P35 (undeclared class or predicate) are **Warnings** (were Violations), and terms of the standard vocabularies
+    the catalogues recommend (DCAT, PROV, FOAF, VANN, Creative Commons, schema.org, vCard, PAV, SKOS-XL, XSD facets of
+    datatype restrictions...) are exempt. The round-eleven claim that the default check no longer exits 1 on
+    declaration gaps now holds for reused vocabularies too.
+  - Warnings (were Violations): P26 (inverse of a symmetric property: redundant, not contradictory), P01 class/property
+    punning (legal in OWL 2 DL), P24 union/intersection recursion and property-domain recursion, K01 import cycles.
+    Info (was Warning): N23 class/instance punning.
+  - New Violations: `IllegalPunningShape` (an IRI that is two kinds of property, or a class and a datatype, which OWL 2
+    DL forbids) and `SelfComplementClassShape` (a class equivalent to, or under, its own complement).
+  - SKOS range statements (S4, S6, S25, S32) are Warnings ("not declared a skos:Concept"): SKOS entails the typing.
+    Empty SKOS labels are Warnings.
+- **Fixed: false positives and negatives across the bundled detectors.**
+  - Domain/range class checks accept restrictions and untyped class expressions, leave undeclared IRIs to P34, and give
+    the "should this be an owl:DatatypeProperty?" hint only when the range is a datatype.
+  - Ontology metadata accepts `dct:title`, `dct:description`, `dc:creator`, `foaf:maker`, `prov:wasAttributedTo`,
+    `cc:license`, `schema:license`, `schema:version` and similar equivalents.
+  - Standard-vocabulary terms declared Protégé-style are not asked for labels, definitions, domains, ranges or names.
+  - Naming (P22) accepts letters of every script and OBO-style identifiers; P40 skips MIREOT terms (`rdfs:isDefinedBy`,
+    IAO "imported from") and compares hosts without `www.`; the deprecated-reference check reads `"true"` and `1` and
+    ignores replacement links (`dct:replaces`, IAO "term replaced by", `rdfs:seeAlso`, axiom annotations); P04 skips
+    deprecated classes; P38's message names properties as well as classes.
+  - SKOS: S46 walks `exactMatch` both ways and `broadMatch`/`narrowMatch` as inverses, so a pair stated from either end
+    is found (once); a one-sided `skos:related` is reported once, on its subject; a concept named by
+    `skos:hasTopConcept` is in its scheme; an S27 pair stated both ways is reported once.
+  - Modern engineering: mixed tagged/untagged labels once per untagged label; namespace style compares the ontology's
+    own terms only, per ontology; an import counts as used by terms of its namespace without file suffix or version
+    segment, or by `rdfs:isDefinedBy`; `schema:license` is machine-readable.
+  - Embedding: catch-all names must be whole words (Miscarriage, Otter are not); equivalent or deprecated classes may
+    share a label. RDF 1.2: RTL labels are recognised by their primary subtag in any case (`@ar-EG`, `@HE`), on
+    `skos:prefLabel` and `skos:altLabel` too.
+- **Fixed: unbounded work and results on large or hostile input.** The subclass and subproperty cycle queries were
+  cubic in the hierarchy depth (a 1,500-class chain ran into the 5-minute validation budget); they are a reachability
+  test per direct superclass now. A notation shared by n concepts is one finding (was n(n-1)/2) and a label shared by n
+  classes n findings (was n(n-1)/2), which matters now that every finding is kept.
+- **Added (CLI):** `--validation-timeout <seconds>` (default 300) and `--reasoner-timeout <seconds>` (default 300); a
+  validation or reasoner out of time is status 5 with a hint naming the option. `--label-language none` (or an empty
+  value) embeds the untagged labels; a bad tag is reported under the subcommand's usage line. Library:
+  `QualityChecker.check(ontology, profile, reasonerTimeout)`.
+- **Added (Java interop):** `QualityChecker.builder` and `QualityReport.from` are `@JvmStatic`; `QualityChecker.allBundled`
+  and `SemanticEnricher.withMiniLm` are callable aliases of the two `default()` factories, whose name is a Java
+  keyword. Additive: the companion methods remain.
+- **Changed:** the enricher, the reasoner merge and the shapes merge copy triples as a stream instead of building a
+  list of the whole graph, and `pipeline` releases the parsed graph once it is enriched.
+- **Fixed (`shacl-era-cli`):** the benchmark report holds every validation result (it kept the first 1,000, with no
+  marker, while the other engines of the comparison report everything); a report the engine truncated is not written
+  (status 5).
+- **Added (benchmarks):** `SimilarityClusteredBenchmark`, embedding-like (anisotropic, clustered) vectors at 10,000 and
+  50,000 labels with onto-qa's scaled limits: exact search, LSH search, and tree build plus first search. Outside the
+  regression gate; the baselines README now documents the gate that exists.
+- **Tests:** `FalsePositiveCorpusTest` (every catalogue, with and without a reasoner, over valid ontologies covering
+  blank nodes, OWL 2 constructs, imports, punning, SKOS in both directions, multilingual names and 3,000 classes: no
+  warning or violation), `DetectorRegressionTest`, `DeepHierarchyTest`, `CliTruncationTest`, `QualityReportTextTest`.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)

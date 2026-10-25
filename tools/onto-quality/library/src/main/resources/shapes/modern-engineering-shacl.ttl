@@ -106,7 +106,7 @@ oqsh:MachineReadableLicenseShape
     oqsh:category   oqsh:FairCompliance ;
     oqsh:pitfall    "N04" ;
     rdfs:label      "License should be declared with a resolvable URI, not just prose" ;
-    rdfs:comment    "FAIR Reusability. A license mentioned only in rdfs:comment cannot be processed automatically by data portals, search engines, or compliance tools. dct:license or cc:license with an IRI to the license text is required for machine-readable licensing." ;
+    rdfs:comment    "FAIR Reusability. A license mentioned only in rdfs:comment cannot be processed automatically by data portals, search engines, or compliance tools. dct:license, cc:license or schema:license with an IRI to the license text is required for machine-readable licensing." ;
     sh:targetClass  owl:Ontology ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Ontology {$this} has no dct:license or cc:license with an IRI; the license is not machine-readable." ;
@@ -122,7 +122,7 @@ oqsh:MachineReadableLicenseShape
                             FILTER ( isIRI(?lic) )
                           }
                           FILTER NOT EXISTS {
-                            $this cc:license ?lic .
+                            $this cc:license|<https://schema.org/license>|<http://schema.org/license> ?lic .
                             FILTER ( isIRI(?lic) )
                           }
                           BIND ( 1 AS ?v )
@@ -200,7 +200,7 @@ oqsh:ConsistentNamespaceStyleShape
     oqsh:category   oqsh:UriHygiene ;
     oqsh:pitfall    "N09" ;
     rdfs:label      "Ontology should use a consistent hash-namespace OR slash-namespace style" ;
-    rdfs:comment    "URI hygiene. An ontology mixing 'http://example.org/foo#Bar' for some terms and 'http://example.org/foo/Baz' for others confuses consumers and breaks naive namespace tooling. Pick one convention per ontology." ;
+    rdfs:comment    "URI hygiene. An ontology mixing 'http://example.org/foo#Bar' for some terms and 'http://example.org/foo/Baz' for others confuses consumers and breaks naive namespace tooling. Pick one convention per ontology. Only the terms in the namespace of an owl:Ontology of the graph (its IRI followed by '#' or '/') are compared: reused external terms follow their own vocabulary's convention." ;
     sh:targetNode   owl:Thing ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Ontology mixes hash-style ({?hashExample}) and slash-style ({?slashExample}) namespaces — pick one convention." ;
@@ -210,26 +210,26 @@ oqsh:ConsistentNamespaceStyleShape
                         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
                         SELECT ?hashExample ?slashExample WHERE {
                           {
-                            SELECT (SAMPLE(?h) AS ?hashExample) (SAMPLE(?s) AS ?slashExample) WHERE {
+                            SELECT ?ontology (SAMPLE(?h) AS ?hashExample) (SAMPLE(?s) AS ?slashExample) WHERE {
                               {
+                                ?ontology a owl:Ontology .
+                                FILTER ( isIRI(?ontology) )
                                 ?h a ?t .
                                 FILTER ( ?t IN ( owl:Class, owl:ObjectProperty, owl:DatatypeProperty ) )
                                 FILTER ( isIRI(?h) )
-                                FILTER ( contains(str(?h), '#') )
+                                FILTER ( strstarts(str(?h), concat(REPLACE(str(?ontology), '[#/]+$', ''), '#')) )
                               }
                               UNION
                               {
+                                ?ontology a owl:Ontology .
+                                FILTER ( isIRI(?ontology) )
                                 ?s a ?t2 .
                                 FILTER ( ?t2 IN ( owl:Class, owl:ObjectProperty, owl:DatatypeProperty ) )
                                 FILTER ( isIRI(?s) )
+                                FILTER ( strstarts(str(?s), concat(REPLACE(str(?ontology), '[#/]+$', ''), '/')) )
                                 FILTER ( !contains(str(?s), '#') )
-                                FILTER ( regex(str(?s), '^https?://[^/]+/[^/]+/[^/]+') )
-                                FILTER ( !strstarts(str(?s), 'http://www.w3.org/') )
-                                FILTER ( !strstarts(str(?s), 'https://www.w3.org/') )
-                                FILTER ( !strstarts(str(?s), 'http://purl.org/') )
-                                FILTER ( !strstarts(str(?s), 'https://purl.org/') )
                               }
-                            }
+                            } GROUP BY ?ontology
                           }
                           FILTER ( bound(?hashExample) && bound(?slashExample) )
                         }
@@ -375,7 +375,7 @@ oqsh:NoClassAsInstanceShape
     oqsh:category   oqsh:OwlAntiPatterns ;
     oqsh:pitfall    "N23" ;
     rdfs:label      "A resource should not be both a class and an instance of a user-defined class" ;
-    rdfs:comment    "OWL anti-pattern. A resource declared both 'a owl:Class' and 'a ex:UserClass' is a punning case — legal in OWL 2 DL with restrictions, problematic in OWL 1 DL and confusing for most consumers. The classic example is ex:Lion both being a class (subclasses are Lion species) and an instance of ex:Species." ;
+    rdfs:comment    "OWL anti-pattern. A resource declared both 'a owl:Class' and 'a ex:UserClass' is a punning case — legal in OWL 2 DL (punning) and often intended (metamodelling), problematic in OWL 1 DL and confusing for many consumers, hence informational. The classic example is ex:Lion both being a class (subclasses are Lion species) and an instance of ex:Species." ;
     sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Resource {$this} is declared both owl:Class and an instance of user-defined class {?otherType} — metamodelling smell." ;
@@ -398,7 +398,7 @@ oqsh:NoClassAsInstanceShape
                           FILTER ( isIRI($this) )
                         }
                       """ ] ;
-    sh:severity     sh:Warning .
+    sh:severity     sh:Info .
 
 # =============================================================================
 #                          VOCABULARY REUSE
@@ -413,7 +413,7 @@ oqsh:UnusedImportShape
     oqsh:category   oqsh:Reuse ;
     oqsh:pitfall    "N26" ;
     rdfs:label      "owl:imports should not declare unused dependencies" ;
-    rdfs:comment    "An ontology that imports another vocabulary but never references any term from it adds bloat with no benefit. Detected by checking whether any IRI from the imported namespace appears as subject, predicate, or object anywhere else in the graph. Heuristic — the imported namespace IRI must be a prefix of at least one term URI in use." ;
+    rdfs:comment    "An ontology that imports another vocabulary but never references any term from it adds bloat with no benefit. Detected by checking whether any IRI from the imported namespace appears as subject, predicate, or object anywhere else in the graph. Heuristic — the imported IRI, without a serialisation suffix (.owl, .ttl...) or a trailing version segment (/1.0), compared without case, must be a prefix of at least one term URI in use (so an import of http://purl.obolibrary.org/obo/bfo.owl is used by obo:BFO_0000001, and one of https://example.org/onto/2.1 by https://example.org/onto#A), or a term must name it with rdfs:isDefinedBy." ;
     sh:targetClass  owl:Ontology ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Ontology imports {?imp} but no term from that namespace is used in the graph." ;
@@ -424,16 +424,17 @@ oqsh:UnusedImportShape
                           $this a owl:Ontology .
                           $this owl:imports ?imp .
                           FILTER ( isIRI(?imp) )
-                          BIND ( str(?imp) AS ?impStr )
+                          BIND ( lcase(REPLACE(REPLACE(str(?imp), '[.](owl|ttl|rdf|xml|nt|n3|jsonld|owx|ofn|omn)$', '', 'i'), '/v?[0-9][^/]*/?$', '')) AS ?impStr )
                           FILTER NOT EXISTS {
                             ?s ?p ?o .
-                            FILTER (
-                              ( isIRI(?s) && strstarts(str(?s), ?impStr) ) ||
-                              ( isIRI(?p) && strstarts(str(?p), ?impStr) ) ||
-                              ( isIRI(?o) && strstarts(str(?o), ?impStr) )
-                            )
                             FILTER ( ?p != owl:imports )
+                            FILTER (
+                              ( isIRI(?s) && strstarts(lcase(str(?s)), ?impStr) ) ||
+                              ( isIRI(?p) && strstarts(lcase(str(?p)), ?impStr) ) ||
+                              ( isIRI(?o) && strstarts(lcase(str(?o)), ?impStr) )
+                            )
                           }
+                          FILTER NOT EXISTS { ?term <http://www.w3.org/2000/01/rdf-schema#isDefinedBy> ?imp }
                         }
                       """ ] ;
     sh:severity     sh:Info .
@@ -451,7 +452,7 @@ oqsh:LanguageTagConsistencyShape
     oqsh:category   oqsh:Multilingual ;
     oqsh:pitfall    "N32" ;
     rdfs:label      "Untagged literals should not coexist with language-tagged literals on the same property of the same entity" ;
-    rdfs:comment    "Multilingual hygiene. If a class has both 'Person' (no lang tag) and 'Personne'@fr, the untagged form will not be retrieved by FILTER(LANG(?l)='en') queries. Either tag the original as @en or drop the duplicate." ;
+    rdfs:comment    "Multilingual hygiene. If a class has both 'Person' (no lang tag) and 'Personne'@fr, the untagged form will not be retrieved by FILTER(LANG(?l)='en') queries. Either tag the original as @en or drop the duplicate. One finding per untagged label, whatever the number of tagged ones." ;
     sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class {$this} mixes untagged label '{?untagged}' with language-tagged label '{?tagged}' on rdfs:label." ;
@@ -459,13 +460,13 @@ oqsh:LanguageTagConsistencyShape
                       sh:select """
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                        SELECT ?untagged ?tagged WHERE {
+                        SELECT ?untagged (SAMPLE(?anyTagged) AS ?tagged) WHERE {
                           $this a owl:Class .
                           $this rdfs:label ?untagged .
-                          $this rdfs:label ?tagged .
+                          $this rdfs:label ?anyTagged .
                           FILTER ( lang(?untagged) = '' )
-                          FILTER ( lang(?tagged) != '' )
-                        }
+                          FILTER ( lang(?anyTagged) != '' )
+                        } GROUP BY ?untagged
                       """ ] ;
     sh:severity     sh:Warning .
 

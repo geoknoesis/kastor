@@ -22,9 +22,23 @@ import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
+import java.time.Duration
 
 private val qualityCheckerLogger = LoggerFactory.getLogger(QualityChecker::class.java)
 
+/** Logger of the truncated-report warning ([QualityReport.truncated]); an application that reports truncation itself can silence it. */
+internal const val TRUNCATION_LOGGER = "com.geoknoesis.kastor.ontoquality.QualityChecker.truncation"
+
+private val truncationLogger = LoggerFactory.getLogger(TRUNCATION_LOGGER)
+
+/**
+ * Runs the shapes of one or more [ShapeCatalog]s over an ontology and turns the SHACL results into a [QualityReport].
+ *
+ * The [ShaclValidator] is the caller's, with its configuration. `ValidationConfig.maxViolations` (default 1,000)
+ * bounds the results the engine returns: a large ontology easily exceeds it. Such a report is marked
+ * [QualityReport.truncated] (and a warning is logged); build the validator with a larger limit, or
+ * `Int.MAX_VALUE`, when every finding is needed, as `onto-qa` does by default.
+ */
 class QualityChecker private constructor(
     private val validator: ShaclValidator,
     private val sourceCatalogs: List<ShapeCatalog>,
@@ -40,7 +54,7 @@ class QualityChecker private constructor(
     fun check(ontology: RdfGraph): QualityReport {
         val raw = validator.validate(ontology, mergedShapes)
         val metricsContext = computeMetricsContext(ontology)
-        return QualityReport.fromKeyed(raw, catalogs, metricsContext, QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes })
+        return QualityReport.fromKeyed(raw, catalogs, metricsContext, QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes }).warnIfTruncated()
     }
 
     private val scopes: EvaluationScopes by lazy { EvaluationScopes.of(mergedShapes) }
@@ -61,8 +75,23 @@ class QualityChecker private constructor(
      * So a reasoner can only add findings of the second kind. The [MetricsProvider] always receives the asserted
      * [ontology] as well: structural metrics and importance scores are meaningless on a closure.
      */
-    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport {
-        val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
+    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport = checkWithReasoning(ontology, reasoning, null)
+
+    /**
+     * [check] with the wall-clock budget of the reasoner run set to [reasonerTimeout] (default: the reasoner
+     * configuration's, 5 minutes). A reasoner that runs out of time fails the check (the reasoner's exception); the
+     * number of inferred triples is bounded by the reasoner configuration as well.
+     *
+     * @throws IllegalArgumentException when [reasonerTimeout] is not positive.
+     */
+    @Throws(IllegalArgumentException::class)
+    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile, reasonerTimeout: Duration): QualityReport {
+        require(!reasonerTimeout.isNegative && !reasonerTimeout.isZero) { "reasonerTimeout must be positive, got $reasonerTimeout" }
+        return checkWithReasoning(ontology, reasoning, reasonerTimeout)
+    }
+
+    private fun checkWithReasoning(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile, reasonerTimeout: Duration?): QualityReport {
+        val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull(reasonerTimeout))
         val metricsContext = computeMetricsContext(ontology)
         val raw =
             if (materialized.graph === ontology) {
@@ -82,13 +111,26 @@ class QualityChecker private constructor(
             } ?: raw
         // Blank-node keys come from the asserted graph (once), so finding refs do not change with the reasoner.
         val keys = QualityReport.blankNodeKeys(merged, ontology, materialized.graph) { mergedShapes }
-        return QualityReport.fromKeyed(merged, catalogs, metricsContext, keys)
+        return QualityReport.fromKeyed(merged, catalogs, metricsContext, keys).warnIfTruncated()
     }
 
     fun checkResource(ontology: RdfGraph, resource: RdfResource): QualityReport {
         val raw = validator.validateResource(ontology, mergedShapes, resource)
         return QualityReport.fromKeyed(raw, catalogs, metricsContext = null, keys = QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes })
+            .warnIfTruncated()
     }
+
+    /** A truncated report is never silent: the reports carry a marker ([QualityReport.truncated]) and this warning is logged. */
+    private fun QualityReport.warnIfTruncated(): QualityReport =
+        also {
+            if (truncated) {
+                truncationLogger.warn(
+                    "SHACL validation stopped recording results after {} finding(s); the quality report is truncated " +
+                        "(raise ValidationConfig.maxViolations of the validator)",
+                    findings.size,
+                )
+            }
+        }
 
     /**
      * Violations as produced by the SHACL engine (catalogue metadata applied per row).
@@ -153,9 +195,15 @@ class QualityChecker private constructor(
     }
 
     companion object {
+        /** Every bundled catalogue plus the OOPS pitfall registry ([Builder.withAllBundledCatalogs]); from Java, [allBundled]. */
         fun default(validator: ShaclValidator): QualityChecker =
             builder(validator).withAllBundledCatalogs().build()
 
+        /** [default] under a name Java can call (`default` is a Java keyword). */
+        @JvmStatic
+        fun allBundled(validator: ShaclValidator): QualityChecker = default(validator)
+
+        @JvmStatic
         fun builder(validator: ShaclValidator): Builder = Builder(validator)
 
         internal fun mergeCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
@@ -183,7 +231,7 @@ class QualityChecker private constructor(
         private fun mergeScopedCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
             val merged = JenaBridge.createEmptyModel()
             for (c in catalogs) {
-                merged.addTriples(c.loadShapesGraph().getTriples())
+                merged.addTriples(c.loadShapesGraph().getTriplesSequence())
             }
             return merged
         }

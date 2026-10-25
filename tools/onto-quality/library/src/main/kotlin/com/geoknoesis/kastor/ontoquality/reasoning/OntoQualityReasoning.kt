@@ -14,6 +14,7 @@ import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
+import java.time.Duration
 
 /** Shape IRI for [BundledCatalogs.OOPS_PITFALL_REGISTRY] metadata and synthetic inconsistency rows. */
 internal const val KASTOR_DOC_K07_SHAPE_URI: String =
@@ -47,14 +48,18 @@ enum class OntoQualityReasoningProfile {
     OWL_RL,
 }
 
-internal fun OntoQualityReasoningProfile.toReasonerConfigOrNull(): ReasonerConfig? =
-    when (this) {
-        OntoQualityReasoningProfile.NONE -> null
-        OntoQualityReasoningProfile.RDFS -> ReasonerConfig.rdfs()
-        OntoQualityReasoningProfile.OWL_RL -> ReasonerConfig(reasonerType = ReasonerType.OWL_RL)
-        OntoQualityReasoningProfile.OWL_MICRO -> ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO)
-        OntoQualityReasoningProfile.HERMIT -> ReasonerConfig.hermit()
-    }
+/** The reasoner configuration of this profile (null for [OntoQualityReasoningProfile.NONE]); [timeout] replaces its default. */
+internal fun OntoQualityReasoningProfile.toReasonerConfigOrNull(timeout: Duration? = null): ReasonerConfig? {
+    val config =
+        when (this) {
+            OntoQualityReasoningProfile.NONE -> return null
+            OntoQualityReasoningProfile.RDFS -> ReasonerConfig.rdfs()
+            OntoQualityReasoningProfile.OWL_RL -> ReasonerConfig(reasonerType = ReasonerType.OWL_RL)
+            OntoQualityReasoningProfile.OWL_MICRO -> ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO)
+            OntoQualityReasoningProfile.HERMIT -> ReasonerConfig.hermit()
+        }
+    return if (timeout == null) config else config.copy(timeout = timeout)
+}
 
 /**
  * v0.4: expand a graph with optional RDFS / OWL RL rules (Jena) or OWL DL (HermiT) before [QualityChecker.check].
@@ -108,7 +113,8 @@ object OntoQualityReasoning {
             }
         val result = reasoner.reason(ontology)
         val out = JenaBridge.createEmptyModel()
-        out.addTriples(ontology.getTriples())
+        // Streamed: no list copy of the asserted graph next to the merged one.
+        out.addTriples(ontology.getTriplesSequence())
         out.addTriples(result.inferredTriples)
         return MaterializeWithReasoningResult(graph = out, reasoningResult = result)
     }

@@ -55,13 +55,14 @@ class CliTest {
         :owns a owl:ObjectProperty .
         """.trimIndent()
 
-    /** OOPS P26: an owl:SymmetricProperty with owl:inverseOf violates a `sh:Violation` shape of owl-quality. */
+    /** OOPS P06: a property in an rdfs:subPropertyOf cycle violates a `sh:Violation` shape of owl-quality. */
     private val violationTtl =
         """
         @prefix : <http://example.org/sym#> .
         @prefix owl: <http://www.w3.org/2002/07/owl#> .
-        :knows a owl:ObjectProperty , owl:SymmetricProperty ; owl:inverseOf :knownBy .
-        :knownBy a owl:ObjectProperty .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        :knows a owl:ObjectProperty ; rdfs:subPropertyOf :knownBy .
+        :knownBy a owl:ObjectProperty ; rdfs:subPropertyOf :knows .
         """.trimIndent()
 
     /** No triples at all: no SHACL focus nodes, hence no findings in any catalog. */
@@ -604,6 +605,31 @@ class CliTest {
     }
 
     @Test
+    fun `a validation out of time is exit 5 with a hint about --validation-timeout`() {
+        // About 25,000 triples under every catalogue: many seconds of validation, far beyond a 1-second budget.
+        val body = buildString {
+            appendLine("@prefix ex: <http://example.org/slow#> .")
+            appendLine("@prefix owl: <http://www.w3.org/2002/07/owl#> .")
+            appendLine("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .")
+            for (i in 0 until 3_000) appendLine("ex:C$i a owl:Class ; rdfs:label \"c $i\" ; rdfs:comment \"c\" ; rdfs:subClassOf ex:C${i / 2} .")
+        }
+        val onto = ontology("slow.ttl", body).toString()
+        val result = run(listOf("check", onto, "--validation-timeout", "1", "--output", dir.resolve("slow.txt").toString()))
+        assertEquals(EXIT_RUNTIME_ERROR, result.status, result.err)
+        assertTrue(result.err.contains("SHACL validation failed") && result.err.contains("--validation-timeout"), result.err)
+        assertEquals(EXIT_USAGE, run(listOf("check", onto, "--validation-timeout", "0")).status)
+    }
+
+    @Test
+    fun `--reasoner-timeout bounds the reasoner run and must be positive`() {
+        val onto = ontology().toString()
+        assertEquals(EXIT_USAGE, run(listOf("check", onto, "--reasoner", "rdfs", "--reasoner-timeout", "0")).status)
+        val out = dir.resolve("timed.json").toString()
+        val ok = run(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "rdfs", "--reasoner-timeout", "60", "--format", "json", "--output", out))
+        assertEquals(EXIT_OK, ok.status, ok.err)
+    }
+
+    @Test
     fun `--label-language reaches the enricher and is validated before any model is loaded`() {
         val captured = mutableListOf<EmbeddingCliOptions>()
         val capture = PipelineEnricherFactory { opts -> captured += opts; FakeEnricherFactory().open(opts) }
@@ -615,7 +641,17 @@ class CliTest {
         val bad = run(listOf("enrich", ontology().toString(), "--label-language", "not a tag"), CliEnvironment(enricherFactory = factory))
         assertEquals(EXIT_USAGE, bad.status, bad.err)
         assertTrue(bad.err.contains("--label-language"), bad.err)
+        // The error is attributed to the subcommand, not to the root command.
+        assertTrue(bad.err.contains("Usage: onto-qa enrich"), bad.err)
         assertEquals(0, factory.opened)
+
+        // `none` (or an empty value) asks for the untagged labels, as LabelExtractor documents for "".
+        for (untagged in listOf("none", "NONE", "")) {
+            captured.clear()
+            val result = run(listOf("enrich", ontology().toString(), "--label-language", untagged, "--output", out), CliEnvironment(enricherFactory = capture))
+            assertEquals(EXIT_OK, result.status, result.err)
+            assertEquals("", captured.single().labelLanguage, "--label-language '$untagged'")
+        }
     }
 
     @Test
@@ -644,6 +680,28 @@ class CliTest {
         assertEquals(EXIT_FINDINGS, micro.statusCode, micro.stderr)
         // owl-micro is a first-class profile (Jena OWL Micro), no longer a deprecated alias of owl-rl.
         assertFalse(micro.stderr.contains("deprecated"), micro.stderr)
+    }
+
+    @Test
+    fun `JSON findings carry the result path and value, as the text report does`() {
+        val onto =
+            ontology(
+                "paths.ttl",
+                """
+                @prefix : <http://example.org/p#> .
+                @prefix owl: <http://www.w3.org/2002/07/owl#> .
+                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                :A a owl:Class . :B a owl:Class . :Lonely a owl:Class .
+                :p a owl:ObjectProperty ; rdfs:domain :A , :B .
+                """.trimIndent(),
+            ).toString()
+        val out = dir.resolve("paths.json")
+        run(listOf("check", onto, "--catalog", "owl-quality", "--format", "json", "--output", out.toString()))
+        val findings = Json.parseToJsonElement(out.readText()).jsonObject.getValue("findings").jsonArray.map { it.jsonObject }
+        val multiple = findings.single { it.getValue("message").jsonPrimitive.content.startsWith("Property has multiple rdfs:domain") }
+        assertEquals("http://www.w3.org/2000/01/rdf-schema#domain", multiple.getValue("resultPath").jsonPrimitive.content)
+        val orphan = findings.first { it.getValue("message").jsonPrimitive.content.startsWith("Class is unconnected") }
+        assertEquals(orphan.getValue("focusNode").jsonPrimitive.content, orphan.getValue("value").jsonPrimitive.content)
     }
 
     @Test

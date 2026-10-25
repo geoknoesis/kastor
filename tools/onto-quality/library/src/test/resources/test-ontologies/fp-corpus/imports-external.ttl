@@ -1,0 +1,57 @@
+# False-positive corpus: an ontology that imports versioned ontologies and reuses the vocabularies the bundled
+# catalogues themselves recommend (DCAT contact point, FOAF, VANN, Creative Commons, PROV, schema.org), with and
+# without Protege-style declarations of the external terms. No detector may report a warning or a violation.
+@prefix ex:     <https://w3id.org/kastor/fp/library#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix dc:     <http://purl.org/dc/elements/1.1/> .
+@prefix dcat:   <http://www.w3.org/ns/dcat#> .
+@prefix foaf:   <http://xmlns.com/foaf/0.1/> .
+@prefix vann:   <http://purl.org/vocab/vann/> .
+@prefix cc:     <http://creativecommons.org/ns#> .
+@prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix schema: <https://schema.org/> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+
+<https://w3id.org/kastor/fp/library> a owl:Ontology ;
+    dct:title "Library"@en ;
+    dct:description "Books, authors and loans."@en ;
+    dc:creator "Ada Lovelace" ;
+    foaf:maker [ foaf:name "Library team" ; foaf:mbox <mailto:library@example.org> ] ;
+    cc:license <https://creativecommons.org/licenses/by/4.0/> ;
+    dcat:contactPoint [ a <http://www.w3.org/2006/vcard/ns#Kind> ; <http://www.w3.org/2006/vcard/ns#hasEmail> <mailto:library@example.org> ] ;
+    vann:preferredNamespacePrefix "lib" ;
+    vann:preferredNamespaceUri "https://w3id.org/kastor/fp/library#" ;
+    prov:wasDerivedFrom <https://w3id.org/kastor/fp/library/0.9> ;
+    schema:version "1.0" ;
+    owl:versionInfo "1.0" ;
+    owl:imports <https://w3id.org/kastor/fp/zoo/1.0> , <http://www.w3.org/2004/02/skos/core> .
+
+# Protege-style declarations of reused terms: a type and nothing else.
+foaf:Person a owl:Class .
+foaf:name a owl:DatatypeProperty .
+dct:creator a owl:AnnotationProperty .
+
+ex:Book a owl:Class ; rdfs:label "Book"@en ; rdfs:comment "A written work that can be lent."@en ; vann:example "Moby-Dick"@en ;
+    rdfs:subClassOf schema:CreativeWork , prov:Entity .
+ex:Author a owl:Class ; rdfs:label "Author"@en ; rdfs:comment "A person who wrote a book."@en ; skos:example "Herman Melville"@en ;
+    rdfs:subClassOf foaf:Person .
+ex:Loan a owl:Class ; rdfs:label "Loan"@en ; rdfs:comment "The lending of a book to a reader."@en ; skos:example "Loan 42"@en ;
+    rdfs:subClassOf prov:Activity .
+ex:writtenBy a owl:ObjectProperty ; rdfs:label "written by"@en ; rdfs:comment "The author of a book."@en ;
+    rdfs:domain ex:Book ; rdfs:range ex:Author ; owl:inverseOf ex:wrote .
+ex:wrote a owl:ObjectProperty ; rdfs:label "wrote"@en ; rdfs:comment "A book an author wrote."@en ;
+    rdfs:domain ex:Author ; rdfs:range ex:Book .
+ex:borrower a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:label "borrower"@en ; rdfs:comment "The person who borrows the book."@en ;
+    rdfs:domain ex:Loan ; rdfs:range foaf:Person .
+ex:lentBook a owl:ObjectProperty , owl:FunctionalProperty ; rdfs:label "lent book"@en ; rdfs:comment "The book of a loan."@en ;
+    rdfs:domain ex:Loan ; rdfs:range ex:Book .
+ex:isbn a owl:DatatypeProperty ; rdfs:label "ISBN"@en ; rdfs:comment "The ISBN of a book."@en ;
+    rdfs:domain ex:Book ; rdfs:range xsd:string .
+ex:moby a ex:Book ; rdfs:label "Moby-Dick"@en ; ex:writtenBy ex:melville ; foaf:homepage <https://example.org/moby> ;
+    schema:datePublished "1851"^^xsd:gYear .
+ex:melville a ex:Author ; rdfs:label "Herman Melville"@en ; foaf:name "Herman Melville" .
+ex:loan42 a ex:Loan ; rdfs:label "Loan 42"@en ; ex:lentBook ex:moby ; ex:borrower ex:melville ;
+    prov:startedAtTime "2026-01-01T10:00:00Z"^^xsd:dateTime .

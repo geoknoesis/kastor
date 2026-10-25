@@ -54,6 +54,20 @@ class ShaclEraCliTest {
     }
 
     @Test
+    fun `the report keeps every result, beyond the library default of 1000`() {
+        val things = (1..1_500).joinToString("\n") { "ex:t$it a ex:Thing ." }
+        val data = dir.resolve("many.ttl").also { Files.writeString(it, "@prefix ex: <http://example.org/> .\n$things\n") }
+        val report = dir.resolve("report.ttl")
+        val result = run(data.toString(), shapes().toString(), report.toString())
+        assertEquals(EXIT_OK, result.status, result.err.toString())
+        val parsed = com.geoknoesis.kastor.rdf.Rdf.parse(Files.readString(report), com.geoknoesis.kastor.rdf.RdfFormat.TURTLE)
+        val shResult = com.geoknoesis.kastor.rdf.Iri("http://www.w3.org/ns/shacl#result")
+        val results = parsed.getTriplesSequence().count { it.predicate == shResult }
+        assertEquals(1_500, results, "every sh:result must be in the report")
+        assertEquals(Int.MAX_VALUE, eraValidationConfig().maxViolations)
+    }
+
+    @Test
     fun `seconds keep microsecond precision`() {
         assertEquals("0.000250", formatSeconds(250_000))
         assertEquals("1.234568", formatSeconds(1_234_567_890))

@@ -101,11 +101,11 @@ Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt
 | Status | `onto-qa` | `kastor-rdf` |
 |--------|-----------|--------------|
 | **0** | Success; no findings at or above `--severity`. | Success; for `diff`, the inputs are isomorphic. |
-| **1** | Findings at or above `--severity`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
+| **1** | Findings at or above `--severity`, or a report cut by `--max-findings`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
 | **2** | The ontology could not be parsed. | `diff` found the inputs not isomorphic. |
 | **3** | LLM explanations failed (with `--fail-on-explain-error`). | Runtime error: I/O, RDF provider, internal error, out of memory or stack overflow, a Java older than 21. |
 | **4** | Usage or configuration error; nothing was run. | not used |
-| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity or LLM budget, internal error. | not used |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity, LLM, validation or reasoner budget, internal error. | not used |
 
 Output redirected to a file or a pipe is UTF-8 whatever the platform charset, so `kastor-rdf to-turtle data.nt > data.ttl` is valid UTF-8 on Windows too. stdout and stderr are decided separately: with `kastor-rdf diff a.ttl b.ttl > result.txt` the file is UTF-8 while the messages on the console keep the console charset. On an interactive console the console's own charset is used (characters it cannot show are printed as `?`; on Windows, `chcp 65001` switches the console to UTF-8).
 

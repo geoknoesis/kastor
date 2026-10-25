@@ -48,21 +48,19 @@ data class QualityReport(
     fun violationsBySeverity(): Map<ViolationSeverity, Int> =
         underlying.violations.groupingBy { it.severity }.eachCount()
 
-    fun describeText(): String = buildString {
-        appendLine("Ontology quality (SHACL validation): ${if (conforms) "conforms" else "does not conform"}")
-        appendLine("Violations: $violationCount, warnings: $warningCount, info: $infoCount")
-        appendLine()
-        for (cat in enumValues<QualityCategory>().sortedBy { it.name }) {
-            val items = byCategory[cat].orEmpty()
-            if (items.isEmpty()) continue
-            appendLine("## ${cat.name.replace('_', ' ')} (${items.size})")
-            for (f in items) {
-                appendLine(" - [${f.tier}] ${f.violation.severity}: ${sanitizeTerminalText(f.stableMessage)}")
-                f.pitfall?.let { appendLine("   Pitfall: ${it.shortLabel()}") }
-            }
-            appendLine()
-        }
-    }
+    /**
+     * True when the SHACL engine produced more results than it returned ([ValidationReport.violationsTruncated], see
+     * `ValidationConfig.maxViolations`): [findings] and the counts above are then a prefix of the results, in engine
+     * order (not the most severe first), and the reports say so. A gate must not treat a truncated report as complete.
+     */
+    val truncated: Boolean get() = underlying.violationsTruncated
+
+    /**
+     * Plain-text report for terminals: per category, each finding with its severity, message, focus node (a blank
+     * node by its stable key), result path and value when present, and pitfall. A [truncated] report says so under
+     * the counts. Ontology-derived text is sanitised ([com.geoknoesis.kastor.ontoquality.OutputSanitizer.terminal]).
+     */
+    fun describeText(): String = renderTextReport(this)
 
     /**
      * First [n] rows of [findings]. When [metricsContext] is non-null, [findings] is already sorted by importance
@@ -89,8 +87,23 @@ data class QualityReport(
         appendLine("- **Conforms:** `$conforms`")
         appendLine("- **Violation-level rows:** ${underlying.violations.count { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }}")
         appendLine("- **SHACL warnings (report):** ${underlying.warnings.size}")
-        appendLine()
         val ctx = metricsContext
+        if (ctx == null) {
+            val unlisted = findings.count { it.violation.severity != ViolationSeverity.VIOLATION && it.violation.severity != ViolationSeverity.ERROR }
+            if (unlisted > 0) {
+                appendLine(
+                    "- **Not listed below:** $unlisted warning or info finding(s); the category sections list violation-level rows " +
+                        "only (the text and JSON reports, and the Markdown report with metrics, list every finding).",
+                )
+            }
+        }
+        if (truncated) {
+            appendLine(
+                "- **Report truncated:** the validator stopped recording results after ${findings.size} finding(s); more exist " +
+                    "and the counts above cover the listed findings only.",
+            )
+        }
+        appendLine()
         if (ctx != null) {
             appendLine("## Top findings by importance")
             appendLine()
@@ -147,6 +160,7 @@ data class QualityReport(
             for (f in items) {
                 val pit = f.pitfall?.shortLabel()?.let { " — **$it**" } ?: ""
                 appendLine("- ${escapeMarkdownInline(f.stableMessage)}$pit")
+                appendLine("  - Focus: ${escapeMarkdownInline(FindingTerms.focus(f))}")
             }
             appendLine()
         }
@@ -159,6 +173,7 @@ data class QualityReport(
          *   (and finding refs) do not depend on the reasoner. Blank nodes of the shapes graph (in a result path) are
          *   keyed on the shapes of [catalogs].
          */
+        @JvmStatic
         @JvmOverloads
         fun from(
             raw: ValidationReport,

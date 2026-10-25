@@ -73,6 +73,13 @@ internal fun buildChecker(
 }
 
 
+/** Runs [checker] on [graph] with the `--reasoner` [profile] and the `--reasoner-timeout` of [options]. */
+internal fun runCheck(checker: QualityChecker, graph: RdfGraph, profile: OntoQualityReasoningProfile, options: ReportOptionGroup): QualityReport {
+    if (profile != OntoQualityReasoningProfile.NONE) logger.info("Onto-quality reasoning profile: {}", profile.name.lowercase())
+    val timeout = options.reasonerTimeout()
+    return if (timeout == null) checker.check(graph, profile) else checker.check(graph, profile, timeout)
+}
+
 /** Options for loading an embedding model (enrich / pipeline). */
 internal data class EmbeddingCliOptions(
     val modelId: String,
@@ -91,7 +98,7 @@ internal data class EmbeddingCliOptions(
     /** `--similarity-max-pairs`; null keeps the default result-pair limit. */
     val similarityMaxPairs: Int? = null,
     val similarityMode: SimilaritySearchMode = SimilaritySearchMode.Exact,
-    /** `--label-language`; null embeds the ontology's most common label language. */
+    /** `--label-language`; null embeds the ontology's most common label language, `""` (`--label-language none`) the untagged labels. */
     val labelLanguage: String? = null,
 )
 

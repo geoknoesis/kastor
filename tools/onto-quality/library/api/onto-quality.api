@@ -108,8 +108,11 @@ public final class com/geoknoesis/kastor/ontoquality/QualityCategory : java/lang
 
 public final class com/geoknoesis/kastor/ontoquality/QualityChecker {
 	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/QualityChecker$Companion;
+	public static final fun allBundled (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;)Lcom/geoknoesis/kastor/ontoquality/QualityChecker;
+	public static final fun builder (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;)Lcom/geoknoesis/kastor/ontoquality/QualityChecker$Builder;
 	public final fun check (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 	public final fun check (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public final fun check (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;Ljava/time/Duration;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 	public final fun checkAsync (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lkotlinx/coroutines/flow/Flow;
 	public final fun checkResource (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 }
@@ -124,6 +127,7 @@ public final class com/geoknoesis/kastor/ontoquality/QualityChecker$Builder {
 }
 
 public final class com/geoknoesis/kastor/ontoquality/QualityChecker$Companion {
+	public final fun allBundled (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;)Lcom/geoknoesis/kastor/ontoquality/QualityChecker;
 	public final fun builder (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;)Lcom/geoknoesis/kastor/ontoquality/QualityChecker$Builder;
 	public final fun default (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;)Lcom/geoknoesis/kastor/ontoquality/QualityChecker;
 }
@@ -170,12 +174,16 @@ public final class com/geoknoesis/kastor/ontoquality/QualityReport {
 	public final fun describeMarkdown (Lcom/geoknoesis/kastor/ontoquality/MarkdownReportOptions;)Ljava/lang/String;
 	public final fun describeText ()Ljava/lang/String;
 	public fun equals (Ljava/lang/Object;)Z
+	public static final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public static final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public static final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 	public final fun getByCategory ()Ljava/util/Map;
 	public final fun getByTier ()Ljava/util/Map;
 	public final fun getConforms ()Z
 	public final fun getFindings ()Ljava/util/List;
 	public final fun getInfoCount ()I
 	public final fun getMetricsContext ()Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;
+	public final fun getTruncated ()Z
 	public final fun getUnderlying ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
 	public final fun getViolationCount ()I
 	public final fun getWarningCount ()I

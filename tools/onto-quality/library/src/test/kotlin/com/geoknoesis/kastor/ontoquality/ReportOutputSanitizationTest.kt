@@ -29,6 +29,7 @@ class ReportOutputSanitizationTest {
     fun `markdown category list escapes ontology-derived messages`() {
         val md = report(hostile).describeMarkdown()
         assertTrue(md.lines().contains("- $escapedHostile"), md)
+        assertTrue(md.lines().contains("""  - Focus: \<http:\/\/ex.org/A\>"""), md)
         assertNoRawInjection(md)
     }
 
@@ -99,6 +100,13 @@ class ReportOutputSanitizationTest {
         assertEquals("x\\u001B[1m ok\n\tnext", OutputSanitizer.terminal("x\u001B[1m ok\n\tnext"))
         assertEquals(visible, OutputSanitizer.markdownInline(bidi))
         assertEquals("\\[a\\]\\(b\\) user\\@host", OutputSanitizer.markdownInline("[a](b) user@host"))
+    }
+
+    @Test
+    fun `text report renders the focus node of a finding visibly sanitised`() {
+        val text = report("m", focus = "http://ex.org/A\u202Eevil").describeText()
+        assertTrue(text.contains("Focus: <http://ex.org/A\\u202Eevil>"), text)
+        assertNoBidi(text)
     }
 
     private fun assertNoBidi(out: String) {

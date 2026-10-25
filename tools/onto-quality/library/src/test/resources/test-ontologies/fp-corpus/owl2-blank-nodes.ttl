@@ -1,0 +1,82 @@
+# False-positive corpus: OWL 2 class expressions, restrictions, axiom annotations and anonymous individuals,
+# all written as blank nodes, the way Protege and the OWL API serialise them (and the way people write them by
+# hand, without the optional `a owl:Class` on a union). Valid, documented OWL 2 DL: no detector may report a
+# warning or a violation here.
+@prefix ex:   <https://w3id.org/kastor/fp/zoo#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<https://w3id.org/kastor/fp/zoo> a owl:Ontology ;
+    rdfs:label "Zoo"@en ;
+    rdfs:comment "Animals, keepers and enclosures."@en ;
+    dct:creator <https://orcid.org/0000-0002-1825-0097> ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    dcat:contactPoint <mailto:zoo@example.org> ;
+    owl:versionIRI <https://w3id.org/kastor/fp/zoo/1.0> ;
+    owl:versionInfo "1.0" .
+
+ex:Animal a owl:Class ; rdfs:label "Animal"@en ; skos:definition "A living organism kept in the zoo."@en ;
+    skos:example "A lion."@en .
+ex:Mammal a owl:Class ; rdfs:label "Mammal"@en ; rdfs:comment "An animal that nurses its young."@en ;
+    rdfs:subClassOf ex:Animal , [ a owl:Restriction ; owl:onProperty ex:hasKeeper ; owl:someValuesFrom ex:Keeper ] .
+ex:Bird a owl:Class ; rdfs:label "Bird"@en ; rdfs:comment "An animal with feathers."@en ;
+    rdfs:subClassOf ex:Animal ;
+    owl:disjointWith ex:Mammal .
+ex:Carnivore a owl:Class ; rdfs:label "Carnivore"@en ; rdfs:comment "An animal that eats only animals."@en ;
+    owl:equivalentClass [ a owl:Class ; owl:intersectionOf ( ex:Animal
+        [ a owl:Restriction ; owl:onProperty ex:eats ; owl:allValuesFrom ex:Animal ] ) ] .
+ex:Herbivore a owl:Class ; rdfs:label "Herbivore"@en ; rdfs:comment "An animal that eats no animal."@en ;
+    owl:equivalentClass [ owl:intersectionOf ( ex:Animal
+        [ owl:complementOf [ a owl:Restriction ; owl:onProperty ex:eats ; owl:someValuesFrom ex:Animal ] ] ) ] .
+ex:Pair a owl:Class ; rdfs:label "Pair"@en ; rdfs:comment "An enclosure that holds exactly two animals."@en ;
+    rdfs:subClassOf ex:Enclosure ,
+        [ a owl:Restriction ; owl:onProperty ex:houses ; owl:qualifiedCardinality "2"^^xsd:nonNegativeInteger ; owl:onClass ex:Animal ] .
+ex:Enclosure a owl:Class ; rdfs:label "Enclosure"@en ; rdfs:comment "A place where animals are kept."@en ;
+    owl:hasKey ( ex:enclosureCode ) .
+ex:Keeper a owl:Class ; rdfs:label "Keeper"@en ; rdfs:comment "A person who looks after animals."@en ;
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty ex:looksAfter ; owl:minQualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass ex:Animal ] .
+ex:Size a owl:Class ; rdfs:label "Size"@en ; rdfs:comment "The size class of an animal."@en ;
+    owl:equivalentClass [ a owl:Class ; owl:oneOf ( ex:small ex:large ) ] .
+ex:small a owl:NamedIndividual , ex:Size ; rdfs:label "small"@en .
+ex:large a owl:NamedIndividual , ex:Size ; rdfs:label "large"@en .
+[] a owl:AllDisjointClasses ; owl:members ( ex:Mammal ex:Bird ex:Keeper ) .
+
+ex:hasKeeper a owl:ObjectProperty ; rdfs:label "has keeper"@en ; rdfs:comment "The keeper of an animal."@en ;
+    rdfs:domain ex:Animal ; rdfs:range ex:Keeper ; owl:inverseOf ex:looksAfter .
+ex:looksAfter a owl:ObjectProperty ; rdfs:label "looks after"@en ; rdfs:comment "An animal a keeper looks after."@en ;
+    rdfs:domain ex:Keeper ; rdfs:range ex:Animal .
+ex:eats a owl:ObjectProperty ; rdfs:label "eats"@en ; rdfs:comment "What an animal eats."@en ;
+    rdfs:domain ex:Animal ;
+    rdfs:range [ a owl:Class ; owl:unionOf ( ex:Animal ex:Plant ) ] .
+ex:houses a owl:ObjectProperty ; rdfs:label "houses"@en ; rdfs:comment "An animal kept in an enclosure."@en ;
+    rdfs:domain [ owl:unionOf ( ex:Enclosure ex:Pair ) ] ;
+    rdfs:range ex:Animal ;
+    owl:inverseOf ex:livesIn .
+ex:livesIn a owl:ObjectProperty ; rdfs:label "lives in"@en ; rdfs:comment "The enclosure of an animal."@en ;
+    rdfs:domain ex:Animal ; rdfs:range ex:Enclosure .
+ex:caredForBy a owl:ObjectProperty ; rdfs:label "cared for by"@en ; rdfs:comment "A keeper of the enclosure of an animal."@en ;
+    rdfs:domain ex:Animal ; rdfs:range ex:Keeper ;
+    owl:propertyChainAxiom ( ex:livesIn [ owl:inverseOf ex:worksIn ] ) .
+ex:worksIn a owl:ObjectProperty ; rdfs:label "works in"@en ; rdfs:comment "An enclosure a keeper works in."@en ;
+    rdfs:domain ex:Keeper ; rdfs:range ex:Enclosure ; owl:inverseOf ex:staffedBy .
+ex:staffedBy a owl:ObjectProperty ; rdfs:label "staffed by"@en ; rdfs:comment "A keeper working in an enclosure."@en ;
+    rdfs:domain ex:Enclosure ; rdfs:range ex:Keeper .
+ex:Plant a owl:Class ; rdfs:label "Plant"@en ; rdfs:comment "A plant some animals eat."@en ; rdfs:subClassOf owl:Thing ;
+    owl:disjointWith ex:Animal .
+ex:enclosureCode a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:label "enclosure code"@en ; rdfs:comment "The code painted on an enclosure."@en ;
+    rdfs:domain ex:Enclosure ; rdfs:range xsd:string .
+ex:weight a owl:DatatypeProperty ; rdfs:label "weight"@en ; rdfs:comment "The weight of an animal, in kilograms."@en ;
+    rdfs:domain ex:Animal ;
+    rdfs:range [ a rdfs:Datatype ; owl:onDatatype xsd:decimal ; owl:withRestrictions ( [ xsd:minExclusive 0 ] ) ] .
+
+# An annotated axiom (OWL 2 reification of a subClassOf triple) and an anonymous individual.
+[] a owl:Axiom ; owl:annotatedSource ex:Bird ; owl:annotatedProperty rdfs:subClassOf ; owl:annotatedTarget ex:Animal ;
+    rdfs:comment "Birds are animals."@en .
+ex:leo a owl:NamedIndividual , ex:Mammal ; rdfs:label "Leo"@en ; ex:livesIn _:pen .
+_:pen a ex:Enclosure ; ex:enclosureCode "P-1" .
+[] a owl:NegativePropertyAssertion ; owl:sourceIndividual ex:leo ; owl:assertionProperty ex:eats ; owl:targetIndividual ex:leo .
