@@ -121,6 +121,46 @@ class KspOntologyProcessorTest {
         assertEquals("2|Ann|41|1|true|[minCount, minInclusive]", output)
     }
 
+    private fun request(annotationArgs: String, pkg: String) = """
+        @file:Rdf(shacl = "people.shacl.ttl", generateDataClass = true$annotationArgs)
+
+        package $pkg
+
+        import com.geoknoesis.kastor.gen.annotations.Rdf
+        import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
+    """.trimIndent()
+
+    @Test
+    fun `the default JAKARTA annotations compile against the real jakarta validation API`() {
+        val result = KspRunner.run(OntologyProcessorProvider(), mapOf("gen/jakarta/Marker.kt" to request("", "gen.jakarta")), options())
+        assertEquals(emptyList(), result.errors)
+        val person = result.generated.entries.single { it.key.endsWith("gen/jakarta/Person.kt") }.value
+        assertTrue("import jakarta.validation.constraints.NotNull" in person, person)
+        val record = result.generated.entries.single { it.key.endsWith("gen/jakarta/PersonRecord.kt") }.value
+        assertTrue("@field:NotNull" in record, record)
+        // No stubs: the class path holds the real API jar, as a consumer's does through kastor-gen-runtime.
+        assertTrue(javaClass.classLoader.getResource("jakarta/validation/constraints/NotNull.class")!!.toString().contains("jakarta.validation-api"))
+        KotlinSourceCompiler.compile(emptyList(), result.sources).assertOk()
+    }
+
+    @Test
+    fun `annotations of an API missing from the class path are one error with the dependency to add`() {
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf(
+                "gen/javax/Marker.kt" to request(", validationAnnotations = ValidationAnnotations.JAVAX", "gen.javax"),
+                "gen/people/Marker.kt" to marker,
+            ),
+            options(),
+        )
+        assertEquals(1, result.errors.size, result.errors.toString())
+        val error = result.errors.single()
+        assertTrue("javax.validation:validation-api" in error && "ValidationAnnotations.NONE" in error, error)
+        assertEquals(emptyList(), result.unlocatedErrors)
+        assertFalse(result.generated.keys.any { "gen/javax" in it }, result.generated.keys.toString())
+        assertTrue(result.generated.keys.any { it.endsWith("gen/people/Person.kt") }, result.generated.keys.toString())
+    }
+
     @Test
     fun `a second annotation for the same shapes is skipped when identical and reported when its options differ`() {
         val same = KspRunner.run(

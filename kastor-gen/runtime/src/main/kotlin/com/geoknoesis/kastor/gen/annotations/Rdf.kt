@@ -44,8 +44,16 @@ annotation class Rdf(
   val dslName: String = "",
   /** Optional OWL/RDFS path for instance-DSL generation. */
   val ontologyPath: String = "",
+  /** How generated wrappers validate their resource: see [ValidationMode]. */
   val validationMode: ValidationMode = ValidationMode.EMBEDDED,
+  /**
+   * Bean Validation annotations put on generated interfaces and data classes for `sh:minCount` / `sh:maxCount`:
+   * see [ValidationAnnotations]. The default, `JAKARTA`, needs `jakarta.validation-api` at compile time, which
+   * kastor-gen-runtime provides (`compileOnlyApi`); `JAVAX` needs `javax.validation:validation-api` declared by
+   * the consumer. When the API is missing the processor reports an error at this annotation.
+   */
   val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
+  /** Qualified name of the validator class used with [ValidationMode.EXTERNAL]. */
   val externalValidatorClass: String = "",
   /** Generate an immutable data-class snapshot alongside (or instead of) interfaces + wrappers. */
   val generateDataClass: Boolean = false,
@@ -56,9 +64,10 @@ annotation class Rdf(
   /** Controls how sh:class object properties are typed in the generated data class. */
   val nestedMode: NestedMode = NestedMode.INTERFACE,
   /**
-   * When true (and [generateDataClass] is also true), the generated factory object also emits a
-   * `toTriples(record, subject)` function that serializes a data-class snapshot back to RDF triples.
-   * Callers control whether to append or replace existing triples.
+   * When true (and [generateDataClass] is also true), the generated factory object also emits
+   * `toTriples(record, subject)`, which serializes a data-class snapshot to RDF triples, and
+   * `replaceInGraph(graph, record, subject)`, the recommended write path: one atomic, lossless edit of the
+   * predicates the record models (see `mergeRecord`).
    */
   val generateWriteSupport: Boolean = false,
 )
@@ -104,10 +113,16 @@ enum class ValidationMode {
   }
 }
 
-/** Which Jakarta / javax / none validation annotations to emit on generated interfaces. */
+/**
+ * Which Bean Validation annotations generated interfaces (`@get:`) and data classes (`@field:`) carry: `@NotNull`
+ * on a required single value, `@NotEmpty` on a required list and `@Size(min, max)` on a list with declared bounds.
+ */
 enum class ValidationAnnotations {
+  /** `jakarta.validation.constraints` (Jakarta Bean Validation 3), provided at compile time by kastor-gen-runtime. */
   JAKARTA,
+  /** `javax.validation.constraints` (Bean Validation 2); the consumer declares `javax.validation:validation-api`. */
   JAVAX,
+  /** No annotations. */
   NONE,
 }
 

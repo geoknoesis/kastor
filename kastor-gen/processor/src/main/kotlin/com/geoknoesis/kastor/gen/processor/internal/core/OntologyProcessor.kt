@@ -3,8 +3,10 @@ package com.geoknoesis.kastor.gen.processor.internal.core
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileNotFoundException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.ProcessingException
+import com.geoknoesis.kastor.gen.processor.internal.codegen.ValidationAnnotationSpecs
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.getClassDeclarationByName
 import com.google.devtools.ksp.validate
 import java.io.File
 import java.io.IOException
@@ -161,6 +163,10 @@ public class OntologyProcessor internal constructor(
               generateWriteSupport = request.generateWriteSupport,
               owner = "@Rdf(shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
               at = symbol,
+              validationApiAvailable = {
+                ValidationAnnotationSpecs.constraintsPackage(request.validationAnnotations)
+                  ?.let { resolver.getClassDeclarationByName("$it.NotNull") != null } ?: true
+              },
             )
           } catch (e: Exception) {
             reportFailure("@Rdf(shacl = \"${request.shaclPath}\")", symbol, e)
