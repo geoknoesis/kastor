@@ -155,7 +155,7 @@ class JenaProvider : RdfProvider {
         val lang = JenaParsing.graphLang(format)
         val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
         try {
-            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validatingGraph(format, model.graph)) }
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaGraphParsing.validatingGraph(format, model.graph)) }
         } catch (failure: Throwable) {
             model.close()
             throw failure
@@ -209,7 +209,7 @@ class JenaProvider : RdfProvider {
             .setChunkSize(STREAM_CHUNK_SIZE)
             .setQueueSize(STREAM_QUEUE_SIZE)
             .streamElements()
-        val triples = elements.map { JenaParsing.graphTripleOf(format, it) }.filter { it != null }.iterator()
+        val triples = elements.map { JenaGraphParsing.graphTripleOf(format, it) }.filter { it != null }.iterator()
         val parser = object : org.apache.jena.atlas.iterator.IteratorCloseable<org.apache.jena.graph.Triple> {
             override fun hasNext() = triples.hasNext()
             override fun next(): org.apache.jena.graph.Triple = triples.next()!!
@@ -407,38 +407,6 @@ internal object JenaParsing {
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2",
         )
 
-        /**
-         * [StreamRDF][org.apache.jena.riot.system.StreamRDF] of a graph parse into [graph]: validated like
-         * [validating], and a statement in a named graph (JSON-LD `@graph` under an `@id`) fails the parse
-         * ([refuseNamedGraph]) instead of being dropped, as Jena's graph sink does with only a logged warning.
-         */
-        fun validatingGraph(format: String, graph: org.apache.jena.graph.Graph): org.apache.jena.riot.system.StreamRDF =
-            validating(object : org.apache.jena.riot.system.StreamRDFWrapper(org.apache.jena.riot.system.StreamRDFLib.graph(graph)) {
-                override fun quad(quad: org.apache.jena.sparql.core.Quad) {
-                    if (!quad.isDefaultGraph) throw refuseNamedGraph(format, quad.graph)
-                    triple(quad.asTriple())
-                }
-            })
-
-        /**
-         * The triple of an element of an asynchronous graph parse, or null for a prefix or base declaration; a
-         * statement in a named graph fails the parse ([refuseNamedGraph]), a parse error is rethrown.
-         */
-        fun graphTripleOf(format: String, element: org.apache.jena.riot.system.EltStreamRDF): org.apache.jena.graph.Triple? = when {
-            element.isTriple -> element.triple()
-            element.isQuad && element.quad().isDefaultGraph -> element.quad().asTriple()
-            element.isQuad -> throw refuseNamedGraph(format, element.quad().graph)
-            element.isException -> throw (element.exception() as? RuntimeException ?: RiotException(element.exception()))
-            else -> null
-        }
-
-        /** The parse error for a statement in the named graph [graph] met while parsing a single graph. */
-        fun refuseNamedGraph(format: String, graph: org.apache.jena.graph.Node): RiotException = RiotException(
-            "the $format document holds statements in the named graph " +
-                "${if (graph.isURI) "<${graph.uri}>" else graph.toString()}; parsing it as a single graph would drop " +
-                "them. Use parseDataset(...) to keep the named graphs.",
-        )
-
         /** Resolves a graph (triple) format; quad formats are rejected instead of being silently flattened. */
         fun graphLang(format: String): Lang {
             val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
@@ -489,18 +457,23 @@ internal object JenaParsing {
         /**
          * Rejects terms that Jena's parser tolerates but that are not valid RDF (and cannot be represented
          * by Kastor terms): IRIs Kastor's [Iri] rejects, malformed language tags, and `rdf:langString` /
-         * `rdf:dirLangString` literals without a language tag. Throws [RiotException].
+         * `rdf:dirLangString` literals without a language tag, and triple terms nested deeper than
+         * [MAX_TRIPLE_TERM_NESTING] (the RDF4J provider's limit). Throws [RiotException].
          */
-        fun validateTriple(triple: org.apache.jena.graph.Triple, knownIris: MutableSet<String>) {
-            validateNode(triple.subject, knownIris)
-            validateNode(triple.predicate, knownIris)
-            validateNode(triple.`object`, knownIris)
+        fun validateTriple(triple: org.apache.jena.graph.Triple, knownIris: MutableSet<String>, depth: Int = 0) {
+            validateNode(triple.subject, knownIris, depth)
+            validateNode(triple.predicate, knownIris, depth)
+            validateNode(triple.`object`, knownIris, depth)
         }
 
-        private fun validateNode(node: org.apache.jena.graph.Node, knownIris: MutableSet<String>) {
+        /** The deepest nesting of triple terms a parse accepts, as on the RDF4J provider. */
+        const val MAX_TRIPLE_TERM_NESTING = 64
+
+        private fun validateNode(node: org.apache.jena.graph.Node, knownIris: MutableSet<String>, depth: Int) {
             when {
                 node.isURI -> validateIri(node.uri, knownIris)
-                node.isTripleTerm -> validateTriple(node.triple, knownIris)
+                node.isTripleTerm -> if (depth >= MAX_TRIPLE_TERM_NESTING) throw RiotException("a triple term is nested more than $MAX_TRIPLE_TERM_NESTING deep")
+                    else validateTriple(node.triple, knownIris, depth + 1)
                 node.isLiteral -> {
                     val language = node.literalLanguage
                     LiteralValidation.problem(node.literalDatatypeURI, language, node.literalBaseDirection != null)
@@ -574,7 +547,7 @@ internal object JenaParsing {
                     super.triple(triple)
                 }
                 override fun quad(quad: org.apache.jena.sparql.core.Quad) {
-                    if (!quad.isDefaultGraph) validateNode(quad.graph, knownIris)
+                    if (!quad.isDefaultGraph) validateNode(quad.graph, knownIris, 0)
                     validateTriple(quad.asTriple(), knownIris)
                     super.quad(quad)
                 }
@@ -586,5 +559,8 @@ internal object JenaParsing {
             throw RdfFormatException.Generic("Failed to parse $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
         } catch (e: org.apache.jena.atlas.RuntimeIOException) {
             throw RdfFormatException.Generic("Failed to read $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+        } catch (e: StackOverflowError) {
+            // Jena's parsers recurse once per level of nesting (triple terms, `[ ]`, collections): the stack has unwound.
+            throw RdfFormatException.Generic("Failed to parse $format data: it is nested too deeply for the parser", RdfErrorCode.FORMAT_PARSE_ERROR, e)
         }
     }

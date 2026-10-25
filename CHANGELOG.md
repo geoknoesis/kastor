@@ -410,6 +410,12 @@ entries are regrouped under those kind headings.
   (`parseGraph`, `parseDataset`, streaming, `JenaBridge`); RDF4J applies the limit for parity. On Jena the graph API
   refuses such a literal with `IllegalArgumentException`, and SPARQL text holding a run of more than 10,000 digits
   is refused with `RdfQueryException` before Jena parses it.
+- **Fixed (security, Jena, RDF4J):** deeply nested input fails fast with `RdfFormatException` instead of a
+  `StackOverflowError`. Both providers accept triple terms nested up to 64 deep (RDF4J's existing reifier limit) and
+  refuse deeper ones on every parse path; RDF4J's Turtle / TriG reader also refuses brackets (`[ ]`, `( )`, `{| |}`,
+  reified triples) nested more than 256 deep, before Rio's recursive parser sees them, and its N-Triples writer refuses
+  triple terms nested deeper than 64. On Jena, a stack overflow of its recursive parser (on the caller's or the
+  streaming thread) is reported as a parse error.
 - **API (core):** `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`, `BOUNDED_NUMERIC_DATATYPES` and
   `numericLengthProblem(datatypeIri, lexical)`: the limit both providers share.
 

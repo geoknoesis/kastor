@@ -207,7 +207,7 @@ object JenaBridge {
         try {
             JenaParsing.parseWithFormatErrors(format) {
                 JenaLiteralBounds.bounded(JenaParsing.noRemoteDocuments(org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url)))
-                    .parse(JenaParsing.validatingGraph(format, model.graph))
+                    .parse(JenaGraphParsing.validatingGraph(format, model.graph))
             }
         } catch (failure: Throwable) {
             model.close()

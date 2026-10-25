@@ -121,6 +121,7 @@ internal object Rdf4jTripleTermSyntax {
             when (c) {
                 '<'.code -> when {
                     next("<") -> {
+                        nest(term = true, by = 1)
                         emit("<<")
                         when {
                             toRdf12 -> emit('('.code)
@@ -131,8 +132,11 @@ internal object Rdf4jTripleTermSyntax {
                     }
                     else -> { emit(c); state = State.IRI }
                 }
-                ')'.code -> { if (!toRdf12 && next(">>")) emit(">>") else emit(c); subjectNext = false }
-                '>'.code -> { if (toRdf12 && next(">")) emit(")>>") else emit(c); subjectNext = false }
+                ')'.code -> { if (!toRdf12 && next(">>")) { emit(">>"); nest(term = true, by = -1) } else { emit(c); nest(term = false, by = -1) }; subjectNext = false }
+                '>'.code -> { if (next(">")) { emit(if (toRdf12) ")>>" else ">>"); nest(term = true, by = -1) } else emit(c); subjectNext = false }
+                '('.code, '['.code -> { emit(c); nest(term = false, by = 1); subjectNext = c == '['.code }
+                ']'.code -> { emit(c); nest(term = false, by = -1); subjectNext = false }
+                '|'.code -> { emit(c); if (next("}")) { emit('}'.code); nest(term = false, by = -1) }; subjectNext = false }
                 '#'.code -> { emit(c); state = State.COMMENT }
                 '"'.code, '\''.code -> {
                     emit(c)
@@ -146,7 +150,8 @@ internal object Rdf4jTripleTermSyntax {
                     val inWord = word.isNotEmpty() || following in '0'.code..'9'.code
                     if (inWord && nameChar(following)) { if (word.length < MAX_WORD) word.append('.') } else { endWord(); subjectNext = true; directive = false }
                 }
-                '{'.code, '}'.code, ';'.code, '['.code -> { emit(c); subjectNext = true }
+                '{'.code -> { emit(c); if (next("|")) { emit('|'.code); nest(term = false, by = 1) }; subjectNext = true }
+                '}'.code, ';'.code -> { emit(c); subjectNext = true }
                 ' '.code, '\t'.code, '\n'.code, '\r'.code -> emit(c)
                 else -> {
                     emit(c)
@@ -155,6 +160,27 @@ internal object Rdf4jTripleTermSyntax {
                 }
             }
             previous = c
+        }
+
+        private var termDepth = 0
+        private var structureDepth = 0
+
+        /**
+         * Tracks the nesting of the document read ([fromRdf12] only): Rio's parser recurses once per level of
+         * `<<( )>>`, `<< >>`, `[ ]`, `( )` and `{| |}`, so a document nested deeper than [MAX_TRIPLE_TERM_NESTING]
+         * (triple terms and reified triples) or [MAX_STRUCTURE_NESTING] (all of them) fails with a format error
+         * before it can exhaust the stack.
+         */
+        private fun nest(term: Boolean, by: Int) {
+            if (toRdf12) return
+            structureDepth += by
+            if (term) termDepth += by
+            if (termDepth > MAX_TRIPLE_TERM_NESTING || structureDepth > MAX_STRUCTURE_NESTING) {
+                throw java.io.IOException(
+                    "The document nests triple terms more than $MAX_TRIPLE_TERM_NESTING deep, or brackets more than " +
+                        "$MAX_STRUCTURE_NESTING deep",
+                )
+            }
         }
 
         /** Letters, digits and the other characters of prefixed names, blank node labels, numbers and keywords. */
@@ -199,6 +225,8 @@ internal object Rdf4jTripleTermSyntax {
 
         private companion object {
             const val MAX_WORD = 8
+            const val MAX_TRIPLE_TERM_NESTING = Rdf4jTerms.MAX_REIFIER_NESTING
+            const val MAX_STRUCTURE_NESTING = 256
         }
     }
 }

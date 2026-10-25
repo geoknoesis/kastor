@@ -27,25 +27,39 @@ import java.io.Writer
  */
 internal object Rdf4jLineSyntax {
 
+    /**
+     * The deepest nesting of triple terms written or read ([Rdf4jTerms.MAX_REIFIER_NESTING], the provider's limit):
+     * the writer, the capture and the parser of a triple term recurse once per level, so deeper input fails with a
+     * format error before it can exhaust the stack.
+     */
+    const val MAX_NESTING: Int = Rdf4jTerms.MAX_REIFIER_NESTING
+
     /** Writes the statements it is given as N-Triples ([quads] false: graph names are not written) or N-Quads lines. */
     class Writer(private val out: java.io.Writer, private val quads: Boolean) : AbstractRDFHandler() {
         override fun handleStatement(statement: Statement) {
             val line = StringBuilder()
-            term(line, statement.subject).append(' ')
-            term(line, statement.predicate).append(' ')
-            term(line, statement.`object`)
-            if (quads) statement.context?.let { term(line.append(' '), it) }
+            term(line, statement.subject, 0).append(' ')
+            term(line, statement.predicate, 0).append(' ')
+            term(line, statement.`object`, 0)
+            if (quads) statement.context?.let { term(line.append(' '), it, 0) }
             out.write(line.append(" .\n").toString())
         }
 
         override fun endRDF() = out.flush()
 
-        private fun term(line: StringBuilder, value: Value): StringBuilder = when (value) {
+        /** Writes [value], a term [depth] triple terms deep; nesting beyond [MAX_NESTING] is refused before recursing. */
+        private fun term(line: StringBuilder, value: Value, depth: Int): StringBuilder = when (value) {
             is Triple -> {
+                if (depth >= MAX_NESTING) {
+                    throw com.geoknoesis.kastor.rdf.RdfFormatException.Generic(
+                        "a triple term is nested more than $MAX_NESTING deep; Kastor does not write it",
+                        com.geoknoesis.kastor.rdf.RdfErrorCode.FORMAT_SERIALIZATION_ERROR,
+                    )
+                }
                 line.append("<<( ")
-                term(line, value.subject).append(' ')
-                term(line, value.predicate).append(' ')
-                term(line, value.`object`).append(" )>>")
+                term(line, value.subject, depth + 1).append(' ')
+                term(line, value.predicate, depth + 1).append(' ')
+                term(line, value.`object`, depth + 1).append(" )>>")
             }
             else -> line.append(NTriplesUtil.toNTriplesString(value, true))
         }
@@ -140,7 +154,12 @@ internal object Rdf4jLineSyntax {
                 if (c < 0) throw IOException("Unterminated RDF 1.2 triple term")
                 when {
                     c == '"'.code -> { bytes.write(stringToken()); continue }
-                    c == '<'.code && peek() == '<'.code -> { input.read(); bytes.write("<<".toByteArray()); if (peek() == '('.code) depth++; continue }
+                    c == '<'.code && peek() == '<'.code -> {
+                        input.read()
+                        bytes.write("<<".toByteArray())
+                        if (peek() == '('.code && ++depth > MAX_NESTING) throw IOException("A triple term is nested more than $MAX_NESTING deep")
+                        continue
+                    }
                     c == '<'.code -> { bytes.write(copyUntil(c, '>'.code)); continue }
                     c == ')'.code && peek() == '>'.code -> {
                         input.read()
@@ -211,26 +230,28 @@ internal object Rdf4jLineSyntax {
         private val values = SimpleValueFactory.getInstance()
         private var i = 0
 
-        fun parse(): Triple = tripleTerm().also {
+        fun parse(): Triple = tripleTerm(1).also {
             skipSpace()
             require(i == text.length) { "unexpected text after the triple term" }
         }
 
-        private fun tripleTerm(): Triple {
+        /** The triple term at [i], [depth] levels deep (checked before recursing into a nested one). */
+        private fun tripleTerm(depth: Int): Triple {
+            require(depth <= MAX_NESTING) { "a triple term is nested more than $MAX_NESTING deep" }
             expect("<<(")
-            val subject = term() as? Resource ?: throw IllegalArgumentException("the subject must be an IRI or a blank node")
+            val subject = term(depth) as? Resource ?: throw IllegalArgumentException("the subject must be an IRI or a blank node")
             if (subject is Triple) throw IllegalArgumentException("the subject must be an IRI or a blank node")
-            val predicate = term() as? IRI ?: throw IllegalArgumentException("the predicate must be an IRI")
-            val obj = term()
+            val predicate = term(depth) as? IRI ?: throw IllegalArgumentException("the predicate must be an IRI")
+            val obj = term(depth)
             skipSpace()
             expect(")>>")
             return values.createTriple(subject, predicate, obj)
         }
 
-        private fun term(): Value {
+        private fun term(depth: Int): Value {
             skipSpace()
             require(i < text.length) { "a term is missing" }
-            if (text.startsWith("<<(", i)) return tripleTerm()
+            if (text.startsWith("<<(", i)) return tripleTerm(depth + 1)
             val start = i
             when (text[i]) {
                 '<' -> i = text.indexOf('>', i).also { require(it > 0) { "unterminated IRI" } } + 1

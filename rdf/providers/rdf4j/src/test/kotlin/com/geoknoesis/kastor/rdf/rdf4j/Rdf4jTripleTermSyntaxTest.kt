@@ -164,4 +164,40 @@ class Rdf4jTripleTermSyntaxTest {
         val objects = Rdf4jProvider().parseGraph(doc.byteInputStream(), "TURTLE").getTriples().map { it.obj }
         assertTrue(objects.any { it is TripleTerm }, doc.take(100))
     }
+
+    private fun nested(depth: Int) =
+        "<${ex}s> <${ex}p> " + "<<( <${ex}a> <${ex}b> ".repeat(depth) + "<${ex}c>" + " )>>".repeat(depth) + " .\n"
+
+    private fun depthOf(term: RdfTerm): Int = if (term is TripleTerm) 1 + depthOf(term.triple.obj) else 0
+
+    @Test
+    fun `triple terms nested up to the limit parse, deeper ones fail fast without overflowing the stack`() {
+        val limit = Rdf4jTerms.MAX_REIFIER_NESTING
+        for (format in listOf("TURTLE", "N-TRIPLES")) {
+            val obj = Rdf4jProvider().parseGraph(nested(limit).byteInputStream(), format).getTriples().single().obj
+            assertEquals(limit, depthOf(obj), format)
+            for (depth in listOf(limit + 1, 200_000)) {
+                val error = assertThrows(RdfFormatException::class.java, { Rdf4jProvider().parseGraph(nested(depth).byteInputStream(), format) }, "$format $depth")
+                assertTrue(error.message!!.contains("$limit"), error.message)
+            }
+        }
+        Rdf4jRepository.MemoryRepository().use { repo ->
+            assertThrows(RdfFormatException::class.java) { Rdf4jProvider().parseDataset(repo, nested(200_000).byteInputStream(), "N-QUADS") }
+            assertThrows(RdfFormatException::class.java) { Rdf4jProvider().parseDataset(repo, nested(200_000).byteInputStream(), "TRIG") }
+        }
+        // Brackets that Rio's parser recurses on are bounded too.
+        val brackets = "<${ex}s> <${ex}p> " + "[ <${ex}q> ".repeat(100_000) + "1" + " ]".repeat(100_000) + " ."
+        assertThrows(RdfFormatException::class.java) { Rdf4jProvider().parseGraph(brackets.byteInputStream(), "TURTLE") }
+        val list = "<${ex}s> <${ex}p> " + "( ".repeat(100_000) + ")".repeat(100_000) + " ."
+        assertThrows(RdfFormatException::class.java) { Rdf4jProvider().parseGraph(list.byteInputStream(), "TURTLE") }
+    }
+
+    @Test
+    fun `the N-Triples writer refuses triple terms nested deeper than the limit`() {
+        val limit = Rdf4jTerms.MAX_REIFIER_NESTING
+        fun term(depth: Int): RdfTerm = (1..depth).fold(Iri("${ex}c") as RdfTerm) { o, _ -> TripleTerm(RdfTriple(Iri("${ex}a"), Iri("${ex}b"), o)) }
+        val ok = Rdf4jProvider().serializeGraph(MemoryGraph(listOf(RdfTriple(s, p, term(limit)))), "N-TRIPLES")
+        assertEquals(limit, depthOf(Rdf4jProvider().parseGraph(ok.byteInputStream(), "N-TRIPLES").getTriples().single().obj))
+        assertThrows(RdfFormatException::class.java) { Rdf4jProvider().serializeGraph(MemoryGraph(listOf(RdfTriple(s, p, term(limit + 1)))), "N-TRIPLES") }
+    }
 }
