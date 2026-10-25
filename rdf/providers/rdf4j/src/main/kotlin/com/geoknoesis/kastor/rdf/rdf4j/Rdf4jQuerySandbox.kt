@@ -6,21 +6,62 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
 /** The checks and datasets of a [SandboxedSelectQuery] and of the nested queries of its custom functions on RDF4J. */
 internal object Rdf4jQuerySandbox {
+
+    /** Why a sandboxed query is refused on a store that [evaluatesSandboxed] rejects. */
+    const val FOREIGN_STORE: String =
+        "This RDF4J repository wraps a store that Kastor did not create (a remote endpoint, or a store without Kastor's " +
+            "evaluation strategy), so it cannot be restricted to sandboxed queries; run them on a repository created by " +
+            "Rdf4jRepository's factory methods or the provider"
+
+    /**
+     * Whether [repository] evaluates queries with [KastorEvaluationStrategyFactory], the only evaluation that holds a
+     * [SandboxedSelectQuery] to its sandbox (the allowlist of functions, the custom functions, the refusal of `SERVICE`
+     * and the bounds of [Rdf4jEvaluationBounds]): a [org.eclipse.rdf4j.repository.sail.SailRepository], possibly
+     * behind repository wrappers, whose base Sail (below any inferencer, SHACL or other stacked Sail) is a memory or
+     * native store that the factory methods created. A remote repository (HTTP, SPARQL endpoint) would send the
+     * untrusted text to a server that evaluates it with its own functions, and any other store would evaluate it with
+     * RDF4J's default strategy and every function of the global registry.
+     */
+    fun evaluatesSandboxed(repository: org.eclipse.rdf4j.repository.Repository): Boolean {
+        val base = generateSequence(repository) { (it as? org.eclipse.rdf4j.repository.DelegatingRepository)?.delegate }.last()
+        val sail = (base as? org.eclipse.rdf4j.repository.sail.SailRepository)?.sail ?: return false
+        val store = generateSequence(sail) { (it as? org.eclipse.rdf4j.sail.StackableSail)?.baseSail }.last()
+        val factory = when (store) {
+            is org.eclipse.rdf4j.sail.memory.MemoryStore -> store.evaluationStrategyFactory
+            is org.eclipse.rdf4j.sail.nativerdf.NativeStore -> store.evaluationStrategyFactory
+            else -> null
+        }
+        return factory is KastorEvaluationStrategyFactory
+    }
     /**
      * Refuses a [SandboxedSelectQuery] whose query, [parsed] by RDF4J's own SPARQL parser (the one that prepares
-     * it), contains `SERVICE`, with [IllegalArgumentException], and returns the parsed query. RDF4J resolves functions
-     * by IRI from its registry and never loads classes by name, so `SERVICE` is the only way such a query reaches
-     * outside the repository. The evaluation strategy is the second barrier: it fails `SERVICE` and calls only
-     * RDF4J's own built-in functions ([Rdf4jSandboxFunctions]) besides the query's custom ones.
+     * it), contains `SERVICE` or a custom aggregate, with [IllegalArgumentException], and returns the parsed query.
+     * RDF4J resolves functions by IRI from its registry and never loads classes by name, so `SERVICE` is the only way
+     * such a query reaches outside the repository; a custom aggregate (an `AggregateFunctionCall`, which RDF4J
+     * resolves from its global `CustomAggregateFunctionRegistry`) would run whatever code registered it, as Jena's
+     * custom aggregates would (both providers refuse them). The evaluation strategy is the second barrier
+     * ([refusal]): it fails both, and calls only RDF4J's own built-in functions ([Rdf4jSandboxFunctions]) besides the
+     * query's custom ones.
      */
     fun check(parsed: org.eclipse.rdf4j.query.parser.ParsedQuery): org.eclipse.rdf4j.query.parser.ParsedQuery {
-        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+        refusal(parsed.tupleExpr)?.let { throw IllegalArgumentException(it) }
+        return parsed
+    }
+
+    /** Why a sandboxed query whose algebra is [expr] is refused (see [check]); null when it is not. */
+    fun refusal(expr: org.eclipse.rdf4j.query.algebra.QueryModelNode): String? {
+        var refused: String? = null
+        expr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
             override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) {
                 val ref = node.serviceRef
-                throw IllegalArgumentException("A sandboxed query may not use SERVICE ${ref.value?.stringValue()?.let { "<$it>" } ?: "?" + ref.name}")
+                refused = refused ?: "A sandboxed query may not use SERVICE ${ref.value?.stringValue()?.let { "<$it>" } ?: "?" + ref.name}"
+            }
+
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.AggregateFunctionCall) {
+                refused = refused ?: "A sandboxed query may not use the custom aggregate <${node.iri}>"
             }
         })
-        return parsed
+        return refused
     }
 
     /**

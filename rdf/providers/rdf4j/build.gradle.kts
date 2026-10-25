@@ -48,6 +48,8 @@ dependencies {
   runtimeOnly(libs.rdf4j.rio.nquads)
   // Initial-binding parity tests compare rows with the Jena provider.
   testImplementation(project(":rdf:jena"))
+  // A remote SPARQL endpoint store, for the refusal of sandboxed queries on stores Kastor did not create.
+  testImplementation(libs.rdf4j.repository.sparql)
 }
 
 publishing {

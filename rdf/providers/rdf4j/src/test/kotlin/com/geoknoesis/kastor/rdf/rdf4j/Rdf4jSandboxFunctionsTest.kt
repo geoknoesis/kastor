@@ -142,6 +142,19 @@ class Rdf4jSandboxFunctionsTest {
         assertEquals(0, asked.get())
     }
 
+    /** The strategy refuses a custom aggregate too, for a query that reached evaluation without the static check. */
+    @Test
+    fun `a custom aggregate fails at evaluation even without the static check`() {
+        val scope = Rdf4jFunctionScope.Scope(SparqlFunctionLibrary.EMPTY, 0, Long.MAX_VALUE, System::nanoTime, { _, _, _ -> error("unused") }, null)
+        val strategy = KastorEvaluationStrategy(EmptySource, null, null, 0, EvaluationStatistics(), false, QueryEvaluationMode.STANDARD, scope)
+        val parsed = SPARQLParser().parseQuery("SELECT (<http://rdf4j.org/aggregate#stdev>(?o) AS ?x) WHERE { BIND (1 AS ?o) }", null)
+        val error = assertThrows(QueryEvaluationException::class.java) {
+            val optimized = strategy.optimize(QueryRoot(parsed.tupleExpr), EvaluationStatistics(), EmptyBindingSet.getInstance())
+            strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance()).use { it.hasNext() }
+        }
+        assertTrue(error.message!!.contains("aggregate"), error.message)
+    }
+
     private object EmptySource : TripleSource {
         override fun getStatements(subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?): CloseableIteration<out Statement> =
             EmptyIteration()

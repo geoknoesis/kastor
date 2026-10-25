@@ -570,9 +570,11 @@ class Rdf4jRepository(
      * propagate unchanged.
      *
      * A [SandboxedSelectQuery] may call its custom SPARQL functions ([SandboxedSelectQuery.functions]); see the timed
-     * overload for how their nested queries are bounded in time.
+     * overload for how their nested queries are bounded in time. It is refused with [UnsupportedOperationException],
+     * before anything is evaluated or sent, on a repository that wraps a store the factory methods did not create
+     * ([Rdf4jQuerySandbox.evaluatesSandboxed]).
      */
-    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = refusingUnsandboxable(query).withConnection { conn ->
         val prepared = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql) }
         val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, query.sparql).dataset else null
         val result = withFunctions(query, Long.MAX_VALUE, declared, conn) {
@@ -586,8 +588,8 @@ class Rdf4jRepository(
      * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none),
      * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset). The nested
      * queries' parses are shared within this one query ([Rdf4jQuerySandbox.NestedParses]).
-     * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
-     * is RDF4J's unknown-function error.
+     * Only the stores the factory methods create evaluate sandboxed queries: the entry points refuse them on any other
+     * store first ([refusingUnsandboxable]), and a query no Kastor strategy evaluated fails ([Rdf4jFunctionScope.with]).
      */
     private fun <T> withFunctions(
         query: SparqlSelect,
@@ -677,6 +679,7 @@ class Rdf4jRepository(
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
+        refusingUnsandboxable(query)
         val bound = Rdf4jInitialBindings.bind(query.sparql, bindings)
         val sparql = bound.sparql
         return withConnection { conn ->
@@ -697,6 +700,14 @@ class Rdf4jRepository(
             }
             result.use { consume(it.rows(sparql, hidden = bound.hidden)) }
         }
+    }
+
+    /** Whether the store evaluates sandboxed queries with Kastor's strategy ([Rdf4jQuerySandbox.evaluatesSandboxed]). */
+    private val sandboxCapable: Boolean = Rdf4jQuerySandbox.evaluatesSandboxed(repository)
+
+    /** This repository, after refusing a [SandboxedSelectQuery] it cannot sandbox ([sandboxCapable]). */
+    private fun refusingUnsandboxable(query: SparqlSelect): Rdf4jRepository = also {
+        if (query is SandboxedSelectQuery && !sandboxCapable) throw UnsupportedOperationException(Rdf4jQuerySandbox.FOREIGN_STORE)
     }
 
     /** [Rdf4jQuerySandbox.check] of [sparql], parsed by RDF4J's own SPARQL parser; parse errors are query errors. */

@@ -71,7 +71,12 @@ internal object Rdf4jFunctionScope {
 
     private val pending = ThreadLocal<Scope?>()
 
-    /** Runs [block] with a scope that the next strategy created on this thread takes. */
+    /**
+     * Runs [block] with a scope that the next strategy created on this thread takes. A [block] that returns while the
+     * scope is still unclaimed evaluated the query without Kastor's strategy, so without its sandbox: its result is
+     * closed (when it is [AutoCloseable]) and the query fails with [UnsupportedOperationException]. The repository
+     * refuses such stores before preparing anything ([Rdf4jQuerySandbox.evaluatesSandboxed]); this is the backstop.
+     */
     fun <T> with(
         functions: SparqlFunctionLibrary,
         depth: Int,
@@ -82,9 +87,15 @@ internal object Rdf4jFunctionScope {
         block: () -> T,
     ): T {
         val previous = pending.get()
-        pending.set(Scope(functions, depth, deadline, clock, nested, dataset))
+        val scope = Scope(functions, depth, deadline, clock, nested, dataset)
+        pending.set(scope)
         try {
-            return block()
+            val result = block()
+            if (pending.get() === scope) {
+                (result as? AutoCloseable)?.close()
+                throw UnsupportedOperationException(Rdf4jQuerySandbox.FOREIGN_STORE)
+            }
+            return result
         } finally {
             if (previous == null) pending.remove() else pending.set(previous)
         }
@@ -162,8 +173,9 @@ internal class KastorEvaluationStrategyFactory(
  * - any other function IRI is an error when it is called, as on Jena (RDF4J fails the whole query otherwise);
  * - calls with constant arguments are not folded while the query is optimized, so that each call runs its body once
  *   and RDF4J does not fail on an unknown function before evaluation;
- * - `SERVICE` and tuple functions fail when they are prepared, and no federated service is ever resolved: the static
- *   check ([Rdf4jQuerySandbox.check]) refuses `SERVICE` first, this is the second barrier.
+ * - `SERVICE`, custom aggregates and tuple functions fail when the query is optimized or prepared, and no federated
+ *   service is ever resolved: the static check ([Rdf4jQuerySandbox.check]) refuses `SERVICE` and custom aggregates
+ *   first, this is the second barrier.
  */
 internal class KastorEvaluationStrategy(
     tripleSource: TripleSource,
@@ -181,6 +193,7 @@ internal class KastorEvaluationStrategy(
     }
 
     override fun optimize(expr: TupleExpr, evaluationStatistics: EvaluationStatistics, bindings: org.eclipse.rdf4j.query.BindingSet): TupleExpr {
+        if (scope != null) Rdf4jQuerySandbox.refusal(expr)?.let { throw QueryEvaluationException(it) }
         if (scope != null && callsCustomFunction(expr)) {
             val standard = StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics)
             setOptimizerPipeline { standard.optimizers.filterNot { it is ConstantOptimizer } }

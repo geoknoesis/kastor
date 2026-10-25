@@ -47,6 +47,25 @@ class Rdf4jQuerySandboxTest {
         assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
     }
 
+    /**
+     * RDF4J resolves a call of an IRI that its global `CustomAggregateFunctionRegistry` holds as an aggregate (filled
+     * by `ServiceLoader`; RDF4J registers its own `stdev` and `variance` there) and runs whatever was registered. As on
+     * Jena, a sandboxed query may use no custom aggregate: it is refused before evaluation, wherever it occurs.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = [
+        "SELECT (<http://rdf4j.org/aggregate#stdev>(?o) AS ?x) WHERE { ?a ?p ?o }",
+        "SELECT ?a WHERE { ?a ?p ?o } GROUP BY ?a HAVING (<http://rdf4j.org/aggregate#stdev>(?o) >= 0)",
+        "SELECT * WHERE { { SELECT (<http://rdf4j.org/aggregate#variance>(?o) AS ?x) WHERE { ?a ?p ?o } } }",
+        "SELECT ?a WHERE { ?a ?p ?o FILTER EXISTS { SELECT (<http://rdf4j.org/aggregate#stdev>(?q) AS ?x) WHERE { ?b ?r ?q } } }",
+    ])
+    fun `custom aggregates are refused before evaluation`(sparql: String) {
+        assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
+        assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
+        // Outside the sandbox the aggregate runs: the check is what refuses it.
+        repository.withSelectRows(com.geoknoesis.kastor.rdf.SparqlSelectQuery(sparql)) { it.toList() }
+    }
+
     @Test
     fun `an ordinary sandboxed query is evaluated`() {
         assertEquals(1, bound("SELECT ?o WHERE { <urn:a> <urn:p> ?o }").size)
