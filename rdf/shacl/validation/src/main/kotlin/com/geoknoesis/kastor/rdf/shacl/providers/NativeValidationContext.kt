@@ -25,6 +25,13 @@ internal class NativeValidationContext(
 ) : AutoCloseable {
     /** The counts of this run, added to [instrumentation] when the run ends. */
     val counters = RunCounters()
+
+    /**
+     * The most results one evaluation of a constraint builds: `maxViolations + 1`. A constraint whose results are
+     * pairs or query solutions can have quadratically many for one focus node; beyond this many, none could be
+     * reported, and the one more keeps [com.geoknoesis.kastor.rdf.shacl.ValidationReport.violationsTruncated] true.
+     */
+    val resultCap: Int = validator.config.maxViolations.let { if (it == Int.MAX_VALUE) it else it + 1 }
     // The seams are read once per run: the hot path reads no shared field.
     /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
     private val patternClock: () -> Long = instrumentation.patternClock

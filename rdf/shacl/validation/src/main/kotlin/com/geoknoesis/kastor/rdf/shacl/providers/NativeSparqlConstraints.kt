@@ -135,12 +135,16 @@ internal fun evaluateSparql(
     // failure, nested or not), without building results; one that cannot stops at the first solution.
     ctx.select(query, providerBindings) { rows ->
         for (row in rows) {
+            ctx.budget.tick("SPARQL results")
             val failure = row.get("failure")
             if (failure != null && isLexicallyTrue(failure)) {
                 throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
             }
-            // Only a query that can bind ?failure gets here after its first result: it is scanned, not built.
-            if (firstOnly && out.isNotEmpty()) continue
+            // Only a query that can bind ?failure gets here after its first result (or its last one that can be
+            // reported, ctx.resultCap): it is scanned, not built.
+            if ((firstOnly && out.isNotEmpty()) || out.size >= ctx.resultCap) {
+                if (c.template.mayBindFailure) continue else break
+            }
             out.add(solutionViolation(focus, row::get, preBound, tpl, source, hasPath = path != null))
             if (firstOnly && !c.template.mayBindFailure) break
         }

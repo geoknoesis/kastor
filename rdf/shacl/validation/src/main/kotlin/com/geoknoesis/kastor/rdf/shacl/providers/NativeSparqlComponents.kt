@@ -63,13 +63,16 @@ internal fun evaluateSparqlComponent(
     // The solutions are streamed, never collected (see evaluateSparql for the ?failure and firstOnly rules).
     ctx.select(query, providerBindings) { rows ->
         for (row in rows) {
+            ctx.budget.tick("SPARQL results")
             val failure = row.get("failure")
             if (failure != null && isLexicallyTrue(failure)) {
                 throw ShaclValidationException(
                     "SPARQL constraint component ${c.component.value} reported ?failure for focus node $focus",
                 )
             }
-            if (firstOnly && out.isNotEmpty()) continue
+            if ((firstOnly && out.isNotEmpty()) || out.size >= ctx.resultCap) {
+                if (c.template.mayBindFailure) continue else break
+            }
             out.add(solutionViolation(focus, row::get, preBound, tpl, source, hasPath))
             if (firstOnly && !c.template.mayBindFailure) break
         }

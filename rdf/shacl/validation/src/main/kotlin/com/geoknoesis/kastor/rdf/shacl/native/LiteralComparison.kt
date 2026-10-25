@@ -340,12 +340,14 @@ private fun totalOrderClass(term: RdfTerm): Any? {
  * strings, booleans, or date/time values of one family that all have or all lack a timezone), [others] is sorted once
  * and each value is compared from the smallest other value upwards until it is below one, since the violating others
  * form a prefix: O((n + m) log m + results) comparisons instead of n × m. Otherwise every pair is compared.
- * [onCompare] observes the comparisons (instrumentation).
+ * At most [limit] pairs are returned (the first ones, in value order). [onCompare] observes the comparisons (the
+ * budget, instrumentation).
  */
 internal fun orderViolations(
     values: List<RdfTerm>,
     others: List<RdfTerm>,
     strict: Boolean,
+    limit: Int = Int.MAX_VALUE,
     onCompare: () -> Unit = {},
 ): List<Pair<RdfTerm, RdfTerm>> {
     if (values.isEmpty() || others.isEmpty()) return emptyList()
@@ -356,7 +358,10 @@ internal fun orderViolations(
     val out = ArrayList<Pair<RdfTerm, RdfTerm>>()
     val space = totalOrderClass(others[0])
     if (space == null || others.any { totalOrderClass(it) != space } || values.any { totalOrderClass(it) != space }) {
-        for (v in values) for (w in others) if (!ordered(v, w)) out.add(v to w)
+        for (v in values) for (w in others) {
+            if (!ordered(v, w)) out.add(v to w)
+            if (out.size >= limit) return out
+        }
         return out
     }
     val sorted = others.sortedWith { a, b ->
@@ -367,6 +372,7 @@ internal fun orderViolations(
         for (w in sorted) {
             if (ordered(v, w)) break
             out.add(v to w)
+            if (out.size >= limit) return out
         }
     }
     return out
