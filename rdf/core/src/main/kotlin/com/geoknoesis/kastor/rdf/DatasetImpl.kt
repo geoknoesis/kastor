@@ -45,6 +45,10 @@ import java.util.IdentityHashMap
  *
  * A dataset on path 1 materializes an unanalysable query; on path 2 it is rejected.
  *
+ * **Sandboxed queries:** a rewritten query keeps its kind ([SparqlQueries.retarget]). A [SandboxedSelectQuery] stays
+ * one, with the same function library, so the provider still checks the text it runs; the materialized path passes the
+ * query on unchanged. The timed `withSelectRows` is not supported here ([UnsupportedOperationException]).
+ *
  * **DESCRIBE:** the Jena and RDF4J providers describe resources from the default graph of the query's dataset. What
  * an engine describes is implementation-defined, though, and another repository may describe from graphs outside
  * the query's dataset. Results of a `DESCRIBE` run in place are therefore restricted to triples that are in a graph
@@ -120,12 +124,13 @@ internal class DatasetImpl(
     override fun select(query: SparqlSelect): SparqlQueryResult {
         val inPlace = inPlace(query.sparql)
             ?: return executeOnMaterializedUnion { repo -> ListSparqlQueryResult(repo.select(query).toList()) }
-        return inPlace.repository.select(if (inPlace.sparql == query.sparql) query else SparqlSelectQuery(inPlace.sparql))
+        // The rewritten query keeps the kind of [query]: a SandboxedSelectQuery keeps its sandbox and function library.
+        return inPlace.repository.select(SparqlQueries.retarget(query, inPlace.sparql))
     }
 
     override fun ask(query: SparqlAsk): Boolean {
         val inPlace = inPlace(query.sparql) ?: return executeOnMaterializedUnion { repo -> repo.ask(query) }
-        return inPlace.repository.ask(if (inPlace.sparql == query.sparql) query else SparqlAskQuery(inPlace.sparql))
+        return inPlace.repository.ask(SparqlQueries.retarget(query, inPlace.sparql))
     }
 
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
@@ -133,14 +138,14 @@ internal class DatasetImpl(
         // sequence to a live connection.
         val inPlace = inPlace(query.sparql)
             ?: return executeOnMaterializedUnion { repo -> repo.construct(query).toList() }.asSequence()
-        return inPlace.repository.construct(if (inPlace.sparql == query.sparql) query else SparqlConstructQuery(inPlace.sparql))
+        return inPlace.repository.construct(SparqlQueries.retarget(query, inPlace.sparql))
     }
 
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
         val inPlace = inPlace(query.sparql)
             ?: return executeOnMaterializedUnion { repo -> repo.describe(query).toList() }.asSequence()
         val repository = inPlace.repository
-        val toRun = if (inPlace.sparql == query.sparql) query else SparqlDescribeQuery(inPlace.sparql)
+        val toRun = SparqlQueries.retarget(query, inPlace.sparql)
         // What DESCRIBE returns is implementation-defined, and an engine may describe a resource from graphs of the
         // store that are not in the query's dataset (Jena's own describe handler reads the store's default graph and
         // every named graph of it, whatever the dataset clauses say; the Jena and RDF4J providers describe from the
