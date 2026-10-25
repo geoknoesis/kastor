@@ -12,14 +12,20 @@ import java.util.regex.Pattern
  * [SandboxLimitException], so the evaluation ends whatever the timeout. A pattern too deep for the matcher's
  * recursion (a `StackOverflowError`) fails the same way instead of unwinding the thread.
  *
- * [replace] also bounds its output: the size of each replacement is computed (from the groups it refers to) before
- * it is appended, so no replacement text beyond [SandboxLimits.MAX_STRING_LENGTH] is ever built.
+ * [replace] also bounds its output: the size of each replacement is computed (from the offsets of the groups it refers
+ * to) before it is appended, so no replacement text beyond [SandboxLimits.MAX_STRING_LENGTH] is ever built.
+ *
+ * Reads are not the only work of a backtracking matcher: alternatives and repetitions that match the empty string can
+ * be explored exponentially often without reading a character (`(|){40}x` on an empty input). Every pattern is
+ * therefore first checked by [SandboxRegexPatterns.requireBounded], which refuses the shapes that allow such work, so
+ * that every choice the matcher explores costs at least one counted read.
  */
 object SandboxRegex {
 
     /** Whether [pattern] matches somewhere in [text] (SPARQL `REGEX`, XPath `fn:matches`). */
     @JvmStatic
     fun find(pattern: Pattern, text: String, check: Runnable): Boolean = bounded("REGEX") {
+        SandboxRegexPatterns.requireBounded(pattern, "REGEX")
         pattern.matcher(Budgeted(text, check)).find()
     }
 
@@ -33,14 +39,16 @@ object SandboxRegex {
     @JvmStatic
     fun replace(pattern: Pattern, text: String, replacement: String, skipEmptyAfterFirst: Boolean, check: Runnable): String? =
         bounded("REPLACE") {
+            SandboxRegexPatterns.requireBounded(pattern, "REPLACE")
             val matcher = pattern.matcher(Budgeted(text, check))
             var out: StringBuilder? = null
             var copied = 0
             while (matcher.find()) {
                 if (out == null) out = StringBuilder() else if (skipEmptyAfterFirst && matcher.start() == matcher.end()) continue
-                // What appendReplacement adds: the text before the match, then the expanded replacement.
-                val added = (matcher.start() - copied).toLong() + expandedLength(matcher, replacement)
-                SandboxLimits.checkStringLength(out.length + added + (text.length - matcher.end()), "REPLACE")
+                // What appendReplacement adds: the text before the match, then the expanded replacement. Both are
+                // measured from the match's offsets (nothing is copied) and checked before anything is appended.
+                val before = out.length + (matcher.start() - copied).toLong() + (text.length - matcher.end())
+                SandboxLimits.checkStringLength(before + expandedLength(matcher, replacement, before, check), "REPLACE")
                 matcher.appendReplacement(out, replacement)
                 copied = matcher.end()
             }
@@ -50,19 +58,30 @@ object SandboxRegex {
     /**
      * An upper bound of the length of [replacement] expanded for the current match of [matcher], read as
      * `Matcher.appendReplacement` reads it; a malformed reference counts as its own text (`appendReplacement` then
-     * fails on it).
+     * fails on it). A group's length is taken from its offsets, never by copying it, and the sum fails with
+     * [SandboxLimitException] as soon as [base] plus it passes [SandboxLimits.MAX_STRING_LENGTH]; [check] runs every
+     * [SandboxLimits.CHECK_INTERVAL] characters of [replacement] read.
      */
-    private fun expandedLength(matcher: Matcher, replacement: String): Long {
+    private fun expandedLength(matcher: Matcher, replacement: String, base: Long, check: Runnable): Long {
         var length = 0L
         var i = 0
+        var sinceCheck = 0
+        fun add(n: Long) {
+            length += n
+            SandboxLimits.checkStringLength(base + length, "REPLACE")
+        }
         while (i < replacement.length) {
+            val start = i
             val c = replacement[i]
             when {
-                c == '\\' -> { length++; i += 2 }
+                c == '\\' -> { add(1); i += 2 }
                 c == '$' && i + 1 < replacement.length && replacement[i + 1] == '{' -> {
                     val close = replacement.indexOf('}', i + 2)
-                    if (close < 0) return length + replacement.length - i
-                    length += groupLength { matcher.group(replacement.substring(i + 2, close)) }
+                    if (close < 0) {
+                        add((replacement.length - i).toLong())
+                        return length
+                    }
+                    add(groupLength { matcher.end(replacement.substring(i + 2, close)) - matcher.start(replacement.substring(i + 2, close)) })
                     i = close + 1
                 }
                 c == '$' && i + 1 < replacement.length && replacement[i + 1].isAsciiDigit() -> {
@@ -75,10 +94,15 @@ object SandboxRegex {
                         group = next
                         j++
                     }
-                    length += groupLength { matcher.group(group) }
+                    add(groupLength { matcher.end(group) - matcher.start(group) })
                     i = j
                 }
-                else -> { length++; i++ }
+                else -> { add(1); i++ }
+            }
+            sinceCheck += i - start
+            if (sinceCheck >= SandboxLimits.CHECK_INTERVAL) {
+                sinceCheck = 0
+                check.run()
             }
         }
         return length
@@ -86,9 +110,12 @@ object SandboxRegex {
 
     private fun Char.isAsciiDigit() = this in '0'..'9'
 
-    /** The length of a group ([read]); 0 for a group that did not take part in the match or does not exist. */
-    private inline fun groupLength(read: () -> String?): Long = try {
-        read()?.length?.toLong() ?: 0L
+    /**
+     * The length of a group from its offsets ([span], `end - start`); 0 for a group that did not take part in the
+     * match (offsets -1) or does not exist.
+     */
+    private inline fun groupLength(span: () -> Int): Long = try {
+        span().coerceAtLeast(0).toLong()
     } catch (e: IllegalArgumentException) {
         0L
     } catch (e: IndexOutOfBoundsException) {

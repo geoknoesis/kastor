@@ -99,4 +99,55 @@ class SandboxRegexTest {
         val text = "ab".repeat(200_000)
         assertThrows(SandboxLimitException::class.java) { SandboxRegex.find(Pattern.compile("(a|b)*c"), text, none) }
     }
+
+    /** Group lengths are taken from offsets: a replacement that refers to a huge group many times is refused at once. */
+    @Test
+    fun `a replacement is measured from group offsets before anything is copied`() {
+        val text = "a".repeat(1 shl 20)
+        val error = assertThrows(SandboxLimitException::class.java) { replaceAll("(a+)", text, "$1".repeat(64)) }
+        assertTrue(error.message!!.contains("REPLACE"), error.message)
+        // The check runs while a long replacement is read.
+        val checks = AtomicInteger()
+        replaceAll("b", "abc", "x".repeat(3 * SandboxLimits.CHECK_INTERVAL), Runnable { checks.incrementAndGet() })
+        assertTrue(checks.get() >= 3, "checks: ${checks.get()}")
+    }
+
+    private fun replaceAll(regex: String, text: String, replacement: String, check: Runnable) =
+        SandboxRegex.replace(Pattern.compile(regex), text, replacement, skipEmptyAfterFirst = false, check = check)
+
+    /**
+     * Choices that match the empty string are explored without reading a character, so the step budget cannot see
+     * them: 24 groups `(?:|)` take Java's matcher 0.4 s with zero reads, and every further group doubles that. Such
+     * patterns are refused before they run.
+     */
+    @Test
+    fun `patterns whose choices read nothing are refused before they run`() {
+        val zeroWidth = "(?:|)".repeat(40) + "\\z."
+        val started = System.nanoTime()
+        assertThrows(SandboxLimitException::class.java) { SandboxRegex.find(Pattern.compile(zeroWidth), "b", none) }
+        assertThrows(SandboxLimitException::class.java) { replaceAll(zeroWidth, "b", "x") }
+        assertTrue(java.time.Duration.ofNanos(System.nanoTime() - started) < java.time.Duration.ofMillis(500))
+        for (refused in listOf(
+            "(|){30}x", "(?:a?|b?){40}c", "(a*)*b", "(a?)+", "(?:)*", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?x) a",
+            "(a|b?|c?)", "(\\b)*", "(\\1)*", "(?:^)+", "(a{0,3}){2}",
+        )) {
+            assertThrows(SandboxLimitException::class.java, { SandboxRegexPatterns.requireBounded(Pattern.compile(refused), "t") }, refused)
+        }
+    }
+
+    @Test
+    fun `ordinary patterns are allowed`() {
+        for (allowed in listOf(
+            "", "b", "^b$", "^AB", "a|", "x*", "^.*$", "[a-z]+@[a-z]+\\.com", "^(\\d{3})-(\\d{4})$", "(a|b)*c", "\\p{L}+",
+            "(?i)abc", "a{1000}", "(?<n>b)", "((a+)+)+$", "(?:ab)?", "([a-z]+ ?)+$", "[(|)]*", "\\Q(|)*\\E", "(a|b?)",
+            "(?i:x)+", "[a-z&&[^b]]+", "\\(a\\|\\)*",
+        )) {
+            SandboxRegexPatterns.requireBounded(Pattern.compile(allowed), "t")
+        }
+        // A literal pattern has no choice at all.
+        SandboxRegexPatterns.requireBounded(Pattern.compile("(|)*", Pattern.LITERAL), "t")
+        // In comments mode, whitespace is not an atom.
+        SandboxRegexPatterns.requireBounded(Pattern.compile("a + b", Pattern.COMMENTS), "t")
+        assertThrows(SandboxLimitException::class.java) { SandboxRegexPatterns.requireBounded(Pattern.compile("( a ? ) +", Pattern.COMMENTS), "t") }
+    }
 }

@@ -110,6 +110,12 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex {
 	public static final fun replace (Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Runnable;)Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegexPatterns {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegexPatterns;
+	public static final field MAX_GROUP_DEPTH I
+	public static final fun requireBounded (Ljava/util/regex/Pattern;Ljava/lang/String;)V
+}
+
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings;
 	public final fun apply (Ljava/lang/String;Ljava/util/Map;)Ljava/lang/String;
