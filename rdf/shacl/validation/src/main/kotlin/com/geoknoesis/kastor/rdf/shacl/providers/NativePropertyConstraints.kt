@@ -86,8 +86,10 @@ internal fun NativeShaclValidator.evaluateConstraint(
             evaluateComputedNodeByExpression(focus, tpl, values, c, ctx, state, sink)
         is PropertyConstraint.Sparql -> {
             // SHACL 1.2 SPARQL: a constraint deactivated for the focus node has no results.
-            if (c.deactivatedWhen == null || !deactivates(c.deactivatedWhen, focus, ctx, state.depth)) {
-                sink.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !sink.reports))
+            val condition = c.deactivatedWhen
+            val activation = if (condition == null) Activation.ACTIVE else Activation.of { deactivates(condition, focus, ctx, state.depth) }
+            unlessDeactivated(activation, sink, ctx, focus, tpl, ConstraintType.SPARQL_CONSTRAINT) { s ->
+                s.failAll(evaluateSparql(focus, tpl, c, ctx, path, firstOnly = !s.reports))
             }
         }
         is PropertyConstraint.ReifierShape,
@@ -99,10 +101,9 @@ internal fun NativeShaclValidator.evaluateConstraint(
                 // conditions here too would evaluate them twice.
                 c.constraint.isReifierConstraint() -> Unit
                 // SHACL 1.2 Core §3.1.6: a constraint a reifier deactivates for the focus node is ignored. A failure of
-                // the expression is thrown; a provisional answer it reads, when no condition is true, makes the
-                // constraint undefined for now (see evaluateConstraintsForValues).
-                else -> if (!anyDeactivates(c.deactivatedWhen, focus, ctx, state.depth)) {
-                    evaluateConstraint(focus, tpl, values, c.constraint, ctx, state, currentShape, path, sink)
+                // the expression is thrown; while it is undefined for now, the constraint is undefined unless it holds.
+                else -> unlessDeactivated(reifierActivation(c.deactivatedWhen, focus, ctx, state.depth), sink, ctx, focus, tpl, provisionalType(c)) { s ->
+                    evaluateConstraint(focus, tpl, values, c.constraint, ctx, state, currentShape, path, s)
                 }
             }
         is PropertyConstraint.SparqlComponent -> {
@@ -498,7 +499,7 @@ private fun NativeShaclValidator.evaluateExpression(
     sink: Sink,
 ) {
     eachValue(values, sink) { v ->
-        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v), shapeDepth = state.depth)
+        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v), shapeDepth = state.depth, positiveReads = c.positive)
         if (out.size != 1 || TrueLiteral != out.single()) {
             val produced = if (out.size > 3) "${out.size} nodes" else out.joinToString(prefix = "( ", postfix = " )")
             tpl.add(focus, sink, ConstraintType.EXPRESSION, "sh:expression produced $produced instead of ( true ) for value $v", v, sourceConstraint = c.node)

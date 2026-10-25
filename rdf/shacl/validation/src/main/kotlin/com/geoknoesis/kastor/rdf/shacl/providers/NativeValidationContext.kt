@@ -53,6 +53,11 @@ internal class NativeValidationContext(
     val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()
     private var patternWorker: PatternWorker? = null
     fun patternWorker(): PatternWorker = patternWorker ?: PatternWorker(patternWorkerStackBytes).also { patternWorker = it }
+    /**
+     * The outputs of `shnex:nodesMatching` per shape (Node Expressions §4.5.2), which do not depend on the focus node:
+     * computed once per run, outside the recursion solver only, where every conformance answer it reads is final.
+     */
+    val nodesMatching = HashMap<RdfResource, List<RdfTerm>>()
     /** Solver of the recursive component currently being evaluated (routes references into that component). */
     var solver: RecursionSolver? = null
     /**

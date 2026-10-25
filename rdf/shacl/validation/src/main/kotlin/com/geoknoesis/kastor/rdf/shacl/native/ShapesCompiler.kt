@@ -25,7 +25,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.ShapeFeatureDetection.isTargetNode
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeFeatureDetection.callPredicate
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeFeatureDetection.detectUnsupportedFeatures
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeDiscovery.findNodeShapes
-import com.geoknoesis.kastor.rdf.shacl.native.ShapeDependencies.compileCandidates
+import com.geoknoesis.kastor.rdf.shacl.native.CandidateCompilation.compileCandidates
 import com.geoknoesis.kastor.rdf.shacl.native.ShapeDependencies.recursiveComponents
 import com.geoknoesis.kastor.rdf.shacl.native.ConstraintCompiler.Companion.parameterValue
 
@@ -78,18 +78,19 @@ internal object ShapesCompiler {
 
         val refNodes = LinkedHashMap<RdfResource, CompiledNodeShape>(byNode)
         val refProps = LinkedHashMap<RdfResource, CompiledPropertyShape>()
-        val candidates = CandidateQueue(exprShapes)
-        val referenced = ShapeClosure(index, config, budget, exprShapes, candidates, refNodes, refProps)
+        val resolver = ShapeDependencyResolver(exprShapes, functions, budget)
+        val candidates = CandidateQueue()
+        val referenced = ShapeClosure(index, config, budget, resolver, candidates, refNodes, refProps)
         compiled.forEach { referenced.visitNode(it) }
         referenced.add(extraRoots)
         // The shapes of the node expression bodies of the functions SPARQL queries may call.
         functions.expressionBodies.forEach { referenced.addExpression(it) }
         referenced.run()
         val ignoredInCandidates = ArrayList<String>()
-        val candidateErrors = compileCandidates(index, config, budget, exprShapes, candidates, refNodes, refProps, detected.candidateOnly, ignoredInCandidates)
+        val candidateErrors = compileCandidates(index, config, budget, resolver, candidates, refNodes, refProps, detected.candidateOnly, ignoredInCandidates)
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
-            recursiveComponents(refNodes, refProps, exprShapes, functions, budget),
+            recursiveComponents(refNodes, refProps, resolver, budget),
             (unsupported.keys + ignoredInCandidates).map { "Unsupported SHACL feature ignored: $it" },
             functions,
             candidateErrors,

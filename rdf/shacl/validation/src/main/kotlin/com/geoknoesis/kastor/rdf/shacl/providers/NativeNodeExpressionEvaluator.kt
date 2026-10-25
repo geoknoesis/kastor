@@ -54,9 +54,14 @@ internal const val MAX_NODE_EXPRESSION_DEPTH = 128
  * failures. All but the last (a node that is not a shape of the shapes graph at all) are undecided failures
  * ([NodeExprOutcome.Failure.undecided]), which no function absorbs ([UndecidedConformanceException]).
  */
-internal fun NativeShaclValidator.evaluate(expr: NodeExpression, ctx: NativeValidationContext, scope: NodeExprScope): NodeExprOutcome =
+internal fun NativeShaclValidator.evaluate(
+    expr: NodeExpression,
+    ctx: NativeValidationContext,
+    scope: NodeExprScope,
+    positiveReads: Boolean = false,
+): NodeExprOutcome =
     try {
-        NodeExprOutcome.Nodes(NodeExpressionEvaluator(this, ctx).eval(expr, scope))
+        NodeExprOutcome.Nodes(NodeExpressionEvaluator(this, ctx, positiveReads).eval(expr, scope))
     } catch (f: NodeExprFailure) {
         NodeExprOutcome.Failure(f.reason, f.cause, f.undecided)
     }
@@ -77,11 +82,12 @@ internal fun NativeShaclValidator.evalNodeExpression(
     focus: RdfTerm?,
     variables: Map<String, RdfTerm> = emptyMap(),
     shapeDepth: Int = ctx.expressionShapeDepth,
+    positiveReads: Boolean = false,
 ): List<RdfTerm> {
     val saved = ctx.expressionShapeDepth
     ctx.expressionShapeDepth = shapeDepth
     val outcome = try {
-        evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0))
+        evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0), positiveReads)
     } finally {
         ctx.expressionShapeDepth = saved
     }
@@ -128,7 +134,16 @@ private fun sizeMessage(ctx: NativeValidationContext, what: String): String {
  */
 private class NodeExprFailure(val reason: String, cause: Throwable? = null, val undecided: Boolean = false) : RuntimeException(reason, cause, false, false)
 
-private class NodeExpressionEvaluator(private val validator: NativeShaclValidator, private val ctx: NativeValidationContext) {
+/**
+ * [positiveReads]: the expression is monotone in the answers it reads ([com.geoknoesis.kastor.rdf.shacl.native.NodeExpressions.readsPositively]),
+ * so its conformance checks are positive reads of the recursion solver. Nested evaluations (function bodies, the
+ * expressions of the shapes it validates against) have evaluators of their own, with negative reads.
+ */
+private class NodeExpressionEvaluator(
+    private val validator: NativeShaclValidator,
+    private val ctx: NativeValidationContext,
+    private val positiveReads: Boolean = false,
+) {
     private fun fail(reason: String, cause: Throwable? = null): Nothing = throw NodeExprFailure(reason, cause)
 
     /** A failure of a conformance check the engine could not decide, which no function absorbs ([NodeExprFailure.undecided]). */
@@ -330,8 +345,9 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      *
      * The check is one shape level deeper than the shape evaluation of the expression
      * ([NativeValidationContext.expressionShapeDepth]), so that recursion through expressions stays bounded. It is a
-     * negative read for the recursion solver: an expression need not be monotone in the answer
-     * (`sparql:logical-not ( [ shnex:conformsToShape ... ] )`).
+     * negative read for the recursion solver, since an expression need not be monotone in the answer
+     * (`sparql:logical-not ( [ shnex:conformsToShape ... ] )`), unless the whole expression is known to be
+     * ([positiveReads]).
      */
     private fun conforms(node: RdfTerm, shape: RdfResource, function: String, depth: Int): Boolean {
         val compiled = ctx.compiled
@@ -341,7 +357,7 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
             fail("$function: $shape is not a shape of the shapes graph")
         }
         val answer = try {
-            startedAt(depth) { validator.conformance(node, shape, ctx, DepthState(ctx.expressionShapeDepth, Mode.CONFORMS), negative = true) }
+            startedAt(depth) { validator.conformance(node, shape, ctx, DepthState(ctx.expressionShapeDepth, Mode.CONFORMS), negative = !positiveReads) }
         } catch (e: ShaclValidationException) {
             ctx.checkDeadline()
             if (isRunAbort(e)) throw e
@@ -362,6 +378,15 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * ([NodeExpressionOrdering]) so that the output does not depend on the triple order of the provider.
      */
     private fun nodesMatching(shape: RdfResource, depth: Int): List<RdfTerm> {
+        // Outside the solver every answer is final, so the outputs are those of the run: computed once per shape
+        // instead of once per focus node. Inside it, answers may be provisional (or optimistic while recording).
+        if (ctx.solver != null) return matchingNodes(shape, depth)
+        ctx.nodesMatching[shape]?.let { return output(it) }
+        return matchingNodes(shape, depth).also { ctx.nodesMatching[shape] = it }
+    }
+
+    private fun matchingNodes(shape: RdfResource, depth: Int): List<RdfTerm> {
+        ctx.counters.nodesMatchingScans++
         val matches = ArrayList<RdfTerm>()
         for (node in ctx.data.allNodes()) {
             ctx.budget.tick("node expression")

@@ -131,6 +131,9 @@ internal class NativeShaclValidator(
     /** Test instrumentation: evaluations of non-constant `sh:deactivated` node expressions (of shapes, SPARQL-based constraints and reifiers). */
     internal val deactivationEvaluations: Long get() = instrumentation.deactivationEvaluations.sum()
 
+    /** Test instrumentation: scans of the data graph by `shnex:nodesMatching` (once per shape and run outside the recursion solver). */
+    internal val nodesMatchingScans: Long get() = instrumentation.nodesMatchingScans.sum()
+
     /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
     internal val patternEvaluations: Long get() = instrumentation.patternEvaluations.sum()
 

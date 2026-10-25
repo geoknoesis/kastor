@@ -169,7 +169,7 @@ internal object SparqlFunctionDeclarations {
  * The SHACL SPARQL functions of a shapes graph ([SparqlFunctionDeclarations]): immutable and shared by every
  * validation run of the compiled shapes graph, while each run builds the [library] it sends.
  */
-internal class SparqlFunctionDeclarationSet(private val declarations: List<Declaration>) {
+internal class SparqlFunctionDeclarationSet(val declarations: List<Declaration>) {
 
     /** A function: its IRI, which parameters are optional, and its body (a [NodeExpression.Select] or another node expression). */
     class Declaration(val iri: Iri, val optional: List<Boolean>, val body: NodeExpression)

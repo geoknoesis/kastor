@@ -190,6 +190,35 @@ API:
   switch; `KASTOR_SKIP_OPENAI_LLM_TESTS` and `KASTOR_SKIP_EMBEDDING_TESTS` no longer gate these tests.
 - ABI additions and changes in `onto-quality-embed` only, listed above; the dump is updated.
 
+#### SHACL (`rdf-shacl-validation`)
+
+- Fixed: a per-focus-node `sh:deactivated` (of a shape, an `sh:sparql` constraint or a reifier of a parameter
+  triple) that read a conformance answer the recursion solver had not settled yet made the shape or constraint
+  undefined, even when its constraints held. Such a shape never settled, and a run that fails closed on undecided
+  checks aborted. "Deactivated, or the constraints hold" is now evaluated as a Kleene disjunction: constraints that
+  hold make the shape conform, whatever the deactivation turns out to be.
+- Fixed: the recursion solver could settle a question undefined by recursion as conforming when an evaluation read
+  a question of its group that the question's recording pass had not read (the recording answered the shape's
+  `sh:deactivated` "conforms" and skipped its constraints). Such a read now restarts the solve with it recorded,
+  like any other missed read.
+- Changed: the recursion analysis no longer makes every shape a dependency of a computed shape reference whose
+  possible outputs are constants (`shnex:if` / list functions over shape IRIs), and a shape that runs SPARQL now
+  depends only on the bodies of the functions its queries may call, not on every function body. Fewer shapes join
+  recursive components, so fewer data cycles are undefined. Computed references read from the data, and queries
+  whose calls are not known (a relative function IRI without an absolute `BASE`), still depend on every shape.
+  The compile closure and the recursion analysis are now derived from one description of what a shape reads.
+- Changed: a SPARQL query that spells a pre-bound variable with a codepoint escape (`?th`, then the escape of `i`, then `s`), or
+  in which a decoded escape makes one appear, is rejected with `SparqlPreBindingRestrictionException`. RDF4J
+  decodes escapes before parsing and would have seen the variable unbound.
+- Fixed: the `VALUES` check of the pre-binding restrictions took quadratic time on a query of many `VALUES` words;
+  it is now linear.
+- Changed: `shnex:nodesMatching` is computed once per shape and run outside the recursion solver, instead of once
+  per focus node.
+- Changed: an `sh:expression` that is a `shnex:conformsToShape` with a constant shape, or a `shnex:matchAll`, whose
+  other argument reads no shape and runs no query, is monotone: its shape reads are positive dependencies, like
+  those of `sh:node`. A data cycle through it now conforms (greatest fixpoint) instead of being undefined recursion,
+  which failed validation. Every other shape-reading expression keeps negative reads.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,

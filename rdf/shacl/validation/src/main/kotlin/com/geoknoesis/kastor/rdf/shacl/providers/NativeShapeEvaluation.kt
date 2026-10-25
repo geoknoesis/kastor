@@ -4,7 +4,6 @@ import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
-import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
@@ -13,7 +12,6 @@ import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledPropertyShape
 import com.geoknoesis.kastor.rdf.shacl.native.DataGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.DynamicComponent
-import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
 import com.geoknoesis.kastor.rdf.shacl.native.NodeLogicalPart
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
@@ -42,13 +40,29 @@ internal fun NativeShaclValidator.validateNodeShape(
     if (shape.deactivated) return
     ctx.counters.shapeEvaluations++
     val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
-    if (shape.deactivatedWhen != null && deactivatedFor(focus, shape.deactivatedWhen, tpl, ConstraintType.NODE, ctx, state, sink)) return
+    val condition = shape.deactivatedWhen
+    if (condition == null) {
+        validateNodeShapeConstraints(focus, shape, tpl, ctx, state, sink)
+    } else {
+        val activation = Activation.of { deactivates(condition, focus, ctx, state.depth) }
+        unlessDeactivated(activation, sink, ctx, focus, tpl, ConstraintType.NODE) { s -> validateNodeShapeConstraints(focus, shape, tpl, ctx, state, s) }
+    }
+}
 
+/** The constraints of the node shape [shape] for [focus], once the shape is known to be active for it. */
+private fun NativeShaclValidator.validateNodeShapeConstraints(
+    focus: RdfTerm,
+    shape: CompiledNodeShape,
+    tpl: ResultTemplate,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+) {
     val reifiers = shape.reifierConditions
     for (nr in shape.nodeRefs) {
         sink.unit { s ->
-            if (!reifierDeactivated(reifiers.link(SHACL.node, nr), focus, tpl, ConstraintType.NODE, ctx, state, s)) {
-                s.outcome(ctx, conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
+            unlessReifierDeactivated(reifiers.link(SHACL.node, nr), focus, tpl, ConstraintType.NODE, ctx, state, s) { t ->
+                t.outcome(ctx, conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
                     violation(focus, tpl, constraintStub(ConstraintType.NODE), "sh:node constraint failed for ${nr.displayId()}", value = focus)
                 }
             }
@@ -58,8 +72,8 @@ internal fun NativeShaclValidator.validateNodeShape(
 
     for (exprRef in shape.nodeByExpressionRefs) {
         sink.unit { s ->
-            if (!reifierDeactivated(reifiers.link(SHACL.nodeByExpression, exprRef), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, ctx, state, s)) {
-                s.outcome(ctx, conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
+            unlessReifierDeactivated(reifiers.link(SHACL.nodeByExpression, exprRef), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, ctx, state, s) { t ->
+                t.outcome(ctx, conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
                     violation(
                         focus, tpl, constraintStub(ConstraintType.NODE_BY_EXPRESSION),
                         "sh:nodeByExpression constraint failed", value = focus, sourceConstraint = exprRef,
@@ -76,14 +90,15 @@ internal fun NativeShaclValidator.validateNodeShape(
     }
 
     for (ps in shape.propertyShapes) {
-        if (reifierDeactivated(reifiers.link(SHACL.`property`, ps.shapeNode), focus, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink)) continue
-        validatePropertyShape(focus, ps, ctx, state, sink)
+        unlessReifierDeactivated(reifiers.link(SHACL.`property`, ps.shapeNode), focus, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink) { s ->
+            validatePropertyShape(focus, ps, ctx, state, s)
+        }
         if (sink.stop) return
     }
 
     for (part in shape.logicalParts) {
         sink.unit { s ->
-            if (!reifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s)) evalLogical(focus, focus, tpl, part, ctx, state, s)
+            unlessReifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s) { t -> evalLogical(focus, focus, tpl, part, ctx, state, t) }
         }
         if (sink.stop) return
     }
@@ -92,64 +107,29 @@ internal fun NativeShaclValidator.validateNodeShape(
     // evaluated for a literal focus node too, so that a failed evaluation fails the run (§3.4), though a literal has no
     // properties to close.
     val closedComputed = shape.closedParameter != null || shape.ignoredParameter != null
-    if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null) && (focus is RdfResource || closedComputed) &&
-        !reifierDeactivated(reifiers.closed, focus, tpl, ConstraintType.CLOSED, ctx, state, sink)
-    ) {
-        val resolved = try {
-            resolveClosed(focus, shape, ctx, state.depth)
-        } catch (e: ProvisionalUndefined) {
-            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.CLOSED, null, e.node, e.shape)
-            null
-        }
-        if (resolved != null && resolved.first != ClosedMode.NONE && focus is RdfResource) {
-            sink.failAll(validateClosed(focus, shape, resolved.first, resolved.second, tpl, ctx, firstOnly = !sink.reports))
-        }
+    if (config.validateClosedShapes && (shape.closed != ClosedMode.NONE || shape.closedParameter != null) && (focus is RdfResource || closedComputed)) {
+        unlessReifierDeactivated(reifiers.closed, focus, tpl, ConstraintType.CLOSED, ctx, state, sink) { s -> validateClosedConstraint(focus, shape, tpl, ctx, state, s) }
     }
 }
 
-/**
- * Whether a reifier of one of the parameter triples of a constraint deactivates it for [focus] (SHACL 1.2 Core
- * §3.1.6): one of [conditions], evaluated with that focus node and an empty scope, produces exactly `true`
- * ([anyDeactivates]). A failure is thrown; when no condition is true and one read a provisional answer of the
- * recursion solver, the constraint is reported as undefined ([type]) once, and true is returned so that it is not
- * evaluated.
- */
-private fun NativeShaclValidator.reifierDeactivated(
-    conditions: List<NodeExpression>,
+/** `sh:closed` of [shape] for [focus], with its computed parameters resolved for [focus]. */
+private fun NativeShaclValidator.validateClosedConstraint(
     focus: RdfTerm,
+    shape: CompiledNodeShape,
     tpl: ResultTemplate,
-    type: ConstraintType,
     ctx: NativeValidationContext,
     state: DepthState,
     sink: Sink,
-): Boolean {
-    if (conditions.isEmpty()) return false
-    return try {
-        anyDeactivates(conditions, focus, ctx, state.depth)
+) {
+    val resolved = try {
+        resolveClosed(focus, shape, ctx, state.depth)
     } catch (e: ProvisionalUndefined) {
-        sink.undefinedAnswer(ctx, focus, tpl, type, null, e.node, e.shape)
-        true
+        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.CLOSED, null, e.node, e.shape)
+        null
     }
-}
-
-/**
- * The disjunction, under Kleene logic, of whether each of [conditions] (the non-constant `sh:deactivated` of the
- * reifiers of one constraint's parameter triples) deactivates the constraint for [focus]: every condition is
- * evaluated until one is definitely true, so a definite `true` wins over an answer that is undefined for now. When
- * none is true and one read a provisional answer of the recursion solver, the first such [ProvisionalUndefined] is
- * thrown. A failure is thrown at once.
- */
-internal fun NativeShaclValidator.anyDeactivates(conditions: List<NodeExpression>, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): Boolean {
-    var provisional: ProvisionalUndefined? = null
-    for (expr in conditions) {
-        try {
-            if (deactivates(expr, focus, ctx, depth)) return true
-        } catch (e: ProvisionalUndefined) {
-            if (provisional == null) provisional = e
-        }
+    if (resolved != null && resolved.first != ClosedMode.NONE && focus is RdfResource) {
+        sink.failAll(validateClosed(focus, shape, resolved.first, resolved.second, tpl, ctx, firstOnly = !sink.reports))
     }
-    provisional?.let { throw it }
-    return false
 }
 
 /** Logical constraints under Kleene logic; operands of `sh:xone` and `sh:not` are negative dependencies. */
@@ -264,42 +244,6 @@ private fun NativeShaclValidator.evaluateConstraintsForValues(
 }
 
 /**
- * Whether the non-constant `sh:deactivated` [expr] of a shape deactivates it for [focus] (SHACL 1.2 Core §3.1.6):
- * `evalExpr(expr, data graph, focus node, {})` produces exactly the term `"true"^^xsd:boolean` (R5) as its only output
- * node. Any other output, the empty list included, leaves the shape active. An evaluation failure is a validation
- * failure (Node Expressions §3.4), thrown by [evalNodeExpression]. A provisional answer of the recursion solver read by
- * the expression makes the whole shape undefined for now: it is reported as undefined ([type]) and true is returned,
- * so that nothing else of the shape is evaluated.
- */
-private fun NativeShaclValidator.deactivatedFor(
-    focus: RdfTerm,
-    expr: NodeExpression,
-    tpl: ResultTemplate,
-    type: ConstraintType,
-    ctx: NativeValidationContext,
-    state: DepthState,
-    sink: Sink,
-): Boolean {
-    return try {
-        deactivates(expr, focus, ctx, state.depth)
-    } catch (e: ProvisionalUndefined) {
-        sink.undefinedAnswer(ctx, focus, tpl, type, null, e.node, e.shape)
-        true
-    }
-}
-
-/**
- * Whether the non-constant `sh:deactivated` [expr] (of a shape or a SPARQL-based constraint) deactivates it for
- * [focus]: `evalExpr(expr, data graph, focus node, {})` at shape nesting [depth] produces exactly the term
- * `"true"^^xsd:boolean` as its only output node. A failure is thrown; so is a [ProvisionalUndefined] answer.
- */
-internal fun NativeShaclValidator.deactivates(expr: NodeExpression, focus: RdfTerm, ctx: NativeValidationContext, depth: Int): Boolean {
-    ctx.counters.deactivationEvaluations++
-    val out = evalNodeExpression(expr, ctx, focus, shapeDepth = depth)
-    return out.size == 1 && out.single() == TrueLiteral
-}
-
-/**
  * True for a `sh:reifierShape` or `sh:reificationRequired` constraint, constant or with a computed
  * `sh:reificationRequired` (SHACL 1.2 Node Expressions §8): [validatePropertyShape] evaluates them, once per focus node,
  * with the triples they constrain.
@@ -309,7 +253,7 @@ internal fun PropertyConstraint.isReifierConstraint(): Boolean =
         (this is PropertyConstraint.Dynamic && component == DynamicComponent.REIFICATION)
 
 /** The constraint type an undefined [ProvisionalUndefined] answer of [c] is reported with. */
-private fun provisionalType(c: PropertyConstraint): ConstraintType =
+internal fun provisionalType(c: PropertyConstraint): ConstraintType =
     when (c) {
         is PropertyConstraint.Deactivatable -> provisionalType(c.constraint)
         is PropertyConstraint.ReifierShape, is PropertyConstraint.ReificationRequired -> ConstraintType.REIFIER_SHAPE
@@ -336,7 +280,24 @@ internal fun NativeShaclValidator.validatePropertyShape(
     if (ps.deactivated) return
     ctx.counters.shapeEvaluations++
     val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
-    if (ps.deactivatedWhen != null && deactivatedFor(focus, ps.deactivatedWhen, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink)) return
+    val condition = ps.deactivatedWhen
+    if (condition == null) {
+        validatePropertyShapeConstraints(focus, ps, tpl, ctx, state, sink)
+    } else {
+        val activation = Activation.of { deactivates(condition, focus, ctx, state.depth) }
+        unlessDeactivated(activation, sink, ctx, focus, tpl, ConstraintType.PROPERTY_SHAPE) { s -> validatePropertyShapeConstraints(focus, ps, tpl, ctx, state, s) }
+    }
+}
+
+/** The constraints of the property shape [ps] for [focus], once the shape is known to be active for it. */
+private fun NativeShaclValidator.validatePropertyShapeConstraints(
+    focus: RdfTerm,
+    ps: CompiledPropertyShape,
+    tpl: ResultTemplate,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+) {
     val values = try {
         propertyValueNodes(focus, ps, ctx, state)
     } catch (e: ProvisionalUndefined) {
@@ -358,10 +319,10 @@ internal fun NativeShaclValidator.validatePropertyShape(
             // condition is evaluated once per (focus node, constraint), in one unit with every value node, so that a
             // re-run unit re-checks it.
             sink.unit { s ->
-                if (!reifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s)) {
+                unlessReifierDeactivated(part.deactivatedWhen, focus, tpl, part.constraintType(), ctx, state, s) { t ->
                     for (v in values) {
-                        evalLogical(focus, v, tpl, part, ctx, state, s)
-                        if (s.stop) break
+                        evalLogical(focus, v, tpl, part, ctx, state, t)
+                        if (t.stop) break
                     }
                 }
             }
@@ -370,45 +331,52 @@ internal fun NativeShaclValidator.validatePropertyShape(
     }
     for (nested in ps.nestedPropertyShapes) {
         if (values.isEmpty()) continue
-        if (reifierDeactivated(ps.reifierConditions.link(SHACL.`property`, nested.shapeNode), focus, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink)) continue
-        for (v in values) {
-            validatePropertyShape(v, nested, ctx, state, sink)
-            if (sink.stop) return
-        }
-    }
-    val reifierConstraints = ps.constraints.filter { it.unwrapped().isReifierConstraint() }
-    // The constraints a reifier deactivates for the focus node are left out (SHACL 1.2 Core §3.1.6); a computed
-    // sh:reificationRequired (SHACL 1.2 Node Expressions §8) is resolved for the focus node once the constraint is known
-    // to be active.
-    fun active(constraints: List<PropertyConstraint>, s: Sink): List<PropertyConstraint> = constraints.mapNotNull { c ->
-        val guarded =
-            if (c is PropertyConstraint.Deactivatable) {
-                c.constraint.takeUnless { reifierDeactivated(c.deactivatedWhen, focus, tpl, ConstraintType.REIFIER_SHAPE, ctx, state, s) }
-            } else {
-                c
+        unlessReifierDeactivated(ps.reifierConditions.link(SHACL.`property`, nested.shapeNode), focus, tpl, ConstraintType.PROPERTY_SHAPE, ctx, state, sink) { s ->
+            for (v in values) {
+                validatePropertyShape(v, nested, ctx, state, s)
+                if (s.stop) break
             }
-        if (guarded is PropertyConstraint.Dynamic) resolveReification(guarded, focus, ps, tpl, ctx, state, s) else guarded
+        }
+        if (sink.stop) return
     }
-    if (focus !is RdfResource) {
-        // A literal has no triples to reify, but the computed parameters are evaluated, so that a failed evaluation
-        // fails the run (§3.4).
-        val computed = reifierConstraints.filter { c ->
-            (if (c is PropertyConstraint.Deactivatable) c.constraint else c) is PropertyConstraint.Dynamic
+    validateReifierConstraints(focus, ps, tpl, ctx, state, sink)
+}
+
+/**
+ * The `sh:reifierShape` / `sh:reificationRequired` constraints of [ps] for [focus], with the triples they constrain.
+ * The constraints a reifier deactivates for the focus node are left out (SHACL 1.2 Core §3.1.6); one whose
+ * deactivation is undefined for now is checked on its own ([unlessDeactivated]). A computed `sh:reificationRequired`
+ * (SHACL 1.2 Node Expressions §8) is resolved for the focus node once the constraint is known to be active. A literal
+ * has no triples to reify, but the computed parameters are evaluated, so that a failed evaluation fails the run (§3.4).
+ */
+private fun NativeShaclValidator.validateReifierConstraints(
+    focus: RdfTerm,
+    ps: CompiledPropertyShape,
+    tpl: ResultTemplate,
+    ctx: NativeValidationContext,
+    state: DepthState,
+    sink: Sink,
+) {
+    val reifierConstraints = ps.constraints.filter { it.unwrapped().isReifierConstraint() }
+    val checked = if (focus is RdfResource) reifierConstraints else reifierConstraints.filter { it.unwrapped() is PropertyConstraint.Dynamic }
+    if (checked.isEmpty()) return
+    val claims = if (focus is RdfResource) tripleClaimsMatchingSimplePath(focus, ps.path, ctx.data) else emptyList()
+    fun resolved(c: PropertyConstraint, s: Sink): PropertyConstraint? =
+        if (c is PropertyConstraint.Dynamic) resolveReification(c, focus, ps, tpl, ctx, state, s) else c
+    fun check(constraints: List<PropertyConstraint>, s: Sink) {
+        if (focus is RdfResource) validateReifierPropertyConstraints(focus, tpl, claims, constraints, ctx, state, s)
+    }
+    sink.unit { s ->
+        val active = ArrayList<PropertyConstraint>()
+        for (c in checked) {
+            val activation = if (c is PropertyConstraint.Deactivatable) reifierActivation(c.deactivatedWhen, focus, ctx, state.depth) else Activation.ACTIVE
+            if (activation.active) {
+                resolved(c.unwrapped(), s)?.let { active.add(it) }
+            } else {
+                unlessDeactivated(activation, s, ctx, focus, tpl, ConstraintType.REIFIER_SHAPE) { t -> resolved(c.unwrapped(), t)?.let { check(listOf(it), t) } }
+            }
         }
-        if (computed.isNotEmpty()) sink.unit { s -> active(computed, s) }
-    } else if (reifierConstraints.isNotEmpty()) {
-        sink.unit { s ->
-            val active = active(reifierConstraints, s)
-            validateReifierPropertyConstraints(
-                focus = focus,
-                tpl = tpl,
-                claims = tripleClaimsMatchingSimplePath(focus, ps.path, ctx.data),
-                constraints = active,
-                ctx = ctx,
-                state = state,
-                sink = s,
-            )
-        }
+        check(active, s)
     }
 }
 
