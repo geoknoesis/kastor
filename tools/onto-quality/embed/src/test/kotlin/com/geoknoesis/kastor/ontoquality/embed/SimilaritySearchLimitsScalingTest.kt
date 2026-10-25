@@ -35,6 +35,20 @@ class SimilaritySearchLimitsScalingTest {
     }
 
     @Test
+    fun `the scaled default deadline is capped at ten minutes`() {
+        // 200,000 labels: about 2e10 worst-case evaluations, which the uncapped rule turned into a 66-minute deadline.
+        val large = SimilaritySearchLimits.forEntityCount(200_000)
+        assertEquals(Duration.ofMinutes(10), large.timeout)
+        // The work budget is capped to what the deadline allows at 5,000 evaluations per millisecond.
+        assertEquals(3_000_000_000L, large.maxDistanceEvaluations)
+        assertEquals(large, SimilaritySearchLimits.forEntityCount(Int.MAX_VALUE))
+        // Explicit overrides are not capped.
+        val explicit = SimilarityLimitsPolicy.scaled(maxDistanceEvaluations = 10_000_000_000L, timeout = Duration.ofHours(2)).limitsFor(200_000)
+        assertEquals(Duration.ofHours(2), explicit.timeout)
+        assertEquals(10_000_000_000L, explicit.maxDistanceEvaluations)
+    }
+
+    @Test
     fun `scaled policy accepts a result-pair override`() {
         assertEquals(1_000_000, SimilarityLimitsPolicy.scaled().limitsFor(10).maxPairs)
         val limits = SimilarityLimitsPolicy.scaled(maxDistanceEvaluations = 7L, timeout = null, maxPairs = 5).limitsFor(10)

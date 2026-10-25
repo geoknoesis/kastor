@@ -44,7 +44,7 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
             help = "Max distance evaluations for the similarity search (default: scaled to the number of labelled entities, at least 50000000)",
         ).long().restrictTo(min = 1L)
     val similarityTimeout by
-        option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, at least 30)")
+        option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, 30 to 600)")
             .int()
             .restrictTo(1..86_400)
     val similarityMaxPairs by
