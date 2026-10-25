@@ -46,6 +46,18 @@ and is kept as is; it was never published to Maven Central.
 - Fixed: an atomic mutation (`mutateAtomically`) of a stand-alone `MemoryGraph` that changes the graph now commits a
   stamp the graph never returned, never one of the private stamps the mutating thread read
   (`VersionedRdfGraph` rule 4).
+- Security (hostile query text): the dataset-clause scanner of `Dataset` queries placed each codepoint escape by
+  scanning every string, IRI and comment of the query, so a query with many of both cost their product (100,000
+  escaped strings took minutes); it now uses a binary search. Its `GRAPH` rewrite recursed once per nested group
+  and overflowed the stack (`StackOverflowError`) on a deeply nested query; a query nesting groups deeper than 128
+  is now unanalysable, so a `Dataset` view rejects it with `IllegalArgumentException`.
+- Security (hostile query text, `rdf-sparql-contract`): `SparqlInitialBindings` (the initial-bindings rewriter
+  behind `withSelectRows` with bindings) recursed once per nested sub-select and overflowed the stack; a query nesting
+  groups deeper than 128 is now rejected with `IllegalArgumentException`.
+- Fixed (`rdf-reasoning`): the memory RDFS reasoner silently ignored `ReasonerConfig.customRules`; a configuration
+  with custom rules is now rejected with `IllegalArgumentException`, as HermiT does (behaviour change).
+- Fixed (`rdf-holon`): `asDataset` refuses (and closes) a repository from `repositoryFactory` that already holds data,
+  instead of answering queries with that data mixed into the snapshot.
 - Docs: `SparqlQueryable.withSelectRows` with bindings and a timeout is documented as optional (the default, the
   `memory` provider and copying `Dataset` views refuse it); the `RdfProviderException` default code is
   `PROVIDER_NOT_SUPPORTED`; the API reference lists every URL-loading exception and has a Java section; an interrupt
