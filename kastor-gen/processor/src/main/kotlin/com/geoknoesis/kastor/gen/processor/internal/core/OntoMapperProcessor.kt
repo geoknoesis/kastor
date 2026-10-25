@@ -386,8 +386,9 @@ public class OntoMapperProcessor(
 
   /**
    * The type of [property] as a member of [owner]: a member inherited from a generic supertype (`val value: T` of
-   * `Named<T>`, inherited by `Tag : Named<String>`) has the supertype's type argument substituted. `null` (after an
-   * error) when a type parameter remains, which a generated wrapper could not name.
+   * `Named<T>`, inherited by `Tag : Named<String>`) has the supertype's type argument substituted. KSP2 already
+   * presents inherited members that way; `asMemberOf` states it rather than relying on it. `null` (after an error)
+   * when a type parameter remains, which a generated wrapper could not name.
    */
   private fun memberType(property: KSPropertyDeclaration, owner: KSClassDeclaration): KSType? {
     val type = property.asMemberOf(owner.asStarProjectedType())
@@ -400,20 +401,6 @@ public class OntoMapperProcessor(
       property,
     )
     return null
-  }
-
-  /** [type] with type aliases replaced by the type they stand for (a nullable alias or use stays nullable). */
-  private fun expandAliases(type: KSType): KSType {
-    var current = type
-    var nullable = type.isMarkedNullable
-    val seen = HashSet<KSDeclaration>()
-    while (true) {
-      val alias = current.declaration as? KSTypeAlias ?: break
-      if (!seen.add(alias)) break
-      current = alias.type.resolve()
-      nullable = nullable || current.isMarkedNullable
-    }
-    return if (nullable) current.makeNullable() else current
   }
 
   /**
