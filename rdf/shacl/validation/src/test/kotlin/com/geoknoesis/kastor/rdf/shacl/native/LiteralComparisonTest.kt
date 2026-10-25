@@ -71,4 +71,47 @@ class LiteralComparisonTest {
         assertTrue(ok("SGVsbG8=", Iri(XSD.namespace + "base64Binary")))
         assertTrue(ok("anything", Iri("http://example.org/customDatatype")))
     }
+
+    @Test fun `decimals compare exactly by their digits`() {
+        fun sign(a: String, b: String, da: Iri = XSD.decimal, db: Iri = XSD.decimal) = cmp(lit(a, da), lit(b, db))!!.coerceIn(-1, 1)
+        assertEquals(0, sign("-0.0", "0"))
+        assertEquals(0, sign("+.0", "-0", db = XSD.integer))
+        assertEquals(0, sign("007", "7.000", da = XSD.integer))
+        assertEquals(0, sign("1.50", "1.5"))
+        assertEquals(-1, sign("-2", "-1.5"))
+        assertEquals(1, sign("-1.49", "-1.5"))
+        assertEquals(-1, sign("0.1", "0.10001"))
+        assertEquals(-1, sign("9.99", "10"))
+        assertEquals(1, sign("100", "99.999"))
+        assertEquals(-1, sign("-100", "-99.999"))
+        assertEquals(0, sign("0.5", "0.5", db = XSD.double))
+        assertEquals(-1, sign("12345678901234567890123", "12345678901234567890124", XSD.integer, XSD.integer))
+    }
+
+    @Test fun `integer ranges hold for values of any length`() {
+        val huge = "9".repeat(100)
+        assertTrue(literalLexicallyValid(lit(huge, XSD.nonNegativeInteger)))
+        assertFalse(literalLexicallyValid(lit("-$huge", XSD.nonNegativeInteger)))
+        assertTrue(literalLexicallyValid(lit("-$huge", XSD.negativeInteger)))
+        assertFalse(literalLexicallyValid(lit(huge, XSD.negativeInteger)))
+        assertFalse(literalLexicallyValid(lit(huge, XSD.unsignedLong)))
+        assertFalse(literalLexicallyValid(lit("-$huge", XSD.long)))
+        assertTrue(literalLexicallyValid(lit("000000000000000000000000000127", XSD.byte)))
+        assertFalse(literalLexicallyValid(lit("128", XSD.byte)))
+        assertTrue(literalLexicallyValid(lit("18446744073709551615", XSD.unsignedLong)))
+        assertFalse(literalLexicallyValid(lit("18446744073709551616", XSD.unsignedLong)))
+        assertTrue(literalLexicallyValid(lit("+5", XSD.positiveInteger)))
+        assertFalse(literalLexicallyValid(lit("-0", XSD.positiveInteger)))
+    }
+
+    @Test fun `a numeric literal of millions of digits is compared in linear time`() {
+        // BigInteger(String) and BigDecimal(String) are quadratic: about 20 s for a million digits, 30 min for ten.
+        val digits = "7".repeat(5_000_000)
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(60)) {
+            assertTrue(satisfiesMinInclusive(lit(digits, XSD.integer), lit("1", XSD.integer)))
+            assertTrue(satisfiesMaxExclusive(lit("1", XSD.decimal), lit("$digits.5", XSD.decimal)))
+            assertTrue(satisfiesMinInclusive(lit(digits, XSD.integer), lit("1e300", XSD.double)))
+            assertTrue(literalLexicallyValid(lit(digits, XSD.positiveInteger)))
+        }
+    }
 }
