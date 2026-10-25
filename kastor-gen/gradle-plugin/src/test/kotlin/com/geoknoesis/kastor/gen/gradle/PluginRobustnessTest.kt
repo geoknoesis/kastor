@@ -41,10 +41,10 @@ class PluginRobustnessTest {
 
     private fun task(configure: OntologyConfig.() -> Unit = {}): OntologyGenerationTask {
         val project = project()
-        project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("sample").apply {
-            shaclPath = "shapes.ttl"
-            contextPath = "context.jsonld"
-            interfacePackage = "demo.domain"
+        project.extensions.getByType(OntoMapperExtension::class.java).ontologies.create("sample").apply {
+            shaclPath.set("shapes.ttl")
+            contextPath.set("context.jsonld")
+            interfacePackage.set("demo.domain")
             configure()
         }
         return project.tasks.getByName("generateOntologySample") as OntologyGenerationTask
@@ -59,7 +59,7 @@ class PluginRobustnessTest {
         val before = out.walkTopDown().filter { it.isFile }.associate { it.relativeTo(out).path to it.readText() }
         assertTrue(before.keys.any { it.endsWith("Person.kt") }, before.keys.toString())
 
-        val second = task { interfacePackage = "demo.renamed" }
+        val second = task { interfacePackage.set("demo.renamed") }
         var writes = 0
         second.beforeFileWritten = { if (++writes == 2) throw IOException("disk full") }
         val e = assertFailsWith<GradleException> { second.generateOntology() }
@@ -85,7 +85,7 @@ class PluginRobustnessTest {
 
     @Test
     fun `the JSON-LD context is optional`() {
-        val t = task { contextPath = "" }
+        val t = task { contextPath.set("") }
         t.generateOntology()
         assertTrue(File(t.outputDirectory.get().asFile, "demo/domain/Person.kt").isFile)
     }
@@ -93,9 +93,9 @@ class PluginRobustnessTest {
     @Test
     fun `a project without a Kotlin JVM or multiplatform plugin fails with a clear message`() {
         val project = project()
-        project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("sample").apply {
-            shaclPath = "shapes.ttl"
-            interfacePackage = "demo.domain"
+        project.extensions.getByType(OntoMapperExtension::class.java).ontologies.create("sample").apply {
+            shaclPath.set("shapes.ttl")
+            interfacePackage.set("demo.domain")
         }
         val e = assertFailsWith<Exception> { (project as ProjectInternal).evaluate() }
         assertTrue(

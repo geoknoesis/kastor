@@ -359,21 +359,23 @@ the member's XSD family (any XSD integer type for `Int`/`Long`/`BigInteger`, any
 
 | SHACL datatype | Kotlin type | Notes |
 |----------------|-------------|-------|
-| `xsd:string`, no datatype | `String` | |
+| `xsd:string`, no datatype | `String` | the lexical form of any literal; a language tag is not part of the value (the generated `replaceInGraph` keeps it on unchanged values) |
 | `xsd:boolean` | `Boolean` | accepts `true`/`false` and `1`/`0` |
-| `xsd:int`, `xsd:short`, `xsd:byte`, `xsd:unsignedShort`, `xsd:unsignedByte` | `Int` | |
+| `xsd:int`, `xsd:short`, `xsd:byte`, `xsd:unsignedShort`, `xsd:unsignedByte` | `Int` | values outside the datatype's range (`"300"^^xsd:unsignedByte`) are ill-typed |
 | `xsd:long`, `xsd:unsignedInt` | `Long` | |
 | `xsd:integer`, `xsd:nonNegativeInteger`, `xsd:positiveInteger`, `xsd:nonPositiveInteger`, `xsd:negativeInteger`, `xsd:unsignedLong` | `java.math.BigInteger` | exact, unbounded; XSD lexical rules (a leading `+` is accepted) |
 | `xsd:decimal` | `java.math.BigDecimal` | exact; exponents (`1e3`) are not decimal syntax and are rejected |
 | `xsd:float` | `Float` | accepts `INF`, `-INF`, `NaN` |
 | `xsd:double` | `Double` | accepts `INF`, `-INF`, `NaN` |
-| `xsd:date` | `java.time.LocalDate` | an optional timezone is accepted and **dropped** on read; years above 9999 (`12345-06-07`) and negative years round-trip |
+| `xsd:date` | `java.time.LocalDate` | an optional timezone is accepted and **dropped** on read (`replaceInGraph` keeps the original literal while the date is unchanged); years above 9999 (`12345-06-07`) and negative years round-trip |
 | `rdf:langString` | `com.geoknoesis.kastor.rdf.LangString` | value and language tag |
-| `xsd:dateTime`, `xsd:time`, `xsd:duration` | `String` | lexical form; no single `java.time` type represents their optional timezones losslessly |
-| any other datatype (e.g. `xsd:anyURI`) | `String` | lexical form |
+| `xsd:dateTime`, `xsd:time`, `xsd:duration` | `String` | lexical form of a well-formed literal of that datatype (`"2020"^^xsd:gYear` is ill-typed for an `xsd:dateTime` member); no single `java.time` type represents their optional timezones losslessly |
+| any other datatype (e.g. `xsd:anyURI`) | `String` | lexical form of a literal of that datatype |
 
 Writers (data-class `toTriples`, DSL builders) always emit the **declared** datatype, so a `String`
-declared `xsd:dateTime` is written back as `"…"^^xsd:dateTime`.
+declared `xsd:dateTime` is written back as `"…"^^xsd:dateTime`. A value that is not valid for the declared
+datatype (`"yesterday"` for `xsd:dateTime`, `300` for `xsd:unsignedByte`) is rejected with an
+`IllegalArgumentException` instead of being written as an ill-typed literal.
 
 Non-literal properties:
 

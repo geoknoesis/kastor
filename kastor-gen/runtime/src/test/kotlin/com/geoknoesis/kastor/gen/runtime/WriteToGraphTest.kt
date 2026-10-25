@@ -467,4 +467,28 @@ class WriteToGraphTest {
         graph.removeTriple(RdfTriple(copied, FOAF.name, Literal("Bob")))
         assertEquals(listOf("Bob"), names(graph, b0), "editing the copy leaves the original intact")
     }
+
+    @Test
+    fun `blank nodes nested in triple terms are written as the same fresh nodes as elsewhere in the closure`() {
+        registerPlainFactory()
+        val alice = Iri("http://example.org/alice")
+        val b0 = bnode("b0")
+        val says = Iri("http://example.org/says")
+        val quoted = TripleTerm(RdfTriple(b0, FOAF.name, TripleTerm(RdfTriple(b0, FOAF.age, Literal("3")))))
+        val source = com.geoknoesis.kastor.rdf.provider.MemoryGraph(listOf(
+            RdfTriple(alice, FOAF.knows, b0),
+            RdfTriple(b0, FOAF.name, Literal("Bob")),
+            RdfTriple(alice, says, quoted),
+        ))
+        val target = com.geoknoesis.kastor.rdf.provider.MemoryGraph(listOf(RdfTriple(b0, FOAF.name, Literal("Unrelated"))))
+
+        (RdfRef(alice, source).asType<TestPersonForWriteToGraph>() as RdfBacked).writeToGraph(target)
+
+        val copied = target.find(alice, FOAF.knows).single().obj as BlankNode
+        assertNotEquals(b0, copied)
+        val written = (target.find(alice, says).single().obj as TripleTerm).triple
+        assertEquals(copied, written.subject, "the quoted triple's blank node is the copy, not the target's _:b0")
+        assertEquals(copied, ((written.obj as TripleTerm).triple).subject, "nested triple terms are renamed too")
+        assertEquals(listOf("Unrelated"), names(target, b0))
+    }
 }

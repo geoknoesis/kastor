@@ -143,47 +143,9 @@ public class InterfaceGenerator(
     }
 
 
-    private fun validationAnnotationsForProperty(member: EffectiveMember): List<AnnotationSpec> {
-        if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
-        val annotations = mutableListOf<AnnotationSpec>()
-        val isList = Cardinality.isList(member.typing)
-        val min = member.constraints.minCount
-        val max = member.constraints.maxCount
-
-        if (!isList) {
-            if (min != null && min > 0) {
-                annotations.add(
-                    AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "NotNull"))
-                        .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
-                        .build()
-                )
-            }
-        } else {
-            if (min != null && min > 0) {
-                annotations.add(
-                    AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "NotEmpty"))
-                        .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
-                        .build()
-                )
-            }
-            if (min != null || max != null) {
-                val annotationBuilder = AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "Size"))
-                    .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
-                min?.let { annotationBuilder.addMember("min = %L", it) }
-                max?.let { annotationBuilder.addMember("max = %L", it) }
-                annotations.add(annotationBuilder.build())
-            }
-        }
-
-        return annotations
-    }
-
-    private fun validationPackage(): String {
-        return when (validationAnnotations) {
-            ValidationAnnotations.JAKARTA -> "jakarta.validation"
-            ValidationAnnotations.JAVAX -> "javax.validation"
-            ValidationAnnotations.NONE -> "jakarta.validation"
-        }
-    }
+    private fun validationAnnotationsForProperty(member: EffectiveMember): List<AnnotationSpec> =
+        ValidationAnnotationSpecs.forCardinality(
+            validationAnnotations, Cardinality.isList(member.typing), member.constraints.minCount, member.constraints.maxCount, AnnotationSpec.UseSiteTarget.GET,
+        )
 
 }

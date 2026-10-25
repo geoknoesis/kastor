@@ -40,9 +40,9 @@ class OntologyGenerationTaskTest {
         val project = ProjectBuilder.builder().withProjectDir(dir).build()
         project.pluginManager.apply(OntoMapperPlugin::class.java)
         val extension = project.extensions.getByType(OntoMapperExtension::class.java)
-        extension.ontologies!!.create("sample").apply {
-            shaclPath = "shapes.ttl"
-            contextPath = "dcat-us_3.0_context.jsonld"
+        extension.ontologies.create("sample").apply {
+            shaclPath.set("shapes.ttl")
+            contextPath.set("dcat-us_3.0_context.jsonld")
             configure()
         }
         return project.tasks.getByName("generateOntologySample") as OntologyGenerationTask
@@ -51,8 +51,38 @@ class OntologyGenerationTaskTest {
     private fun output(t: OntologyGenerationTask): File = t.outputDirectory.get().asFile
 
     @Test
+    fun `settings assigned after the task was realized are used`() {
+        val project = ProjectBuilder.builder().withProjectDir(dir).build()
+        project.pluginManager.apply(OntoMapperPlugin::class.java)
+        val config = project.extensions.getByType(OntoMapperExtension::class.java).ontologies.create("late")
+        // Realize the task first, as `tasks.all {}` or another plugin would.
+        val task = project.tasks.getByName("generateOntologyLate") as OntologyGenerationTask
+        config.shaclPath.set("late.ttl")
+        config.interfacePackage.set("late.domain")
+        config.generateWrappers.set(false)
+        config.outputDirectory.set(project.layout.projectDirectory.dir("custom"))
+        assertEquals("late.ttl", task.shaclPath.get())
+        assertEquals("late.domain", task.interfacePackage.get())
+        assertEquals(false, task.generateWrappers.get())
+        assertFalse(task.generateDsl.isPresent, "an unassigned setting keeps the task default")
+        assertEquals(File(dir, "custom/late").canonicalFile, task.outputDirectory.get().asFile.canonicalFile)
+    }
+
+    @Test
+    fun `the DSL methods of the extension add configurations named by their creation`() {
+        val project = ProjectBuilder.builder().withProjectDir(dir).build()
+        project.pluginManager.apply(OntoMapperPlugin::class.java)
+        val extension = project.extensions.getByType(OntoMapperExtension::class.java)
+        extension.ontology("first") { it.shaclPath.set("a.ttl") }
+        extension.ontologies { it.create("second") { config -> config.interfacePackage.set("b") } }
+        assertEquals(listOf("first", "second"), extension.ontologies.names.toList())
+        assertEquals("a.ttl", (project.tasks.getByName("generateOntologyFirst") as OntologyGenerationTask).shaclPath.get())
+        assertEquals("b", (project.tasks.getByName("generateOntologySecond") as OntologyGenerationTask).interfacePackage.get())
+    }
+
+    @Test
     fun `shaclFile and contextFile default to the files the task reads`() {
-        val t = task { interfacePackage = "demo.domain" }
+        val t = task { interfacePackage.set("demo.domain") }
         // Build scripts read task.shaclFile.get(): the properties have a convention again.
         assertEquals(File(dir, "shapes.ttl").canonicalFile, t.shaclFile.get().asFile.canonicalFile)
         assertEquals(File(dir, "dcat-us_3.0_context.jsonld").canonicalFile, t.contextFile.asFile.get().canonicalFile)
@@ -72,7 +102,7 @@ class OntologyGenerationTaskTest {
     @Test
     fun `the convention is looked up when it is asked for, not when the task is configured`() {
         // The task is configured while the SHACL file is in the project directory ...
-        val t = task { interfacePackage = "demo.domain" }
+        val t = task { interfacePackage.set("demo.domain") }
         // ... which is gone, with a file at the fallback location instead, before anything asks for the value.
         assertTrue(File(dir, "shapes.ttl").delete())
         val fallback = write("src/main/resources/shapes.ttl", shapes)
@@ -82,7 +112,7 @@ class OntologyGenerationTaskTest {
 
     @Test
     fun `without a file at any candidate location the convention has no value and the task says where it looked`() {
-        val t = task { interfacePackage = "demo.domain" }
+        val t = task { interfacePackage.set("demo.domain") }
         assertTrue(File(dir, "shapes.ttl").delete())
         assertFalse(t.shaclFile.isPresent)
         assertEquals(null, t.shaclFile.orNull)
@@ -91,9 +121,9 @@ class OntologyGenerationTaskTest {
         // No context configured: no value, and contextInput says so.
         val project = ProjectBuilder.builder().withProjectDir(File(dir, "bare").apply { mkdirs() }).build()
         project.pluginManager.apply(OntoMapperPlugin::class.java)
-        project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("bare").apply {
-            shaclPath = "shapes.ttl"
-            interfacePackage = "demo.domain"
+        project.extensions.getByType(OntoMapperExtension::class.java).ontologies.create("bare").apply {
+            shaclPath.set("shapes.ttl")
+            interfacePackage.set("demo.domain")
         }
         val bare = project.tasks.getByName("generateOntologyBare") as OntologyGenerationTask
         assertFalse(bare.contextFile.isPresent)
@@ -103,11 +133,11 @@ class OntologyGenerationTaskTest {
     @Test
     fun `optional settings default relative to interfacePackage`() {
         val t = task {
-            interfacePackage = "demo.domain"
-            vocabularyName = "DCAT"
-            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
-            vocabularyPrefix = "dcat"
-            generateDsl = true
+            interfacePackage.set("demo.domain")
+            vocabularyName.set("DCAT")
+            vocabularyNamespace.set("http://www.w3.org/ns/dcat#")
+            vocabularyPrefix.set("dcat")
+            generateDsl.set(true)
         }
         t.generateOntology()
         val out = output(t)
@@ -121,10 +151,10 @@ class OntologyGenerationTaskTest {
     @Test
     fun `vocabulary keeps full IRIs for out-of-namespace terms and qualifies clashing names`() {
         val t = task {
-            interfacePackage = "demo.domain"
-            vocabularyName = "DCAT"
-            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
-            vocabularyPrefix = "dcat"
+            interfacePackage.set("demo.domain")
+            vocabularyName.set("DCAT")
+            vocabularyNamespace.set("http://www.w3.org/ns/dcat#")
+            vocabularyPrefix.set("dcat")
         }
         t.generateOntology()
         val vocabulary = File(output(t), "demo/domain/DCAT.kt").readText()
@@ -138,18 +168,18 @@ class OntologyGenerationTaskTest {
     fun `missing or invalid packages fail with a clear message`() {
         val missing = assertFailsWith<GradleException> { task { }.generateOntology() }
         assertTrue(missing.message!!.contains("interfacePackage"), missing.message)
-        val invalid = assertFailsWith<GradleException> { task { interfacePackage = "demo.1bad" }.generateOntology() }
+        val invalid = assertFailsWith<GradleException> { task { interfacePackage.set("demo.1bad") }.generateOntology() }
         assertTrue(invalid.message!!.contains("demo.1bad"), invalid.message)
     }
 
     @Test
     fun `a SHACL syntax error fails the task and keeps the previous output`() {
-        val first = task { interfacePackage = "demo.domain" }
+        val first = task { interfacePackage.set("demo.domain") }
         first.generateOntology()
         val person = File(output(first), "demo/domain/Person.kt")
         assertTrue(person.isFile)
 
-        val second = task { interfacePackage = "demo.domain" }
+        val second = task { interfacePackage.set("demo.domain") }
         write("shapes.ttl", "@prefix sh: <http://www.w3.org/ns/shacl#> . this is not turtle")
         val e = assertFailsWith<GradleException> { second.generateOntology() }
         assertTrue(e.message!!.contains("SHACL"), e.message)
@@ -159,13 +189,13 @@ class OntologyGenerationTaskTest {
     @Test
     fun `case-only renames replace the file on every file system`() {
         write("dcat-us_3.0_context.jsonld", """{"@context":{"ex":"https://example.test/","Foo":"ex:Person"}}""")
-        val first = task { interfacePackage = "demo.domain" }
+        val first = task { interfacePackage.set("demo.domain") }
         first.generateOntology()
         val pkg = File(output(first), "demo/domain")
         assertTrue(pkg.list()!!.contains("Foo.kt"))
 
         write("dcat-us_3.0_context.jsonld", """{"@context":{"ex":"https://example.test/","FOO":"ex:Person"}}""")
-        task { interfacePackage = "demo.domain" }.generateOntology()
+        task { interfacePackage.set("demo.domain") }.generateOntology()
         val names = pkg.list()!!.toSet()
         assertTrue("FOO.kt" in names && "FOOWrapper.kt" in names, names.toString())
         assertFalse("Foo.kt" in names || "FooWrapper.kt" in names, names.toString())
@@ -174,8 +204,8 @@ class OntologyGenerationTaskTest {
     @Test
     fun `separate wrapper package gets a KotlinPoet factory stub next to the interface`() {
         val t = task {
-            interfacePackage = "demo.domain"
-            wrapperPackage = "demo.impl"
+            interfacePackage.set("demo.domain")
+            wrapperPackage.set("demo.impl")
         }
         t.generateOntology()
         val stub = File(output(t), "demo/domain/PersonFactory.kt").readText()
@@ -185,7 +215,7 @@ class OntologyGenerationTaskTest {
 
     @Test
     fun `sh in value sets become enums that interfaces and wrappers use, as with KSP`() {
-        val t = task { interfacePackage = "demo.domain"; wrapperPackage = "demo.impl" }
+        val t = task { interfacePackage.set("demo.domain"); wrapperPackage.set("demo.impl") }
         write(
             "shapes.ttl",
             """

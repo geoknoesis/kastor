@@ -27,14 +27,9 @@ import org.gradle.api.provider.Provider
 class OntoMapperPlugin : Plugin<Project> {
 
     override fun apply(project: Project) {
-        // Create the extension for configuration
+        // The extension and its Gradle-managed container of ontology configurations.
         val extension = project.extensions.create("kastorGen", OntoMapperExtension::class.java)
-
-        // Create container for ontology configurations
-        val ontologyContainer = project.container(OntologyConfig::class.java) { name ->
-            OntologyConfig().apply { this.name = name }
-        }
-        extension.ontologies = ontologyContainer
+        val ontologyContainer = extension.ontologies
 
         val mainTask = project.tasks.register("generateOntology") {
             it.group = "kastor-gen"
@@ -43,32 +38,28 @@ class OntoMapperPlugin : Plugin<Project> {
         ontologyContainer.all { config ->
             require(config.name.matches(Regex("[A-Za-z][A-Za-z0-9_-]*"))) { "Invalid ontology name: ${config.name}" }
             val taskName = "generateOntology${config.name.replaceFirstChar { it.uppercaseChar() }}"
+            val defaultOutput = project.layout.buildDirectory.dir("generated/sources/kastor-gen/${config.name}")
             val generation = project.tasks.register(taskName, OntologyGenerationTask::class.java) { task ->
                 task.group = "kastor-gen"
                 task.description = "Generate ontology ${config.name}"
                 task.ontologyName.set(config.name)
+                // Lazy wiring: the task reads each setting when it needs it, so a value assigned after the task was
+                // realized is used. An unassigned setting has no value and the task's documented default applies.
                 task.shaclPath.set(config.shaclPath)
-                // The JSON-LD context is optional.
-                config.contextPath.takeIf { it.isNotBlank() }?.let { task.contextPath.set(it) }
-                // Only user-assigned values are forwarded, so the task's documented defaults apply otherwise.
-                config.interfacePackage?.let { task.interfacePackage.set(it) }
-                config.wrapperPackage?.let { task.wrapperPackage.set(it) }
-                config.vocabularyPackage?.let { task.vocabularyPackage.set(it) }
-                config.generateInterfaces?.let { task.generateInterfaces.set(it) }
-                config.generateWrappers?.let { task.generateWrappers.set(it) }
-                config.generateVocabulary?.let { task.generateVocabulary.set(it) }
-                config.vocabularyName?.let { task.vocabularyName.set(it) }
-                config.vocabularyNamespace?.let { task.vocabularyNamespace.set(it) }
-                config.vocabularyPrefix?.let { task.vocabularyPrefix.set(it) }
-                config.generateDsl?.let { task.generateDsl.set(it) }
-                config.dslPackage?.let { task.dslPackage.set(it) }
-                config.dslName?.let { task.dslName.set(it) }
-                val output = config.outputDirectory
-                if (output != null) {
-                    task.outputDirectory.set(project.file(output).resolve(config.name))
-                } else {
-                    task.outputDirectory.set(project.layout.buildDirectory.dir("generated/sources/kastor-gen/${config.name}"))
-                }
+                task.contextPath.set(config.contextPath.filter { it.isNotBlank() }) // optional
+                task.interfacePackage.set(config.interfacePackage)
+                task.wrapperPackage.set(config.wrapperPackage)
+                task.vocabularyPackage.set(config.vocabularyPackage)
+                task.generateInterfaces.set(config.generateInterfaces)
+                task.generateWrappers.set(config.generateWrappers)
+                task.generateVocabulary.set(config.generateVocabulary)
+                task.vocabularyName.set(config.vocabularyName)
+                task.vocabularyNamespace.set(config.vocabularyNamespace)
+                task.vocabularyPrefix.set(config.vocabularyPrefix)
+                task.generateDsl.set(config.generateDsl)
+                task.dslPackage.set(config.dslPackage)
+                task.dslName.set(config.dslName)
+                task.outputDirectory.set(config.outputDirectory.dir(config.name).orElse(defaultOutput))
             }
             mainTask.configure { it.dependsOn(generation) }
             KotlinSourceSetWiring.wire(project, generation.flatMap { it.outputDirectory })

@@ -40,10 +40,10 @@ class OutputReplacementTest {
         File(dir, "context.jsonld").writeText("""{"@context":{"ex":"https://example.test/","$typeName":"ex:Person"}}""")
         val project = ProjectBuilder.builder().withProjectDir(dir).build()
         project.pluginManager.apply(OntoMapperPlugin::class.java)
-        project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("sample").apply {
-            shaclPath = "shapes.ttl"
-            contextPath = "context.jsonld"
-            interfacePackage = "demo.domain"
+        project.extensions.getByType(OntoMapperExtension::class.java).ontologies.create("sample").apply {
+            shaclPath.set("shapes.ttl")
+            contextPath.set("context.jsonld")
+            interfacePackage.set("demo.domain")
         }
         return (project.tasks.getByName("generateOntologySample") as OntologyGenerationTask).also { it.fileReplacement = replacement }
     }

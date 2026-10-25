@@ -380,7 +380,34 @@ fun MutableRdfGraph.replaceResource(
 
 **`replaceValues`** — targeted predicate-level update. Removes all existing triples for the `(subject, predicate)` pair, then adds `newTriples`. Use this when you have updated a single property and want to replace only those triples without touching others.
 
-**`replacePredicates`** — scoped update. Removes the existing values of every predicate in `predicates`, then adds `triples` (which must all have `subject`; triples of other predicates, such as `rdf:type`, are added next to the existing values). Every other triple of `subject` is kept. The generated `<Record>Factory.replaceInGraph(graph, record, subject)` calls it with the predicates `toTriples` writes: use that to write a modified record back.
+**`replacePredicates`** — scoped update. Removes the existing values of every predicate in `predicates`, then adds `triples` (which must all have `subject`; triples of other predicates, such as `rdf:type`, are added next to the existing values). Every other triple of `subject` is kept. To write a modified record back, use the generated `<Record>Factory.replaceInGraph(graph, record, subject)`, which goes through `mergeRecord` (below).
+
+**`mergeRecord`** — lossless record write, used by the generated `replaceInGraph`:
+
+```kotlin
+class RecordField<T : Any>(
+    val predicate: Iri,
+    val values: List<T>,            // the record's values for the predicate
+    val singleValued: Boolean,
+    val decode: (RdfTerm) -> T?,    // the value the record's reader makes of a term; null = not representable
+    val encode: (T) -> RdfTerm,     // the term written for a new value
+)
+
+fun MutableRdfGraph.mergeRecord(subject: RdfResource, types: Collection<Iri>, fields: Collection<RecordField<*>>)
+```
+
+For each field it compares the record's values with the decoded values of the predicate's current terms:
+
+- a term whose value the record still holds is kept as it is, so its language tag, datatype and lexical form
+  survive (`"Chat"@fr` read into a `String` is not rewritten as `"Chat"`, `"2020-01-01+05:00"^^xsd:date` keeps its
+  timezone, `"02"^^xsd:integer` its spelling);
+- a single-valued field whose value is among the decoded values is unchanged, so values beyond `sh:maxCount`
+  that its reader did not return are kept;
+- a term the record cannot represent (an ill-typed literal, another datatype, another term kind) is kept;
+- the other terms are removed and the record's new values are added with `encode`.
+
+`rdf:type` triples for `types` are added when missing. Every read, decode and encode happens before the first
+change, so an ill-typed new value (`encode` throws) leaves the graph unchanged.
 
 **`replaceResource`** — full-resource swap. Removes **all** triples for `subject` (every predicate, including ones the replacement does not model), then adds `triples`. It is only right when `triples` is the complete description of the resource; a data-class record usually is not (unmodelled predicates, complex-path triples and, in `NestedMode.DATA_CLASS`, object links are not in `toTriples`).
 
@@ -391,11 +418,11 @@ fun MutableRdfGraph.replaceResource(
 val nameTriples = listOf(RdfTriple(subject, NAME_IRI, Literal("New Name")))
 graph.replaceValues(subject, NAME_IRI, nameTriples)
 
-// Write a modified record back: replaces only the predicates the record writes
+// Write a modified record back: edits only the values the record changed
 PersonRecordFactory.replaceInGraph(graph, updatedRecord, subject)
 ```
 
-All three are atomic: they require an `AtomicMutableRdfGraph` (standalone `MemoryGraph`, graphs of Memory, Jena and RDF4J repositories), reject other graphs and out-of-scope triples before changing anything, roll back on failure, and concurrent readers see either the old or the new values, never the gap between removal and insertion. The removal step is a no-op when there are no matching existing triples, and the add step when `newTriples` / `triples` is empty.
+All four are atomic: they require an `AtomicMutableRdfGraph` (standalone `MemoryGraph`, graphs of Memory, Jena and RDF4J repositories), reject other graphs and out-of-scope triples before changing anything, roll back on failure, and concurrent readers see either the old or the new values, never the gap between removal and insertion. The removal step is a no-op when there are no matching existing triples, and the add step when `newTriples` / `triples` is empty.
 
 ---
 
@@ -622,7 +649,8 @@ data-class factories, writers and DSL builders. You can use it in hand-written c
 
 ```kotlin
 object XsdLiterals {
-    fun string(literal: Literal): String
+    fun string(literal: Literal): String                  // lexical form of any literal
+    fun lexical(literal: Literal, datatype: Iri): String? // lexical form of a well-formed literal of `datatype`
     fun int(literal: Literal): Int?
     fun long(literal: Literal): Long?
     fun bigInteger(literal: Literal): BigInteger?
@@ -633,7 +661,7 @@ object XsdLiterals {
     fun booleanLexical(lexical: String): Boolean?
     fun localDate(literal: Literal): LocalDate?  // optional timezone suffix accepted and dropped
     fun langString(literal: Literal): LangString?
-    fun encode(value: Any, datatype: Iri): Literal
+    fun encode(value: Any, datatype: Iri): Literal // throws IllegalArgumentException for an ill-typed value
 
     fun isWellFormed(literal: Literal): Boolean          // lexical form valid for the literal's own datatype
     fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean // SHACL sh:datatype
@@ -641,22 +669,32 @@ object XsdLiterals {
 }
 ```
 
-- Decoders return `null` for ill-typed literals: a datatype outside the target's XSD family, or a lexical
-  form that is not valid for it. `int`, `long` and `bigInteger` accept the XSD integer types (`xsd:integer`
+- Decoders return `null` for ill-typed literals: a literal that is not well formed for its own datatype
+  (`"300"^^xsd:unsignedByte`, `"-1"^^xsd:unsignedInt`, `"INF"^^xsd:decimal`, `"1e5"^^xsd:integer`), a datatype
+  outside the target's XSD family, or a value outside the Kotlin type (`"3000000000"^^xsd:integer` as `Int`). `int`, `long` and `bigInteger` accept the XSD integer types (`xsd:integer`
   and its derived types such as `xsd:int`, `xsd:long`, `xsd:nonNegativeInteger`); `bigDecimal` also
   `xsd:decimal`; `float` and `double` every XSD numeric type; `boolean` only `xsd:boolean`; `localDate` only
   `xsd:date`. So `"42"^^xsd:string` (or a plain `"42"`) is ill-typed for an `Int` member and follows
-  `MaterializationPolicy.illTypedValues`; `string` reads the lexical form of any literal. Lexical forms follow
+  `MaterializationPolicy.illTypedValues`; `string` reads the lexical form of any literal (on purpose: a String
+  member without a datatype, or with `xsd:string`, also reads `"Chat"@fr` as `"Chat"`, and `replaceInGraph` keeps
+  that original term while the value is unchanged), and `lexical` (the
+  decoder of String members that declare a datatype other than `xsd:string`, such as `xsd:dateTime`) only that
+  of a well-formed literal of the declared datatype. Lexical forms follow
   XML Schema rules rather than Kotlin's:
-  - integers (`int`, `long`, `bigInteger`) accept `[+-]?digits`, so a leading `+` is valid; `int`/`long`
-    are range-checked;
+  - integers (`int`, `long`, `bigInteger`) accept `[+-]?digits`, so a leading `+` is valid, within the value
+    range of the literal's datatype (`xsd:byte`, `xsd:unsignedInt`, `xsd:positiveInteger`, …) and of the
+    Kotlin type;
   - `bigDecimal` accepts `[+-]?(digits[.digits] | .digits)`; exponents (`1e3`) are not decimal syntax and
     are rejected;
   - `localDate` accepts years with more than four digits (`12345-06-07`, without the `+` ISO-8601 would
     require) and negative years (`-0044-03-15`); `encode` writes such dates back in the same form, so
     years above 9999 round-trip.
-- `isWellFormed` checks XSD numeric, boolean and date datatypes, including the ranges of the derived integer
-  types; other datatypes are accepted. `hasDatatype` requires a literal of exactly that datatype with a
+- `isWellFormed` checks the XSD numeric types (including the ranges of the derived integer types),
+  `xsd:boolean`, `xsd:date`, `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:time`, the Gregorian types (`xsd:gYear`,
+  `xsd:gYearMonth`, …) and the duration types; other datatypes are accepted. Every decoder applies it, and
+  `encode` throws `IllegalArgumentException` instead of producing a literal it rejects (`300` as
+  `xsd:unsignedByte`, `"yesterday"` as `xsd:dateTime`), so generated writers and DSL setters never write an
+  ill-typed literal. `hasDatatype` requires a literal of exactly that datatype with a
   well-formed lexical form. `compareNumeric` returns the sign of `value - bound`, or `null` when the value
   is not a well-formed numeric literal or is `NaN`. Generated embedded validation uses these three.
 - `encode` always produces a literal with the **declared** datatype (literals such as `LangString` are
