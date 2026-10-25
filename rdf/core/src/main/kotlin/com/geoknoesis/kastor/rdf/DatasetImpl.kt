@@ -255,7 +255,8 @@ internal class DatasetImpl(
             return SparqlDatasetClauses.withoutNamedGraphs(queryText) ?: throw IllegalArgumentException(
                 "The query cannot be analysed by Kastor: GRAPH (and SERVICE) must be followed by a variable or IRI " +
                     "and a { ... } group, strings must be terminated, and codepoint escapes (\\uXXXX) must not " +
-                    "change where a string, an IRI or a comment ends. This dataset has no named graphs, so GRAPH " +
+                    "change where a string, an IRI or a comment ends; groups may nest at most " +
+                    "${SparqlDatasetClauses.MAX_GROUP_DEPTH} deep. This dataset has no named graphs, so GRAPH " +
                     "patterns must match nothing; fix the query or query the source repository directly."
             )
         }
