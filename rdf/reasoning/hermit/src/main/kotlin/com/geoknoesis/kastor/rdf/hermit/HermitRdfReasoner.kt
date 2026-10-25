@@ -99,7 +99,7 @@ class HermitRdfReasoner internal constructor(
 
     init {
         require(!config.enableIncrementalReasoning && !config.cacheResults && !config.streamingMode) { "HermiT does not support incremental, cached, or streaming reasoning" }
-        require(config.materializationThreshold > 0 && config.maxMemoryUsage > 0 && config.timeout.toMillis() > 0)
+        require(config.materializationThreshold > 0 && config.maxMemoryUsage > 0 && !config.timeout.isNegative && !config.timeout.isZero)
         require(config.customRules.isEmpty()) { "HermiT custom rules are unsupported" }
     }
     override fun reason(graph: RdfGraph): ReasoningResult = compute(graph, true, config.includeAxioms)
@@ -110,7 +110,7 @@ class HermitRdfReasoner internal constructor(
 
     private fun compute(graph: RdfGraph, materialize: Boolean, classify: Boolean): ReasoningResult {
         val start = clock()
-        val deadline = start + config.timeout.toNanos()
+        val deadline = start + config.timeout.budgetNanos()
         val timedOut = AtomicBoolean(false)
         fun checkBudget() {
             // What this check sees decides alone: a watchdog that fires while it runs is noticed by the next one.
@@ -545,4 +545,15 @@ class HermitRdfReasoner internal constructor(
         val EQUIVALENT_PROPERTY = Iri(OWL + "equivalentProperty")
         val INVERSE_OF = Iri(OWL + "inverseOf")
     }
+}
+
+/**
+ * The nanoseconds of [this] budget, at most a quarter of the `Long` range (about 73 years: no limit in practice), so
+ * that `start + budget` and the differences taken from it never overflow, however long the configured timeout
+ * (`Duration.ofMillis(Long.MAX_VALUE)` is a common way to say "no limit", and `toNanos()` throws for it).
+ */
+private fun java.time.Duration.budgetNanos(): Long = try {
+    toNanos().coerceAtMost(Long.MAX_VALUE / 4)
+} catch (e: ArithmeticException) {
+    Long.MAX_VALUE / 4
 }

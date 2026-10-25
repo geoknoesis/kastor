@@ -128,7 +128,7 @@ class Rdf4jReasoner internal constructor(
         require(config.reasonerType == ReasonerType.RDFS) {
             "RDF4J reasoner only supports ReasonerType.RDFS, got ${config.reasonerType}"
         }
-        require(config.timeout.toNanos() > 0) { "ReasonerConfig.timeout must be positive" }
+        require(!config.timeout.isNegative && !config.timeout.isZero) { "ReasonerConfig.timeout must be positive" }
         require(config.materializationThreshold > 0) { "ReasonerConfig.materializationThreshold must be positive" }
         require(config.enabledRules.containsAll(RDFS_RULES)) {
             "RDF4J's SchemaCachingRDFSInferencer applies the complete RDFS rule set and cannot select rules; " +
@@ -140,7 +140,7 @@ class Rdf4jReasoner internal constructor(
 
     /** Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted. */
     private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
-        private val deadline = clock() + timeout.toNanos()
+        private val deadline = clock() + timeout.budgetNanos()
         fun remainingNanos(): Long = deadline - clock()
         fun check() {
             check(remainingNanos() > 0 && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
@@ -439,4 +439,15 @@ class Rdf4jReasoner internal constructor(
             }
         }
     }
+}
+
+/**
+ * The nanoseconds of [this] budget, at most a quarter of the `Long` range (about 73 years: no limit in practice), so
+ * that `start + budget` and the differences taken from it never overflow, however long the configured timeout
+ * (`Duration.ofMillis(Long.MAX_VALUE)` is a common way to say "no limit", and `toNanos()` throws for it).
+ */
+private fun java.time.Duration.budgetNanos(): Long = try {
+    toNanos().coerceAtMost(Long.MAX_VALUE / 4)
+} catch (e: ArithmeticException) {
+    Long.MAX_VALUE / 4
 }

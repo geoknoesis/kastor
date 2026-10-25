@@ -387,4 +387,18 @@ class HermitTimeoutTest {
         assertEquals(2, watchdog.scheduled.size)
         assertTrue(watchdog.scheduled.all { it.future.isCancelled })
     }
+
+    /**
+     * A timeout too long for a nanosecond deadline (`Duration.ofMillis(Long.MAX_VALUE)`) means no limit, even with a
+     * clock near the top of its range: the deadline neither throws nor wraps into the past.
+     */
+    @Test
+    @Timeout(120)
+    fun `a timeout too long for nanoseconds means no limit`() {
+        val graph = Rdf.parse("$header\nex:A rdfs:subClassOf ex:B . ex:i a ex:A .", RdfFormat.TURTLE)
+        for (timeout in listOf(Duration.ofMillis(Long.MAX_VALUE), Duration.ofSeconds(Long.MAX_VALUE), Duration.ofNanos(Long.MAX_VALUE))) {
+            val reasoner = reasoner(timeout, clock = { Long.MAX_VALUE - 1_000 }, watchdog = ManualWatchdog().schedule, engines = realEngine)
+            assertFalse(reasoner.reason(graph).inferredTriples.isEmpty(), "$timeout")
+        }
+    }
 }
