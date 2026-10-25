@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import org.eclipse.rdf4j.common.iteration.CloseableIteration
 import org.eclipse.rdf4j.common.order.StatementOrder
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode
@@ -21,6 +22,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException
 import org.eclipse.rdf4j.query.QueryInterruptedException
 import org.eclipse.rdf4j.query.algebra.FunctionCall
 import org.eclipse.rdf4j.query.algebra.QueryRoot
+import org.eclipse.rdf4j.query.algebra.Regex
+import org.eclipse.rdf4j.query.algebra.ValueExpr
 import org.eclipse.rdf4j.query.algebra.Service
 import org.eclipse.rdf4j.query.algebra.TupleExpr
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall
@@ -150,9 +153,12 @@ internal class KastorEvaluationStrategyFactory(
 ) : DefaultEvaluationStrategyFactory(resolver) {
 
     override fun createEvaluationStrategy(dataset: Dataset?, tripleSource: TripleSource, statistics: EvaluationStatistics): EvaluationStrategy {
+        val scope = Rdf4jFunctionScope.claim()
+        // A sandboxed query checks its exact deadline on every statement it reads, as its nested queries do.
+        val source = if (scope == null || scope.deadline == Long.MAX_VALUE) tripleSource
+        else DeadlineTripleSource.of(tripleSource, Rdf4jSandboxBudget(scope.deadline, scope.clock)::check)
         val strategy = KastorEvaluationStrategy(
-            tripleSource, dataset, federatedServiceResolver, querySolutionCacheThreshold, statistics, isTrackResultSize, mode,
-            Rdf4jFunctionScope.claim(),
+            source, dataset, federatedServiceResolver, querySolutionCacheThreshold, statistics, isTrackResultSize, mode, scope,
         )
         optimizerPipeline.ifPresent(strategy::setOptimizerPipeline)
         return strategy
@@ -192,13 +198,64 @@ internal class KastorEvaluationStrategy(
         queryEvaluationMode = mode
     }
 
+    /** The bounds of a sandboxed query's expressions ([Rdf4jEvaluationBounds]); null for an ordinary query. */
+    private val bounds: Rdf4jEvaluationBounds? =
+        scope?.let { Rdf4jEvaluationBounds(Rdf4jSandboxBudget(it.deadline, it.clock), tripleSource.valueFactory) }
+
     override fun optimize(expr: TupleExpr, evaluationStatistics: EvaluationStatistics, bindings: org.eclipse.rdf4j.query.BindingSet): TupleExpr {
-        if (scope != null) Rdf4jQuerySandbox.refusal(expr)?.let { throw QueryEvaluationException(it) }
-        if (scope != null && callsCustomFunction(expr)) {
+        if (scope != null) {
+            Rdf4jQuerySandbox.refusal(expr)?.let { throw QueryEvaluationException(it) }
+            // No expression is evaluated while the query is optimized: constant folding would compute it unbounded.
             val standard = StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics)
             setOptimizerPipeline { standard.optimizers.filterNot { it is ConstantOptimizer } }
         }
         return super.optimize(expr, evaluationStatistics, bindings)
+    }
+
+    /**
+     * Every row an operator of a sandboxed query produces checks the deadline and interruption, as Jena checks them per
+     * binding: a cross product of `VALUES` tables or an aggregate over one reads no statement and may evaluate no
+     * expression, so neither of the other checks would stop it.
+     */
+    override fun precompile(expr: TupleExpr, context: QueryEvaluationContext): QueryEvaluationStep {
+        val step = super.precompile(expr, context)
+        val budget = bounds?.budget ?: return step
+        return QueryEvaluationStep { bindings -> CheckedIteration(step.evaluate(bindings), budget::check) }
+    }
+
+    override fun precompile(expr: ValueExpr, context: QueryEvaluationContext): QueryValueEvaluationStep {
+        val step = super.precompile(expr, context)
+        return bounds?.wrap(expr, step) ?: step
+    }
+
+    override fun prepare(node: Regex, context: QueryEvaluationContext): QueryValueEvaluationStep {
+        val bounds = bounds ?: return super.prepare(node, context)
+        val text = precompile(node.arg, context)
+        val pattern = precompile(node.patternArg, context)
+        val flags = node.flagsArg?.let { precompile(it, context) }
+        val compiled = Rdf4jEvaluationBounds.PatternCache()
+        return QueryValueEvaluationStep { b ->
+            bounds.failing { bounds.regex(text.evaluate(b), pattern.evaluate(b), flags?.evaluate(b), compiled) }
+        }
+    }
+
+    /** A built-in function call of a sandboxed query whose cost is checked before it computes ([Rdf4jCost]). */
+    private fun builtIn(node: FunctionCall, context: QueryEvaluationContext, bounds: Rdf4jEvaluationBounds): QueryValueEvaluationStep {
+        val cost = Rdf4jCost.ofFunction(node.uri)
+        if (cost == Rdf4jCost.GENERIC || cost == Rdf4jCost.COPYING) return super.prepare(node, context)
+        val function = org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry.getInstance().get(node.uri).get()
+        val args = node.args.map { precompile(it, context) }
+        val compiled = Rdf4jEvaluationBounds.PatternCache()
+        return QueryValueEvaluationStep { b ->
+            val values = args.map { it.evaluate(b) }
+            bounds.failing {
+                if (cost == Rdf4jCost.REPLACE) bounds.replace(values, compiled)
+                else {
+                    bounds.precheck(cost, node.uri, values)
+                    function.evaluate(tripleSource, *values.toTypedArray())
+                }
+            }
+        }
     }
 
     override fun prepare(service: Service, context: QueryEvaluationContext): QueryEvaluationStep {
@@ -218,7 +275,8 @@ internal class KastorEvaluationStrategy(
 
     override fun prepare(node: FunctionCall, context: QueryEvaluationContext): QueryValueEvaluationStep {
         val iri = node.uri
-        if (scope == null || isBuiltIn(iri)) return super.prepare(node, context)
+        if (scope == null) return super.prepare(node, context)
+        if (isBuiltIn(iri)) return builtIn(node, context, bounds!!)
         val function = scope.functions.function(iri) ?: return QueryValueEvaluationStep.Fail("Unknown function '$iri'")
         val arguments = node.args.map { precompile(it, context) }
         return QueryValueEvaluationStep { bindings -> call(function, scope, arguments, bindings) }
@@ -245,6 +303,8 @@ internal class KastorEvaluationStrategy(
             function.body(Call(arguments, scope))
         } catch (e: QueryInterruptedException) {
             throw e
+        } catch (e: Rdf4jSandboxLimitExceeded) {
+            throw e
         } catch (e: ValueExprEvaluationException) {
             throw e
         } catch (e: InterruptedException) {
@@ -252,7 +312,11 @@ internal class KastorEvaluationStrategy(
             Thread.currentThread().interrupt()
             throw QueryInterruptedException(e)
         } catch (e: Exception) {
-            generateSequence<Throwable>(e) { it.cause }.filterIsInstance<QueryInterruptedException>().firstOrNull()?.let { throw it }
+            // An interruption or an exceeded sandbox limit of a nested query stops the calling query too.
+            generateSequence<Throwable>(e) { it.cause }
+                .firstOrNull { it is QueryInterruptedException || it is Rdf4jSandboxLimitExceeded }?.let { throw it }
+            generateSequence<Throwable>(e) { it.cause }.filterIsInstance<SandboxLimitException>().firstOrNull()
+                ?.let { throw Rdf4jSandboxLimitExceeded(it) }
             throw ValueExprEvaluationException("The custom function <${function.iri}> failed: ${e.message}", e)
         } ?: throw ValueExprEvaluationException("The custom function <${function.iri}> has no result")
         return try {
@@ -317,10 +381,10 @@ internal class KastorEvaluationStrategy(
  * statement or triple term is read. RDF4J's own time limit (`TimeLimitIteration`) is only checked between result rows,
  * so it does not stop a query while it computes a row (an aggregate, a sort, a join); this does.
  *
- * Known RDF4J limitation (ruling R8): work that reads no statements, such as a cross product of `VALUES` blocks or a
- * catastrophic `REGEX` over a few statements, is still not interrupted within a row; it stops at the next statement
- * read or the next row. A top-level sandboxed query has the same limitation, since RDF4J's `maxExecutionTime` is
- * whole-second and checked between rows. (Jena checks cancellation per binding.)
+ * A sandboxed query with a deadline reads its store through this source too, at the top level as in nested queries,
+ * and every value expression it evaluates checks the deadline first ([Rdf4jEvaluationBounds]), so work that reads no
+ * statements also stops at the deadline: every row an operator produces checks it (as Jena checks cancellation per
+ * binding), and a regular expression checks it while it matches.
  *
  * [of] keeps RDF4J's triple-term access: a source that is an [RDFStarTripleSource] (as a store's is) is wrapped as one,
  * because RDF4J matches `<< ?s ?p ?o >>` against `rdf:subject` / `rdf:predicate` / `rdf:object` statements on any other
@@ -337,14 +401,14 @@ private open class DeadlineTripleSource(private val source: TripleSource, protec
         subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?,
     ): CloseableIteration<out Statement> {
         check()
-        return Checked(source.getStatements(subj, pred, obj, *contexts))
+        return checked(source.getStatements(subj, pred, obj, *contexts))
     }
 
     override fun getStatements(
         order: StatementOrder?, subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?,
     ): CloseableIteration<out Statement> {
         check()
-        return Checked(source.getStatements(order, subj, pred, obj, *contexts))
+        return checked(source.getStatements(order, subj, pred, obj, *contexts))
     }
 
     override fun getSupportedOrders(subj: Resource?, pred: IRI?, obj: Value?, vararg contexts: Resource?): Set<StatementOrder> =
@@ -354,22 +418,24 @@ private open class DeadlineTripleSource(private val source: TripleSource, protec
 
     override fun getValueFactory(): ValueFactory = source.valueFactory
 
-    /** [items], with [check] run before each is read. */
-    protected inner class Checked<E>(private val items: CloseableIteration<out E>) : CloseableIteration<E> {
-        override fun hasNext(): Boolean {
-            check()
-            return items.hasNext()
-        }
+    protected fun <E> checked(items: CloseableIteration<out E>): CloseableIteration<E> = CheckedIteration(items, check)
+}
 
-        override fun next(): E {
-            check()
-            return items.next()
-        }
-
-        override fun remove() = items.remove()
-
-        override fun close() = items.close()
+/** [items], with [check] run before each is read. */
+internal class CheckedIteration<E>(private val items: CloseableIteration<out E>, private val check: () -> Unit) : CloseableIteration<E> {
+    override fun hasNext(): Boolean {
+        check()
+        return items.hasNext()
     }
+
+    override fun next(): E {
+        check()
+        return items.next()
+    }
+
+    override fun remove() = items.remove()
+
+    override fun close() = items.close()
 }
 
 /** A [DeadlineTripleSource] over an [RDFStarTripleSource], whose triple terms are read with the same [check]. */
@@ -378,6 +444,6 @@ private class DeadlineRdfStarTripleSource(private val source: RDFStarTripleSourc
 
     override fun getRdfStarTriples(subj: Resource?, pred: IRI?, obj: Value?): CloseableIteration<out Triple> {
         check()
-        return Checked(source.getRdfStarTriples(subj, pred, obj))
+        return checked(source.getRdfStarTriples(subj, pred, obj))
     }
 }

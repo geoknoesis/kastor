@@ -611,11 +611,9 @@ class Rdf4jRepository(
      * requested, but may run up to one second longer. A timeout too long for a nanosecond deadline (about 292 years)
      * is no limit at all.
      *
-     * The nested queries of the custom functions of a [SandboxedSelectQuery] end by the exact deadline: it is checked
-     * before each nested query, before each of its rows and before each statement it reads. Known RDF4J limitation
-     * (ruling R8): RDF4J checks its own limit only between rows, and work that reads no statements (a cross product of
-     * `VALUES` blocks, a catastrophic `REGEX` over a few statements) is not interrupted within a row, neither at the
-     * top level nor in a nested query. Jena checks cancellation per binding.
+     * A [SandboxedSelectQuery] and the nested queries of its custom functions end by the exact deadline: it is checked
+     * before each nested query, before each statement read and before each value expression is evaluated, and its
+     * expressions are bounded in size and cost ([Rdf4jEvaluationBounds]), as on Jena.
      *
      * Bindings follow the initial-bindings contract shared by every provider
      * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings], the rules of Jena's `substitution`), so every

@@ -77,6 +77,8 @@ internal object Rdf4jQuerySandbox {
         check: (String) -> org.eclipse.rdf4j.query.parser.ParsedQuery,
         kastorDataset: (org.eclipse.rdf4j.query.algebra.TupleExpr) -> org.eclipse.rdf4j.query.Dataset?,
     ): Rdf4jNestedQuery {
+        // IRIs and literals are written into the text: RDF4J's BindingAssignerOptimizer trips an internal assertion
+        // for a natively bound variable in some positions (inside COALESCE), so only what text cannot spell is bound.
         val bound = Rdf4jInitialBindings.bind(query.sparql, bindings)
         val parsed = check(bound.sparql)
         val placeholders = org.eclipse.rdf4j.query.impl.MapBindingSet()
@@ -107,8 +109,9 @@ internal object Rdf4jQuerySandbox {
 
     /**
      * The checked parses ([check]) of the nested queries of one top-level query, by query text, so that a function
-     * called once per row does not parse and check the same text on every call (the text differs only when the
-     * call's bindings are written into it). At most [capacity] texts are kept, the least recently used dropped first.
+     * called with the same bindings (the same focus node, or none) does not parse and check the same text again. The
+     * bound IRIs and literals are part of the text (see [prepareNested]), so calls bound to different values parse
+     * their own texts; at most [capacity] texts are kept, the least recently used dropped first.
      *
      * A cached [org.eclipse.rdf4j.query.parser.ParsedQuery] is shared by the calls: they only read it, and evaluate a
      * clone of its algebra.
