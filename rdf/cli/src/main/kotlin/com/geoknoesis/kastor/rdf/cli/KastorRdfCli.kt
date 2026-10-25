@@ -154,7 +154,8 @@ private val COMMAND_USAGE =
             """
             Usage: kastor-rdf to-turtle [--base <iri>] [--] <file> [INPUT_FORMAT]
 
-            Prints <file> as Turtle. Inputs with named graphs are refused (Turtle cannot represent them).
+            Prints <file> as Turtle. Inputs with named graphs (TriG, N-Quads, JSON-LD) are refused with status 1:
+            Turtle cannot represent them, and they are never dropped silently.
             --base <iri>: absolute IRI that relative IRIs in <file> are resolved against (without it they are an error).
             The whole input is loaded in memory; very large dumps are not streamed.
             Use -- before a file name that starts with a dash.
@@ -218,8 +219,8 @@ private fun printUsage(out: PrintStream) {
 
         FORMAT defaults from the file extension when omitted (.ttl -> TURTLE, .nt -> NTRIPLES, .nq -> NQUADS,
         .trig -> TRIG, .jsonld/.json -> JSON-LD, .rdf/.owl/.xml -> RDFXML); other extensions require FORMAT.
-        Quad formats (TriG, N-Quads) are read as datasets: diff compares the default graph and all named
-        graphs as one dataset (blank nodes shared across graphs must correspond). A graph named by a blank node
+        Every input is read as a dataset: the formats that can name graphs (TriG, N-Quads, JSON-LD) keep their named
+        graphs in every command. diff compares the default graph and all named graphs as one dataset (blank nodes shared across graphs must correspond). A graph named by a blank node
         matches a graph named by a blank node in the other input, up to relabelling; graphs named by IRIs must have
         the same IRIs.
 

@@ -14,6 +14,16 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round twelve
+
+#### SPARQL endpoint, CLI and examples
+
+- **Fixed (`rdf-cli`):** `diff`, `parse` and `to-turtle` no longer drop the named graphs of a JSON-LD input. Only TriG
+  and N-Quads were read as datasets; JSON-LD went through the graph parser, which drops named-graph quads with a
+  logged warning, so `diff` printed `ISOMORPHIC` and exited 0 for two JSON-LD datasets that differed in a named
+  graph, `parse` under-counted, and `to-turtle` printed only the default graph instead of refusing the input. Every
+  input is now read as a dataset; a graph format simply has no named graphs.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)
