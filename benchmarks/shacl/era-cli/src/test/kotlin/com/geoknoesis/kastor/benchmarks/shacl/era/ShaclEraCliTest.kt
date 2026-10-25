@@ -104,8 +104,26 @@ class ShaclEraCliTest {
 
     @Test
     fun `sanitize renders control and bidi characters visibly`() {
-        assertEquals("a\\u001B[31m\\u202Eb\\u2066c\n\td", sanitize("a\u001B[31m\u202Eb\u2066c\n\td"))
+        assertEquals("a\\u001B[31m\\u202Eb\\u2066c d", sanitize("a\u001B[31m\u202Eb\u2066c\n\td"))
         assertEquals("(no message)", sanitize(null))
+        assertEquals("(no message)", sanitize(" \n "))
+    }
+
+    @Test
+    fun `a multi-line error message is one stderr line`() {
+        val err = ByteArrayOutputStream()
+        val message = "[line: 3, col: 7 ] Bad input\r\n  expected '.'\n\tgot EOF  "
+        val status =
+            runEraCli(
+                listOf("a", "b", "c"),
+                PrintStream(ByteArrayOutputStream()),
+                PrintStream(err, true, Charsets.UTF_8),
+                benchmark = { _, _, _, _ -> throw EraCliException(EXIT_RUNTIME_ERROR, message) },
+            )
+        assertEquals(EXIT_RUNTIME_ERROR, status)
+        val printed = err.toString(Charsets.UTF_8)
+        assertEquals("shacl-era-cli: [line: 3, col: 7 ] Bad input expected '.' got EOF", printed.trimEnd())
+        assertEquals(1, printed.trimEnd().lines().size, printed)
     }
 
     @Test
