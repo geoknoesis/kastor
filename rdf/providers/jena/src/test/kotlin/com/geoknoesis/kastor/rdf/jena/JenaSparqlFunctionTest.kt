@@ -186,7 +186,7 @@ class JenaSparqlFunctionTest {
     }
 
     @Test
-    fun `a function IRI computed at run time in a nested query cannot load a java class`() {
+    fun `a nested query cannot compute a function IRI, so it cannot load a java class`() {
         val probe = "java:" + SandboxProbeFunction::class.java.name
         val (head, tail) = probe.substring(0, 5) to probe.substring(5)
         val nested = "SELECT ?x WHERE { BIND (CALL(IRI(CONCAT(\"$head\", \"$tail\")), 1) AS ?x) }"
@@ -196,7 +196,9 @@ class JenaSparqlFunctionTest {
             },
         ))
         val before = SandboxProbeFunction.instances.get()
-        assertEquals("unseen", lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
+        // CALL is ARQ syntax, not sandboxed SPARQL: the nested query does not parse, so the body fails (a SPARQL
+        // error, ?v unbound) before anything is evaluated.
+        assertEquals(null, lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
         assertEquals(before, SandboxProbeFunction.instances.get())
     }
 
