@@ -204,6 +204,7 @@ skvsh:HasPrefLabelShape
     rdfs:comment    "Not in the SKOS spec — a concept may legitimately have only altLabels (see SKOS Reference §5.6.4) — but consumers almost always need a preferred label for display. Issued as a Warning rather than Violation." ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path skos:prefLabel ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Concept has no skos:prefLabel; consumers will not be able to display it." ] ;
     sh:severity     sh:Warning .
@@ -239,10 +240,12 @@ skvsh:NoWhitespaceLabelShape
     rdfs:label      "Labels must not start or end with whitespace" ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path skos:prefLabel ;
+                      sh:severity sh:Warning ;
                       sh:pattern "^\\S(.*\\S)?$" ;
                       sh:flags "s" ;
                       sh:message "skos:prefLabel has leading or trailing whitespace." ] ;
     sh:property     [ sh:path skos:altLabel ;
+                      sh:severity sh:Warning ;
                       sh:pattern "^\\S(.*\\S)?$" ;
                       sh:flags "s" ;
                       sh:message "skos:altLabel has leading or trailing whitespace." ] ;
@@ -298,6 +301,7 @@ skvsh:RelatedSymmetryShape
     rdfs:comment    "skos:related is owl:SymmetricProperty (S23), so the inverse is entailed. This shape flags one-sided assertions as a serialisation hygiene issue, not a logical error." ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path [ sh:inversePath skos:related ] ;
+                      sh:severity sh:Info ;
                       sh:equals skos:related ;
                       sh:message "skos:related triple lacks its symmetric counterpart." ] ;
     sh:severity     sh:Info .
@@ -545,6 +549,7 @@ skvsh:OrderedCollectionMemberListShape
     rdfs:comment    "An OrderedCollection without a memberList is missing the very thing that distinguishes it from a regular Collection." ;
     sh:targetClass  skos:OrderedCollection ;
     sh:property     [ sh:path skos:memberList ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "OrderedCollection has no skos:memberList; the ordering it claims to express is absent." ] ;
     sh:severity     sh:Warning .

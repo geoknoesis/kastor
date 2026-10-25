@@ -182,12 +182,15 @@ oqsh:OntologyMetadataShape
     rdfs:comment    "OOPS! P09: 'Missing basic information' — an ontology that does not state who made it, what it is, and what version it is fails the most elementary metadata test." ;
     sh:targetClass  owl:Ontology ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Ontology has no rdfs:label." ] ;
     sh:property     [ sh:path rdfs:comment ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Ontology has no rdfs:comment describing its purpose." ] ;
     sh:property     [ sh:path dct:creator ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:severity sh:Info ;
                       sh:message "Ontology has no dct:creator (or equivalent attribution)." ] ;
@@ -217,6 +220,7 @@ oqsh:OntologyLicenseShape
     rdfs:comment    "Aligns with OOPS! P41 (no licence declared): require dct:license on the ontology head." ;
     sh:targetClass  owl:Ontology ;
     sh:property     [ sh:path dct:license ;
+                      sh:severity sh:Info ;
                       sh:minCount 1 ;
                       sh:message "Ontology has no dct:license; downstream users cannot legally redistribute." ] ;
     sh:severity     sh:Info .
@@ -235,6 +239,7 @@ oqsh:ClassHasLabelShape
     rdfs:comment    "OOPS! P08. Defined classes without labels are unusable in browsers and editors." ;
     sh:targetClass  owl:Class ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Class has no rdfs:label." ] ;
     sh:severity     sh:Warning .
@@ -248,6 +253,7 @@ oqsh:ObjectPropertyHasLabelShape
     rdfs:label      "Every owl:ObjectProperty should have rdfs:label" ;
     sh:targetClass  owl:ObjectProperty ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Object property has no rdfs:label." ] ;
     sh:severity     sh:Warning .
@@ -261,6 +267,7 @@ oqsh:DatatypePropertyHasLabelShape
     rdfs:label      "Every owl:DatatypeProperty should have rdfs:label" ;
     sh:targetClass  owl:DatatypeProperty ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Datatype property has no rdfs:label." ] ;
     sh:severity     sh:Warning .
@@ -306,6 +313,7 @@ oqsh:ObjectPropertyHasDomainShape
     rdfs:comment    "OOPS! P11. Without a domain, the property is effectively typed as rdfs:Resource — useful in some open-vocabulary cases but a smell in domain ontologies." ;
     sh:targetClass  owl:ObjectProperty ;
     sh:property     [ sh:path rdfs:domain ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Object property has no rdfs:domain." ] ;
     sh:severity     sh:Warning .
@@ -319,6 +327,7 @@ oqsh:ObjectPropertyHasRangeShape
     rdfs:label      "Every owl:ObjectProperty should declare rdfs:range" ;
     sh:targetClass  owl:ObjectProperty ;
     sh:property     [ sh:path rdfs:range ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Object property has no rdfs:range." ] ;
     sh:severity     sh:Warning .
@@ -332,6 +341,7 @@ oqsh:DatatypePropertyHasDomainShape
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:domain" ;
     sh:targetClass  owl:DatatypeProperty ;
     sh:property     [ sh:path rdfs:domain ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Datatype property has no rdfs:domain." ] ;
     sh:severity     sh:Warning .
@@ -345,6 +355,7 @@ oqsh:DatatypePropertyHasRangeShape
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:range" ;
     sh:targetClass  owl:DatatypeProperty ;
     sh:property     [ sh:path rdfs:range ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Datatype property has no rdfs:range." ] ;
     sh:severity     sh:Warning .
@@ -359,6 +370,7 @@ oqsh:SingleDomainShape
     rdfs:comment    "Multiple rdfs:domain values combine by INTERSECTION, not union — usually a mis-modelling. If you mean union, use owl:unionOf in a single rdfs:domain." ;
     sh:targetSubjectsOf rdfs:domain ;
     sh:property     [ sh:path rdfs:domain ;
+                      sh:severity sh:Warning ;
                       sh:maxCount 1 ;
                       sh:message "Property has multiple rdfs:domain values — these combine by INTERSECTION; use owl:unionOf for union." ] ;
     sh:severity     sh:Warning .
@@ -372,6 +384,7 @@ oqsh:SingleRangeShape
     rdfs:label      "Properties should not declare more than one rdfs:range" ;
     sh:targetSubjectsOf rdfs:range ;
     sh:property     [ sh:path rdfs:range ;
+                      sh:severity sh:Warning ;
                       sh:maxCount 1 ;
                       sh:message "Property has multiple rdfs:range values — these combine by INTERSECTION; use owl:unionOf for union." ] ;
     sh:severity     sh:Warning .
@@ -400,6 +413,7 @@ oqsh:DomainIsClassShape
     rdfs:label      "rdfs:domain values should be declared classes" ;
     sh:targetSubjectsOf rdfs:domain ;
     sh:property     [ sh:path rdfs:domain ;
+                      sh:severity sh:Warning ;
                       sh:or ( [ sh:class owl:Class ]
                               [ sh:class rdfs:Class ] ) ;
                       sh:message "rdfs:domain value is not declared as an owl:Class or rdfs:Class." ] ;
@@ -415,6 +429,7 @@ oqsh:ObjectPropertyRangeIsClassShape
     rdfs:comment    "A datatype in the range of an object property is a sign that the property was meant to be a datatype property instead." ;
     sh:targetClass  owl:ObjectProperty ;
     sh:property     [ sh:path rdfs:range ;
+                      sh:severity sh:Warning ;
                       sh:or ( [ sh:class owl:Class ]
                               [ sh:class rdfs:Class ] ) ;
                       sh:message "owl:ObjectProperty has an rdfs:range that is not a class — should this be an owl:DatatypeProperty?" ] ;
@@ -430,6 +445,7 @@ oqsh:NonTrivialDomainShape
     rdfs:comment    "An owl:Thing/rdfs:Resource domain is logically equivalent to having no domain at all — but worse, because it suggests intent. Use no domain, or pick a meaningful class." ;
     sh:targetSubjectsOf rdfs:domain ;
     sh:property     [ sh:path rdfs:domain ;
+                      sh:severity sh:Info ;
                       sh:not [ sh:in ( owl:Thing rdfs:Resource ) ] ;
                       sh:message "rdfs:domain is owl:Thing/rdfs:Resource — equivalent to no domain at all, but more misleading." ] ;
     sh:severity     sh:Info .
