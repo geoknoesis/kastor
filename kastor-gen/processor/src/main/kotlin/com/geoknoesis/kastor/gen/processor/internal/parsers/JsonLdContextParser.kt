@@ -13,6 +13,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.InputStream
+import java.net.URI
+import java.net.URISyntaxException
 import com.geoknoesis.kastor.rdf.Iri as RdfIri
 
 /**
@@ -21,7 +23,9 @@ import com.geoknoesis.kastor.rdf.Iri as RdfIri
  *
  * ## What is understood (JSON-LD 1.1 context definitions)
  * - a context object, or an array of context objects processed in order (`null` resets the context);
- * - `@base`, `@vocab` (`@version`, `@language`, `@direction`, `@protected`, `@propagate` are accepted and have no
+ * - `@base` and `@vocab`, resolved with RFC 3986 reference resolution (a relative `@base` against the previous
+ *   base, a relative `@vocab` such as `"#"` against the base, a base-relative term IRI against the base; a relative
+ *   one without an absolute base is an error) (`@version`, `@language`, `@direction`, `@protected`, `@propagate` are accepted and have no
  *   effect on code generation);
  * - **keyword aliases**: `"id": "@id"`, `"type": "@type"`, `"type": {"@id": "@type", "@container": "@set"}` are
  *   recorded in [JsonLdContext.keywordAliases]; they are neither types nor properties;
@@ -135,7 +139,9 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
             context["@import"]?.let { import ->
                 fail("@import is not supported: put the term definitions of $import in the context file")
             }
-            context["@base"]?.let { active.base = stringOrNull("@base", it) }
+            context["@base"]?.let { value ->
+                active.base = stringOrNull("@base", value)?.let { base -> resolveReference("@base", active.base, base) }
+            }
             context["@vocab"]?.let { value ->
                 val vocab = stringOrNull("@vocab", value)
                 active.vocab = when {
@@ -172,8 +178,10 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
                 val prefix = vocab.substring(0, colon)
                 if (prefix in context && !prefix.startsWith("@")) define(prefix)
                 active.prefixes[prefix]?.let { return it + vocab.substring(colon + 1) }
+                if (isAbsoluteIri(vocab) || vocab.substring(colon + 1).startsWith("//")) return vocab
             }
-            return vocab
+            // JSON-LD 1.1: a relative vocabulary mapping is resolved against the base IRI.
+            return resolveReference("@vocab", active.base, vocab)
         }
 
         private fun define(term: String) {
@@ -320,7 +328,7 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
                 fail("term \"$term\": unknown prefix \"$prefix\" in \"$value\" (Unknown prefix: $prefix)")
             }
             active.vocab?.let { return it + value }
-            active.base?.let { return it + value }
+            active.base?.let { return resolveReference("term \"$term\"", it, value) }
             fail("term \"$term\": cannot expand \"$value\": it has no prefix and the context has no @vocab or @base")
         }
     }
@@ -339,6 +347,29 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
         "@type" -> JsonLdContainer.Type
         "@graph" -> JsonLdContainer.Graph
         else -> JsonLdContainer.Unknown(value)
+    }
+
+    /**
+     * [reference] resolved against [base] with RFC 3986 §5.2 (`http://ex.org/a/b` + `c` = `http://ex.org/a/c`). An
+     * absolute [reference] is returned as is; a relative one without an absolute [base] is an error.
+     */
+    private fun resolveReference(what: String, base: String?, reference: String): String {
+        val ref = parseUri(what, reference)
+        if (ref.isAbsolute) return reference
+        val absoluteBase = base?.let { parseUri(what, it) }?.takeIf { it.isAbsolute }
+            ?: fail("$what: the relative IRI \"$reference\" needs an absolute @base to resolve against")
+        // java.net.URI resolves against an empty path as if it had none (http://ex.org + c = http://ex.orgc).
+        val rooted = if (absoluteBase.isOpaque || absoluteBase.rawPath.isNotEmpty()) absoluteBase
+        else URI("${absoluteBase.scheme}://${absoluteBase.rawAuthority.orEmpty()}/" + absoluteBase.rawQuery?.let { "?$it" }.orEmpty())
+        // A bare fragment keeps the whole base, query included (RFC 3986 §5.2.2).
+        if (reference.startsWith("#")) return rooted.toString().substringBefore('#') + reference
+        return rooted.resolve(ref).toString()
+    }
+
+    private fun parseUri(what: String, value: String): URI = try {
+        URI(value)
+    } catch (e: URISyntaxException) {
+        fail("$what: \"$value\" is not a valid IRI reference (${e.reason})")
     }
 
     private fun isAbsoluteIri(term: String): Boolean =
