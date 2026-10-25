@@ -141,6 +141,8 @@ values beyond `sh:maxCount` its reader did not return, and a term the record can
 `mergeRecord` in the [runtime reference](runtime.md#write-support-extensions)). A single-valued member is
 unchanged only when it equals the value the reader returned; setting it to another value, even one the graph
 already holds beyond `sh:maxCount`, writes it and removes the other values, so the next read returns it.
+Which of several values a single-valued reader returns follows the provider's triple order, which differs
+between the memory, Jena and RDF4J stores; only a graph that violates `sh:maxCount` can tell them apart.
 Everything else about the
 subject is kept: other types, predicates the shape does not model,
 triples of complex `sh:path`s (which are not generated), and object links that `toTriples` cannot write

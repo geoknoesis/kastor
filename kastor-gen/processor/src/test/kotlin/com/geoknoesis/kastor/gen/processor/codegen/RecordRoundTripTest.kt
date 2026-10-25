@@ -77,7 +77,7 @@ class RecordRoundTripTest {
             .map { t ->
                 val o = t.obj
                 t.predicate.value.substringAfterLast('/') + "=" + when (o) {
-                    is LangString -> o.lexical + "@" + o.lang
+                    is LangString -> o.lexical + "@" + o.lang + (o.direction?.let { d -> "--" + d.token } ?: "")
                     is Literal -> o.lexical + "^^" + o.datatype.value.substringAfterLast('#')
                     is Iri -> o.value
                     else -> o.toString()
@@ -140,6 +140,24 @@ class RecordRoundTripTest {
             return motto.lexical + "@" + motto.lang + "--" + motto.direction + "^^" + motto.datatype.value.substringAfterLast('#')
         }
 
+        /**
+         * The same read, update and write-back in a repository of [providerId]: every term kind, datatype, language
+         * tag and base direction survives, so the dump equals the in-memory graph's.
+         */
+        fun providerRoundTrip(providerId: String): String {
+            val repo = Rdf.repository { this.providerId = providerId }
+            val g = repo.editDefaultGraph()
+            graph().getTriples().forEach { g.addTriple(it) }
+            g.addTriple(RdfTriple(a, p("level"), TypedLiteral("255", XSD.unsignedByte)))
+            g.addTriple(RdfTriple(a, p("count"), TypedLiteral("123456789012345678901234567890", XSD.nonNegativeInteger)))
+            g.addTriple(RdfTriple(a, p("motto"), LangString("salam", "ar", Direction.RTL)))
+            g.addTriple(RdfTriple(a, p("modified"), TypedLiteral("2020-01-01T00:00:00+14:00", XSD.dateTime)))
+            val record = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+            DocRecordFactory.replaceInGraph(g, record.copy(tags = listOf("a", "c")), a)
+            val reread = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+            return dump(g) + "|" + (reread == record.copy(tags = listOf("a", "c")))
+        }
+
         /** Integer values outside the declared derived type are ill-typed on read, not a failure on the next write. */
         fun outOfRange(): String {
             fun read(term: RdfTerm, predicate: String) = graph().apply { addTriple(RdfTriple(a, p(predicate), term)) }.let { g ->
@@ -171,6 +189,9 @@ class RecordRoundTripTest {
     private fun call(name: String): String =
         compiled.classLoader().loadClass("gen.roundtrip.ProbeKt").getMethod(name).invoke(null) as String
 
+    private fun call(name: String, argument: String): String =
+        compiled.classLoader().loadClass("gen.roundtrip.ProbeKt").getMethod(name, String::class.java).invoke(null, argument) as String
+
     @Test
     fun `unchanged fields keep language tags, datatypes, lexical forms and values beyond maxCount`() {
         assertEquals(
@@ -196,6 +217,16 @@ class RecordRoundTripTest {
     @Test
     fun `a single-valued update to a value held beyond sh maxCount is written and read back`() {
         assertEquals("Chat,urn:home1->Cat,urn:home2|homepage=urn:home2,title=Cat@en", call("updateToExtraValue"))
+    }
+
+    @Test
+    fun `records round-trip through Jena and RDF4J repositories like through the memory graph`() {
+        val expected = "age=02^^integer,count=123456789012345678901234567890^^nonNegativeInteger," +
+            "homepage=urn:home1,homepage=urn:home2,issued=2020-01-01+05:00^^date,level=255^^unsignedByte," +
+            "modified=2020-01-01T00:00:00+14:00^^dateTime,motto=salam@ar--rtl,tags=a@en,tags=c^^string,title=Cat@en,title=Chat@fr|true"
+        for (provider in listOf("memory", "jena", "rdf4j")) {
+            assertEquals(expected, call("providerRoundTrip", provider), provider)
+        }
     }
 
     @Test
