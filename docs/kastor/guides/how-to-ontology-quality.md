@@ -185,7 +185,7 @@ Similarity options on `enrich` and `pipeline`:
 | `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, 50,000,000 to 3,000,000,000. |
 | `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30 and at most 600. |
 | `--similarity-max-pairs N` | Maximum similar pairs the search may return before failing (≥ 1). Default: 1,000,000. |
-| `--label-language TAG` | Language of the labels to embed, e.g. `fr`. Default: the ontology's most common label language. An entity without a label in it falls back to its untagged labels, then to its smallest language tag. |
+| `--label-language TAG` | Language of the labels to embed, e.g. `fr`, or `none` for the untagged labels. Default: the ontology's most common label language. An entity without a label in it falls back to its untagged labels, then to its smallest language tag. |
 | `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
 
 When a similarity budget is exhausted, the command exits with status 5. The message says which limit was reached, and the hint matches it:
@@ -253,27 +253,29 @@ See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-c
 ## Validation
 
 - Kotlin: `report.conforms` / `report.describeText()` reflect SHACL outcomes for the selected catalogues.
+- Reports: `onto-qa` reports every finding (`--max-findings N` caps them; a cut report says so in every format and exits 1). The text report names the focus node, result path and value of each finding; JSON carries them as `focusNode`, `resultPath` and `value`. See [Every finding, or a marked cut](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
+- Severities: `violation` for logical errors and SKOS integrity conditions, `warning` for likely mistakes and declaration gaps (undeclared classes and predicates, missing labels), `info` for conventions; terms of standard vocabularies (DCAT, FOAF, PROV, schema.org...) are not asked to be declared or documented. See the severity policy in the [library README](../../../tools/onto-quality/library/README.md).
 - CLI exit codes (every failure has its own status):
 
 | Exit status | Meaning |
 |-------------|---------|
 | **0** | Success; no findings at or above `--severity` (default `violation`). |
-| **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Used for nothing else. |
+| **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Also a report cut by `--max-findings`: the findings it dropped may reach `--severity`. Used for nothing else. |
 | **2** | The input ontology could not be parsed in the selected RDF syntax. A file that cannot be read is status 5. |
 | **3** | `--fail-on-explain-error` was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
 | **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, an input path that is a directory, a `--base-iri` that is not an absolute IRI, `--reasoner hermit` when HermiT is not on the classpath (the message says how to fix it), inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`, `--explain` with `--format turtle`, an `--output` that is the input file without `--overwrite-input`. |
-| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), no RDF provider for the input syntax, embedding model download or loading, similarity search budget exceeded, or an unexpected internal error. Add `--debug` (before or after the command) for the stack trace. |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), no RDF provider for the input syntax, embedding model download or loading, similarity search budget exceeded, SHACL validation or reasoner out of time (`--validation-timeout`, `--reasoner-timeout`), or an unexpected internal error. Add `--debug` (before or after the command) for the stack trace. |
 
   `kastor-rdf` (see [How to test RDF graphs](how-to-test-rdf-graphs.md#kastor-rdf-cli)) uses a different, older convention. Side by side (both are printed by `--help` of either tool):
 
 | Status | `onto-qa` | `kastor-rdf` |
 |--------|-----------|--------------|
 | **0** | Success; no findings at or above `--severity`. | Success; for `diff`, the inputs are isomorphic. |
-| **1** | Findings at or above `--severity`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
+| **1** | Findings at or above `--severity`, or a report cut by `--max-findings`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
 | **2** | The ontology could not be parsed. | `diff` found the inputs not isomorphic. |
 | **3** | LLM explanations failed (with `--fail-on-explain-error`). | Runtime error: I/O, RDF provider, internal error, out of memory or stack overflow. |
 | **4** | Usage or configuration error; nothing was run. | not used |
-| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity or LLM budget, internal error. | not used |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity, LLM, validation or reasoner budget, internal error. | not used |
 
   Scripts that treated status 1 as "findings or bad usage" should also check 4 and 5. See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
 - The SHACL benchmark CLI (`benchmarks/shacl/era-cli`) uses the same convention for the statuses it has: 0, 2, 4 and 5. It prints errors as one sanitised stderr line. See its [README](../../../benchmarks/shacl/era-cli/README.md#exit-status).
