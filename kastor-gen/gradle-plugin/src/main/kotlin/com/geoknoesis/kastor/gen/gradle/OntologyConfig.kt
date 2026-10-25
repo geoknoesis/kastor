@@ -7,14 +7,23 @@ package com.geoknoesis.kastor.gen.gradle
  * a single SHACL file and JSON-LD context file pair.
  *
  * Optional settings are `null` until assigned; the generation task then applies its documented defaults
- * (see [com.geoknoesis.kastor.gen.gradle.tasks.OntologyGenerationTask]).
+ * (see [com.geoknoesis.kastor.gen.gradle.tasks.OntologyGenerationTask]). The task reads these settings lazily,
+ * when it needs them, so a value assigned after the task was realized is still used.
  */
 class OntologyConfig {
 
     /**
-     * Name of this ontology configuration.
+     * Name of this ontology configuration: the name it was created with in `kastorGen.ontologies`. It names the
+     * `generateOntology<Name>` task and the output directory, so it cannot be changed once set.
+     *
+     * @throws IllegalStateException when assigned a different name after it was set
      */
     var name: String = ""
+        @Deprecated("The name is set by the ontologies container; renaming an ontology is not supported")
+        set(value) {
+            check(field.isEmpty() || field == value) { "kastorGen ontology '$field' cannot be renamed to '$value'" }
+            field = value
+        }
 
     /**
      * Path to the SHACL file (relative to project root or resources).

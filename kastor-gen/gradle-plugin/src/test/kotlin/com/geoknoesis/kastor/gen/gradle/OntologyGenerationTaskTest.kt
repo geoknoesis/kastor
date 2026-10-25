@@ -51,6 +51,39 @@ class OntologyGenerationTaskTest {
     private fun output(t: OntologyGenerationTask): File = t.outputDirectory.get().asFile
 
     @Test
+    fun `settings assigned after the task was realized are used`() {
+        val project = ProjectBuilder.builder().withProjectDir(dir).build()
+        project.pluginManager.apply(OntoMapperPlugin::class.java)
+        val config = project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("late")
+        // Realize the task first, as `tasks.all {}` or another plugin would.
+        val task = project.tasks.getByName("generateOntologyLate") as OntologyGenerationTask
+        config.shaclPath = "late.ttl"
+        config.interfacePackage = "late.domain"
+        config.generateWrappers = false
+        config.outputDirectory = "custom"
+        assertEquals("late.ttl", task.shaclPath.get())
+        assertEquals("late.domain", task.interfacePackage.get())
+        assertEquals(false, task.generateWrappers.get())
+        assertFalse(task.generateDsl.isPresent, "an unassigned setting keeps the task default")
+        assertEquals(File(dir, "custom/late").canonicalFile, task.outputDirectory.get().asFile.canonicalFile)
+    }
+
+    @Test
+    fun `an ontology configuration cannot be renamed and the extension needs the plugin`() {
+        val project = ProjectBuilder.builder().withProjectDir(dir).build()
+        project.pluginManager.apply(OntoMapperPlugin::class.java)
+        val config = project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("sample")
+        val renamed = assertFailsWith<IllegalStateException> { @Suppress("DEPRECATION") config.name = "other" }
+        assertTrue("sample" in renamed.message.orEmpty() && "other" in renamed.message.orEmpty(), renamed.message)
+        assertEquals("sample", config.name)
+
+        val detached = OntoMapperExtension()
+        val e = assertFailsWith<IllegalStateException> { detached.ontology("x") { shaclPath = "s.ttl" } }
+        assertTrue("apply the com.geoknoesis.kastor.gen plugin" in e.message.orEmpty(), e.message)
+        assertFailsWith<IllegalStateException> { detached.ontologies { } }
+    }
+
+    @Test
     fun `shaclFile and contextFile default to the files the task reads`() {
         val t = task { interfacePackage = "demo.domain" }
         // Build scripts read task.shaclFile.get(): the properties have a convention again.

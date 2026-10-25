@@ -53,11 +53,16 @@ internal object ConsumerBuild {
         kotlin.internal.collectFUSMetrics=false
     """.trimIndent()
 
-    fun runner(projectDir: File, vararg args: String): GradleRunner =
+    /**
+     * A runner for [projectDir]. The build cache is off unless [buildCache] is set: then the build uses the local
+     * cache its settings configure (see [settings]), so a test can check cache hits without a shared cache.
+     */
+    fun runner(projectDir: File, vararg args: String, buildCache: Boolean = false): GradleRunner =
         GradleRunner.create().withProjectDir(projectDir).withTestKitDir(testKitDir()).withPluginClasspath().forwardOutput()
             .withEnvironment(System.getenv() + ("JAVA_HOME" to System.getProperty("java.home")))
             .withArguments(
-                *args, "--offline", "--stacktrace", "--no-build-cache", "--configuration-cache", "--configuration-cache-problems=fail",
+                *args, "--offline", "--stacktrace", if (buildCache) "--build-cache" else "--no-build-cache",
+                "--configuration-cache", "--configuration-cache-problems=fail",
             )
 
     /** Runs the build; a failure caused by something missing from the file repository says what to do about it. */

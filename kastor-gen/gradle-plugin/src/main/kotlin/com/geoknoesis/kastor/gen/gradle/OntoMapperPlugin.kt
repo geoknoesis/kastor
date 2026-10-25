@@ -9,6 +9,7 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.Directory
 import org.gradle.api.file.SourceDirectorySet
+import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 
 /**
@@ -32,6 +33,7 @@ class OntoMapperPlugin : Plugin<Project> {
 
         // Create container for ontology configurations
         val ontologyContainer = project.container(OntologyConfig::class.java) { name ->
+            @Suppress("DEPRECATION") // the container is the one place that names a configuration
             OntologyConfig().apply { this.name = name }
         }
         extension.ontologies = ontologyContainer
@@ -47,28 +49,30 @@ class OntoMapperPlugin : Plugin<Project> {
                 task.group = "kastor-gen"
                 task.description = "Generate ontology ${config.name}"
                 task.ontologyName.set(config.name)
-                task.shaclPath.set(config.shaclPath)
-                // The JSON-LD context is optional.
-                config.contextPath.takeIf { it.isNotBlank() }?.let { task.contextPath.set(it) }
-                // Only user-assigned values are forwarded, so the task's documented defaults apply otherwise.
-                config.interfacePackage?.let { task.interfacePackage.set(it) }
-                config.wrapperPackage?.let { task.wrapperPackage.set(it) }
-                config.vocabularyPackage?.let { task.vocabularyPackage.set(it) }
-                config.generateInterfaces?.let { task.generateInterfaces.set(it) }
-                config.generateWrappers?.let { task.generateWrappers.set(it) }
-                config.generateVocabulary?.let { task.generateVocabulary.set(it) }
-                config.vocabularyName?.let { task.vocabularyName.set(it) }
-                config.vocabularyNamespace?.let { task.vocabularyNamespace.set(it) }
-                config.vocabularyPrefix?.let { task.vocabularyPrefix.set(it) }
-                config.generateDsl?.let { task.generateDsl.set(it) }
-                config.dslPackage?.let { task.dslPackage.set(it) }
-                config.dslName?.let { task.dslName.set(it) }
-                val output = config.outputDirectory
-                if (output != null) {
-                    task.outputDirectory.set(project.file(output).resolve(config.name))
-                } else {
-                    task.outputDirectory.set(project.layout.buildDirectory.dir("generated/sources/kastor-gen/${config.name}"))
-                }
+                // Every setting is read through a provider, when the task needs it: a value assigned after the task
+                // was realized (by `tasks.all {}`, another plugin or build logic) is not lost. Only user-assigned
+                // values are forwarded (a provider of null has no value), so the task's documented defaults apply
+                // otherwise.
+                fun <T : Any> forward(target: Property<T>, value: () -> T?) = target.set(project.provider(value))
+                forward(task.shaclPath) { config.shaclPath }
+                forward(task.contextPath) { config.contextPath.takeIf { it.isNotBlank() } } // optional
+                forward(task.interfacePackage) { config.interfacePackage }
+                forward(task.wrapperPackage) { config.wrapperPackage }
+                forward(task.vocabularyPackage) { config.vocabularyPackage }
+                forward(task.generateInterfaces) { config.generateInterfaces }
+                forward(task.generateWrappers) { config.generateWrappers }
+                forward(task.generateVocabulary) { config.generateVocabulary }
+                forward(task.vocabularyName) { config.vocabularyName }
+                forward(task.vocabularyNamespace) { config.vocabularyNamespace }
+                forward(task.vocabularyPrefix) { config.vocabularyPrefix }
+                forward(task.generateDsl) { config.generateDsl }
+                forward(task.dslPackage) { config.dslPackage }
+                forward(task.dslName) { config.dslName }
+                val defaultOutput = project.layout.buildDirectory.dir("generated/sources/kastor-gen/${config.name}")
+                val projectDirectory = project.layout.projectDirectory
+                task.outputDirectory.set(
+                    project.provider { config.outputDirectory?.let { projectDirectory.dir(it).dir(config.name) } }.orElse(defaultOutput),
+                )
             }
             mainTask.configure { it.dependsOn(generation) }
             KotlinSourceSetWiring.wire(project, generation.flatMap { it.outputDirectory })
