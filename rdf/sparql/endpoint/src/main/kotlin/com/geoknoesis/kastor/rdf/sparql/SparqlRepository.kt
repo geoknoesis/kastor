@@ -53,7 +53,8 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   that label JSON results differently need [SparqlEndpointConfig.strictContentType] `false`.
  * - No single result row (or other JSON value) larger than
  *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory; rows are decoded one
- *   at a time, straight from the stream.
+ *   at a time, straight from the stream. The heap that the rows of a buffered [select] retain is
+ *   capped by [SparqlEndpointConfig.maxBufferedResultBytes], not only the bytes of the response.
  * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
  *   timeout share one HTTP client, which is shut down when the last of them is closed, and all
  *   repositories share the daemon thread that enforces read deadlines, which ends when the last of
@@ -162,10 +163,16 @@ class SparqlRepository internal constructor(
         return getGraph(name) as MutableRdfGraph
     }
 
-    /** Buffers every row; capped by [SparqlEndpointConfig.maxResponseBytes]. A [SandboxedSelectQuery] is refused (see [withSelectRows]). */
+    /**
+     * Buffers every row; capped by [SparqlEndpointConfig.maxResponseBytes] (the response) and
+     * [SparqlEndpointConfig.maxBufferedResultBytes] (the estimated heap of the decoded rows). A [SandboxedSelectQuery]
+     * is refused (see [withSelectRows]).
+     */
     override fun select(query: SparqlSelect): SparqlQueryResult {
         refuseSandboxed(query)
-        return selectRows(query.sparql, config.maxResponseBytes, EndpointHttp.Timeouts.buffered(config.requestTimeout)) { ListSparqlQueryResult(it.toList()) }
+        return selectRows(
+            query.sparql, config.maxResponseBytes, EndpointHttp.Timeouts.buffered(config.requestTimeout), config.maxBufferedResultBytes,
+        ) { ListSparqlQueryResult(it.toList()) }
     }
 
     /**
@@ -175,7 +182,7 @@ class SparqlRepository internal constructor(
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T {
         refuseSandboxed(query)
-        return selectRows(query.sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
+        return selectRows(query.sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(config.requestTimeout, config.streamingRequestTimeout), null, consume)
     }
 
     /**
@@ -209,7 +216,7 @@ class SparqlRepository internal constructor(
         val overall = config.streamingRequestTimeout?.let { minOf(it, timeout) } ?: timeout
         // The response headers are awaited until the earliest of requestTimeout and the whole-call deadline.
         val headers = config.requestTimeout?.let { minOf(it, timeout) } ?: timeout
-        return selectRows(sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(headers, overall), consume)
+        return selectRows(sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(headers, overall), null, consume)
     }
 
     /**
@@ -223,14 +230,22 @@ class SparqlRepository internal constructor(
         }
     }
 
-    private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: EndpointHttp.Timeouts, consume: (Sequence<BindingSet>) -> T): T {
+    /** [retainedLimit] caps the estimated heap of the decoded rows of a buffered call; `null` for streamed rows. */
+    private fun <T> selectRows(
+        sparql: String,
+        byteLimit: Long?,
+        timeouts: EndpointHttp.Timeouts,
+        retainedLimit: Long?,
+        consume: (Sequence<BindingSet>) -> T,
+    ): T {
         ensureOpen()
         val startTime = System.currentTimeMillis()
         var rows = 0
         var decoder: JsonBindingRows? = null
         try {
             val result = http.exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
-                val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms).also { decoder = it }.rows()
+                val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms, maxRetainedBytes = retainedLimit)
+                    .also { decoder = it }.rows()
                     .guarded(sparql, checkDeadline)
                     .onEach { rows++ }
                 consume(sequence)

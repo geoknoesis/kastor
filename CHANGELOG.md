@@ -23,6 +23,24 @@ and is kept as is; it was never published to Maven Central.
   logged warning, so `diff` printed `ISOMORPHIC` and exited 0 for two JSON-LD datasets that differed in a named
   graph, `parse` under-counted, and `to-turtle` printed only the default graph instead of refusing the input. Every
   input is now read as a dataset; a graph format simply has no named graphs.
+- **Fixed (`rdf-sparql`):** `maxResponseBytes` bounded the bytes of a buffered `select` but not the heap of its
+  decoded rows: a 31 MB response of empty rows retained about 900 MB. Decoding now shares what repeats across rows
+  (variable names, the name set of rows that bind the same variables, datatype IRIs, language tags; rows that bind
+  nothing are one object), which brings that response to under 20 MB and rows of short terms to at most about
+  3.5 times their response size, and the new `SparqlEndpointConfig.maxBufferedResultBytes` (default 256 MiB,
+  provider option `maxBufferedResultBytes`) caps an estimate of the retained heap of `select`, graph reads and
+  `listGraphs`: a result above it fails with `RdfQueryException` naming the setting. Streamed rows are not held to it.
+- **Security (`rdf-sparql`):** a cross-origin redirect followed with `followCrossOriginRedirects = true` must now pass
+  the new `SparqlEndpointConfig.redirectAddressPolicy`, default `UrlAddressPolicy.PUBLIC_ADDRESSES` (the core URL
+  loading default): a redirect to loopback, a private or link-local address (`169.254.169.254`) or an unresolvable
+  host fails before anything is sent there (behaviour change; `UrlAddressPolicy.ALLOW_ALL` restores the old
+  behaviour, provider option `redirectAddressPolicy`). The check runs on a daemon thread within the header wait.
+- **Security (`rdf-sparql`):** `SparqlEndpointConfig.toString()`, the plain-http credential warning and configuration
+  errors print endpoint URLs without their query string (`https://host/sparql?...`): an API key in the query
+  (`?apikey=...`) was printed verbatim.
+- **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
+  and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
+  accordingly (binary change for compiled callers of `copy`; nothing has been published).
 
 ### Round eleven
 

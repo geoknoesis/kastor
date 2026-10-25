@@ -267,7 +267,7 @@ class SparqlEndpointProtocolTest {
             CompletableFuture.completedFuture(response)
         }
         val downgrade = SparqlEndpointConfig("https://secure.example/downgrade", headers = mapOf("X-Api-Key" to "k"))
-        for (config in listOf(downgrade, downgrade.copy(followCrossOriginRedirects = true))) {
+        for (config in listOf(downgrade, downgrade.copy(followCrossOriginRedirects = true, redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL))) {
             sent.clear()
             SparqlRepository(config, transport).use { repo ->
                 for (call in listOf<() -> Any>(
@@ -285,7 +285,7 @@ class SparqlEndpointProtocolTest {
         }
         // An https redirect to another origin is followed when allowed, without the custom header.
         sent.clear()
-        SparqlRepository(downgrade.copy(endpoint = "https://secure.example/elsewhere", followCrossOriginRedirects = true), transport).use { repo ->
+        SparqlRepository(downgrade.copy(endpoint = "https://secure.example/elsewhere", followCrossOriginRedirects = true, redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL), transport).use { repo ->
             assertEquals(1, repo.select(selectAll).count())
         }
         assertEquals(listOf("https://secure.example/elsewhere", "https://other.example/sparql"), sent.map { it.uri().toString() })
