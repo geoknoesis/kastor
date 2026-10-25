@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.ontoquality.cli
 import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
 import com.geoknoesis.kastor.rdf.LiteralValidation
+import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededException
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchLimits
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
@@ -107,6 +108,13 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
             .choice(*SEVERITY_CHOICES, ignoreCase = true)
             .default("violation")
     val output by option("--output", help = OUTPUT_HELP).path()
+    val maxFindings by
+        option(
+            "--max-findings",
+            help = "Stop recording findings after this many per validation run (default: no limit). A report cut by the limit says " +
+                "so (stderr, and a marker in every --format) and the run exits $EXIT_FINDINGS, since it cannot show that no " +
+                "finding at or above --severity was dropped.",
+        ).int().restrictTo(min = 1)
     val explain by
         option(
             "--explain",
@@ -166,6 +174,12 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
             "--markdown-ascii",
             help = "With --format markdown: use [VIOLATION]/[WARNING] markers instead of emoji.",
         ).flag(default = false)
+
+    /**
+     * The validator settings of `--max-findings`: by default the engine returns every result (`maxViolations` is
+     * `Int.MAX_VALUE`, not the library default of 1,000), so no finding is dropped without a trace.
+     */
+    fun validationConfig(): ValidationConfig = ValidationConfig(maxViolations = maxFindings ?: Int.MAX_VALUE)
 
     /**
      * `--explain` options, validated before anything is parsed, loaded or sent. The SHACL validation report

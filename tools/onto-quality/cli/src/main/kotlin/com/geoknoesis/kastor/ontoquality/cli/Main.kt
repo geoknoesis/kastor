@@ -382,7 +382,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         // LLM prerequisites (opt-in, API key) are checked before the ontology is parsed or a model is loaded.
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val ontology = parseOntology(ontologyArg, format, baseIri)
-        val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), withMetricsProvider = false)
+        val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(reportOptions.validationConfig()), withMetricsProvider = false)
 
         val exitCode =
             openEnricher(environment, embeddingOptions).use { enricher ->
@@ -411,6 +411,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
                     logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
                 }
                 val report = checker.check(enriched, reasoningProfile)
+                warnIfTruncated(report, reportOptions.maxFindings) { echo(it, err = true) }
                 val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
                 emitReport(
                     report,
@@ -451,7 +452,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
         requireUsableOutput(ontologyArg, reportOptions.output)
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val useMetrics = withMetricsOpt && !noMetricsOpt
-        val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
+        val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(reportOptions.validationConfig()), useMetrics)
 
         val graph = parseOntology(ontologyArg, format, baseIri)
 
@@ -472,6 +473,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
             logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
         }
         val report = checker.check(graph, reasoningProfile)
+        warnIfTruncated(report, reportOptions.maxFindings) { echo(it, err = true) }
         val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
         emitReport(
             report,
@@ -485,10 +487,14 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
     }
 }
 
-/** [EXIT_FINDINGS] takes precedence over [EXIT_EXPLAIN_ERROR]. */
+/**
+ * [EXIT_FINDINGS] takes precedence over [EXIT_EXPLAIN_ERROR]. A [QualityReport.truncated] report is [EXIT_FINDINGS]
+ * whatever the findings it lists: the findings it dropped may reach `--severity`.
+ */
 private fun exitStatus(report: QualityReport, options: ReportOptionGroup, outcome: ExplainOutcome): Int =
     when {
         shouldFail(report, severityThreshold(options.severity)) -> EXIT_FINDINGS
+        report.truncated -> EXIT_FINDINGS
         options.failOnExplainError && outcome.failed -> EXIT_EXPLAIN_ERROR
         else -> EXIT_OK
     }
