@@ -1,5 +1,12 @@
 package com.geoknoesis.kastor.rdf
 
+import com.geoknoesis.kastor.rdf.RdfNameChars.escapeEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.exponentEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.isVarNamePart
+import com.geoknoesis.kastor.rdf.RdfNameChars.isVarNameStart
+import com.geoknoesis.kastor.rdf.RdfNameChars.nameCharEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.isPnCharsBase
+
 /**
  * Analyses and rewrites the dataset-related parts of a SPARQL query: detects `FROM` and `GRAPH`, inserts dataset
  * clauses (FROM / FROM NAMED) at the grammatically correct place - after the SELECT projection, CONSTRUCT template,
@@ -31,6 +38,9 @@ internal object SparqlDatasetClauses {
 
     /** A SPARQL codepoint escape: `\u` + 4 hex digits or `\U` + 8 hex digits. */
     private val CODEPOINT_ESCAPE = Regex("""\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})""")
+
+    /** The word `FROM`, in any case, wherever it stands: the fail-closed test for a query that cannot be analysed. */
+    private val FROM_WORD = Regex("""(?<![\p{L}\p{N}_])FROM(?![\p{L}\p{N}_])""", RegexOption.IGNORE_CASE)
 
     /** Stands in the early reading for an escape above U+10FFFF, which has no character. */
     private val REPLACEMENT_CHARACTER = 0xFFFD.toChar()
@@ -156,10 +166,15 @@ internal object SparqlDatasetClauses {
     /**
      * True if [query] contains a `FROM` keyword in either reading of its escapes, i.e. declares `FROM` or
      * `FROM NAMED` dataset clauses. `FROM` inside strings, IRIs, comments, variables, language tags and prefixed
-     * names does not count; `FROM` is not used by any other SPARQL construct. False for a query that cannot be
-     * analysed (callers never run such a query in place without rewriting it, which fails).
+     * names does not count; `FROM` is not used by any other SPARQL construct. For a query that cannot be analysed,
+     * true if the word `FROM` appears anywhere in it, with or without its escapes decoded: an engine may read it as
+     * a dataset clause, so it fails closed.
      */
-    fun declaresDataset(query: String): Boolean = analyse(query)?.hasKeyword("FROM") ?: false
+    fun declaresDataset(query: String): Boolean = analyse(query)?.hasKeyword("FROM")
+        ?: (FROM_WORD.containsMatchIn(query) || FROM_WORD.containsMatchIn(CODEPOINT_ESCAPE.replace(query) { escape ->
+            val codePoint = escape.value.substring(2).toLong(16)
+            if (codePoint > Character.MAX_CODE_POINT) REPLACEMENT_CHARACTER.toString() else String(Character.toChars(codePoint.toInt()))
+        }))
 
     /**
      * True if [query] contains the `GRAPH` keyword (a graph pattern, or a graph reference in an update) in either
@@ -526,59 +541,6 @@ internal object SparqlDatasetClauses {
     private fun isPrefixedName(query: String, token: Token): Boolean {
         for (k in token.start until token.end) if (query[k] == ':') return true
         return false
-    }
-
-    /** The SPARQL production `PN_CHARS_BASE`: the letters a name or a variable name may start with. */
-    private fun isPnCharsBase(codePoint: Int): Boolean =
-        codePoint in 'A'.code..'Z'.code || codePoint in 'a'.code..'z'.code ||
-            codePoint in 0x00C0..0x00D6 || codePoint in 0x00D8..0x00F6 || codePoint in 0x00F8..0x02FF ||
-            codePoint in 0x0370..0x037D || codePoint in 0x037F..0x1FFF || codePoint in 0x200C..0x200D ||
-            codePoint in 0x2070..0x218F || codePoint in 0x2C00..0x2FEF || codePoint in 0x3001..0xD7FF ||
-            codePoint in 0xF900..0xFDCF || codePoint in 0xFDF0..0xFFFD || codePoint in 0x10000..0xEFFFF
-
-    /** First character of the SPARQL production `VARNAME`: `PN_CHARS_U | [0-9]`. */
-    private fun isVarNameStart(codePoint: Int): Boolean =
-        isPnCharsBase(codePoint) || codePoint == '_'.code || codePoint in '0'.code..'9'.code
-
-    /**
-     * Later characters of `VARNAME`: `PN_CHARS_U | [0-9] | U+00B7 | [U+0300-U+036F] | [U+203F-U+2040]` - the
-     * middle dot, the combining diacritical marks, and the undertie and character tie.
-     */
-    private fun isVarNamePart(codePoint: Int): Boolean =
-        isVarNameStart(codePoint) || codePoint == 0x00B7 || codePoint in 0x0300..0x036F || codePoint in 0x203F..0x2040
-
-    /**
-     * Index after the name character at [index] of [q] - `PN_CHARS` (what [isVarNamePart] allows, and `-`) or a dot -
-     * or [index] itself if there is none.
-     */
-    private fun nameCharEnd(q: String, index: Int): Int {
-        val codePoint = q.codePointAt(index)
-        return if (isVarNamePart(codePoint) || codePoint == '-'.code || codePoint == '.'.code) {
-            index + Character.charCount(codePoint)
-        } else index
-    }
-
-    /** End of the exponent (`e`, optional sign, digits) starting at [from], or -1 if there is none. */
-    private fun exponentEnd(q: String, from: Int): Int {
-        if (from >= q.length || (q[from] != 'e' && q[from] != 'E')) return -1
-        var k = from + 1
-        if (k < q.length && (q[k] == '+' || q[k] == '-')) k++
-        val digits = k
-        while (k < q.length && q[k] in '0'..'9') k++
-        return if (k > digits) k else -1
-    }
-
-    /** End of the codepoint escape that starts with the backslash at [from], or -1 if there is none. */
-    private fun escapeEnd(q: String, from: Int): Int {
-        val digits = when (q.getOrNull(from + 1)) {
-            'u' -> 4
-            'U' -> 8
-            else -> return -1
-        }
-        val end = from + 2 + digits
-        if (end > q.length) return -1
-        for (k in from + 2 until end) if (Character.digit(q[k], 16) < 0) return -1
-        return end
     }
 
     /**
