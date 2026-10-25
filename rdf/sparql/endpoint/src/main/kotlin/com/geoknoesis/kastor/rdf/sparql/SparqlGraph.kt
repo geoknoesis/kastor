@@ -240,7 +240,7 @@ class SparqlGraph(
         )
         val count = term.lexical.trim().toLongOrNull()
         if (count == null || count < 0 || count > Int.MAX_VALUE) {
-            throw RdfQueryException("SPARQL endpoint returned a triple count of '${term.lexical}', which is not a valid Int size", query = query)
+            throw RdfQueryException("SPARQL endpoint returned a triple count of '${errorDetail(term.lexical)}', which is not a valid Int size", query = query)
         }
         return count.toInt()
     }

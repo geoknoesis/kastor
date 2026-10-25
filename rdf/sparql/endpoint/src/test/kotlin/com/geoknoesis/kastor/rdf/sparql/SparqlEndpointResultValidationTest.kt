@@ -303,4 +303,13 @@ class SparqlEndpointResultValidationTest {
             assertEquals(listOf(RdfTriple(Iri("urn:s"), Iri("urn:p"), Iri("urn:o")), RdfTriple(Iri("urn:s"), Iri("urn:p"), Literal("v", XSD.string))), found)
         }
     }
+    @Test
+    fun `an invalid triple count is quoted as printable text`() {
+        val body = result("\"count\"", """{"count":{"type":"literal","value":"\u001b[31m${"9".repeat(2_000)}"}}""")
+        SparqlRepository(SparqlEndpointConfig(url), answering(200, body)).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.defaultGraph.size() }
+            assertFalse(e.message!!.contains('\u001b'), e.message)
+            assertTrue(e.message!!.length < 1_000, "message of ${e.message!!.length} characters")
+        }
+    }
 }
