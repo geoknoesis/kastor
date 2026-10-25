@@ -375,6 +375,17 @@ entries are regrouped under those kind headings.
   now behave the same. A JSON-LD document with only a default graph parses as before.
 - **Changed (core):** `Rdf.parseDataset` (string, file and repository forms) and `parseDatasetFromUrl`
   accept JSON-LD as well as TriG and N-Quads, so a JSON-LD document with named graphs has a core path that keeps them.
+- **Fixed (data integrity, RDF4J):** Turtle and TriG serialization keeps every literal's lexical form. Rio wrote
+  numbers and booleans bare in canonical form, so `"+1"`, `"01"` and `"1.0e0"` came back as other literals (`1`, `1`,
+  `1.0E0`), and `"1"^^xsd:boolean` as `true`.
+- **Fixed (data integrity, RDF4J):** Turtle and TriG serialization writes RDF 1.2 triple terms as `<<( s p o )>>`
+  instead of `urn:rdf4j:triple:` IRIs, which every other RDF 1.2 reader takes for plain IRIs. Kastor translates
+  between RDF 1.2 triple-term tokens and the RDF-star tokens Rio 5.3.2 implements, token by token, in both directions;
+  so the RDF4J provider now also reads Turtle / TriG with `<<( s p o )>>` (14 W3C RDF 1.2 parser tests pass that were
+  allowlisted). A triple term where a subject or a predicate belongs stays a syntax error. N-Triples, N-Quads, RDF/XML
+  and JSON-LD keep RDF4J's encoding: Rio 5.3.2 reads RDF-star in none of them.
+- **Conformance:** the 27 RDF4J serializer round-trip known losses are fixed and removed from
+  `serializer-roundtrip-allowlist.tsv`, which now lists none.
 
 ### Round twelve
 

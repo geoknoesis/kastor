@@ -178,10 +178,32 @@ internal object Rdf4jFormatSupport {
         throw RdfFormatException.Generic("Failed to read $what: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
     }
 
+    /**
+     * The formats whose triple terms are written and read in RDF 1.2 syntax ([Rdf4jTripleTermSyntax]). Not N-Triples
+     * and N-Quads (Rio 5.x reads RDF-star in neither), nor RDF/XML and JSON-LD (Rio 5.x has no triple-term syntax for
+     * them): their triple terms stay `urn:rdf4j:triple:` IRIs, which only RDF4J reads back as triple terms.
+     */
+    private val TURTLE_FAMILY = setOf(RDFFormat.TURTLE, RDFFormat.TRIG)
+
+    /** The text a [writerFor] writer wrote, with RDF 1.2 triple-term syntax in the Turtle family. */
+    private fun rdf12Text(format: RDFFormat, text: String): String =
+        if (format in TURTLE_FAMILY) Rdf4jTripleTermSyntax.toRdf12(text) else text
+
+    /** [input] for Rio: in the Turtle family, RDF 1.2 triple terms become the RDF-star tokens Rio reads. */
+    private fun rdf12Input(format: RDFFormat, input: InputStream): InputStream =
+        if (format in TURTLE_FAMILY) Rdf4jTripleTermSyntax.fromRdf12(input) else input
+
     private fun writerFor(format: RDFFormat, writer: StringWriter, options: SerializationOptions): RDFHandler {
         // Base declarations are only emitted for formats that have one (Turtle / TriG), matching Jena.
         val base = options.baseUri?.takeIf { format == RDFFormat.TURTLE || format == RDFFormat.TRIG }
-        val rioWriter = if (base != null) Rio.createWriter(format, writer, base) else Rio.createWriter(format, writer)
+        // Turtle / TriG triple terms: RDF-star writers (`<< s p o >>`, turned into RDF 1.2 `<<( s p o )>>` by rdf12Text),
+        // not the `urn:rdf4j:triple:` IRIs of Rio's RDF 1.1 writers, which the other formats keep.
+        val writerFormat = when (format) { RDFFormat.TURTLE -> RDFFormat.TURTLESTAR; RDFFormat.TRIG -> RDFFormat.TRIGSTAR; else -> format }
+        val rioWriter = if (base != null) Rio.createWriter(writerFormat, writer, base) else Rio.createWriter(writerFormat, writer)
+        if (format in TURTLE_FAMILY) rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.helpers.BasicWriterSettings.ENCODE_RDF_STAR, false)
+        // Rio's Turtle / TriG writers write numbers and booleans bare by default, in their canonical form ("+1", "01"
+        // and "1"^^xsd:boolean as 1, 1 and true): another literal. Written quoted, every lexical form is kept.
+        rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.turtle.TurtleWriterSettings.ABBREVIATE_NUMBERS, false)
         return object : RDFHandlerWrapper(rioWriter) {
             override fun startRDF() {
                 super.startRDF()
@@ -212,7 +234,7 @@ internal object Rdf4jFormatSupport {
         }
         val writer = StringWriter()
         Rio.write(model as Iterable<Statement>, writerFor(rdf4jFormat, writer, options))
-        return writer.toString()
+        return rdf12Text(rdf4jFormat, writer.toString())
     }
 
     /**
@@ -231,7 +253,7 @@ internal object Rdf4jFormatSupport {
         val triples = mutableListOf<RdfTriple>()
         val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
-            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(inputStream, baseIri)
+            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(rdf12Input(rdf4jFormat, inputStream), baseIri)
         }
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
@@ -432,7 +454,7 @@ internal object Rdf4jFormatSupport {
                 var terminal: Any = PRODUCER_DIED
                 try {
                     val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(state.input, baseIri)
+                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(rdf12Input(format, state.input), baseIri)
                     terminal = END
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
@@ -479,8 +501,9 @@ internal object Rdf4jFormatSupport {
      * are written with their blank graph label ([parseDataset] skolemizes it).
      *
      * A blank node that occurs inside a triple term **and** outside of it (for example the reifier of an annotation on
-     * an annotated triple) stays one node when the document is parsed by [parseDataset] / [parseGraph]: Rio writes a
-     * triple term as an `urn:rdf4j:triple:` IRI with the labels of the blank nodes inside it, every blank node is
+     * an annotated triple) stays one node when the document is parsed by [parseDataset] / [parseGraph]: a triple term
+     * is written with the labels of the blank nodes inside it (in RDF 1.2 syntax in TriG, see [Rdf4jTripleTermSyntax];
+     * as an `urn:rdf4j:triple:` IRI in N-Quads), every blank node is
      * written under a label no Rio writer changes ([WriterLabels]), and the parsers of this object give a label the
      * same node inside and outside a triple term ([DocumentBlankNodes]). This holds for [serializeGraph] too. (Rio's
      * own parsers, used directly, keep the labels inside a triple term as written.)
@@ -517,7 +540,7 @@ internal object Rdf4jFormatSupport {
                     }
                 }
                 handler.endRDF()
-                writer.toString()
+                rdf12Text(rdf4jFormat, writer.toString())
             } catch (e: org.eclipse.rdf4j.rio.RDFHandlerException) {
                 throw RdfFormatException.Generic("Failed to serialize dataset: ${e.message}", RdfErrorCode.FORMAT_SERIALIZATION_ERROR, e)
             }
@@ -604,7 +627,7 @@ internal object Rdf4jFormatSupport {
                     } else {
                         connection.add(statement.subject, statement.predicate, statement.`object`)
                     }
-                }.parse(inputStream, baseIri)
+                }.parse(rdf12Input(rdf4jFormat, inputStream), baseIri)
             }
         }
     }
