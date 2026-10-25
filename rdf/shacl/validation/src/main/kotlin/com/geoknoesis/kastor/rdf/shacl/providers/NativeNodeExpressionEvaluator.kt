@@ -194,7 +194,7 @@ private class NodeExpressionEvaluator(
             is NodeExpression.InstancesOf -> instancesOf(sub(expr.e))
             is NodeExpression.Select -> startedAt(scope.depth) { select(expr, scope.focus, scope.args) }
             // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
-            is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape", scope.depth) })
+            is NodeExpression.FilterShape -> output(conforming(sub(expr.nodes), expr.shape, "shnex:filterShape", scope.depth))
             is NodeExpression.FindFirst -> findFirst(expr, scope, inner)
             is NodeExpression.MatchAll -> matchAll(expr, scope, inner)
             is NodeExpression.NodesMatching -> nodesMatching(expr.shape, scope.depth)
@@ -265,9 +265,42 @@ private class NodeExpressionEvaluator(
 
     private fun matchAll(expr: NodeExpression.MatchAll, scope: NodeExprScope, inner: NodeExprScope): List<RdfTerm> {
         // R6: every node is checked, so an undecided or failed check anywhere is a failure; ( true ) for no input.
+        // Kleene: one definite non-conforming node makes the result false even when another answer is provisional.
         val inputs = expr.nodes?.let { eval(it, inner) } ?: listOfNotNull(scope.focus)
-        val answers = inputs.map { conforms(it, expr.shape, "shnex:matchAll", scope.depth) }
-        return output(listOf(if (answers.all { it }) TrueLiteral else FalseLiteral))
+        var provisional: ProvisionalUndefined? = null
+        var all = true
+        for (node in inputs) {
+            try {
+                if (!conforms(node, expr.shape, "shnex:matchAll", scope.depth)) all = false
+            } catch (p: ProvisionalUndefined) {
+                if (provisional == null) provisional = p
+            }
+        }
+        if (all) provisional?.let { throw it }
+        return output(listOf(if (all) TrueLiteral else FalseLiteral))
+    }
+
+    /**
+     * The [nodes] that conform to [shape], in order. Every node is checked before a provisional answer is thrown, so
+     * that a failure of the check on a later node (which fails the expression whatever the provisional answer turns
+     * out to be) wins over it.
+     */
+    private fun conforming(nodes: Iterable<RdfTerm>, shape: RdfResource, function: String, depth: Int, each: () -> Unit = {}): List<RdfTerm> {
+        var provisional: ProvisionalUndefined? = null
+        val out = ArrayList<RdfTerm>()
+        for (node in nodes) {
+            each()
+            try {
+                if (conforms(node, shape, function, depth)) {
+                    out.add(node)
+                    capped(out.size)
+                }
+            } catch (p: ProvisionalUndefined) {
+                if (provisional == null) provisional = p
+            }
+        }
+        provisional?.let { throw it }
+        return out
     }
 
     private fun conformsToShape(expr: NodeExpression.ConformsToShape, scope: NodeExprScope, inner: NodeExprScope): List<RdfTerm> {
@@ -387,14 +420,7 @@ private class NodeExpressionEvaluator(
 
     private fun matchingNodes(shape: RdfResource, depth: Int): List<RdfTerm> {
         ctx.counters.nodesMatchingScans++
-        val matches = ArrayList<RdfTerm>()
-        for (node in ctx.data.allNodes()) {
-            ctx.budget.tick("node expression")
-            if (conforms(node, shape, "shnex:nodesMatching", depth)) {
-                matches.add(node)
-                capped(matches.size)
-            }
-        }
+        val matches = conforming(ctx.data.allNodes(), shape, "shnex:nodesMatching", depth) { ctx.budget.tick("node expression") }
         val sorted = NodeExpressionOrdering.stableSort(matches) { a, b ->
             ctx.budget.tick("node expression ordering")
             NodeExpressionOrdering.compare(a, b)
