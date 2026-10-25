@@ -202,7 +202,7 @@ subprojects {
       // Opt-in selection is part of test identity; changing these flags must not
       // reuse a report in which the requested native/remote tests were skipped.
       listOf("KASTOR_SKIP_EMBEDDING_TESTS", "KASTOR_SKIP_OPENAI_LLM_TESTS",
-        "KASTOR_RUN_EMBEDDING_TESTS", "KASTOR_RUN_SOAK_TESTS", "KASTOR_SOAK_CYCLES",
+        "KASTOR_RUN_EMBEDDING_TESTS", "KASTOR_RUN_OPENAI_LLM_TESTS", "KASTOR_RUN_SOAK_TESTS", "KASTOR_SOAK_CYCLES",
         "KASTOR_OOPS_BENCHMARK").forEach { name ->
         inputs.property(name, providers.environmentVariable(name).orElse(""))
       }

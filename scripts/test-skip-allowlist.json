@@ -5,19 +5,19 @@
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
    "test": "benchmark semantic embedding catalogue against bundled OOPS fixtures()",
    "count": 1,
-   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case additionally needs the ONNX model and is off under KASTOR_SKIP_EMBEDDING_TESTS=1."
+   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case downloads the ONNX model and also needs KASTOR_RUN_EMBEDDING_TESTS=1."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
    "test": "benchmark structural OWL quality against full bundled OOPS corpus()",
    "count": 1,
-   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case additionally needs the ONNX model and is off under KASTOR_SKIP_EMBEDDING_TESTS=1."
+   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case downloads the ONNX model and also needs KASTOR_RUN_EMBEDDING_TESTS=1."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsCalibrationTest$SemanticTierAfterEnrichment",
    "test": "semantic tier catches OOPS pitfall after enrichment(String)",
    "count": 1,
-   "reason": "Semantic tier downloads the all-MiniLM-L6-v2 ONNX model; disabled when KASTOR_SKIP_EMBEDDING_TESTS=1 (CI). Exercised by native-lifecycle.yml."
+   "reason": "Semantic tier downloads the all-MiniLM-L6-v2 ONNX model, opt-in with KASTOR_RUN_EMBEDDING_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.NativeResourceSoakTest",
@@ -53,7 +53,7 @@
    "class": "com.geoknoesis.kastor.ontoquality.llm.OpenAiExplanationIntegrationTest",
    "test": "enrichesReportWithOpenAi()",
    "count": 1,
-   "reason": "org.opentest4j.TestAbortedException: Assumption failed: Skipped: KASTOR_SKIP_OPENAI_LLM_TESTS=1"
+   "reason": "Live, billed OpenAI request, opt-in with KASTOR_RUN_OPENAI_LLM_TESTS=1 (@EnabledIfEnvironmentVariable); run by live-llm.yml."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
