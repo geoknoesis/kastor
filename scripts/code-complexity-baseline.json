@@ -117,10 +117,6 @@
       "lines": 850,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
-    "rdf/sparql/endpoint/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/SparqlRepository.kt": {
-      "lines": 1170,
-      "reason": "Round-ten upstream b5cfef13: credential redaction, per-call header deadlines and bounded UPDATE-body handling. Frozen at integration; further growth requires review."
-    },
     "rdf/sparql/lang/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/SparqlAst.kt": {
       "lines": 1020,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."

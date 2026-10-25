@@ -158,7 +158,7 @@ class SparqlEndpointRound9Test {
     @Test
     fun `a read that the watchdog expires as it returns fails the next read with the message of that read`() {
         val watchdog = ReadWatchdog()
-        lateinit var guarded: SparqlRepository.GuardedInputStream
+        lateinit var guarded: GuardedInputStream
         val raw = object : InputStream() {
             @Volatile var closed = false
             override fun read(): Int = throw UnsupportedOperationException()
@@ -170,7 +170,7 @@ class SparqlEndpointRound9Test {
             }
             override fun close() { closed = true }
         }
-        guarded = SparqlRepository.GuardedInputStream(raw, watchdog, Duration.ofHours(1), null, null)
+        guarded = GuardedInputStream(raw, watchdog, Duration.ofHours(1), null, null)
         assertEquals(1, guarded.read(ByteArray(4), 0, 4))
         assertTrue(raw.closed)
         val e = assertThrows(IOException::class.java) { guarded.read(ByteArray(4), 0, 4) }

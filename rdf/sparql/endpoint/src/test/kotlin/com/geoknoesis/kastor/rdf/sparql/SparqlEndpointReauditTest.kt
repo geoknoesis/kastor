@@ -746,14 +746,14 @@ class SparqlEndpointReauditTest {
     fun `https to http redirects are refused even when cross-origin redirects are followed`() {
         val https = java.net.URI("https://example.org/sparql")
         val http = java.net.URI("http://example.org/sparql")
-        val refusal = SparqlRepository.redirectRefusal(https, http, followCrossOriginRedirects = true)
+        val refusal = Redirects.refusal(https, http, followCrossOriginRedirects = true)
         assertNotNull(refusal)
         assertTrue(refusal!!.contains("plain http"), refusal)
-        assertNotNull(SparqlRepository.redirectRefusal(https, http, followCrossOriginRedirects = false))
-        assertNull(SparqlRepository.redirectRefusal(http, java.net.URI("https://example.org/sparql"), followCrossOriginRedirects = true))
-        assertNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = true))
-        assertNotNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = false))
-        assertNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://example.org/moved"), followCrossOriginRedirects = false))
+        assertNotNull(Redirects.refusal(https, http, followCrossOriginRedirects = false))
+        assertNull(Redirects.refusal(http, java.net.URI("https://example.org/sparql"), followCrossOriginRedirects = true))
+        assertNull(Redirects.refusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = true))
+        assertNotNull(Redirects.refusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = false))
+        assertNull(Redirects.refusal(https, java.net.URI("https://example.org/moved"), followCrossOriginRedirects = false))
     }
 
     @Test
