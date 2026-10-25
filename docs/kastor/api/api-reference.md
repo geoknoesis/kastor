@@ -395,11 +395,12 @@ Other network failures are plain `IOException`s; a parse failure of the body is 
 
 ### From Java
 
-`RdfException` extends `Exception`, so it is checked in Java. Every public entry point that can throw it declares it
-(`@Throws`): the functions of `Rdf`, the query, update and transaction methods of `SparqlQueryable`, `SparqlMutable`
-and `RdfRepository`, `ProviderRegistry.create`, the parse and serialize methods of `RdfProvider`, and the `rdf-holon`
-operations. Functions that read a stream, a file or a URL also declare `IOException`. `Rdf`'s functions are
-`@JvmStatic`, and functions with default arguments are `@JvmOverloads`:
+`RdfException` extends `RuntimeException`, so it is unchecked in Java as in Kotlin: Java needs no `catch` for it, and
+can catch it, or a subclass such as `HolonException`, by type around any call. The entry points that can throw it list
+it with `@Throws` as documentation: the functions of `Rdf`, the query, update and transaction methods of
+`SparqlQueryable`, `SparqlMutable` and `RdfRepository`, `ProviderRegistry.create`, the parse and serialize methods of
+`RdfProvider`, and the `rdf-holon` operations. Functions that read a stream, a file or a URL declare `IOException`,
+which is checked. `Rdf`'s functions are `@JvmStatic`, and functions with default arguments are `@JvmOverloads`:
 
 ```java
 try (RdfRepository repository = Rdf.memory()) {          // close() throws no checked exception
@@ -416,7 +417,7 @@ try (RdfRepository repository = Rdf.memory()) {          // close() throws no ch
 UrlLoadOptions options = UrlLoadOptions.DEFAULT.withMaxBytes(1_048_576).withTotalTimeoutMillis(10_000);
 ```
 
-Graph accessors (`RdfGraph.find`, `getTriples`, ...) do not declare `RdfException`. Terms are Kotlin value classes
+Terms are Kotlin value classes
 (`Iri`, `BlankNode`), and functions that take them as parameters have mangled JVM names, so they are not callable from
 Java; use the functions that take `RdfResource`, `RdfTerm` or `String`.
 

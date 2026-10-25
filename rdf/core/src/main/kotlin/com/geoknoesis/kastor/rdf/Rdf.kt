@@ -16,11 +16,11 @@ import java.util.concurrent.Executor
  * and `graph()` DSL are stable and part of the public API.
  *
  * **Java.** Every function is `@JvmStatic`, so Java calls `Rdf.parse(text)` rather than `Rdf.INSTANCE.parse(text)`,
- * and functions with default arguments are `@JvmOverloads`. Each function declares the checked exceptions it can
- * throw (`@Throws`): [RdfException] for parse, format and provider failures, and [IOException] for the functions that
- * read a stream, a file or a URL - URL loading refusals, HTTP errors, timeouts and size limits
- * ([RdfAddressRefusedException], [RdfHttpStatusException], [RdfLoadTimeoutException], [RdfInputTooLargeException])
- * are [IOException]s, not [RdfException]s, so `catch (RdfException e)` alone does not see them.
+ * and functions with default arguments are `@JvmOverloads`. Each function lists what it can throw (`@Throws`):
+ * [RdfException] (unchecked: Java needs no `catch`, and may catch it or a subclass by type) for parse, format and
+ * provider failures, and the checked [IOException] for functions that read a stream, a file or a URL. URL refusals,
+ * HTTP errors, timeouts and size limits ([RdfAddressRefusedException], [RdfHttpStatusException],
+ * [RdfLoadTimeoutException], [RdfInputTooLargeException]) are [IOException]s: `catch (RdfException e)` misses them.
  *
  * The provider dispatch behind the parse functions is in [RdfParsing], the URL loads in [RdfUrlParsing].
  */

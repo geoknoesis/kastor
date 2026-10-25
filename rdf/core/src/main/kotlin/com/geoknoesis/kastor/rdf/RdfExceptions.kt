@@ -36,11 +36,11 @@ package com.geoknoesis.kastor.rdf
  *
  * ## Java callers and I/O failures
  *
- * [RdfException] extends [Exception], so it is a checked exception for Java. The public entry points declare it with
- * `@Throws` (the parse functions of [Rdf], the query, update and transaction methods of [SparqlQueryable],
- * [SparqlMutable] and [RdfRepository], [ProviderRegistry.create], the [RdfProvider] parse and serialize methods, and
- * the `rdf-holon` operations), so Java can `catch (RdfException e)`, or a subclass, around them. Graph accessors
- * ([RdfGraph], [MutableRdfGraph]) do not declare it: the bundled providers do not throw it from them.
+ * [RdfException] extends [RuntimeException]: it is unchecked, for Java as for Kotlin, so a Java caller needs no
+ * `catch` or `throws` for it and can catch it, or any subclass, by type around any call. The public entry points still
+ * list it with `@Throws` as documentation (the parse functions of [Rdf], the query, update and transaction methods of
+ * [SparqlQueryable], [SparqlMutable] and [RdfRepository], [ProviderRegistry.create], the [RdfProvider] parse and
+ * serialize methods, and the `rdf-holon` operations).
  *
  * Failures to *read* input are [java.io.IOException]s, not [RdfException]s: an [java.io.InputStream] that fails, a
  * missing file, and every URL-loading failure - network errors, and Kastor's own [RdfAddressRefusedException],
@@ -64,7 +64,7 @@ sealed class RdfException(
     message: String,
     val errorCode: RdfErrorCode = RdfErrorCode.UNKNOWN_ERROR,
     cause: Throwable? = null
-) : Exception(message, cause) {
+) : RuntimeException(message, cause) {
     /**
      * Additional context for debugging.
      * Subclasses should populate this with relevant information (query strings, bindings, etc.).
@@ -79,9 +79,8 @@ sealed class RdfException(
  *
  * A subclass passes its own [errorCode] when one of [RdfErrorCode] fits, and otherwise keeps
  * [RdfErrorCode.EXTENSION_ERROR]; it identifies its failures more precisely with its own type and properties.
- * Like every [RdfException] it is a checked exception for Java callers: a Java `catch` of it compiles only around a
- * call that declares it (or a superclass) with `@Throws`, so every public function of an extension module that can
- * throw it must carry `@Throws`.
+ * Like every [RdfException] it is unchecked; an extension module lists it with `@Throws` on the functions that throw
+ * it, as documentation for Java callers.
  *
  * @param message Human-readable error message
  * @param errorCode Error code for programmatic handling (defaults to [RdfErrorCode.EXTENSION_ERROR])

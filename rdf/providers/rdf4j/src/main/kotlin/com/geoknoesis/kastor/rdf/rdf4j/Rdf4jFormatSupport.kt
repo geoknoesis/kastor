@@ -255,11 +255,11 @@ internal object Rdf4jFormatSupport {
 
     /**
      * Maps the failures of Rio to [RdfFormatException], including unchecked exceptions Rio throws on input it does
-     * not handle; a failure of the statement handler ([HandlerFailure]) propagates unchanged.
+     * not handle; a failure of the statement handler ([HandlerFailure]) and a Kastor [RdfException] propagate unchanged.
      */
     private inline fun <T> formatErrors(what: String, block: () -> T): T = try {
         block()
-    } catch (e: RuntimeException) {
+    } catch (e: RdfException) { throw e } catch (e: RuntimeException) {
         handlerFailure(e)?.let { throw it }
         throw when (e) {
             is RDFParseException -> RdfFormatException.Generic("Failed to parse $what: ${withRootCause(e)}", RdfErrorCode.FORMAT_PARSE_ERROR, e)

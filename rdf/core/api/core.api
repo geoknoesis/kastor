@@ -802,7 +802,7 @@ public final class com/geoknoesis/kastor/rdf/RdfErrorCode$Companion {
 	public final fun fromCode (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfErrorCode;
 }
 
-public abstract class com/geoknoesis/kastor/rdf/RdfException : java/lang/Exception {
+public abstract class com/geoknoesis/kastor/rdf/RdfException : java/lang/RuntimeException {
 	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfErrorCode;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun getContext ()Ljava/util/Map;
 	public final fun getErrorCode ()Lcom/geoknoesis/kastor/rdf/RdfErrorCode;

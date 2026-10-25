@@ -17,15 +17,28 @@ import kotlin.Unit;
 import org.junit.jupiter.api.Test;
 
 /**
- * The core entry points are usable from Java: this file must compile. Each {@code catch} of a checked Kastor exception
- * compiles only because the called function declares it ({@code @Throws}), and the static calls only because
- * {@code Rdf} exposes {@code @JvmStatic} members with {@code @JvmOverloads} defaults.
+ * The core entry points are usable from Java: this file must compile. {@code RdfException} is unchecked, so Java calls
+ * them without a {@code catch} and can still catch each exception by type; {@code IOException} (stream, file and URL
+ * loads) is checked and declared. The static calls compile because {@code Rdf} exposes {@code @JvmStatic} members
+ * with {@code @JvmOverloads} defaults.
  */
 class CoreJavaApiTest {
     private static final String TURTLE = "<http://example.org/s> <http://example.org/p> \"o\" .";
 
     @Test
-    void parseIsStaticWithDefaultFormatAndFailuresAreCaughtByType() throws RdfException {
+    void entryPointsNeedNoCatchForRdfExceptions() {
+        assertEquals(1, Rdf.parse(TURTLE).size());
+        assertEquals(1, Rdf.parse(TURTLE, RdfFormat.TURTLE).size());
+        try (RdfRepository repository = Rdf.memory()) {
+            repository.transaction(repo -> Unit.INSTANCE);
+            assertFalse(repository.select(new SandboxedSelectQuery("SELECT * WHERE { ?s ?p ?o }")).iterator().hasNext());
+        }
+        assertTrue(RuntimeException.class.isAssignableFrom(RdfException.class));
+        assertTrue(RuntimeException.class.isAssignableFrom(RdfExtensionException.class));
+    }
+
+    @Test
+    void parseIsStaticWithDefaultFormatAndFailuresAreCaughtByType() {
         try {
             assertEquals(1, Rdf.parse(TURTLE).size());
             Rdf.parse("<http://example.org/s> <http://example.org/p> .");

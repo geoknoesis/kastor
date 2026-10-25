@@ -18,16 +18,21 @@ and is kept as is; it was never published to Maven Central.
 
 #### Core (`rdf-core`, `rdf-holon`, `rdf-testkit`)
 
-- **Java interop (breaking for Java, binary):** the public entry points declare their checked exceptions with
-  `@Throws`, so Java can catch them by type. `RdfException` (and `HolonException`, an `RdfException` since round
-  eleven) is declared by the functions of `Rdf`, the query, update and transaction methods of `SparqlQueryable`,
+- **Breaking: `RdfException` is unchecked.** It extends `RuntimeException` instead of `Exception`, and so do all its
+  subclasses, `RdfExtensionException` and `rdf-holon`'s `HolonException` included. Java callers no longer need a
+  `catch` or `throws` for any of them, and can still catch each one by type (`catch (HolonException e)`); Kotlin code
+  is unaffected. Before, they were checked exceptions that no function declared, so a Java `catch` of one around a
+  Kastor call did not compile. Code that caught `RuntimeException` before `RdfException` now catches Kastor failures
+  in the first clause.
+- **Java interop:** the public entry points list what they throw with `@Throws` (documentation for the unchecked
+  `RdfException`, a declaration for the checked `IOException`). `RdfException` is listed by the functions of `Rdf`,
+  the query, update and transaction methods of `SparqlQueryable`,
   `SparqlMutable` and `RdfRepository`, `ProviderRegistry.create`, the parse, serialize and `createRepository` methods
   of `RdfProvider`, `RdfFormat.fromStringOrThrow`, `serialize` / `serializeDataset` / `openTripleStream`, and every
   public `rdf-holon` operation (`HolonContext.of` / `fromDataset` / `fromGraph` / `resolve` / `effectiveShapes`,
   `holon`, `holons`, `Holon.*`, `asDataset`, `validate`, `convert`). Functions that read a stream, a file or a URL
-  also declare `IOException`. Before, Java code could not compile `catch (RdfException e)`,
-  `catch (HolonException e)` or `catch (RdfAddressRefusedException e)` around any Kastor call. Java code that called
-  these functions without handling the declared exceptions no longer compiles: catch them or declare them.
+  also declare `IOException`, so Java can `catch (RdfAddressRefusedException e)` around a URL load; Java code that
+  calls them must now handle or declare `IOException`.
 - **Java interop:** every function of `object Rdf` is `@JvmStatic` (Java writes `Rdf.parse(text)`; bytecode
   compiled against `Rdf.INSTANCE.parse(...)` must be recompiled), and functions with default arguments are
   `@JvmOverloads` there, on the serialization and `openTripleStream` extensions, on `HolonContext` (whose factories are
@@ -295,8 +300,8 @@ API:
   `RdfErrorCode.EXTENSION_ERROR`.
 - **Breaking (rdf-holon):** `HolonException` extends `RdfExtensionException` instead of `RuntimeException`, so
   `catch (e: RdfException)` catches holon failures. Its `errorCode` is `EXTENSION_ERROR`, and `condition` still names
-  the RDF-H error. For Java callers it is a checked exception, like every `RdfException`; a Java `catch` of it
-  compiles only around a function that declares it, which the holon functions do from round twelve on (`@Throws`).
+  the RDF-H error. (Round twelve makes the whole `RdfException` hierarchy unchecked, so for Java callers it stays an
+  unchecked exception, as it was when it extended `RuntimeException`.)
 - Security: a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
   function library. This covers dataset clauses added for graphs of one repository, and `GRAPH` patterns rewritten for
   a dataset of the store's default graph. Before, it sent a plain `SparqlSelectQuery`: the provider ran the untrusted
