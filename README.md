@@ -180,7 +180,7 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **SPARQL 1.2** (`<<( s p o )>>` syntax, `LANGDIR` / `STRLANGDIR`, `TRIPLE` family)
 
 **Validation & Semantics**
-- **SHACL** (core constraints; provider-dependent)
+- **SHACL 1.2**: Core, SHACL-SPARQL (constraints, constraint components, functions) and Node Expressions in the native engine; the SPARQL parts run on `rdf-jena` or `rdf-rdf4j` (see [SHACL validation](docs/kastor/features/shacl-validation.md))
 - **RDFS** reasoning
 - **OWL** reasoning (EL / RL / DL via providers)
 
@@ -513,7 +513,7 @@ cd kastor
 ./gradlew conformanceSmokeTest
 ```
 
-Requires JDK 21+. See [CONTRIBUTING](CONTRIBUTING.md) for the full W3C conformance suites, memory settings, and the release process.
+Requires JDK 21+ and Python 3: `check` also runs the repository quality gates (`verifyQualityGates`: complexity ratchet, documentation versions, build pins, README imports). See [CONTRIBUTING](CONTRIBUTING.md) for the full W3C conformance suites, memory settings, and the release process.
 
 ## About
 
