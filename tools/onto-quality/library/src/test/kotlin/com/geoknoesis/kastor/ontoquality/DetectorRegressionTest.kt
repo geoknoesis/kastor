@@ -268,6 +268,15 @@ class DetectorRegressionTest {
         assertEquals(setOf(ViolationSeverity.WARNING), range.severities())
     }
 
+    @Test
+    fun `a notation shared by many concepts is one finding, not one per pair`() {
+        val concepts = (1..40).joinToString("\n") { "ex:c$it a skos:Concept ; skos:inScheme ex:S ; skos:notation \"X\" ." }
+        val found = findings(BundledCatalogs.SKOS_VALIDATION, "ex:S a skos:ConceptScheme .\n$concepts\nex:u a skos:Concept ; skos:inScheme ex:S ; skos:notation \"U\" .")
+        val notation = found.of("UniqueNotationInSchemeShape")
+        assertEquals(1, notation.size, notation.map { it.violation.message }.toString())
+        assertTrue("used by 40 concepts" in notation.single().violation.message, notation.single().violation.message)
+    }
+
     // ---- modern-engineering, embedding, rdf12 -----------------------------------------------------------------
 
     @Test
@@ -334,7 +343,9 @@ class DetectorRegressionTest {
                 """.trimIndent(),
             )
         assertEquals(setOf(ex("OtherStuff"), ex("C1")), found.of("JunkDrawerClassShape").focus())
-        assertEquals(setOf(ex("Bus")), found.of("SameLabelDifferentClassShape").focus())
+        val shared = found.of("SameLabelDifferentClassShape")
+        assertEquals(setOf(ex("Bus"), ex("Coach")), shared.focus())
+        assertEquals(2, shared.size)
     }
 
     @Test

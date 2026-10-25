@@ -219,7 +219,8 @@ class CliOutputTest {
         for (argv in listOf(listOf("--help"), listOf("check", "--help"), listOf("metrics", "--help"))) {
             val help = ontoQualityApp().test(argv).output.replace(Regex("\\s+"), " ")
             assertTrue(help.contains("2 the ontology could not be parsed"), help)
-            assertTrue(help.contains("5 runtime error (model download or loading, similarity or LLM budget, I/O"), help)
+            assertTrue(help.contains("5 runtime error (model download or loading, similarity, LLM, validation or reasoner budget, I/O"), help)
+            assertTrue(help.contains("1 findings at or above --severity, or a report cut by --max-findings"), help)
             assertTrue(help.contains("kastor-rdf uses a different convention: 0 success; 1 usage or input error"), help)
         }
     }

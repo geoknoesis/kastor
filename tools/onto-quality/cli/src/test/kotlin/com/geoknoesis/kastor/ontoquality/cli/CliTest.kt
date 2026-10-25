@@ -683,6 +683,28 @@ class CliTest {
     }
 
     @Test
+    fun `JSON findings carry the result path and value, as the text report does`() {
+        val onto =
+            ontology(
+                "paths.ttl",
+                """
+                @prefix : <http://example.org/p#> .
+                @prefix owl: <http://www.w3.org/2002/07/owl#> .
+                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                :A a owl:Class . :B a owl:Class . :Lonely a owl:Class .
+                :p a owl:ObjectProperty ; rdfs:domain :A , :B .
+                """.trimIndent(),
+            ).toString()
+        val out = dir.resolve("paths.json")
+        run(listOf("check", onto, "--catalog", "owl-quality", "--format", "json", "--output", out.toString()))
+        val findings = Json.parseToJsonElement(out.readText()).jsonObject.getValue("findings").jsonArray.map { it.jsonObject }
+        val multiple = findings.single { it.getValue("message").jsonPrimitive.content.startsWith("Property has multiple rdfs:domain") }
+        assertEquals("http://www.w3.org/2000/01/rdf-schema#domain", multiple.getValue("resultPath").jsonPrimitive.content)
+        val orphan = findings.first { it.getValue("message").jsonPrimitive.content.startsWith("Class is unconnected") }
+        assertEquals(orphan.getValue("focusNode").jsonPrimitive.content, orphan.getValue("value").jsonPrimitive.content)
+    }
+
+    @Test
     fun `JSON report escapes every control character`() {
         val nasty = "bell\u0007 formfeed\u000C nul\u0000 quote\" backslash\\ newline\n tab\t unit\u001F"
         val report = report(nasty)

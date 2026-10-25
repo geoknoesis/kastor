@@ -88,11 +88,11 @@ oqsh:SameLabelDifferentClassShape
     oqsh:pitfall     "P32" ;
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Distinct classes share an identical label" ;
-    rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling. Not reported: equivalent classes, and a deprecated class that keeps the label of its replacement." ;
+    rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling. Not reported: equivalent classes, and a deprecated class that keeps the label of its replacement. Each class is reported once per shared label, with the number of classes it shares it with: n classes with one label give n findings, not n(n-1)/2." ;
     sh:targetClass   owl:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
-                       sh:message "Class {$this} shares its label '{?label}' with another distinct class {?other}." ;
-                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label ?other WHERE { $this a owl:Class ; rdfs:label ?label . ?other a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) && isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentClass|^owl:equivalentClass ?other } FILTER NOT EXISTS { { $this owl:deprecated ?d1 } UNION { ?other owl:deprecated ?d2 } UNION { $this a owl:DeprecatedClass } UNION { ?other a owl:DeprecatedClass } } }""" ] ;
+                       sh:message "Class {$this} shares its label '{?label}' with {?count} other class(es), for example {?other}." ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label (COUNT(DISTINCT ?o) AS ?count) (MIN(str(?o)) AS ?other) WHERE { $this a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this owl:deprecated ?d1 } FILTER NOT EXISTS { $this a owl:DeprecatedClass } ?o rdfs:label ?label ; a owl:Class . FILTER ( isIRI(?o) && ?o != $this ) FILTER NOT EXISTS { $this owl:equivalentClass|^owl:equivalentClass ?o } FILTER NOT EXISTS { { ?o owl:deprecated ?d2 } UNION { ?o a owl:DeprecatedClass } } } GROUP BY ?label""" ] ;
     sh:severity      sh:Warning .
 
 ################################################################

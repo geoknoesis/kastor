@@ -87,6 +87,16 @@ data class QualityReport(
         appendLine("- **Conforms:** `$conforms`")
         appendLine("- **Violation-level rows:** ${underlying.violations.count { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }}")
         appendLine("- **SHACL warnings (report):** ${underlying.warnings.size}")
+        val ctx = metricsContext
+        if (ctx == null) {
+            val unlisted = findings.count { it.violation.severity != ViolationSeverity.VIOLATION && it.violation.severity != ViolationSeverity.ERROR }
+            if (unlisted > 0) {
+                appendLine(
+                    "- **Not listed below:** $unlisted warning or info finding(s); the category sections list violation-level rows " +
+                        "only (the text and JSON reports, and the Markdown report with metrics, list every finding).",
+                )
+            }
+        }
         if (truncated) {
             appendLine(
                 "- **Report truncated:** the validator stopped recording results after ${findings.size} finding(s); more exist " +
@@ -94,7 +104,6 @@ data class QualityReport(
             )
         }
         appendLine()
-        val ctx = metricsContext
         if (ctx != null) {
             appendLine("## Top findings by importance")
             appendLine()

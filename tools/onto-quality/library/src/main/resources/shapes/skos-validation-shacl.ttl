@@ -634,19 +634,17 @@ skvsh:UniqueNotationInSchemeShape
     skvsh:category  skvsh:Notations ;
     skvsh:rule      "convention" ;
     rdfs:label      "Notations should be unique within a concept scheme" ;
-    rdfs:comment    "SKOS Reference §6.5.3: 'A common usage convention is that the value of a skos:notation should be unique within the scope of a given concept scheme.' Not formally required by the spec." ;
+    rdfs:comment    "SKOS Reference §6.5.3: 'A common usage convention is that the value of a skos:notation should be unique within the scope of a given concept scheme.' Not formally required by the spec. One finding per duplicated notation and scheme, with the number of concepts that share it: n concepts with one notation give one finding, not n(n-1)/2." ;
     sh:targetClass  skos:ConceptScheme ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "Notation '{?notation}' is used by two different concepts ({?c1}, {?c2}) in scheme {$this}." ;
+                      sh:message "Notation '{?notation}' is used by {?count} concepts in scheme {$this}, for example {?c1} and {?c2}." ;
                       sh:prefixes <http://example.org/skos-validation-shacl> ;
                       sh:select """
-                        SELECT $this ?notation ?c1 ?c2 WHERE {
-                          ?c1 skos:inScheme $this ;
-                              skos:notation ?notation .
-                          ?c2 skos:inScheme $this ;
-                              skos:notation ?notation .
-                          FILTER ( str(?c1) < str(?c2) )
-                        }
+                        SELECT ?notation (COUNT(DISTINCT ?c) AS ?count) (MIN(str(?c)) AS ?c1) (MAX(str(?c)) AS ?c2) WHERE {
+                          ?c skos:inScheme $this ;
+                             skos:notation ?notation .
+                          FILTER EXISTS { ?d skos:notation ?notation ; skos:inScheme $this . FILTER ( ?d != ?c ) }
+                        } GROUP BY ?notation
                       """ ] ;
     sh:severity     sh:Warning .
 

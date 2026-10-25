@@ -63,6 +63,15 @@ class QualityReportTextTest {
     }
 
     @Test
+    fun `the Markdown digest says how many findings it does not list`() {
+        val report = checker().check(parse("ex:Alpha a owl:Class ."))
+        val md = report.describeMarkdown()
+        val unlisted = report.findings.count { it.violation.severity != com.geoknoesis.kastor.rdf.shacl.ViolationSeverity.VIOLATION }
+        assertTrue(unlisted > 0)
+        assertContains(md, "**Not listed below:** $unlisted warning or info finding(s)")
+    }
+
+    @Test
     fun `a truncated report says so in text and Markdown`() {
         val classes = (1..12).joinToString("\n") { "ex:C$it a owl:Class ." }
         val report = checker(ValidationConfig(maxViolations = 5)).check(parse(classes))

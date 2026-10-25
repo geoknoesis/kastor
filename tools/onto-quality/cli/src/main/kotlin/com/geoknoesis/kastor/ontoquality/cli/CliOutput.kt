@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.ontoquality.cli
 
 import com.geoknoesis.kastor.ontoquality.PitfallReference
+import com.geoknoesis.kastor.ontoquality.QualityFinding
 import com.geoknoesis.kastor.ontoquality.QualityReport
 import com.geoknoesis.kastor.ontoquality.MarkdownReportOptions
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
@@ -165,6 +166,9 @@ internal fun findingsToJson(
                         put("pitfall", pitfallLabel(f.pitfall))
                         put("tier", f.tier.name)
                         put("focusNode", focusNodeToString(f.violation.focusNode, f.blankNodeKeys))
+                        // The result path (its IRIs, or the key of a complex path) and value, as in the text report.
+                        put("resultPath", resultPathToString(f))
+                        put("value", f.violation.value?.let { focusNodeToString(it, f.blankNodeKeys) })
                     }
                 }
             }
@@ -192,6 +196,13 @@ internal fun findingsToJson(
             }
         }
     return reportJson.encodeToString(JsonObject.serializer(), root)
+}
+
+/** The result path of [finding]: its steps joined by ` / `, or the key of a complex (blank-node) path; null when it has none. */
+private fun resultPathToString(finding: QualityFinding): String? {
+    val steps = finding.violation.path.orEmpty()
+    if (steps.isNotEmpty()) return steps.joinToString(" / ") { focusNodeToString(it, finding.blankNodeKeys) }
+    return finding.violation.resultPathNode?.let { focusNodeToString(it, finding.blankNodeKeys) }
 }
 
 /** Blank nodes use their known stable key (see [com.geoknoesis.kastor.ontoquality.QualityFinding.blankNodeKeys]). */
