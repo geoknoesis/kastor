@@ -59,8 +59,17 @@ class MemoryReasonerProvider : RdfReasonerProvider {
  *
  * Consistency: plain RDFS has no negation, so the only detectable inconsistency is an ill-typed literal of
  * a recognised XSD datatype (D-unsatisfiability); that is what [isConsistent] reports.
+ *
+ * [ReasonerConfig.customRules] are not supported: a configuration with any is rejected with
+ * [IllegalArgumentException] instead of being reasoned over without them.
  */
 class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
+    init {
+        require(config.customRules.isEmpty()) {
+            "The memory RDFS reasoner does not support custom rules (${config.customRules.size} given); " +
+                "use a provider whose capabilities list supportsCustomRules, such as rdf-jena-reasoning"
+        }
+    }
 
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()

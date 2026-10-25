@@ -10,13 +10,20 @@ import com.geoknoesis.kastor.rdf.*
  * Kastor's Dataset API names graphs by IRI: a requested blank-node graph name reports unsupported-capability;
  * the full RDF-H result remains available through [HolonResolution.attributedGraphs].
  * Providers that cannot retain empty named graphs also report unsupported-capability for those datasets.
- * [repositoryFactory] must return a fresh, empty repository whose ownership transfers to this method.
+ * [repositoryFactory] must return a fresh, empty repository whose ownership transfers to this method; one that already
+ * holds data is closed and refused with [IllegalArgumentException].
  *
  * The snapshot is copied into that repository once. Queries then run in place on it, with or without [attributed]
  * (no per-query copy), when it has a SPARQL engine; the graph-only `memory` provider is copied for every query, as
  * any [Dataset] over it is. With [attributed], the scope union is stored in a private named graph whose IRI is never
  * one of the dataset's named graphs.
+ *
+ * @throws HolonException with [HolonError.UNSUPPORTED_CAPABILITY] for the GLOBAL scope, a blank-node graph name
+ *   with [attributed], or graph names or empty graphs the query provider cannot represent
+ * @throws RdfException if [repositoryFactory] or the copy into its repository fails
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun HolonResolution.asDataset(
   attributed: Boolean = false,
   repositoryFactory: () -> RdfRepository = { Rdf.memory() },
@@ -27,6 +34,10 @@ fun HolonResolution.asDataset(
   }
   val repository = repositoryFactory()
   try {
+    // Data already in the repository would be queried with the snapshot: refuse it instead.
+    require(repository.defaultGraph.size() == 0 && repository.listGraphs().isEmpty()) {
+      "repositoryFactory must return a fresh, empty repository; the one it returned already holds data"
+    }
     val names = if (attributed) attributedGraphs.keys.filterIsInstance<Iri>() else emptyList()
     // With named graphs, the scope union is stored in a private named graph rather than the store's default graph:
     // a dataset of the store's default graph and named graphs cannot be queried in place (the default graph has no

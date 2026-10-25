@@ -1,5 +1,12 @@
 package com.geoknoesis.kastor.rdf
 
+import com.geoknoesis.kastor.rdf.RdfNameChars.escapeEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.exponentEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.isVarNamePart
+import com.geoknoesis.kastor.rdf.RdfNameChars.isVarNameStart
+import com.geoknoesis.kastor.rdf.RdfNameChars.nameCharEnd
+import com.geoknoesis.kastor.rdf.RdfNameChars.isPnCharsBase
+
 /**
  * Analyses and rewrites the dataset-related parts of a SPARQL query: detects `FROM` and `GRAPH`, inserts dataset
  * clauses (FROM / FROM NAMED) at the grammatically correct place - after the SELECT projection, CONSTRUCT template,
@@ -21,16 +28,26 @@ package com.geoknoesis.kastor.rdf
  * it. `SparqlScannerDifferentialTest` compares it with a real parser; extend that test before extending the scanner.
  */
 internal object SparqlDatasetClauses {
-    private enum class Kind { WORD, IRI, STRING, VAR, PUNCT }
-    private class Token(val kind: Kind, val start: Int, val end: Int)
+    internal enum class Kind { WORD, IRI, STRING, VAR, PUNCT }
+    internal class Token(val kind: Kind, val start: Int, val end: Int)
 
     private val SOLUTION_MODIFIERS = setOf("ORDER", "GROUP", "HAVING", "LIMIT", "OFFSET", "VALUES")
 
     /** Words, besides `a`, numbers and prefixed names, of a pattern whose written variables are all in scope. */
-    private val SIMPLE_PATTERN_WORDS = setOf("OPTIONAL", "UNION", "GRAPH", "TRUE", "FALSE")
+    internal val SIMPLE_PATTERN_WORDS = setOf("OPTIONAL", "UNION", "GRAPH", "TRUE", "FALSE")
 
     /** A SPARQL codepoint escape: `\u` + 4 hex digits or `\U` + 8 hex digits. */
     private val CODEPOINT_ESCAPE = Regex("""\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})""")
+
+    /** The word `FROM`, in any case, wherever it stands: the fail-closed test for a query that cannot be analysed. */
+    private val FROM_WORD = Regex("""(?<![\p{L}\p{N}_])FROM(?![\p{L}\p{N}_])""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Deepest nesting of groups [withoutNamedGraphs] analyses. The scope analysis recurses per group and reads each
+     * nested group again, so a deeper query is refused (it is unanalysable) instead of overflowing the stack or costing
+     * time quadratic in its length. Real queries nest a handful of groups.
+     */
+    const val MAX_GROUP_DEPTH = 128
 
     /** Stands in the early reading for an escape above U+10FFFF, which has no character. */
     private val REPLACEMENT_CHARACTER = 0xFFFD.toChar()
@@ -115,9 +132,25 @@ internal object SparqlDatasetClauses {
         return Analysis(text, tokens, earlyText, tokenize(earlyText), origin)
     }
 
-    /** True if [range] lies within one of the [regions] (strings, IRIs and comments). */
-    private fun inside(regions: List<Token>, range: IntRange): Boolean =
-        regions.any { it.start <= range.first && range.last < it.end }
+    /**
+     * True if [range] lies within one of the [regions] (strings, IRIs and comments). The regions come from one
+     * tokenizer pass, so they are in text order and do not overlap: a binary search finds the only candidate, which
+     * keeps the scan of a query with many escapes and many strings linear (up to a log factor), not quadratic.
+     */
+    private fun inside(regions: List<Token>, range: IntRange): Boolean {
+        var low = 0
+        var high = regions.size - 1
+        while (low <= high) {
+            val mid = (low + high) ushr 1
+            val region = regions[mid]
+            when {
+                region.end <= range.first -> low = mid + 1
+                region.start > range.first -> high = mid - 1
+                else -> return range.last < region.end
+            }
+        }
+        return false
+    }
 
     /**
      * [query] with the escapes outside the [opaque] regions decoded; [query] itself if there are none. Null if such
@@ -149,17 +182,22 @@ internal object SparqlDatasetClauses {
      */
     fun canonical(query: String): String? = analyse(query)?.takeIf { it.agree() }?.text
 
-    private fun isKeyword(query: String, token: Token, keyword: String): Boolean =
+    internal fun isKeyword(query: String, token: Token, keyword: String): Boolean =
         token.kind == Kind.WORD && token.end - token.start == keyword.length &&
             query.regionMatches(token.start, keyword, 0, keyword.length, ignoreCase = true)
 
     /**
      * True if [query] contains a `FROM` keyword in either reading of its escapes, i.e. declares `FROM` or
      * `FROM NAMED` dataset clauses. `FROM` inside strings, IRIs, comments, variables, language tags and prefixed
-     * names does not count; `FROM` is not used by any other SPARQL construct. False for a query that cannot be
-     * analysed (callers never run such a query in place without rewriting it, which fails).
+     * names does not count; `FROM` is not used by any other SPARQL construct. For a query that cannot be analysed,
+     * true if the word `FROM` appears anywhere in it, with or without its escapes decoded: an engine may read it as
+     * a dataset clause, so it fails closed.
      */
-    fun declaresDataset(query: String): Boolean = analyse(query)?.hasKeyword("FROM") ?: false
+    fun declaresDataset(query: String): Boolean = analyse(query)?.hasKeyword("FROM")
+        ?: (FROM_WORD.containsMatchIn(query) || FROM_WORD.containsMatchIn(CODEPOINT_ESCAPE.replace(query) { escape ->
+            val codePoint = escape.value.substring(2).toLong(16)
+            if (codePoint > Character.MAX_CODE_POINT) REPLACEMENT_CHARACTER.toString() else String(Character.toChars(codePoint.toInt()))
+        }))
 
     /**
      * True if [query] contains the `GRAPH` keyword (a graph pattern, or a graph reference in an update) in either
@@ -192,8 +230,8 @@ internal object SparqlDatasetClauses {
      * @return [query] itself if it has no `GRAPH` in either reading of its escapes (with escapes outside strings,
      *   IRIs and comments decoded, see [canonical]); the rewritten query; or null if a `GRAPH` keyword is not
      *   followed by a variable or IRI and a balanced group, a `SERVICE` keyword is not followed by a name and a
-     *   balanced group, the query has an unterminated string or its readings differ, or it uses `GRAPH` in a
-     *   `CONSTRUCT WHERE` short form.
+     *   balanced group, the query has an unterminated string or its readings differ, it uses `GRAPH` in a
+     *   `CONSTRUCT WHERE` short form, or it nests groups deeper than [MAX_GROUP_DEPTH].
      */
     fun withoutNamedGraphs(query: String): String? {
         val analysis = analyse(query) ?: return null
@@ -201,6 +239,7 @@ internal object SparqlDatasetClauses {
         if (!analysis.hasKeyword("GRAPH")) return if (text == query) query else text
         if (!analysis.agree()) return null
         val tokens = analysis.tokens
+        if (groupDepth(text, tokens) > MAX_GROUP_DEPTH) return null
         fun isGraph(t: Token) = isKeyword(text, t, "GRAPH")
         fun punct(t: Token, c: Char) = t.kind == Kind.PUNCT && text[t.start] == c
         fun isName(t: Token) = t.kind == Kind.VAR || t.kind == Kind.IRI || (t.kind == Kind.WORD && isPrefixedName(text, t))
@@ -291,167 +330,21 @@ internal object SparqlDatasetClauses {
      */
     private fun patternVariables(text: String, tokens: List<Token>, from: Int, until: Int): List<String>? {
         val variables = LinkedHashSet<String>()
-        return if (Scope(text, tokens).group(from, until, variables)) variables.toList() else null
+        return if (SparqlGroupScope(text, tokens).group(from, until, variables)) variables.toList() else null
     }
 
-    /** The scope analysis of [patternVariables] over the [tokens] of [text]. */
-    private class Scope(private val text: String, private val tokens: List<Token>) {
-        private fun punct(index: Int, c: Char) = tokens[index].kind == Kind.PUNCT && text[tokens[index].start] == c
-        private fun keyword(index: Int, word: String) = isKeyword(text, tokens[index], word)
-        private fun variable(index: Int) = text.substring(tokens[index].start, tokens[index].end)
-
-        /** Adds the variables in scope of the group content [from] until [until] to [out]; false if not certain. */
-        fun group(from: Int, until: Int, out: MutableSet<String>): Boolean {
-            // The content of a group is a sub-select, or patterns.
-            if (from < until && keyword(from, "SELECT")) return subSelect(from, until, out)
-            var k = from
-            while (k < until) {
-                val token = tokens[k]
-                when (token.kind) {
-                    Kind.VAR -> { out.add(variable(k)); k++ }
-                    Kind.PUNCT -> {
-                        if (punct(k, '{')) {
-                            val close = closing(k, until, '{', '}') ?: return false
-                            if (!group(k + 1, close, out)) return false
-                            k = close + 1
-                        } else k++
-                    }
-                    Kind.WORD -> {
-                        val first = text[token.start]
-                        if (first in '0'..'9' || first == '.' || isPrefixedName(text, token)) { k++; continue }
-                        val word = text.substring(token.start, token.end)
-                        k = when {
-                            word == "a" || word.uppercase() in SIMPLE_PATTERN_WORDS -> k + 1
-                            word.equals("FILTER", ignoreCase = true) -> constraintEnd(k + 1, until)
-                            word.equals("MINUS", ignoreCase = true) -> groupEnd(k + 1, until)
-                            word.equals("BIND", ignoreCase = true) -> {
-                                val assigned = assignment(k + 1, until) ?: return false
-                                out.add(variable(assigned.first))
-                                assigned.second
-                            }
-                            word.equals("VALUES", ignoreCase = true) -> inlineData(k + 1, until, out)
-                            else -> null
-                        } ?: return false
-                    }
-                    else -> k++
-                }
+    /** Deepest nesting of `{` groups in [tokens] of [text]. */
+    private fun groupDepth(text: String, tokens: List<Token>): Int {
+        var depth = 0
+        var deepest = 0
+        for (t in tokens) {
+            if (t.kind != Kind.PUNCT) continue
+            when (text[t.start]) {
+                '{' -> deepest = maxOf(deepest, ++depth)
+                '}' -> depth--
             }
-            return true
         }
-
-        /** Index of the token closing the bracket [open] at [openIndex], before [until]; null if there is none. */
-        private fun closing(openIndex: Int, until: Int, open: Char, close: Char): Int? {
-            var depth = 0
-            for (j in openIndex until until) {
-                if (tokens[j].kind != Kind.PUNCT) continue
-                val c = text[tokens[j].start]
-                if (c == open) depth++ else if (c == close && --depth == 0) return j
-            }
-            return null
-        }
-
-        /** Index after the `{ ... }` group that must start at [index]; null if there is none. */
-        private fun groupEnd(index: Int, until: Int): Int? {
-            if (index >= until || !punct(index, '{')) return null
-            return closing(index, until, '{', '}')?.plus(1)
-        }
-
-        /**
-         * Index of the `)` closing the `(` at [openIndex], if the expression between them was certainly read as it
-         * is written. An IRI token that follows an operand (`?a<?b&&?c>1` reads as the IRI `<?b&&?c>`) may be a
-         * comparison that swallowed brackets and variables: such an expression is not certain.
-         */
-        private fun expressionEnd(openIndex: Int, until: Int): Int? {
-            val close = closing(openIndex, until, '(', ')') ?: return null
-            for (j in openIndex + 1 until close) {
-                if (tokens[j].kind != Kind.IRI) continue
-                val before = tokens[j - 1]
-                val operand = before.kind == Kind.VAR || before.kind == Kind.WORD || before.kind == Kind.STRING ||
-                    before.kind == Kind.IRI || punct(j - 1, ')')
-                if (operand) return null
-            }
-            return close
-        }
-
-        /**
-         * Index after the constraint of a `FILTER` that starts at [index]: `( expr )`, `[NOT] EXISTS { ... }`, or a
-         * built-in or function call `name( ... )`.
-         */
-        private fun constraintEnd(index: Int, until: Int): Int? {
-            var j = index
-            if (j >= until) return null
-            if (punct(j, '(')) return expressionEnd(j, until)?.plus(1)
-            if (keyword(j, "NOT")) j++
-            if (j < until && keyword(j, "EXISTS")) return groupEnd(j + 1, until)
-            if (j != index) return null
-            val callable = tokens[j].kind == Kind.IRI || tokens[j].kind == Kind.WORD
-            if (!callable || j + 1 >= until || !punct(j + 1, '(')) return null
-            return expressionEnd(j + 1, until)?.plus(1)
-        }
-
-        /**
-         * For `( expr AS ?v )` starting at [index]: the index of `?v` and the index after the closing bracket.
-         */
-        private fun assignment(index: Int, until: Int): Pair<Int, Int>? {
-            if (index >= until || !punct(index, '(')) return null
-            val close = expressionEnd(index, until) ?: return null
-            if (close - 2 <= index || tokens[close - 1].kind != Kind.VAR || !keyword(close - 2, "AS")) return null
-            return (close - 1) to (close + 1)
-        }
-
-        /** Adds the variables of `VALUES ?v { ... }` or `VALUES ( ?v ... ) { ... }` at [index]; index after it. */
-        private fun inlineData(index: Int, until: Int, out: MutableSet<String>): Int? {
-            var j = index
-            if (j >= until) return null
-            if (tokens[j].kind == Kind.VAR) {
-                out.add(variable(j))
-                j++
-            } else if (punct(j, '(')) {
-                j++
-                while (j < until && tokens[j].kind == Kind.VAR) { out.add(variable(j)); j++ }
-                if (j >= until || !punct(j, ')')) return null
-                j++
-            } else return null
-            return groupEnd(j, until)
-        }
-
-        /** The projected variables of the sub-select that fills the group [from] until [until]. */
-        private fun subSelect(from: Int, until: Int, out: MutableSet<String>): Boolean {
-            var j = from + 1
-            if (j < until && (keyword(j, "DISTINCT") || keyword(j, "REDUCED"))) j++
-            val projected = ArrayList<String>()
-            var star = false
-            while (true) {
-                if (j >= until) return false
-                when {
-                    tokens[j].kind == Kind.VAR -> { projected.add(variable(j)); j++ }
-                    punct(j, '*') -> { star = true; j++ }
-                    punct(j, '(') -> {
-                        val assigned = assignment(j, until) ?: return false
-                        projected.add(variable(assigned.first))
-                        j = assigned.second
-                    }
-                    keyword(j, "WHERE") -> { j++; break }
-                    punct(j, '{') -> break
-                    else -> return false
-                }
-            }
-            if (j >= until || !punct(j, '{')) return false
-            val close = closing(j, until, '{', '}') ?: return false
-            if (star) {
-                if (projected.isNotEmpty() || !group(j + 1, close, out)) return false
-            } else {
-                if (projected.isEmpty()) return false
-                out.addAll(projected)
-            }
-            // Solution modifiers may follow; a trailing VALUES clause joins its variables in, so it is not certain,
-            // and neither is an expression with an IRI the scanner may have misread.
-            for (m in close + 1 until until) {
-                val token = tokens[m]
-                if (token.kind == Kind.IRI || punct(m, '{') || punct(m, '}') || keyword(m, "VALUES")) return false
-            }
-            return true
-        }
+        return deepest
     }
 
     /** Index of the `}` token closing the `{` at [openIndex], or null if unbalanced. */
@@ -523,62 +416,9 @@ internal object SparqlDatasetClauses {
     }
 
     /** True if the WORD [token] is a prefixed name or blank node label (it contains a colon). */
-    private fun isPrefixedName(query: String, token: Token): Boolean {
+    internal fun isPrefixedName(query: String, token: Token): Boolean {
         for (k in token.start until token.end) if (query[k] == ':') return true
         return false
-    }
-
-    /** The SPARQL production `PN_CHARS_BASE`: the letters a name or a variable name may start with. */
-    private fun isPnCharsBase(codePoint: Int): Boolean =
-        codePoint in 'A'.code..'Z'.code || codePoint in 'a'.code..'z'.code ||
-            codePoint in 0x00C0..0x00D6 || codePoint in 0x00D8..0x00F6 || codePoint in 0x00F8..0x02FF ||
-            codePoint in 0x0370..0x037D || codePoint in 0x037F..0x1FFF || codePoint in 0x200C..0x200D ||
-            codePoint in 0x2070..0x218F || codePoint in 0x2C00..0x2FEF || codePoint in 0x3001..0xD7FF ||
-            codePoint in 0xF900..0xFDCF || codePoint in 0xFDF0..0xFFFD || codePoint in 0x10000..0xEFFFF
-
-    /** First character of the SPARQL production `VARNAME`: `PN_CHARS_U | [0-9]`. */
-    private fun isVarNameStart(codePoint: Int): Boolean =
-        isPnCharsBase(codePoint) || codePoint == '_'.code || codePoint in '0'.code..'9'.code
-
-    /**
-     * Later characters of `VARNAME`: `PN_CHARS_U | [0-9] | U+00B7 | [U+0300-U+036F] | [U+203F-U+2040]` - the
-     * middle dot, the combining diacritical marks, and the undertie and character tie.
-     */
-    private fun isVarNamePart(codePoint: Int): Boolean =
-        isVarNameStart(codePoint) || codePoint == 0x00B7 || codePoint in 0x0300..0x036F || codePoint in 0x203F..0x2040
-
-    /**
-     * Index after the name character at [index] of [q] - `PN_CHARS` (what [isVarNamePart] allows, and `-`) or a dot -
-     * or [index] itself if there is none.
-     */
-    private fun nameCharEnd(q: String, index: Int): Int {
-        val codePoint = q.codePointAt(index)
-        return if (isVarNamePart(codePoint) || codePoint == '-'.code || codePoint == '.'.code) {
-            index + Character.charCount(codePoint)
-        } else index
-    }
-
-    /** End of the exponent (`e`, optional sign, digits) starting at [from], or -1 if there is none. */
-    private fun exponentEnd(q: String, from: Int): Int {
-        if (from >= q.length || (q[from] != 'e' && q[from] != 'E')) return -1
-        var k = from + 1
-        if (k < q.length && (q[k] == '+' || q[k] == '-')) k++
-        val digits = k
-        while (k < q.length && q[k] in '0'..'9') k++
-        return if (k > digits) k else -1
-    }
-
-    /** End of the codepoint escape that starts with the backslash at [from], or -1 if there is none. */
-    private fun escapeEnd(q: String, from: Int): Int {
-        val digits = when (q.getOrNull(from + 1)) {
-            'u' -> 4
-            'U' -> 8
-            else -> return -1
-        }
-        val end = from + 2 + digits
-        if (end > q.length) return -1
-        for (k in from + 2 until end) if (Character.digit(q[k], 16) < 0) return -1
-        return end
     }
 
     /**

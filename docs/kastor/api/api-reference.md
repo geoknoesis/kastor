@@ -382,7 +382,44 @@ open class RdfExtensionException(
 
 `rdf-holon`'s `HolonException` extends `RdfExtensionException`, so `catch (e: RdfException)` also catches holon failures.
 
-URL loading can also throw `RdfInputTooLargeException` (an `IOException`) when a body exceeds `UrlLoadOptions.maxBytes`, and invalid configurations or disallowed URL schemes throw `IllegalArgumentException`.
+URL loading fails with `IOException`s, not `RdfException`s, when the input cannot be obtained:
+
+| Exception | When |
+|---|---|
+| `RdfAddressRefusedException` | `UrlLoadOptions.addressPolicy` refuses the URL or a redirect target. With the default `UrlAddressPolicy.PUBLIC_ADDRESSES` this is every loopback, private, link-local or other non-public address, and every URL without a host (`file:`). Nothing was sent. |
+| `RdfHttpStatusException` | The server answered outside 200-299, or a redirect was not followed (`statusCode` says which). |
+| `RdfLoadTimeoutException` | The load exceeded `UrlLoadOptions.totalTimeoutMillis` (an `InterruptedIOException`). |
+| `RdfInputTooLargeException` | The body exceeded `UrlLoadOptions.maxBytes`. |
+
+Other network failures are plain `IOException`s; a parse failure of the body is an `RdfFormatException`. Invalid configurations and disallowed URL schemes throw `IllegalArgumentException`.
+
+### From Java
+
+`RdfException` extends `RuntimeException`, so it is unchecked in Java as in Kotlin: Java needs no `catch` for it, and
+can catch it, or a subclass such as `HolonException`, by type around any call. The entry points that can throw it list
+it with `@Throws` as documentation: the functions of `Rdf`, the query, update and transaction methods of
+`SparqlQueryable`, `SparqlMutable` and `RdfRepository`, `ProviderRegistry.create`, the parse and serialize methods of
+`RdfProvider`, and the `rdf-holon` operations. Functions that read a stream, a file or a URL declare `IOException`,
+which is checked. `Rdf`'s functions are `@JvmStatic`, and functions with default arguments are `@JvmOverloads`:
+
+```java
+try (RdfRepository repository = Rdf.memory()) {          // close() throws no checked exception
+    MutableRdfGraph graph = Rdf.parseFromUrl(url);         // TURTLE, UrlLoadOptions.DEFAULT
+    repository.select(new SandboxedSelectQuery("SELECT * WHERE { ?s ?p ?o }"));
+} catch (RdfAddressRefusedException e) {                 // an IOException
+    // the URL names a non-public address
+} catch (IOException e) {
+    // the input could not be read
+} catch (RdfException e) {
+    // a parse, query or provider failure; HolonException is one too
+}
+
+UrlLoadOptions options = UrlLoadOptions.DEFAULT.withMaxBytes(1_048_576).withTotalTimeoutMillis(10_000);
+```
+
+Terms are Kotlin value classes
+(`Iri`, `BlankNode`), and functions that take them as parameters have mangled JVM names, so they are not callable from
+Java; use the functions that take `RdfResource`, `RdfTerm` or `String`.
 
 ## ⚙️ Configuration
 

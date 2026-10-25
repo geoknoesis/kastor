@@ -42,7 +42,11 @@ interface RdfProvider {
     
     /**
      * Create a repository with the given configuration.
+     *
+     * @throws RdfException if the repository cannot be created (an unknown variant, an invalid option, a storage
+     *   location that cannot be opened)
      */
+    @Throws(RdfException::class)
     fun createRepository(variantId: String, config: RdfConfig): RdfRepository
     
     /**
@@ -149,6 +153,7 @@ interface RdfProvider {
      * @throws RdfFormatException if the format is not supported or serialization fails
      * @throws UnsupportedOperationException if the provider doesn't support serialization
      */
+    @Throws(RdfException::class)
     fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         throw UnsupportedOperationException("Provider '${id}' does not support graph serialization")
     }
@@ -169,6 +174,7 @@ interface RdfProvider {
      * @throws RdfFormatException if the format is not supported or serialization fails
      * @throws UnsupportedOperationException if the provider doesn't support dataset serialization
      */
+    @Throws(RdfException::class)
     fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         throw UnsupportedOperationException("Provider '${id}' does not support dataset serialization")
     }
@@ -185,6 +191,7 @@ interface RdfProvider {
      * @throws RdfFormatException if the format is not supported or parsing fails
      * @throws UnsupportedOperationException if the provider doesn't support parsing
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
         throw UnsupportedOperationException("Provider '${id}' does not support graph parsing")
     }
@@ -202,6 +209,7 @@ interface RdfProvider {
      * @param baseIri Absolute IRI used to resolve relative references in the
      *   input. Pass null to fall back to the format's default behaviour.
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseGraph(
         inputStream: java.io.InputStream,
         format: String,
@@ -211,23 +219,8 @@ interface RdfProvider {
         return parseGraph(inputStream, format)
     }
     
-    /**
-     * Parse RDF data from an input stream as a sequence of triples (streaming).
-     * 
-     * This method enables memory-efficient parsing of large RDF files by returning
-     * triples as a lazy sequence rather than loading everything into memory.
-     * 
-     * Default implementation reads the stream and delegates to [parseGraph], then
-     * returns the triples as a sequence. Providers that support true streaming
-     * should override this method for better performance.
-     * 
-     * @param inputStream The input stream containing RDF data
-     * @param format The RDF format
-     * @return A sequence of RDF triples (lazy evaluation)
-     * @throws RdfFormatException if the format is not supported or parsing fails
-     * @throws UnsupportedOperationException if the provider doesn't support parsing
-     */
     /** Explicit resource scope for parsers; the fallback materializes a graph before returning. */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
         val rows = inputStream.use { parseGraph(it, format).getTriplesSequence().constrainOnce() }
         return object : TripleStream {
@@ -244,6 +237,7 @@ interface RdfProvider {
      * method is how a provider declares base-IRI streaming support; providers with a streaming parser should do so.
      * Note that [Rdf.parseFromFile] and URL loading always pass a base IRI.
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
         if (baseIri == null) return openTripleStream(inputStream, format)
         EagerBaseIriFallback.DEFAULT.record(this)
@@ -254,6 +248,23 @@ interface RdfProvider {
         }
     }
 
+    /**
+     * Parse RDF data from an input stream as a sequence of triples (streaming).
+     * 
+     * This method enables memory-efficient parsing of large RDF files by returning
+     * triples as a lazy sequence rather than loading everything into memory.
+     * 
+     * Default implementation reads the stream and delegates to [parseGraph], then
+     * returns the triples as a sequence. Providers that support true streaming
+     * should override this method for better performance.
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @return A sequence of RDF triples (lazy evaluation)
+     * @throws RdfFormatException if the format is not supported or parsing fails
+     * @throws UnsupportedOperationException if the provider doesn't support parsing
+     */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
         // Default implementation: parse to graph, then return triples as sequence
         val graph = parseGraph(inputStream, format)
@@ -267,6 +278,7 @@ interface RdfProvider {
      * triples of [parseGraph] with the base (eager), logging a one-time warning per provider class. Providers with a
      * streaming parser should override it.
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> {
         if (baseIri == null) return parseStreaming(inputStream, format)
         EagerBaseIriFallback.DEFAULT.record(this)
@@ -288,6 +300,7 @@ interface RdfProvider {
      * @throws RdfFormatException if the format is not supported or parsing fails
      * @throws UnsupportedOperationException if the provider doesn't support dataset parsing
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
         throw UnsupportedOperationException("Provider '${id}' does not support dataset parsing")
     }
@@ -300,6 +313,7 @@ interface RdfProvider {
      * single-arg [parseDataset], logging a one-time warning per provider class when a base IRI is given.
      * Providers that can honour an external base should override.
      */
+    @Throws(RdfException::class, java.io.IOException::class)
     fun parseDataset(
         repository: RdfRepository,
         inputStream: java.io.InputStream,

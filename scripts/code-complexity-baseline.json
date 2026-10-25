@@ -20,15 +20,14 @@
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/Rdf.kt": {
-      "lines": 928,
+      "lines": 774,
       "reason": "Round-ten upstream b5cfef13: asynchronous cancellation connection handoff and helper class. Frozen at integration; further growth requires review."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/RdfTerms.kt": {
-      "lines": 1403,
+      "lines": 742,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/SparqlDatasetClauses.kt": {
-      "lines": 721,
       "functions": {
         "tokenize:44569e344684": 85
       },
@@ -85,7 +84,7 @@
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/sparql/contract/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings.kt": {
-      "lines": 938,
+      "lines": 797,
       "functions": {
         "queryLevel:9e4ff9c0be59": 47
       },

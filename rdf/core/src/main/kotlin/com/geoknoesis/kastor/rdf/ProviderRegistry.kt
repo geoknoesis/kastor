@@ -18,6 +18,15 @@ interface ProviderRegistry {
 
     fun register(provider: RdfProvider)
 
+    /**
+     * Create a repository for [config] with the provider and variant it selects.
+     *
+     * @throws IllegalArgumentException if [config] names a provider that is not registered, a variant it does not
+     *   have or requirements it does not meet, or if no provider is registered at all
+     * @throws RdfProviderException if no registered provider offers a requested variant or inference
+     * @throws RdfException if the selected provider fails to create the repository
+     */
+    @Throws(RdfException::class)
     fun create(config: RdfConfig): RdfRepository
 
     fun discoverProviders(): List<RdfProvider>

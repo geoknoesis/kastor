@@ -56,6 +56,8 @@ internal class EagerBaseIriFallback(private val warn: (String) -> Unit) {
  *
  * @throws RdfFormatException.UnsupportedFormat if no registered provider can parse [format]
  */
+@JvmOverloads
+@Throws(RdfException::class, java.io.IOException::class)
 fun Rdf.openTripleStream(input: java.io.InputStream, format: String = "TURTLE"): TripleStream =
     openTripleStream(input, format, null)
 
@@ -63,6 +65,7 @@ fun Rdf.openTripleStream(input: java.io.InputStream, format: String = "TURTLE"):
  * [openTripleStream] resolving relative IRIs against [baseIri] (see [RdfProvider.openTripleStream]); null keeps
  * the provider's default (relative IRIs are then errors with the bundled providers).
  */
+@Throws(RdfException::class, java.io.IOException::class)
 fun Rdf.openTripleStream(input: java.io.InputStream, format: String, baseIri: String?): TripleStream {
     return try {
         val normalized = RdfFormat.fromStringOrThrow(format).formatName
@@ -78,6 +81,8 @@ fun Rdf.openTripleStream(input: java.io.InputStream, format: String, baseIri: St
         throw e
     }
 }
+@Throws(RdfException::class, java.io.IOException::class)
 fun Rdf.openTripleStream(input: java.io.InputStream, format: RdfFormat): TripleStream = openTripleStream(input, format.formatName, null)
+@Throws(RdfException::class, java.io.IOException::class)
 fun Rdf.openTripleStream(input: java.io.InputStream, format: RdfFormat, baseIri: String?): TripleStream =
     openTripleStream(input, format.formatName, baseIri)

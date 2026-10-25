@@ -136,6 +136,68 @@ entries are regrouped under those kind headings.
 - **Internal:** the Jena `DESCRIBE` evaluation moved to `JenaDescribe` and the RDF4J graph-result and update-syntax
   helpers to `Rdf4jQuerySyntax`, out of the repository classes (whose complexity ceilings are lowered).
 
+### Round twelve
+
+#### Core (`rdf-core`, `rdf-holon`, `rdf-testkit`)
+
+- **Breaking: `RdfException` is unchecked.** It extends `RuntimeException` instead of `Exception`, and so do all its
+  subclasses, `RdfExtensionException` and `rdf-holon`'s `HolonException` included. Java callers no longer need a
+  `catch` or `throws` for any of them, and can still catch each one by type (`catch (HolonException e)`); Kotlin code
+  is unaffected. Before, they were checked exceptions that no function declared, so a Java `catch` of one around a
+  Kastor call did not compile. Code that caught `RuntimeException` before `RdfException` now catches Kastor failures
+  in the first clause.
+- **Java interop:** the public entry points list what they throw with `@Throws` (documentation for the unchecked
+  `RdfException`, a declaration for the checked `IOException`). `RdfException` is listed by the functions of `Rdf`,
+  the query, update and transaction methods of `SparqlQueryable`,
+  `SparqlMutable` and `RdfRepository`, `ProviderRegistry.create`, the parse, serialize and `createRepository` methods
+  of `RdfProvider`, `RdfFormat.fromStringOrThrow`, `serialize` / `serializeDataset` / `openTripleStream`, and every
+  public `rdf-holon` operation (`HolonContext.of` / `fromDataset` / `fromGraph` / `resolve` / `effectiveShapes`,
+  `holon`, `holons`, `Holon.*`, `asDataset`, `validate`, `convert`). Functions that read a stream, a file or a URL
+  also declare `IOException`, so Java can `catch (RdfAddressRefusedException e)` around a URL load; Java code that
+  calls them must now handle or declare `IOException`.
+- **Java interop:** every function of `object Rdf` is `@JvmStatic` (Java writes `Rdf.parse(text)`; bytecode
+  compiled against `Rdf.INSTANCE.parse(...)` must be recompiled), and functions with default arguments are
+  `@JvmOverloads` there, on the serialization and `openTripleStream` extensions, on `HolonContext` (whose factories are
+  also `@JvmStatic`), `Holon` and the holon extension functions. `UrlLoadOptions` has a `@JvmOverloads` constructor
+  and one `with...` method per property (`UrlLoadOptions.DEFAULT.withMaxBytes(1024)`), because Java cannot call
+  `copy(...)` with named arguments. `SparqlQueryable` redeclares `close()` without `IOException`, so Java can use a
+  repository or dataset in try-with-resources without catching `IOException`.
+- **Decision (documented):** the URL-loading failures `RdfAddressRefusedException`, `RdfHttpStatusException`,
+  `RdfLoadTimeoutException` and `RdfInputTooLargeException` stay `IOException`s beside the network failures, outside the
+  `RdfException` hierarchy: `catch (e: RdfException)` sees every processing failure and `catch (e: IOException)` every
+  failure to obtain the input. The KDoc of `RdfException`, `UrlLoadOptions` and `Rdf`, and the API reference, say so.
+- Fixed: a `Dataset` query that the dataset-clause scanner cannot analyse (for example an escape `\u0023` outside a
+  string) and that contains the word `FROM` is now rejected with `IllegalArgumentException`, as every query with
+  dataset clauses is. Before, it was run on the materialized copy with its own `FROM`, and answered from the wrong
+  default graph.
+- Fixed: an atomic mutation (`mutateAtomically`) of a stand-alone `MemoryGraph` that changes the graph now commits a
+  stamp the graph never returned, never one of the private stamps the mutating thread read
+  (`VersionedRdfGraph` rule 4).
+- Security (hostile query text): the dataset-clause scanner of `Dataset` queries placed each codepoint escape by
+  scanning every string, IRI and comment of the query, so a query with many of both cost their product (100,000
+  escaped strings took minutes); it now uses a binary search. Its `GRAPH` rewrite recursed once per nested group
+  and overflowed the stack (`StackOverflowError`) on a deeply nested query; a query nesting groups deeper than 128
+  is now unanalysable, so a `Dataset` view rejects it with `IllegalArgumentException`.
+- Security (hostile query text, `rdf-sparql-contract`): `SparqlInitialBindings` (the initial-bindings rewriter
+  behind `withSelectRows` with bindings) recursed once per nested sub-select and overflowed the stack; a query nesting
+  groups deeper than 128 is now rejected with `IllegalArgumentException`.
+- Fixed (`rdf-reasoning`): the memory RDFS reasoner silently ignored `ReasonerConfig.customRules`; a configuration
+  with custom rules is now rejected with `IllegalArgumentException`, as HermiT does (behaviour change).
+- Fixed (`rdf-holon`): `asDataset` refuses (and closes) a repository from `repositoryFactory` that already holds data,
+  instead of answering queries with that data mixed into the snapshot.
+- Docs: `SparqlQueryable.withSelectRows` with bindings and a timeout is documented as optional (the default, the
+  `memory` provider and copying `Dataset` views refuse it); the `RdfProviderException` default code is
+  `PROVIDER_NOT_SUPPORTED`; the API reference lists every URL-loading exception and has a Java section; an interrupt
+  of a URL load ends a read on the calling thread only when its socket timeout does (`UrlLoadOptions`).
+- Internal: `Rdf.kt` keeps the public facade; the provider dispatch is in `RdfParsing` (one loop for graphs, streams and
+  datasets instead of three copies) and URL loads in `RdfUrlParsing`. `RdfTerms.kt` is split into the term classes,
+  `RdfTermFactories.kt` (same JVM facade `RdfTerms`), `RdfGraphs.kt` (graph interfaces) and `TermSyntax.kt` (IRI and
+  blank-node label syntax); the PN_CHARS tables of the term model and the SPARQL scanner are one (`RdfNameChars`).
+- Tests: Java sources `CoreJavaApiTest` and `HolonJavaApiTest` catch the exceptions by type; the sandboxed-query
+  contract test fixes which (provider, path, call) cases must refuse and requires a result from all others; the URL
+  deadline test no longer asserts that the request reached the server; the interrupt test of URL loading runs in
+  well under a second and now fails if a socket timeout, rather than the interrupt, ends the load.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)
@@ -359,6 +421,10 @@ entries are regrouped under those kind headings.
   `catch (e: RdfException)` catches holon failures. Its `errorCode` is `EXTENSION_ERROR`, and `condition` still names
   the RDF-H error. For Java callers it is now a checked exception, like every `RdfException`.
 - **Security:** a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
+
+  the RDF-H error. (Round twelve makes the whole `RdfException` hierarchy unchecked, so for Java callers it stays an
+  unchecked exception, as it was when it extended `RuntimeException`.)
+- Security: a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
   function library. This covers dataset clauses added for graphs of one repository, and `GRAPH` patterns rewritten for
   a dataset of the store's default graph. Before, it sent a plain `SparqlSelectQuery`: the provider ran the untrusted
   text without its sandbox, so `SERVICE` calls went out, and the custom functions were lost. The materialized path was
@@ -528,7 +594,8 @@ entries are regrouped under those kind headings.
 - **Breaking (binary):** `SandboxedSelectQuery` moved from `rdf-sparql-contract` to `rdf-core`, in the same package
   `com.geoknoesis.kastor.rdf`. It is now a regular class instead of a `@JvmInline value class`, with a second
   constructor parameter `functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY`. Source that calls
-  `SandboxedSelectQuery(text)` compiles unchanged (`rdf-sparql-contract` depends on `rdf-core`); code compiled against
+  `SandboxedSelectQuery(text)` compiles unchanged when it depends on `rdf-core`, which re-exports `rdf-sparql-contract`
+  (a module that depends only on `rdf-sparql-contract` no longer sees the class); code compiled against
   the value class must be recompiled. Two queries are equal when their text is equal and they carry the same library
   instance.
 

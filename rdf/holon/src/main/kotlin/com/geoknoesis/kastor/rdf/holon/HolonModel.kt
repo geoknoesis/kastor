@@ -31,7 +31,8 @@ enum class HolonError(val id: String) {
 
 /**
  * An RDF-H processing failure, identified by [condition]. It is an [RdfExtensionException], so
- * `catch (e: RdfException)` sees holon failures too; its [errorCode] is [RdfErrorCode.EXTENSION_ERROR].
+ * `catch (e: RdfException)` sees holon failures too; its [errorCode] is [RdfErrorCode.EXTENSION_ERROR]. Like every
+ * [RdfException] it is unchecked: Java needs no `catch` for it, and can catch it by type.
  */
 class HolonException(
   val condition: HolonError,

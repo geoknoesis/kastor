@@ -92,4 +92,17 @@ class HolonQueriesTest {
     assertFails { result.asDataset(repositoryFactory = { failing }) }
     assertTrue(repository.isClosed())
   }
+
+  @Test fun `a repository factory that returns a repository with data is refused, not queried with that data`() {
+    val result = HolonContext.of(HolonGraph(registrations(a)), mapOf(a to g(t(a, ex("value"), string("mine"))))).resolve(a)
+    for (stale in listOf<(RdfRepository) -> Unit>(
+      { it.editDefaultGraph().addTriple(t(b, ex("value"), string("stale"))) },
+      { it.editGraph(ex("other")).addTriple(t(b, ex("value"), string("stale"))) },
+    )) {
+      val used = Rdf.memory().also(stale)
+      val error = assertFailsWith<IllegalArgumentException> { result.asDataset(repositoryFactory = { used }) }
+      assertTrue(error.message!!.contains("empty"), error.message)
+      assertTrue(used.isClosed(), "ownership of the repository was transferred, so it is closed")
+    }
+  }
 }
