@@ -45,6 +45,12 @@ class RecursionSolverDifferentialTest {
         data class Xone(val a: Int, val b: Int) : Conjunct()
         data class Not(val shape: Int) : Conjunct()
         data class Node(val shape: Int) : Conjunct()
+        /** `sh:expression [ shnex:conformsToShape ( focusNode shape ) ]`: an expression read, always negative. */
+        data class Expr(val shape: Int) : Conjunct()
+        /** The shape's `sh:deactivated [ shnex:conformsToShape ( focusNode shape ) ]` (at most one per shape). */
+        data class Deact(val shape: Int) : Conjunct()
+        /** `sh:node node` whose triple a reifier deactivates when the focus node conforms to [shape]. */
+        data class ReifNode(val node: Int, val shape: Int) : Conjunct()
     }
 
     private data class Atom(val node: Int, val shape: Int)
@@ -83,6 +89,21 @@ class RecursionSolverDifferentialTest {
                     is Conjunct.Xone -> listOf(Edge(Atom(atom.node, c.a), true), Edge(Atom(atom.node, c.b), true))
                     is Conjunct.Not -> listOf(Edge(Atom(atom.node, c.shape), true))
                     is Conjunct.Node -> listOf(Edge(Atom(atom.node, c.shape), false))
+                    // Expression reads are negative dependencies.
+                    is Conjunct.Expr -> listOf(Edge(Atom(atom.node, c.shape), true))
+                    is Conjunct.Deact -> listOf(Edge(Atom(atom.node, c.shape), true))
+                    is Conjunct.ReifNode -> listOf(Edge(Atom(atom.node, c.node), false), Edge(Atom(atom.node, c.shape), true))
+                }
+            }
+
+        /** The questions the node expressions of [atom]'s shape ask while [atom] is evaluated. */
+        fun expressionReads(atom: Atom): List<Atom> =
+            shapes[atom.shape].mapNotNull { c ->
+                when (c) {
+                    is Conjunct.Expr -> Atom(atom.node, c.shape)
+                    is Conjunct.Deact -> Atom(atom.node, c.shape)
+                    is Conjunct.ReifNode -> Atom(atom.node, c.shape)
+                    else -> null
                 }
             }
 
@@ -142,10 +163,30 @@ class RecursionSolverDifferentialTest {
                 }
                 is Conjunct.Not -> row(shape, ConstraintType.NOT, node, invert(answer(Atom(node, c.shape))))
                 is Conjunct.Node -> row(shape, ConstraintType.NODE, node, answer(Atom(node, c.shape)))
+                is Conjunct.Expr -> row(shape, ConstraintType.EXPRESSION, node, answer(Atom(node, c.shape)))
+                is Conjunct.Deact -> emptyList()
+                is Conjunct.ReifNode -> {
+                    // Deactivated, or the constraint holds: a Kleene disjunction, undefined only when it does not hold.
+                    val constraint = answer(Atom(node, c.node))
+                    when (answer(Atom(node, c.shape))) {
+                        V.C -> emptyList()
+                        V.F -> row(shape, ConstraintType.NODE, node, constraint)
+                        V.U -> if (constraint == V.C) emptyList() else listOf(Row(node, shape, ConstraintType.NODE, null, true))
+                    }
+                }
             }
         }
 
-        fun rows(atom: Atom, answer: (Atom) -> V): List<Row> = shapes[atom.shape].indices.flatMap { rows(atom, it, answer) }
+        /** The rows of [atom]: its conjuncts', unless its shape's `sh:deactivated` holds (a Kleene disjunction). */
+        fun rows(atom: Atom, answer: (Atom) -> V): List<Row> {
+            val body = shapes[atom.shape].indices.flatMap { rows(atom, it, answer) }
+            val deactivation = shapes[atom.shape].filterIsInstance<Conjunct.Deact>().firstOrNull() ?: return body
+            return when (answer(Atom(atom.node, deactivation.shape))) {
+                V.C -> emptyList()
+                V.F -> body
+                V.U -> if (body.isEmpty()) emptyList() else listOf(Row(atom.node, "S${atom.shape}", ConstraintType.NODE, null, true))
+            }
+        }
 
         /** Kleene evaluation of one question: fails with a definite result, undefined with only undefined ones. */
         fun evaluate(atom: Atom, answer: (Atom) -> V): V {
@@ -278,16 +319,25 @@ class RecursionSolverDifferentialTest {
                         is Conjunct.Xone -> sb.append("ex:S$s sh:xone ( ex:S${c.a} ex:S${c.b} ) .\n")
                         is Conjunct.Not -> sb.append("ex:S$s sh:not ex:S${c.shape} .\n")
                         is Conjunct.Node -> sb.append("ex:S$s sh:node ex:S${c.shape} .\n")
+                        is Conjunct.Expr -> sb.append("ex:S$s sh:expression ${conformsTo(c.shape)} .\n")
+                        is Conjunct.Deact -> sb.append("ex:S$s sh:deactivated ${conformsTo(c.shape)} .\n")
+                        is Conjunct.ReifNode -> sb.append("ex:S$s sh:node ex:S${c.node} {| sh:deactivated ${conformsTo(c.shape)} |} .\n")
                     }
                 }
             }
             return Rdf.parse(sb.toString(), RdfFormat.TURTLE)
         }
 
+        private fun conformsTo(shape: Int) = "[ shnex:conformsToShape ( [ shnex:var \"focusNode\" ] ex:S$shape ) ]"
+
         fun describe(): String = "seed=$seed kinds=$kinds named=$named edges=$edges shapes=$shapes"
     }
 
-    private fun generate(seed: Long): Case {
+    /**
+     * A random case. With [expressions], shapes also read each other through node expressions: `sh:expression`, the
+     * shape's `sh:deactivated` and the `sh:deactivated` of a reifier of `sh:node`.
+     */
+    private fun generate(seed: Long, expressions: Boolean = false): Case {
         val random = Random(seed)
         val nodes = 1 + random.nextInt(6)
         val shapeCount = 1 + random.nextInt(4)
@@ -310,7 +360,7 @@ class RecursionSolverDifferentialTest {
         fun pred() = predicates[random.nextInt(predicates.size)]
         val shapes = List(shapeCount) {
             List(1 + random.nextInt(3)) {
-                when (random.nextInt(16)) {
+                when (random.nextInt(if (expressions) 22 else 16)) {
                     0, 1 -> Conjunct.HasName
                     2, 3 -> Conjunct.All(pred(), shape())
                     4, 5 -> Conjunct.None(pred(), shape())
@@ -327,9 +377,16 @@ class RecursionSolverDifferentialTest {
                     12 -> Conjunct.Or(shape(), shape())
                     13 -> Conjunct.Xone(shape(), shape())
                     14 -> Conjunct.Not(shape())
+                    16, 17 -> Conjunct.Expr(shape())
+                    18, 19 -> Conjunct.Deact(shape())
+                    20, 21 -> Conjunct.ReifNode(shape(), shape())
                     else -> Conjunct.Node(shape())
                 }
-            }.distinct()
+            }.distinct().let { conjuncts ->
+                // At most one sh:deactivated per shape.
+                val first = conjuncts.indexOfFirst { it is Conjunct.Deact }
+                conjuncts.filterIndexed { i, c -> c !is Conjunct.Deact || i == first }
+            }
         }
         return Case(seed, kinds, named, edges, shapes)
     }
@@ -454,6 +511,70 @@ class RecursionSolverDifferentialTest {
         assertTrue(mixed >= 10, "runs that used both ways: $mixed")
     }
 
+    // --- expression reads -----------------------------------------------------------------------------------------
+
+    /**
+     * The same comparison with shapes that read each other through node expressions as well: `sh:expression`, a
+     * shape's `sh:deactivated` and a reifier's `sh:deactivated` (all negative reads). An expression that reads a
+     * final undefined answer fails closed ([com.geoknoesis.kastor.rdf.shacl.providers.UndecidedConformanceException]):
+     * when the oracle has such a read, the run may abort, and otherwise must give the oracle's report. A run that
+     * does not abort always gives it.
+     */
+    @Test
+    fun `incremental solver agrees with the naive oracle on expression and deactivation reads`() {
+        var compared = 0
+        var aborted = 0
+        var settledThroughCycle = 0
+        val rowsByType = HashMap<Pair<ConstraintType, Boolean>, Int>()
+        for (seed in 1L..400L) {
+            val case = generate(seed, expressions = true)
+            val expected = case.oracle()
+            val answer = { atom: Atom -> expected.getValue(atom) }
+            val atoms = expected.keys
+            // A final undefined answer read by an expression may abort the run.
+            val mayAbort = atoms.any { a -> case.expressionReads(a).any { expected.getValue(it) == V.U } }
+            // Expression reads inside a cycle that settle definitely: the reads were provisional while the solver ran.
+            settledThroughCycle += atoms.count { a ->
+                expected.getValue(a) != V.U && case.expressionReads(a).any { r -> expected.getValue(r) != V.U && reaches(case, r, a) }
+            }
+            val data = case.dataGraph()
+            val expectedRows = atoms.flatMap { case.rows(it, answer) }
+            val allTargets = case.shapes.indices.associateWith { (0 until case.nodes).toList() }
+            val outcome = runCatching { engineRows(validator().validate(data, case.shapesGraph(allTargets)), data) }
+            val error = outcome.exceptionOrNull()
+            if (error != null) {
+                assertTrue(mayAbort && error is ShaclValidationException, "unexpected ${error}: ${case.describe()}")
+                aborted++
+                continue
+            }
+            assertEquals(sorted(expectedRows), sorted(outcome.getOrThrow()), "all targets in one run: ${case.describe()}")
+            compared++
+            for (row in expectedRows) rowsByType.merge(row.type to row.undefined, 1, Int::plus)
+            if (mayAbort) continue
+            for (atom in atoms.toList().shuffled(Random(seed)).take(3)) {
+                val alone = engineRows(validator().validate(data, case.shapesGraph(mapOf(atom.shape to listOf(atom.node)))), data)
+                assertEquals(sorted(case.rows(atom, answer)), sorted(alone), "single target $atom: ${case.describe()}")
+            }
+        }
+        val coverage = "compared=$compared aborted=$aborted settledThroughCycle=$settledThroughCycle rows=$rowsByType"
+        assertTrue(compared >= 200, coverage)
+        assertTrue(aborted >= 10, coverage)
+        assertTrue(settledThroughCycle >= 50, coverage)
+        assertTrue((rowsByType[ConstraintType.EXPRESSION to false] ?: 0) >= 20, coverage)
+    }
+
+    /** Whether question [from] depends, directly or not, on question [to] in [case]. */
+    private fun reaches(case: Case, from: Atom, to: Atom): Boolean {
+        val seen = HashSet<Atom>()
+        val pending = ArrayDeque(listOf(from))
+        while (pending.isNotEmpty()) {
+            val a = pending.removeLast()
+            if (a == to) return true
+            if (seen.add(a)) case.dependencies(a).forEach { pending.addLast(it.to) }
+        }
+        return false
+    }
+
     // --- restart recovery --------------------------------------------------------------------------------------------
 
     private val notNext = """
@@ -489,7 +610,8 @@ class RecursionSolverDifferentialTest {
     }
 
     private companion object {
-        const val PREFIXES = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n@prefix ex: <http://example.org/> .\n"
+        const val PREFIXES = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n@prefix ex: <http://example.org/> .\n" +
+            "@prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .\n"
 
         fun invert(v: V) = when (v) { V.F -> V.C; V.C -> V.F; V.U -> V.U }
     }
