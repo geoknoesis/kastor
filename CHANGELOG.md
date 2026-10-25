@@ -27,9 +27,9 @@ super-linear time or memory outside `ValidationConfig.timeout`:
 - Fixed: a property path whose blank nodes are shared level after level (`_:p0 sh:alternativePath ( _:p1 _:p1 )`, ...)
   was unfolded exponentially by the parser and again by the report writer. Paths are parsed once per blank node and
   shared, a path that unfolds to more than 4,096 nodes (or nests more than 128 constructors deep) is refused with
-  `ShapeCompileException`, and `toShaclValidationReportRdf()` copies a blank-node `sh:resultPath` with one fresh blank
-  node per source blank node, so a shared node stays shared (behaviour change: the copy is isomorphic to the source
-  instead of an unfolded tree).
+  `ShapeCompileException`, and `toShaclValidationReportRdf()` unfolds a blank-node `sh:resultPath` per use only
+  while the copy has at most 1,024 nodes; a larger one gets one fresh blank node per source blank node, shared as in
+  the source.
 - Fixed: a computed shape reference read from the data made its shape depend on every shape through a copied
   candidate set, so n such shapes cost n * n memory (4,000 shapes took about 1 GB). These dependencies are now
   symbolic and the recursion analysis is linear.

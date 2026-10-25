@@ -112,7 +112,7 @@ class SharedSubPathTest {
         val report = validator.validate(Rdf.graph { Iri("${ex}a") - Iri("${ex}other") - Iri("${ex}b") }, graph(shapes(levels)))
         val rdf = report.toShaclValidationReportRdf().getTriples()
         val root = rdf.single { it.predicate == SHACL.resultPath }.obj
-        // The copy of the path shares its blank nodes as the shapes graph does: one copy per source blank node.
+        // Too large to unfold, the copy shares its blank nodes as the shapes graph does: one copy per source blank node.
         val bySubject = rdf.groupBy { it.subject }
         val reached = HashSet<RdfResource>()
         val queue = ArrayDeque<RdfTerm>(listOf(root))
@@ -143,5 +143,23 @@ class SharedSubPathTest {
         assertEquals(list.size, report.violations.single().resultPathTriples.size)
         val tooLong = list + RdfTriple(BlankNode("x"), RDF.first, Iri("${ex}x")) + RdfTriple(BlankNode("x"), RDF.rest, cells[0])
         assertThrows(ShapeCompileException::class.java) { ShaclPathParser.parse(BlankNode("x"), ShapeGraphIndex(tooLong)) }
+    }
+    @Test
+    fun `a small shared path is reported unfolded, as the W3C suite expects`() {
+        // ( _:inv _:inv ): two sh:inversePath nodes in the result path (path-complex-002), not one shared node.
+        val inv = BlankNode("inv")
+        val shapes = listOf(
+            RdfTriple(inv, SHACL.inversePath, q),
+            RdfTriple(BlankNode("c0"), RDF.first, inv), RdfTriple(BlankNode("c0"), RDF.rest, BlankNode("c1")),
+            RdfTriple(BlankNode("c1"), RDF.first, inv), RdfTriple(BlankNode("c1"), RDF.rest, RDF.nil),
+            RdfTriple(Iri("${ex}S"), RDF.type, SHACL.PropertyShape),
+            RdfTriple(Iri("${ex}S"), SHACL.targetNode, Iri("${ex}a")),
+            RdfTriple(Iri("${ex}S"), SHACL.path, BlankNode("c0")),
+            RdfTriple(Iri("${ex}S"), SHACL.minCount, TypedLiteral("1", XSD.integer)),
+        )
+        val report = NativeShaclValidatorProvider().createValidator(ValidationConfig.default()).validate(Rdf.graph { }, graph(shapes))
+        val rdf = report.toShaclValidationReportRdf().getTriples()
+        assertEquals(2, rdf.count { it.predicate == SHACL.inversePath })
+        assertEquals(2, rdf.filter { it.predicate == SHACL.inversePath }.map { it.subject }.toSet().size)
     }
 }
