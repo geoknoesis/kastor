@@ -41,6 +41,9 @@ class RecordRoundTripTest {
                     prop("issued", datatype = "${XSD_NS}date"),
                     prop("modified", datatype = "${XSD_NS}dateTime"),
                     prop("homepage", datatype = null).copy(nodeKind = "http://www.w3.org/ns/shacl#IRI"),
+                    prop("level", datatype = "${XSD_NS}unsignedByte"),
+                    prop("count", datatype = "${XSD_NS}nonNegativeInteger"),
+                    prop("motto", datatype = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"),
                 ),
             )
         ),
@@ -117,6 +120,40 @@ class RecordRoundTripTest {
             } catch (e: IllegalArgumentException) { "rejected" }
             return outcome + "|" + (dump(g) == before)
         }
+
+        /** Updates to a value the graph already holds beyond sh:maxCount are written and read back. */
+        fun updateToExtraValue(): String {
+            val g = graph()
+            val record = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+            DocRecordFactory.replaceInGraph(g, record.copy(title = "Cat", homepage = "urn:home2"), a)
+            val reread = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+            return record.title + "," + record.homepage + "->" + reread.title + "," + reread.homepage + "|" +
+                dump(g).split(',').filter { it.startsWith("title=") || it.startsWith("homepage=") }.joinToString(",")
+        }
+
+        /** An rdf:dirLangString member is a LangString with its base direction, read and written back as is. */
+        fun directional(): String {
+            val g = graph()
+            val record = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+            DocRecordFactory.replaceInGraph(g, record.copy(motto = LangString("salam", "ar", Direction.RTL)), a)
+            val motto = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet())).motto!!
+            return motto.lexical + "@" + motto.lang + "--" + motto.direction + "^^" + motto.datatype.value.substringAfterLast('#')
+        }
+
+        /** Integer values outside the declared derived type are ill-typed on read, not a failure on the next write. */
+        fun outOfRange(): String {
+            fun read(term: RdfTerm, predicate: String) = graph().apply { addTriple(RdfTriple(a, p(predicate), term)) }.let { g ->
+                try {
+                    val r = DocRecordFactory.from(DefaultRdfHandle(a, g, emptySet()))
+                    (r.level ?: r.count).toString()
+                } catch (e: MaterializationException) { "rejected" }
+            }
+            return listOf(
+                read(TypedLiteral("300", XSD.integer), "level"), read(TypedLiteral("-1", XSD.long), "level"),
+                read(TypedLiteral("200", XSD.integer), "level"), read(TypedLiteral("-1", XSD.integer), "count"),
+                read(TypedLiteral("7", XSD.int), "count"),
+            ).joinToString(",")
+        }
     """.trimIndent()
 
     @BeforeAll
@@ -154,6 +191,21 @@ class RecordRoundTripTest {
     @Test
     fun `a declared non-string datatype is checked on read and an unrepresentable value is kept on write`() {
         assertEquals("rejected|null|modified=2020^^gYear,modified=2021-05-06T07:08:09Z^^dateTime", call("illTypedRead"))
+    }
+
+    @Test
+    fun `a single-valued update to a value held beyond sh maxCount is written and read back`() {
+        assertEquals("Chat,urn:home1->Cat,urn:home2|homepage=urn:home2,title=Cat@en", call("updateToExtraValue"))
+    }
+
+    @Test
+    fun `an rdf dirLangString member round-trips its language and direction`() {
+        assertEquals("salam@ar--RTL^^dirLangString", call("directional"))
+    }
+
+    @Test
+    fun `integer values outside the declared derived type are ill-typed on read`() {
+        assertEquals("rejected,rejected,200,rejected,7", call("outOfRange"))
     }
 
     @Test

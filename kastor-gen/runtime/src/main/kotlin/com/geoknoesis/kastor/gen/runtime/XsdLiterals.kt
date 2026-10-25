@@ -49,15 +49,43 @@ object XsdLiterals {
   private fun Literal.wellFormedIn(datatypes: Set<String>): String? =
     takeIf { it.datatype.value in datatypes && isWellFormed(it) }?.lexical?.trim()
 
+  /**
+   * Longest integer or decimal lexical form, in characters, that is converted to a [BigInteger] or [BigDecimal].
+   * The JDK parses those in time quadratic in the number of digits (a million digits take tens of seconds), so a
+   * longer literal is treated as not representable: [bigInteger] and [bigDecimal] return `null` (the generated
+   * readers then apply `MaterializationPolicy`, which throws by default) and [compareNumeric] returns `null` (a
+   * generated `sh:minInclusive`-style check then reports a violation).
+   */
+  private const val MAX_DECODED_NUMBER_LENGTH = 10_000
+
   /** xsd:int and smaller types, read as [Int]: a well-formed XSD integer literal whose value fits in an `Int`. */
   fun int(literal: Literal): Int? = literal.wellFormedIn(INTEGER_DATATYPES)?.toIntOrNull()
 
+  /**
+   * [int] limited to the value range of [declared], the member's integer datatype: `"300"^^xsd:integer` is not an
+   * `xsd:unsignedByte` value, so it is ill-typed for such a member instead of failing on the next write.
+   */
+  fun int(literal: Literal, declared: Iri): Int? = int(literal)?.takeIf { inRange(literal, declared) }
+
   fun long(literal: Literal): Long? = literal.wellFormedIn(INTEGER_DATATYPES)?.toLongOrNull()
 
-  fun bigInteger(literal: Literal): BigInteger? = literal.wellFormedIn(INTEGER_DATATYPES)?.let(::BigInteger)
+  /** [long] limited to the value range of [declared] (e.g. `xsd:unsignedInt`), as for [int]. */
+  fun long(literal: Literal, declared: Iri): Long? = long(literal)?.takeIf { inRange(literal, declared) }
+
+  fun bigInteger(literal: Literal): BigInteger? =
+    literal.wellFormedIn(INTEGER_DATATYPES)?.takeIf { it.length <= MAX_DECODED_NUMBER_LENGTH }?.let(::BigInteger)
+
+  /** [bigInteger] limited to the value range of [declared] (e.g. `xsd:nonNegativeInteger`), as for [int]. */
+  fun bigInteger(literal: Literal, declared: Iri): BigInteger? =
+    bigInteger(literal)?.takeIf { inRange(literal, declared) }
+
+  /** Whether the integer value of [literal] is in the value space of the integer datatype [declared]. */
+  private fun inRange(literal: Literal, declared: Iri): Boolean =
+    XsdLexicalForms.check(literal.lexical, declared.value) ?: true
 
   /** xsd:decimal: `[+-]?(digits[.digits] | .digits)`; exponents are not decimal syntax. */
-  fun bigDecimal(literal: Literal): BigDecimal? = literal.wellFormedIn(DECIMAL_DATATYPES)?.let(::BigDecimal)
+  fun bigDecimal(literal: Literal): BigDecimal? =
+    literal.wellFormedIn(DECIMAL_DATATYPES)?.takeIf { it.length <= MAX_DECODED_NUMBER_LENGTH }?.let(::BigDecimal)
 
   fun float(literal: Literal): Float? = when (val s = literal.wellFormedIn(FLOATING_DATATYPES)) {
     null -> null
@@ -139,7 +167,7 @@ object XsdLiterals {
   /**
    * Comparison of a numeric literal with [bound] (a decimal lexical form), for `sh:minInclusive` and friends.
    * Returns the sign of `value - bound`, or `null` when the comparison is undefined: [term] is not a well-formed
-   * XSD numeric literal, or is `NaN`. Decimal bounds are promoted to the literal's floating-point type when needed.
+   * XSD numeric literal, is `NaN`, or has a lexical form longer than 10,000 characters. Decimal bounds are promoted to the literal's floating-point type when needed.
    */
   fun compareNumeric(term: RdfTerm, bound: String): Int? =
     compareNumeric(term, BigDecimal(bound).toPlainString(), Iri("${XSD}decimal"))
@@ -147,6 +175,7 @@ object XsdLiterals {
   /** Compare using both operands' datatypes: double > float > decimal/integer numeric promotion. */
   fun compareNumeric(term: RdfTerm, bound: String, boundDatatype: Iri): Int? {
     val literal = term as? Literal ?: return null
+    if (literal.lexical.length > MAX_DECODED_NUMBER_LENGTH || bound.length > MAX_DECODED_NUMBER_LENGTH) return null
     if (literal.datatype.value !in NUMERIC_DATATYPES || !isWellFormed(literal)) return null
     val limit = Literal(bound, boundDatatype)
     if (boundDatatype.value !in NUMERIC_DATATYPES || !isWellFormed(limit)) return null

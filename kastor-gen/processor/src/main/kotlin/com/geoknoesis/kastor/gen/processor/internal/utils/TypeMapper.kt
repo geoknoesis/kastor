@@ -30,12 +30,18 @@ internal data class LiteralMapping(
         CodeBlock.of("%T.encode(%L, %T(%S))", XSD_LITERALS, valueExpr, IRI, writeDatatype)
 
     /**
-     * `XsdLiterals.<decoder>(<literalExpr>)` (nullable result); `XsdLiterals.lexical(<literalExpr>, Iri("<datatype>"))`
-     * for the [LEXICAL] decoder, which also needs the declared datatype.
+     * `XsdLiterals.<decoder>(<literalExpr>)` (nullable result). The declared datatype is passed as well,
+     * `XsdLiterals.<decoder>(<literalExpr>, Iri("<datatype>"))`, to the [LEXICAL] decoder and to an integer decoder
+     * whose declared datatype is narrower than its Kotlin type (`xsd:unsignedByte` read as `Int`,
+     * `xsd:nonNegativeInteger` as `BigInteger`), so a value outside the declared range is ill-typed on read instead
+     * of failing on the next write.
      */
     fun decode(literalExpr: CodeBlock): CodeBlock =
-        if (decoder == LEXICAL) CodeBlock.of("%T.%N(%L, %T(%S))", XSD_LITERALS, decoder, literalExpr, IRI, writeDatatype)
-        else CodeBlock.of("%T.%N(%L)", XSD_LITERALS, decoder, literalExpr)
+        if (decoder == LEXICAL || NATURAL_INTEGER_DATATYPES[decoder].let { it != null && it != writeDatatype }) {
+            CodeBlock.of("%T.%N(%L, %T(%S))", XSD_LITERALS, decoder, literalExpr, IRI, writeDatatype)
+        } else {
+            CodeBlock.of("%T.%N(%L)", XSD_LITERALS, decoder, literalExpr)
+        }
 
     /** Human-readable target of [decode] for diagnostics, e.g. `BigInteger (xsd:integer)`. */
     fun expectedDescription(): String = "${type.simpleName} (<$writeDatatype>)"
@@ -43,6 +49,12 @@ internal data class LiteralMapping(
     companion object {
         /** Decoder of String members that declare a datatype other than `xsd:string`. */
         internal const val LEXICAL = "lexical"
+        /** The datatype whose value range is exactly that of each integer decoder's Kotlin type. */
+        private val NATURAL_INTEGER_DATATYPES = mapOf(
+            "int" to "http://www.w3.org/2001/XMLSchema#int",
+            "long" to "http://www.w3.org/2001/XMLSchema#long",
+            "bigInteger" to "http://www.w3.org/2001/XMLSchema#integer",
+        )
         internal val STRING = String::class.asTypeName()
         private val NUMERIC_TYPES = setOf(
             Int::class.asTypeName(), Long::class.asTypeName(), Float::class.asTypeName(), Double::class.asTypeName(),
@@ -96,6 +108,7 @@ internal object TypeMapper {
     private const val XSD = "http://www.w3.org/2001/XMLSchema#"
     private const val SH = "http://www.w3.org/ns/shacl#"
     private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+    private const val RDF_DIR_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
 
     /**
      * Classifies [property]'s values. [knownTypes] (when non-null) turns `sh:class` targets without a shape
@@ -202,7 +215,7 @@ internal object TypeMapper {
      * Datatype → Kotlin representation. Integers are exact (`xsd:integer` and unbounded derived types map
      * to [java.math.BigInteger]; `xsd:long`/`xsd:unsignedInt` to [Long]; `xsd:int`/`short`/`byte` and the
      * small unsigned types to [Int]), `xsd:decimal` to [java.math.BigDecimal], `xsd:float` to [Float],
-     * `xsd:date` to [java.time.LocalDate] and `rdf:langString` to the core `LangString` term. Every other
+     * `xsd:date` to [java.time.LocalDate] and `rdf:langString` and `rdf:dirLangString` to the core `LangString` term. Every other
      * datatype (including `xsd:dateTime`, `xsd:time`, `xsd:duration` whose value spaces carry optional
      * timezones that no single `java.time` type represents losslessly) keeps its lexical form as [String], read only
      * from a well-formed literal of that datatype (`XsdLiterals.lexical`); without a datatype (or with `xsd:string`)
@@ -221,7 +234,8 @@ internal object TypeMapper {
             "${XSD}float" -> m(Float::class.asTypeName(), "float")
             "${XSD}double" -> m(Double::class.asTypeName(), "double")
             "${XSD}date" -> m(ClassName("java.time", "LocalDate"), "localDate")
-            RDF_LANG_STRING -> m(ClassName(CodegenConstants.RDF_PACKAGE, "LangString"), "langString")
+            // rdf:dirLangString (RDF 1.2) values are LangString terms with a base direction.
+            RDF_LANG_STRING, RDF_DIR_LANG_STRING -> m(ClassName(CodegenConstants.RDF_PACKAGE, "LangString"), "langString")
             null, "${XSD}string" -> m(String::class.asTypeName(), "string")
             // A declared datatype is checked on read: "2020"^^xsd:gYear is not an xsd:dateTime value.
             else -> m(String::class.asTypeName(), LiteralMapping.LEXICAL)
