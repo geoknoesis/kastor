@@ -84,6 +84,35 @@ class UrlLoadingAsyncCancelTest {
     }
 
     @Test
+    fun `a burst of cancels while every helper is busy starts no more threads than the overflow releaser has`() {
+        val hold = CountDownLatch(1)
+        val released = CountDownLatch(20)
+        val releasers = java.util.concurrent.ConcurrentHashMap.newKeySet<Thread>()
+        UrlLoadHelperPool(1).use { pool ->
+            val overflow = UrlLoadCancellation.overflowExecutor(2)
+            try {
+                // The only helper is busy, so every release goes to the overflow releaser.
+                assertTrue(pool.tryExecute { hold.await(60, TimeUnit.SECONDS) } != null)
+                repeat(20) {
+                    val connection = FakeHttp(onDisconnect = {
+                        releasers.add(Thread.currentThread())
+                        hold.await(60, TimeUnit.SECONDS)
+                        released.countDown()
+                    })
+                    UrlLoadCancellation(pool, overflow).apply { connecting(connection) }.cancel()
+                }
+                assertEquals(20L, released.count, "cancel() hands the release on and returns at once")
+                hold.countDown()
+                assertTrue(released.await(60, TimeUnit.SECONDS), "every queued release runs")
+                assertTrue(releasers.size <= 2, "releases ran on ${releasers.size} threads")
+            } finally {
+                hold.countDown()
+                overflow.shutdownNow()
+            }
+        }
+    }
+
+    @Test
     fun `a cancel that lands after the last check before connecting still stops the request`() {
         val armed = AtomicBoolean()
         val futureRef = AtomicReference<java.util.concurrent.Future<*>>()
