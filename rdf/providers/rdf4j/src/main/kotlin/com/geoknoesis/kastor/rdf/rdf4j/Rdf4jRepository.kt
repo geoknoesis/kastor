@@ -573,9 +573,10 @@ class Rdf4jRepository(
      * overload for how their nested queries are bounded in time.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        val declared = if (query is SandboxedSelectQuery) checkSandboxed(query.sparql).dataset else null
+        val prepared = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql) }
+        val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, query.sparql).dataset else null
         val result = withFunctions(query, Long.MAX_VALUE, declared, conn) {
-            queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
+            queryOperation(query.sparql) { prepared.onKastorDataset(conn).evaluate() }
         }
         result.use { consume(it.rows(query.sparql)) }
     }
@@ -583,7 +584,8 @@ class Rdf4jRepository(
     /**
      * Runs [block], which prepares and evaluates [query] on [conn], with the custom functions of a sandboxed [query]
      * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none),
-     * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset).
+     * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset). The nested
+     * queries' parses are shared within this one query ([Rdf4jQuerySandbox.NestedParses]).
      * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
      * is RDF4J's unknown-function error.
      */
@@ -595,11 +597,13 @@ class Rdf4jRepository(
         block: () -> T,
     ): T =
         if (query !is SandboxedSelectQuery) block()
-        else Rdf4jFunctionScope.with(
-            query.functions, 0, deadline, clock,
-            { nested, bindings, caller -> Rdf4jQuerySandbox.prepareNested(nested, bindings, caller, ::checkSandboxed) { kastorDataset(it, conn) } },
-            declared, block,
-        )
+        else Rdf4jQuerySandbox.NestedParses(::checkSandboxed).let { parses ->
+            Rdf4jFunctionScope.with(
+                query.functions, 0, deadline, clock,
+                { nested, bindings, caller -> Rdf4jQuerySandbox.prepareNested(nested, bindings, caller, parses::get) { kastorDataset(it, conn) } },
+                declared, block,
+            )
+        }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
@@ -675,14 +679,15 @@ class Rdf4jRepository(
         consume: (Sequence<BindingSet>) -> T): T {
         val bound = Rdf4jInitialBindings.bind(query.sparql, bindings)
         val sparql = bound.sparql
-        // The rewritten text is the one prepared below, so that is the text checked.
-        val declared = if (query is SandboxedSelectQuery) checkSandboxed(sparql).dataset else null
         return withConnection { conn ->
+            // The rewritten text is the one prepared, so that is the text checked.
+            val prepared = queryOperation(sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql) }
+            val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, sparql).dataset else null
             // A timeout too long for a nanosecond deadline (about 292 years) is no deadline and no time limit.
             val deadline = Rdf4jQuerySandbox.deadlineAfter(clock(), timeout)
             val result = withFunctions(query, deadline, declared, conn) {
                 queryOperation(sparql) {
-                    val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
+                    prepared.onKastorDataset(conn)
                     bound.placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
                     if (deadline != Long.MAX_VALUE) {
                         prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
@@ -697,6 +702,10 @@ class Rdf4jRepository(
     /** [Rdf4jQuerySandbox.check] of [sparql], parsed by RDF4J's own SPARQL parser; parse errors are query errors. */
     private fun checkSandboxed(sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery =
         Rdf4jQuerySandbox.check(queryOperation(sparql) { org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(sparql, null) })
+
+    /** [Rdf4jQuerySandbox.check] of [prepared] (the query of [sparql]), on the parse it is evaluated from when it has one. */
+    private fun checkSandboxed(prepared: org.eclipse.rdf4j.query.Query, sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery =
+        (prepared as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery?.let(Rdf4jQuerySandbox::check) ?: checkSandboxed(sparql)
 
     private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String, hidden: Set<String> = emptySet()): Sequence<BindingSet> =
         iterator().asSequence().map { row ->
