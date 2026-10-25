@@ -191,6 +191,11 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
                 false -> fail("term \"${chain.first()}\": cyclic definition (${(chain + term).joinToString(" -> ")})")
                 null -> Unit
             }
+            // Terms defined through other terms recurse: bound the depth so a long chain is an error, not a
+            // StackOverflowError that escapes the processor's error reporting.
+            if (chain.size >= MAX_DEFINITION_DEPTH) {
+                fail("term \"${chain.first()}\": its definition refers through more than $MAX_DEFINITION_DEPTH other terms")
+            }
             defined[term] = false
             chain += term
             active.remove(term)
@@ -372,6 +377,9 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
         term.contains("://") || ABSOLUTE_SCHEMES.any { term.startsWith("$it:") }
 
     private companion object {
+        /** Longest chain of terms whose definitions refer to the next one. */
+        const val MAX_DEFINITION_DEPTH: Int = 256
+
         /** Keywords a term can be an alias of. */
         val KEYWORDS: Set<String> = setOf(
             "@id", "@type", "@value", "@language", "@direction", "@graph", "@list", "@set", "@index", "@included",
