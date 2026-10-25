@@ -362,6 +362,15 @@ private class NodeExpressionEvaluator(private val validator: NativeShaclValidato
      * ([NodeExpressionOrdering]) so that the output does not depend on the triple order of the provider.
      */
     private fun nodesMatching(shape: RdfResource, depth: Int): List<RdfTerm> {
+        // Outside the solver every answer is final, so the outputs are those of the run: computed once per shape
+        // instead of once per focus node. Inside it, answers may be provisional (or optimistic while recording).
+        if (ctx.solver != null) return matchingNodes(shape, depth)
+        ctx.nodesMatching[shape]?.let { return output(it) }
+        return matchingNodes(shape, depth).also { ctx.nodesMatching[shape] = it }
+    }
+
+    private fun matchingNodes(shape: RdfResource, depth: Int): List<RdfTerm> {
+        ctx.counters.nodesMatchingScans++
         val matches = ArrayList<RdfTerm>()
         for (node in ctx.data.allNodes()) {
             ctx.budget.tick("node expression")
