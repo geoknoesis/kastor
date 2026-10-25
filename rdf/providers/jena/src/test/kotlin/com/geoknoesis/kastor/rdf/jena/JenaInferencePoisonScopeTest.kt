@@ -150,8 +150,11 @@ class JenaInferencePoisonScopeTest {
             repo.hooks.onStoreRead = {}
 
             assertSame(view, repo.currentInferenceView(), "stopping between two results leaves the reasoner consistent")
-            assertEquals(0, repo.queuedInferenceSteps(), "the worker is free again")
+            // The cancelled find hands the close of its reasoner iterator to the worker (submitQuietly), so right after
+            // the reader returns that close may still be queued. A later step runs behind it on the single worker
+            // thread: once that step has returned, nothing of the cancelled one can be left in the queue.
             assertEquals(instances, repo.defaultGraph.find(null, type, cls(2)).size)
+            assertEquals(0, repo.queuedInferenceSteps(), "the worker is free again")
             assertSame(view, repo.currentInferenceView())
         }
     }
