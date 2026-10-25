@@ -990,6 +990,12 @@
    "test": "the report gets the permissions of an ordinary new file()",
    "count": 1,
    "reason": "Checks POSIX file permissions (umask versus the 0600 of a temporary file); skipped where the file system has no POSIX attribute view, such as Windows, and runs on Linux and macOS"
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.cli.CliPreflightTest",
+   "test": "an output that is a dangling symbolic link is refused before any LLM call()",
+   "count": 1,
+   "reason": "Environment-gated: assumeTrue skips it where the account cannot create symbolic links (Windows without Developer Mode or the symlink privilege); CI runners can, and FakeFileSystem covers the same refusal on every platform."
   }
  ]
 }
