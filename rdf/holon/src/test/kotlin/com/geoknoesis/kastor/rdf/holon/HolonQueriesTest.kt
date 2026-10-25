@@ -35,6 +35,26 @@ class HolonQueriesTest {
     }
   }
 
+  @Test fun `an attributed dataset is queried in place on its own repository, without a copy per query`() {
+    val triple = t(a, ex("value"), string("one"))
+    val result = HolonContext.of(HolonGraph(registrations(a, b) + t(b, RDFH.parentHolon, a)),
+      mapOf(a to g(triple), b to g(t(b, ex("value"), string("two"))))).resolve(a, HolonScope.AGGREGATED)
+    val seen = mutableListOf<String>()
+    val delegate = Rdf.memory()
+    val recording = object : RdfRepository by delegate {
+      override fun select(query: SparqlSelect): SparqlQueryResult = delegate.select(query).also { seen += query.sparql }
+    }
+    result.asDataset(attributed = true, repositoryFactory = { recording }).use { dataset ->
+      val rows = dataset.select(SparqlSelectQuery("SELECT ?g ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }")).toList()
+      assertEquals(4, rows.size)
+      assertEquals(setOf<RdfTerm?>(null, a, b), rows.map { it.get("g") }.toSet())
+      assertTrue(dataset.ask(SparqlAskQuery("ASK { <${a.value}> <${ex("value").value}> \"one\" }")))
+      assertFalse(dataset.ask(SparqlAskQuery("ASK { GRAPH ?g { <${a.value}> <${ex("value").value}> \"two\" } }")))
+    }
+    assertEquals(1, seen.size, "the query must reach the private repository itself")
+    assertTrue(seen.single().contains("FROM NAMED <${a.value}>"), seen.single())
+  }
+
   @Test fun `empty attribution reports the query provider limitation explicitly`() {
     val result = HolonContext.of(HolonGraph(registrations(a))).resolve(a)
     assertEquals(setOf(a), result.attributedGraphs.keys)
