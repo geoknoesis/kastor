@@ -289,4 +289,22 @@ class NativeValidatorRobustnessTest {
         assertTrue(error is ShaclValidationException, error.toString())
         assertTrue(error.message.orEmpty().contains("maxRecursionDepth"), error.message)
     }
+    // --- message templates -------------------------------------------------------------------------------------------
+
+    @Test
+    fun `message substitution is bounded and marks what it left out`() {
+        // A message of many {?v} placeholders times a long data value would otherwise be their product per result.
+        val placeholders = "{?v}".repeat(1_000)
+        val shapes = graph("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:sparql [ sh:message \"$placeholders\" ; " +
+            "sh:select \"SELECT \$this ?v WHERE { \$this ex:p ?v }\" ; sh:prefixes ex: ] . ex: sh:declare [ sh:prefix \"ex\" ; sh:namespace \"http://example.org/\"^^<http://www.w3.org/2001/XMLSchema#anyURI> ] .")
+        val long = "x".repeat(30_000)
+        val report = NativeShaclValidator(ValidationConfig.default()).validate(graph("ex:a ex:p \"$long\" ."), shapes)
+        val message = report.violations.single().resultMessages.single().lexical
+        assertTrue(message.length < 2 * 65_536 + placeholders.length, "${message.length}")
+        assertTrue(message.startsWith(long + long + "{?v}"), message.take(80))
+        assertTrue(message.endsWith("[message truncated: substituted values exceed 65536 characters]"), message.takeLast(120))
+        // A short message is substituted in full.
+        val short = NativeShaclValidator(ValidationConfig.default()).validate(graph("ex:a ex:p \"v\" ."), shapes)
+        assertEquals("v".repeat(1_000), short.violations.single().resultMessages.single().lexical)
+    }
 }
