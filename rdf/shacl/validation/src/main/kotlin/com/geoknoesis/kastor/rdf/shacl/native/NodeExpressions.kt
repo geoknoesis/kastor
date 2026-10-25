@@ -205,14 +205,24 @@ internal object NodeExpressions {
     }
 
     /**
-     * Whether [expr] runs a SPARQL query anywhere in its tree (a SPARQL node expression, `sh:select` /
-     * `sh:sparqlExpr`), custom function bodies included as for [shapeRefs]. Such a query may call any SHACL SPARQL
-     * function of the shapes graph ([SparqlFunctionDeclarationSet]).
+     * The computed shape arguments of the `shnex:conformsToShape` calls of [expr] (those [computesShapes] finds),
+     * custom function bodies included as for [shapeRefs].
      */
-    fun runsSparql(expr: NodeExpression, index: ShapeGraphIndex): Boolean {
-        var found = false
-        walk(expr, index) { e -> if (e is NodeExpression.Select) found = true }
-        return found
+    fun computedShapeArguments(expr: NodeExpression, index: ShapeGraphIndex): List<NodeExpression> {
+        val out = ArrayList<NodeExpression>()
+        walk(expr, index) { e -> if (e is NodeExpression.ConformsToShape && e.shape !is NodeExpression.Constant) out.add(e.shape) }
+        return out
+    }
+
+    /**
+     * The SPARQL node expressions (`sh:select` / `sh:sparqlExpr`) anywhere in [expr], custom function bodies included
+     * as for [shapeRefs]. Their queries may call the SHACL SPARQL functions of the shapes graph
+     * ([SparqlFunctionDeclarationSet]).
+     */
+    fun selects(expr: NodeExpression, index: ShapeGraphIndex): List<NodeExpression.Select> {
+        val out = ArrayList<NodeExpression.Select>()
+        walk(expr, index) { e -> if (e is NodeExpression.Select) out.add(e) }
+        return out
     }
 
     /**

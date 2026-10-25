@@ -56,8 +56,8 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** Custom node expression functions of this shapes graph (§6), collected once per index. */
     val nodeExpressionFunctions: NodeExpressionFunctions by lazy { NodeExpressionFunctions.build(this) }
 
-    /** A SPARQL query of this shapes graph: its text and the prefixes its node declares (`sh:prefixes`, `sh:declare`). */
-    class SparqlQueryText(val text: String, val prefixes: Map<String, String>)
+    /** A SPARQL query of this shapes graph: its [node], its text and the prefixes its node declares (`sh:prefixes`, `sh:declare`). */
+    class SparqlQueryText(val node: RdfResource, val text: String, val prefixes: Map<String, String>)
 
     /** Every SPARQL query of this shapes graph (`sh:select`, `sh:ask`, `sh:sparqlExpr` literals), collected once. */
     val sparqlQueries: List<SparqlQueryText> by lazy {
@@ -71,7 +71,7 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
                 } catch (_: ShapeCompileException) {
                     // An ill-formed declaration is reported where the query is compiled.
                 }
-                SparqlQueryText(text, prefixes)
+                SparqlQueryText(t.subject, text, prefixes)
             }
     }
 
@@ -94,25 +94,43 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
      * call of every function ([SparqlFunctionCalls.any]). That is sound, and only queries with such calls pay for it.
      */
     val sparqlFunctionCalls: SparqlFunctionCalls by lazy {
-        val out = HashSet<String>()
-        var any = false
+        val values = sparqlCallsByNode.values
+        SparqlFunctionCalls(values.flatMapTo(HashSet()) { it.iris }, values.any { it.any })
+    }
+
+    /**
+     * The functions the queries of each query node of [sparqlQueries] (the subject of its `sh:select`, `sh:ask` or
+     * `sh:sparqlExpr`) may call, as [sparqlFunctionCalls] collects them; [sparqlFunctionCalls] is their union. A node
+     * without a query here is unknown ([callsOf]).
+     */
+    val sparqlCallsByNode: Map<RdfResource, SparqlFunctionCalls> by lazy {
+        val iris = LinkedHashMap<RdfResource, HashSet<String>>()
+        val any = HashSet<RdfResource>()
         for (query in sparqlQueries) {
             tick("SPARQL function compilation")
+            val out = iris.getOrPut(query.node) { HashSet() }
             val strict = try {
                 SparqlQueryTemplate.decodeCodepointEscapes(query.text, strict = true)
             } catch (_: ShapeCompileException) {
                 query.text
             }
             for (view in linkedSetOf(query.text, strict, SparqlQueryTemplate.decodeCodepointEscapes(query.text, strict = false))) {
-                if (collectCalls(view, query.prefixes, out)) any = true
+                if (collectCalls(view, query.prefixes, out)) any.add(query.node)
             }
         }
-        SparqlFunctionCalls(out, any)
+        iris.mapValues { (node, calls) -> SparqlFunctionCalls(calls, node in any) }
     }
+
+    /** The functions the queries of [node] may call ([sparqlCallsByNode]); every function for a node without a query. */
+    fun callsOf(node: RdfResource): SparqlFunctionCalls = sparqlCallsByNode[node] ?: SparqlFunctionCalls.ANY
 
     /** The functions some SPARQL query may call: those of [iris], or every function when [any]. */
     class SparqlFunctionCalls(val iris: Set<String>, val any: Boolean) {
         fun mayCall(iri: String): Boolean = any || iri in iris
+
+        companion object {
+            val ANY = SparqlFunctionCalls(emptySet(), any = true)
+        }
     }
 
     /**
