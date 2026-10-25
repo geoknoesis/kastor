@@ -16,7 +16,9 @@ import org.apache.jena.sparql.algebra.Op
 import org.apache.jena.sparql.algebra.OpVisitorBase
 import org.apache.jena.sparql.algebra.op.OpBGP
 import org.apache.jena.sparql.algebra.op.OpGroup
+import org.apache.jena.sparql.algebra.op.OpPath
 import org.apache.jena.sparql.algebra.op.OpService
+import org.apache.jena.sparql.path.*
 import org.apache.jena.sparql.algebra.op.OpTriple
 import org.apache.jena.sparql.expr.E_Call
 import org.apache.jena.sparql.expr.E_Function
@@ -44,7 +46,7 @@ import org.apache.jena.sparql.util.MappedLoader
  *   from data at run time), a function or property function that Jena would load as a class by name (`java:` IRIs,
  *   and ARQ's `afn:` / `apf:` namespaces, which Jena maps to its own classes), any IRI in ARQ's own namespaces (Jena
  *   runs `http://jena.apache.org/ARQ/<language>Function#name` as a script function without asking any registry,
- *   whether `jena:scripting` is on or off), custom aggregates, and any expression class that is not on the
+ *   whether `jena:scripting` is on or off), ARQ's path extensions (`p{n,m}`, `distinct(...)`, ...), custom aggregates, and any expression class that is not on the
  *   allowlist of [JenaCost] are refused. Sub-patterns of `EXISTS` / `NOT EXISTS`, sort conditions, `GROUP BY`
  *   expressions and aggregate arguments are checked explicitly, whatever the walker does with them
  *   ([JenaSandboxBounds.walk]).
@@ -171,6 +173,7 @@ internal object JenaQuerySandbox {
             override fun visit(opBGP: OpBGP) = opBGP.pattern.forEach { predicate(it.predicate) }
             override fun visit(opTriple: OpTriple) = predicate(opTriple.triple.predicate)
             override fun visit(opGroup: OpGroup) = opGroup.aggregators.forEach { aggregate(it.aggregator) }
+            override fun visit(opPath: OpPath) = path(opPath.triplePath.path)
         }
         JenaSandboxBounds.walk(op, exprs, ops)
     }
@@ -181,6 +184,30 @@ internal object JenaQuerySandbox {
             ARQ_NAMESPACES.any(iri::startsWith) -> refuse("the Jena function <$iri> (an ARQ extension or script function)")
             iri == FN_APPLY -> refuse("fn:apply, which computes a function IRI at run time")
         }
+    }
+
+    /**
+     * Refuses ARQ's path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`, `shortest(...)`): Jena evaluates
+     * one of them for a binding without checking the timeout (`<p>{1000000}` over a two-node cycle ran past 100 s under
+     * a 500 ms timeout), and standard SPARQL has none of them. The standard operators are allowed: their evaluation is
+     * bounded by the graph.
+     */
+    private fun path(path: Path) {
+        path.visit(object : PathVisitorBase() {
+            override fun visit(path: P_Mod) = refuse("the ARQ path extension ${path}")
+            override fun visit(path: P_FixedLength) = refuse("the ARQ path extension ${path}")
+            override fun visit(path: P_Distinct) = refuse("the ARQ path extension ${path}")
+            override fun visit(path: P_Multi) = refuse("the ARQ path extension ${path}")
+            override fun visit(path: P_Shortest) = refuse("the ARQ path extension ${path}")
+            override fun visit(path: P_Inverse) = path.subPath.visit(this)
+            override fun visit(path: P_ZeroOrOne) = path.subPath.visit(this)
+            override fun visit(path: P_ZeroOrMore1) = path.subPath.visit(this)
+            override fun visit(path: P_ZeroOrMoreN) = path.subPath.visit(this)
+            override fun visit(path: P_OneOrMore1) = path.subPath.visit(this)
+            override fun visit(path: P_OneOrMoreN) = path.subPath.visit(this)
+            override fun visit(path: P_Alt) = listOf(path.left, path.right).forEach { it.visit(this) }
+            override fun visit(path: P_Seq) = listOf(path.left, path.right).forEach { it.visit(this) }
+        })
     }
 
     private fun aggregate(aggregator: Aggregator) {

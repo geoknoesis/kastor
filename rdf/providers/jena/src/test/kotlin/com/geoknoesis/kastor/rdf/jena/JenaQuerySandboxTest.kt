@@ -133,6 +133,26 @@ class JenaQuerySandboxTest {
         }
     }
 
+    /** ARQ's path extensions run without checking the timeout; standard SPARQL has none of them. */
+    @ParameterizedTest
+    @ValueSource(strings = [
+        "SELECT * WHERE { <urn:a> <urn:p>{1000000} ?o }",
+        "SELECT * WHERE { <urn:a> <urn:p>{0,100000000} ?o }",
+        "SELECT * WHERE { <urn:a> (^<urn:p>/<urn:p>{2,})* ?o }",
+        "SELECT * WHERE { <urn:a> distinct(<urn:p>*) ?o }",
+        "SELECT * WHERE { <urn:a> ?q ?r FILTER EXISTS { ?r multi(<urn:p>+) ?o } }",
+    ])
+    fun `ARQ path extensions are refused`(sparql: String) {
+        assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
+        assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
+    }
+
+    @Test
+    fun `standard property paths still evaluate`() {
+        assertEquals(2, bound("SELECT * WHERE { <urn:a> (<urn:p>|^<urn:p>)+ ?o }").size)
+        assertEquals(2, bound("SELECT * WHERE { <urn:a> <urn:p>* ?o }").size)
+    }
+
     @Test
     fun `fn apply, which calls a function by a computed IRI, is refused`() {
         val sparql = "SELECT ?x WHERE { BIND (<http://www.w3.org/2005/xpath-functions#apply>(<http://www.w3.org/2005/xpath-functions/math#pow>, 7, 3000000) AS ?x) }"
