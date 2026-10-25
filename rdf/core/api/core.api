@@ -1310,11 +1310,12 @@ public abstract interface class com/geoknoesis/kastor/rdf/SparqlFunctionCall {
 
 public abstract interface class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary$Companion;
+	public static final field EMPTY Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
 	public abstract fun function (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlFunction;
+	public static fun of (Ljava/util/Collection;)Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
 }
 
 public final class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary$Companion {
-	public final fun getEMPTY ()Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
 	public final fun of (Ljava/util/Collection;)Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
 }
 
