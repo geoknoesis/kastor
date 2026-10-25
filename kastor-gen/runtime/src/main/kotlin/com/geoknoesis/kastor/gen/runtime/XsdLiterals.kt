@@ -12,68 +12,69 @@ import java.time.LocalDate
 /**
  * Lexical-form codecs used by generated wrappers, data-class factories, writers and DSL builders.
  *
- * Decoders return `null` for ill-typed literals (callers decide whether that is an error): a lexical form that is
- * not valid for the target type, or a datatype outside the target's XSD family (`"42"^^xsd:string` is not an
- * integer). Integer decoders accept the XSD integer types (`xsd:integer` and its derived types); [bigDecimal] also
- * `xsd:decimal`; [float] and [double] every XSD numeric type; [boolean] `xsd:boolean`; [localDate] `xsd:date`.
- * Lexical forms follow XML Schema rules rather than Kotlin's (`"1"`/`"0"` are booleans, `INF`/`-INF`/`NaN` are
- * floating-point values, integers are unbounded). [string] reads the lexical form of any literal. [encode]
- * always produces a literal with the *declared* datatype so values round-trip without losing their type.
+ * Decoders return `null` for ill-typed literals (callers decide whether that is an error): a literal that is not
+ * [well formed][isWellFormed] for its own datatype (`"300"^^xsd:unsignedByte`, `"INF"^^xsd:decimal`), a datatype
+ * outside the target's XSD family (`"42"^^xsd:string` is not an integer), or a value outside the target Kotlin type
+ * (`"3000000000"^^xsd:integer` is not an `Int`). Integer decoders accept the XSD integer types (`xsd:integer` and
+ * its derived types); [bigDecimal] also `xsd:decimal`; [float] and [double] every XSD numeric type; [boolean]
+ * `xsd:boolean`; [localDate] `xsd:date`. Lexical forms follow XML Schema rules rather than Kotlin's (`"1"`/`"0"`
+ * are booleans, `INF`/`-INF`/`NaN` are floating-point values, integers are unbounded). [string] reads the lexical
+ * form of any literal; [lexical] only that of a well-formed literal of a given datatype. [encode] always produces
+ * a literal with the *declared* datatype and rejects values that would not be well formed for it.
  */
 object XsdLiterals {
 
+  /** The lexical form of any literal: the decoder of String members without a declared datatype (or `xsd:string`). */
   fun string(literal: Literal): String = literal.lexical
 
-  private val INTEGER = Regex("[+-]?[0-9]+")
-  private val DECIMAL = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
-  private val DATE = Regex("(-?)([0-9]{4,})-([0-9]{2})-([0-9]{2})(Z|[+-][0-9]{2}:[0-9]{2})?")
+  /**
+   * The lexical form of [literal] when it is a [well-formed][isWellFormed] literal of exactly [datatype]; `null`
+   * otherwise. The decoder of String members that declare a datatype other than `xsd:string` (`xsd:dateTime`,
+   * `xsd:duration`, custom datatypes), so `"2020"^^xsd:gYear` is not read as an `xsd:dateTime` value.
+   */
+  fun lexical(literal: Literal, datatype: Iri): String? =
+    literal.lexical.takeIf { literal.datatype == datatype && isWellFormed(literal) }
 
-  private val INTEGER_DATATYPES = setOf(
-    "integer", "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
-    "long", "int", "short", "byte", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
-  ).map { "http://www.w3.org/2001/XMLSchema#$it" }.toSet()
+  private val INTEGER_DATATYPES = XsdLexicalForms.INTEGER_RANGES.keys
   private val DECIMAL_DATATYPES = INTEGER_DATATYPES + "http://www.w3.org/2001/XMLSchema#decimal"
   private val FLOATING_DATATYPES =
     DECIMAL_DATATYPES + "http://www.w3.org/2001/XMLSchema#float" + "http://www.w3.org/2001/XMLSchema#double"
 
-  private fun Literal.typedIn(datatypes: Set<String>): Literal? = takeIf { it.datatype.value in datatypes }
+  /** The trimmed lexical form of [this] when its datatype is in [datatypes] and it is well formed for it. */
+  private fun Literal.wellFormedIn(datatypes: Set<String>): String? =
+    takeIf { it.datatype.value in datatypes && isWellFormed(it) }?.lexical?.trim()
 
-  private fun integerLexical(literal: Literal): String? =
-    literal.typedIn(INTEGER_DATATYPES)?.lexical?.trim()?.takeIf { INTEGER.matches(it) }
+  /** xsd:int and smaller types, read as [Int]: a well-formed XSD integer literal whose value fits in an `Int`. */
+  fun int(literal: Literal): Int? = literal.wellFormedIn(INTEGER_DATATYPES)?.toIntOrNull()
 
-  /** xsd:int and smaller types; `[+-]?digits` (a leading `+` is valid XSD), range-checked. */
-  fun int(literal: Literal): Int? = integerLexical(literal)?.toIntOrNull()
+  fun long(literal: Literal): Long? = literal.wellFormedIn(INTEGER_DATATYPES)?.toLongOrNull()
 
-  fun long(literal: Literal): Long? = integerLexical(literal)?.toLongOrNull()
-
-  fun bigInteger(literal: Literal): BigInteger? = integerLexical(literal)?.let(::BigInteger)
+  fun bigInteger(literal: Literal): BigInteger? = literal.wellFormedIn(INTEGER_DATATYPES)?.let(::BigInteger)
 
   /** xsd:decimal: `[+-]?(digits[.digits] | .digits)`; exponents are not decimal syntax. */
-  fun bigDecimal(literal: Literal): BigDecimal? =
-    literal.typedIn(DECIMAL_DATATYPES)?.lexical?.trim()?.takeIf { DECIMAL.matches(it) }?.let(::BigDecimal)
+  fun bigDecimal(literal: Literal): BigDecimal? = literal.wellFormedIn(DECIMAL_DATATYPES)?.let(::BigDecimal)
 
-  fun float(literal: Literal): Float? = when (val s = literal.typedIn(FLOATING_DATATYPES)?.lexical?.trim()) {
+  fun float(literal: Literal): Float? = when (val s = literal.wellFormedIn(FLOATING_DATATYPES)) {
     null -> null
     "INF", "+INF" -> Float.POSITIVE_INFINITY
     "-INF" -> Float.NEGATIVE_INFINITY
     "NaN" -> Float.NaN
-    else -> if (s.any { it.isLetter() && it != 'e' && it != 'E' }) null else s.toFloatOrNull()
+    else -> s.toFloatOrNull()
   }
 
-  fun double(literal: Literal): Double? = when (val s = literal.typedIn(FLOATING_DATATYPES)?.lexical?.trim()) {
+  fun double(literal: Literal): Double? = when (val s = literal.wellFormedIn(FLOATING_DATATYPES)) {
     null -> null
     "INF", "+INF" -> Double.POSITIVE_INFINITY
     "-INF" -> Double.NEGATIVE_INFINITY
     "NaN" -> Double.NaN
-    else -> if (s.any { it.isLetter() && it != 'e' && it != 'E' }) null else s.toDoubleOrNull()
+    else -> s.toDoubleOrNull()
   }
 
   /** xsd:boolean: `true`/`1` and `false`/`0`. Literals of other datatypes are ill-typed. */
   fun boolean(literal: Literal): Boolean? =
-    literal.typedIn(BOOLEAN_DATATYPE)?.let { booleanLexical(it.lexical) }
+    literal.takeIf { it.datatype.value == "${XSD}boolean" }?.let { booleanLexical(it.lexical) }
 
-  private val BOOLEAN_DATATYPE = setOf("http://www.w3.org/2001/XMLSchema#boolean")
-  private val DATE_DATATYPE = setOf("http://www.w3.org/2001/XMLSchema#date")
+  private val DATE = Regex("(-?)([0-9]{4,})-([0-9]{2})-([0-9]{2})(Z|[+-][0-9]{2}:[0-9]{2})?")
 
   fun booleanLexical(lexical: String): Boolean? = when (lexical.trim()) {
     "true", "1" -> true
@@ -82,21 +83,18 @@ object XsdLiterals {
   }
 
   /**
-   * xsd:date; an optional timezone suffix is accepted and dropped. Years have at least four digits and may have
-   * more (`12345-06-07`, without the `+` that ISO-8601 requires) or be negative (`-0044-03-15`, proleptic).
+   * xsd:date; an optional timezone suffix is accepted and dropped (the generated `replaceInGraph` keeps the
+   * original literal of an unchanged value). Years have at least four digits and may have more (`12345-06-07`,
+   * without the `+` that ISO-8601 requires) or be negative (`-0044-03-15`, proleptic).
    */
   fun localDate(literal: Literal): LocalDate? {
-    val match = DATE.matchEntire(literal.typedIn(DATE_DATATYPE)?.lexical?.trim() ?: return null) ?: return null
-    val (sign, year, month, day, timezone) = match.destructured
-    if (timezone.isNotEmpty() && timezone != "Z") {
-      val hours = timezone.substring(1, 3).toInt()
-      val minutes = timezone.substring(4, 6).toInt()
-      if (hours > 14 || minutes > 59 || (hours == 14 && minutes != 0)) return null
-    }
+    if (literal.datatype.value != "${XSD}date" || !isWellFormed(literal)) return null
+    val match = DATE.matchEntire(literal.lexical.trim()) ?: return null
+    val (sign, year, month, day) = match.destructured
     return try {
       LocalDate.of((sign + year).toInt(), month.toInt(), day.toInt())
     } catch (_: DateTimeException) {
-      null
+      null // A year outside LocalDate's range.
     } catch (_: NumberFormatException) {
       null
     }
@@ -113,38 +111,15 @@ object XsdLiterals {
   /** rdf:langString values are exposed as the core [LangString] term. */
   fun langString(literal: Literal): LangString? = literal as? LangString
 
-  private const val XSD = "http://www.w3.org/2001/XMLSchema#"
-
-  private fun integerIn(literal: Literal, min: BigInteger?, max: BigInteger?): Boolean {
-    val value = bigInteger(literal) ?: return false
-    return (min == null || value >= min) && (max == null || value <= max)
-  }
+  private const val XSD = XsdLexicalForms.XSD
 
   /**
-   * Whether [literal]'s lexical form is valid for its own datatype. XSD numeric, boolean and date datatypes are
-   * checked (including the ranges of the derived integer types); other datatypes are accepted.
+   * Whether [literal]'s lexical form is valid for its own datatype. The XSD numeric types (including the value
+   * ranges of the derived integer types), `xsd:boolean`, `xsd:date`, `xsd:dateTime`, `xsd:dateTimeStamp`,
+   * `xsd:time`, the Gregorian types and the duration types are checked; other datatypes are accepted. Every
+   * decoder of this object, and [encode], apply this check.
    */
-  fun isWellFormed(literal: Literal): Boolean = when (literal.datatype.value) {
-    "${XSD}boolean" -> boolean(literal) != null
-    "${XSD}integer" -> integerIn(literal, null, null)
-    "${XSD}nonNegativeInteger" -> integerIn(literal, BigInteger.ZERO, null)
-    "${XSD}positiveInteger" -> integerIn(literal, BigInteger.ONE, null)
-    "${XSD}nonPositiveInteger" -> integerIn(literal, null, BigInteger.ZERO)
-    "${XSD}negativeInteger" -> integerIn(literal, null, BigInteger.ONE.negate())
-    "${XSD}long" -> long(literal) != null
-    "${XSD}int" -> int(literal) != null
-    "${XSD}short" -> integerIn(literal, BigInteger.valueOf(Short.MIN_VALUE.toLong()), BigInteger.valueOf(Short.MAX_VALUE.toLong()))
-    "${XSD}byte" -> integerIn(literal, BigInteger.valueOf(Byte.MIN_VALUE.toLong()), BigInteger.valueOf(Byte.MAX_VALUE.toLong()))
-    "${XSD}unsignedLong" -> integerIn(literal, BigInteger.ZERO, BigInteger("18446744073709551615"))
-    "${XSD}unsignedInt" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(4294967295L))
-    "${XSD}unsignedShort" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(65535L))
-    "${XSD}unsignedByte" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(255L))
-    "${XSD}decimal" -> bigDecimal(literal) != null
-    "${XSD}float" -> float(literal) != null
-    "${XSD}double" -> double(literal) != null
-    "${XSD}date" -> localDate(literal) != null
-    else -> true
-  }
+  fun isWellFormed(literal: Literal): Boolean = XsdLexicalForms.check(literal.lexical, literal.datatype.value) ?: true
 
   /** SHACL `sh:datatype`: [term] is a literal of exactly [datatype] whose lexical form is well formed. */
   fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean =
@@ -198,7 +173,8 @@ object XsdLiterals {
   /**
    * Encodes [value] as a literal of [datatype]. Literals (e.g. [LangString]) are returned unchanged.
    *
-   * @throws IllegalArgumentException if the lexical form is invalid for [datatype] (e.g. xsd:boolean)
+   * @throws IllegalArgumentException if the encoded literal is not [well formed][isWellFormed] for [datatype]:
+   *   `300` as `xsd:unsignedByte`, `BigInteger.ZERO` as `xsd:positiveInteger`, `"yesterday"` as `xsd:dateTime`
    */
   fun encode(value: Any, datatype: Iri): Literal {
     if (value is Literal) return value
@@ -219,7 +195,9 @@ object XsdLiterals {
       is LocalDate -> dateLexical(value)
       else -> value.toString()
     }
-    return Literal(lexical, datatype)
+    val literal = Literal(lexical, datatype)
+    require(isWellFormed(literal)) { "Value '$value' is not a valid <${datatype.value}> literal" }
+    return literal
   }
 }
 
