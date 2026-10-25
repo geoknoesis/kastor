@@ -43,6 +43,12 @@ and is kept as is; it was never published to Maven Central.
 - **Fixed (`rdf-sparql`):** request deadlines are compared by difference, as `System.nanoTime()` requires, and a
   deadline whose clock sum wraps around is kept: it used to be dropped as "no deadline", which would have disabled the
   read timeout and the request deadline on a JVM whose clock reads close to `Long.MAX_VALUE`.
+- **Docs (`rdf-sparql`):** `SparqlGraph` and the provider guide say that blank-node labels in results are scoped to one
+  result set: equal labels from two calls are in general different nodes.
+- **Examples (`rdf-examples`):** a new `SparqlEndpointExample` shows `SparqlRepository` (buffered and streamed
+  `select`, `ask`, the heap cap) against a local canned endpoint. Examples report a caught failure through one helper
+  with a fixed marker, and the smoke test looks for it on standard output and standard error (three failure messages
+  used to slip through). `JenaBridgeExample` uses `serialize(RdfFormat)` instead of the deprecated string overload.
 - **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).

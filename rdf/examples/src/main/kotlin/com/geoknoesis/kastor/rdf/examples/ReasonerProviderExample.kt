@@ -46,7 +46,7 @@ class ReasonerProviderExample {
                     println("  Consistent: ${result.consistencyCheck.isConsistent}")
                     
                 } catch (e: Exception) {
-                    println("✗ Failed to reason with ${provider.name}: ${e.message}")
+                    reportFailure("reasoning with ${provider.name}", e)
                 }
             } else {
                 println("  No supported reasoner types")
@@ -76,7 +76,7 @@ class ReasonerProviderExample {
                     val result = reasoner.reason(graph)
                     println("  $name: ${result.inferredTriples.size} inferred triples in ${result.reasoningTime.toMillis()}ms")
                 } catch (e: Exception) {
-                    println("  $name: Failed - ${e.message}")
+                    reportFailure("reasoner $name", e)
                 }
             }
         }
@@ -107,7 +107,7 @@ class ReasonerProviderExample {
                 println("  Inferred triples: ${result.inferredTriples.size}")
                 
             } catch (e: Exception) {
-                println("✗ Custom rules failed: ${e.message}")
+                reportFailure("custom rules", e)
             }
         } else {
             println("No providers support custom rules")
