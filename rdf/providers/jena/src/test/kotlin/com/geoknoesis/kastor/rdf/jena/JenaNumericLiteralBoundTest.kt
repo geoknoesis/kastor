@@ -72,6 +72,21 @@ class JenaNumericLiteralBoundTest {
                 assertTrue(refused.message!!.contains("$limit"), refused.message)
             }
             assertEquals(1, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $longest }")).toList().size)
+            // Digits written as escapes, which Jena's parser decodes inside a string before it builds (and values) the
+            // literal. (A bare escape is a lexical error to Jena; it is refused before Jena sees it all the same.)
+            val escaped = "\\u0037".repeat(limit + 1)
+            for (query in listOf(
+                "SELECT * WHERE { ?s ?p $escaped }",
+                "SELECT * WHERE { ?s ?p \"$escaped\"^^<${xsd}integer> }",
+                "SELECT * WHERE { ?s ?p \"${"\\U00000037".repeat(limit + 1)}\"^^<${xsd}decimal> }",
+                "SELECT * WHERE { ?s ?p \"${"7".repeat(limit / 2)}${"\\u0037".repeat(limit / 2 + 1)}\"^^<${xsd}long> }",
+            )) {
+                val refused = assertThrows(RdfQueryException::class.java, { repo.select(SparqlSelectQuery(query)) }, query.take(60))
+                assertTrue(refused.message!!.contains("$limit"), refused.message)
+            }
+            // An escape that is not a digit ends a run.
+            val split = "${"7".repeat(limit)}\\u0020${"7".repeat(limit)}"
+            assertEquals(0, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p \"$split\" }")).toList().size)
         }
     }
 }
