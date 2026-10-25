@@ -604,7 +604,7 @@ class GraphStateCache<S : Any>(
         /** The entry found by handle, and only when it holds a state; nothing is created. */
         LOADED,
 
-        /** A private state for the content of a transaction: a temporary one, never a wait for it. */
+        /** A private, temporary state for a transaction; waits up to `temporaryWaitMillis` only without overflow. */
         DETACHED,
 
         /** Removes the entry found by handle (its state is released once nobody uses it); nothing is pinned. */

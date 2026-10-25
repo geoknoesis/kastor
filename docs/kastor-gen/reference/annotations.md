@@ -39,6 +39,23 @@ annotation class Rdf(
 )
 ```
 
+#### Ontology generation fields
+
+| Field | Default | Description |
+|---|---|---|
+| `shacl` | `""` | Path of the SHACL shapes (Turtle), resolved against the annotated file's `src/<set>/resources`, `src/main/resources`, the project directory, the KSP option `kastor.gen.resources` and the processor class path. Setting it turns the annotation into a generation request. |
+| `context` | `""` | Optional JSON-LD `@context` that names types and properties. |
+| `packageName` | annotated package | Package of the generated code. |
+| `generateInterfaces` / `generateWrappers` | `true` / `true` | Emit the domain interfaces and their RDF-backed wrappers. |
+| `generateDsl`, `dslName`, `ontologyPath` | `false`, `""`, `""` | Emit an instance-building DSL (see [ontology generation](../tutorials/ontology-generation.md)). |
+| `validationMode` | `EMBEDDED` | How wrappers validate: `EMBEDDED` (generated SHACL checks), `EXTERNAL` (through `externalValidatorClass`) or `NONE`. |
+| `validationAnnotations` | `JAKARTA` | Bean Validation annotations on generated interfaces (`@get:`) and data classes (`@field:`): `@NotNull` for a required single value, `@NotEmpty` for a required list, `@Size(min, max)` for a bounded list. `JAKARTA` uses `jakarta.validation-api`, which `kastor-gen-runtime` provides at compile time (Gradle `compileOnlyApi`, so it is not on your runtime class path); `JAVAX` needs `javax.validation:validation-api` in your dependencies; `NONE` emits none. If the API of the selected flavour is missing, the processor reports an error at the annotation naming the dependency to add. |
+| `externalValidatorClass` | `""` | Validator class for `ValidationMode.EXTERNAL`. |
+
+A problem with a request's input (a missing, unreadable or invalid shapes, context or ontology file, shapes that
+cannot be generated, a missing Bean Validation API) is reported once, as a KSP error at the annotated
+declaration or file, and the other `@Rdf` requests of the compilation are still generated.
+
 #### Data-class generation fields
 
 | Field | Default | Description |
@@ -47,7 +64,7 @@ annotation class Rdf(
 | `dataClassSuffix` | `"Record"` | Suffix appended to the shape name for the generated data class (`Person` → `PersonRecord`). An empty suffix is rejected when interfaces or wrappers are also generated (or `dataClassImplementsInterface = true`), because the data class would collide with the interface. |
 | `dataClassImplementsInterface` | `false` | When `true`, the generated data class also implements the generated interface, providing structural alignment. |
 | `nestedMode` | `INTERFACE` | How `sh:class` object properties are typed inside the data class — see [`NestedMode`](#nestedmode) below. |
-| `generateWriteSupport` | `false` | Adds a `toTriples(record, subject): List<RdfTriple>` function to the factory object, serializing the data class back to RDF triples. Requires `generateDataClass = true`. |
+| `generateWriteSupport` | `false` | Adds `toTriples(record, subject): List<RdfTriple>` (the record as triples) and `replaceInGraph(graph, record, subject)` (the recommended write path: one atomic, lossless edit of the predicates the record models) to the factory object. Requires `generateDataClass = true`. |
 
 **Example — generate both modes:**
 
@@ -121,7 +138,10 @@ PersonRecordFactory.replaceInGraph(graph, updated, subject)   // atomic, scoped 
 `rdf:type`. Within those predicates it changes only what the record changed: a value the record still holds
 keeps its original term (language tag, datatype, lexical form), an unchanged single-valued member keeps the
 values beyond `sh:maxCount` its reader did not return, and a term the record cannot represent is kept (see
-`mergeRecord` in the [runtime reference](runtime.md#write-support-extensions)). Everything else about the
+`mergeRecord` in the [runtime reference](runtime.md#write-support-extensions)). A single-valued member is
+unchanged only when it equals the value the reader returned; setting it to another value, even one the graph
+already holds beyond `sh:maxCount`, writes it and removes the other values, so the next read returns it.
+Everything else about the
 subject is kept: other types, predicates the shape does not model,
 triples of complex `sh:path`s (which are not generated), and object links that `toTriples` cannot write
 (`NestedMode.DATA_CLASS` snapshots carry no subject for nested objects). Do **not** use
