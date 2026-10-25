@@ -14,6 +14,38 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### Providers (Jena, RDF4J, HermiT)
+
+- **Security (`rdf-reasoning-hermit`):** HermiT no longer follows `owl:imports`. The OWL API's default loader
+  dereferenced every import IRI of the reasoned graph (HTTP with redirects, or `file:`) and merged what it found into
+  the closure, so graph data could choose a request (SSRF), read a local file into the inferred triples, or hold a
+  load permit past the deadline. The graph is now loaded as one in-memory document: every other document source is
+  refused, and an unresolvable import is ignored instead of failing the call. To reason over an imported ontology,
+  merge it into the graph first under your own `UrlLoadOptions`.
+- **Security (`rdf-jena`):** the sandbox of a `SandboxedSelectQuery` is now an allowlist. Before, it refused only
+  `java:` IRIs and otherwise used Jena's whole function registry, whose lookup loads ARQ's `afn:` library by name:
+  `afn:wait` slept through the query timeout and cleared the thread's interrupt flag (one call per row could hold a
+  worker for days), `afn:print` wrote to stdout and `afn:context` exposed execution-context values. Now:
+  - ARQ's `CALL(iri, ...)`, which computes a function IRI from data, constant `afn:` / `apf:` function and
+    property-function IRIs (both the `jena.apache.org` and the old `jena.hpl.hp.com` namespaces) and custom aggregates
+    are refused with `IllegalArgumentException` before evaluation (behaviour change for sandboxed queries only);
+  - at run time only already-registered functions in the XSD, XPath `fn:` / `math:` and `http://www.w3.org/ns/sparql#`
+    namespaces and the query's custom functions are found; nothing is class-loaded or registered globally;
+  - property functions are off in sandboxed queries, so `rdfs:member` or `list:member` are matched as ordinary
+    predicates, as standard SPARQL does (behaviour change).
+- **Security (`rdf-rdf4j`):** a sandboxed query calls only RDF4J's own built-in functions (from
+  `rdf4j-queryalgebra-evaluation`) besides its custom functions; a function another library or the application
+  registered in RDF4J's global `FunctionRegistry` is an unknown function to it. Its evaluation strategy also fails
+  `SERVICE` and tuple functions and never resolves a federated service, a second barrier behind the static check.
+- **Performance:** a nested query of a custom SPARQL function is parsed and checked once per call site (Jena) or once
+  per query text within a top-level query (RDF4J), instead of once per call; RDF4J parses a top-level sandboxed query
+  once instead of twice.
+- **Tests:** `JenaInferencePoisonScopeTest` ("a cancelled step stops between two results", the scheduled-CI flake at
+  line 153) no longer races with the task that closes the find's reasoner iterator, which the reader queues after its
+  failure: it waits (bounded) for the worker's queue to drain instead of asserting it is already empty.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,

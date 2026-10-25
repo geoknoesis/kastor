@@ -14,7 +14,7 @@ import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryCancelledException
 import org.apache.jena.query.QueryExecution
-import org.apache.jena.query.QueryFactory
+import org.apache.jena.query.Query
 import org.apache.jena.query.QuerySolutionMap
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.sparql.engine.binding.Binding
@@ -36,7 +36,9 @@ import java.util.concurrent.TimeUnit
  * with [InterruptedException], whose interrupt flag is restored) stops the calling query.
  *
  * Nested queries run on the dataset of the calling query, restricted like it, and end by [deadline] (a [clock] value;
- * [Long.MAX_VALUE] when the calling query has no timeout).
+ * [Long.MAX_VALUE] when the calling query has no timeout). Jena creates one instance per call site and execution, so
+ * a nested query is validated, parsed and checked once per instance ([prepared]), not once per row: the bindings of a
+ * call are applied with `substitution`, never written into the text.
  */
 internal class JenaLibraryFunction(
     private val function: SparqlFunction,
@@ -46,6 +48,25 @@ internal class JenaLibraryFunction(
 ) : Function {
 
     override fun build(uri: String, args: ExprList, context: Context) = Unit
+
+    /** What a nested query's preparation depends on: its text and which variables are bound, to what kind of term. */
+    private data class NestedKey(val sparql: String, val bound: Set<String>, val literals: Set<String>)
+
+    /** The checked parses of the nested queries of this call site; a refused or malformed query is never kept. */
+    private val prepared = HashMap<NestedKey, Query>()
+
+    /**
+     * [query] validated against the initial-bindings contract of a top-level query (see JenaRepository.withSelectRows)
+     * for [bindings], parsed as sandboxed SPARQL and checked, once per [NestedKey].
+     */
+    private fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>): Query {
+        val key = NestedKey(query.sparql, bindings.keys, bindings.filterValues { it is Literal || it is TripleTerm }.keys)
+        synchronized(prepared) { prepared[key] }?.let { return it }
+        SparqlInitialBindings.validate(key.sparql, key.bound, key.literals)
+        val parsed = JenaQuerySandbox.parseChecked(key.sparql)
+        synchronized(prepared) { prepared[key] = parsed }
+        return parsed
+    }
 
     override fun exec(binding: Binding, args: ExprList, uri: String, env: FunctionEnv): NodeValue {
         val evaluated = args.list.map { expr ->
@@ -84,14 +105,7 @@ internal class JenaLibraryFunction(
 
         override fun <T> select(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, consume: (Sequence<BindingSet>) -> T): T {
             if (depth >= MAX_FUNCTION_DEPTH) throw ExprEvalException("Custom SPARQL functions nest deeper than $MAX_FUNCTION_DEPTH")
-            // The same initial-bindings contract as a top-level query (see JenaRepository.withSelectRows).
-            SparqlInitialBindings.validate(
-                query.sparql,
-                bindings.keys,
-                bindings.filterValues { it is Literal || it is TripleTerm }.keys,
-            )
-            val parsed = QueryFactory.create(query.sparql)
-            JenaQuerySandbox.check(parsed)
+            val parsed = prepare(query, bindings)
             val dataset = env.dataset ?: throw ExprEvalException("No dataset for a nested query")
             val builder = JenaQuerySandbox.restrict(
                 QueryExecution.dataset(DatasetFactory.wrap(dataset)).query(parsed), query.functions, depth + 1, deadline, clock,

@@ -19,17 +19,21 @@ import org.eclipse.rdf4j.model.Triple
 import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.ValueFactory
 import org.eclipse.rdf4j.query.Dataset
+import org.eclipse.rdf4j.query.QueryEvaluationException
 import org.eclipse.rdf4j.query.QueryInterruptedException
 import org.eclipse.rdf4j.query.algebra.FunctionCall
 import org.eclipse.rdf4j.query.algebra.QueryRoot
+import org.eclipse.rdf4j.query.algebra.Service
 import org.eclipse.rdf4j.query.algebra.TupleExpr
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep
 import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics
@@ -150,15 +154,18 @@ internal class KastorEvaluationStrategyFactory(
  * RDF4J's evaluation, plus the custom functions of [scope] (null: an ordinary query, evaluated exactly as RDF4J does).
  *
  * For a sandboxed query (a [scope]):
- * - a function IRI that RDF4J's `FunctionRegistry` knows is evaluated by RDF4J: a built-in wins over a custom function
- *   (SHACL 1.2 SPARQL Extensions, section 7.3);
+ * - a SPARQL built-in or XSD cast that RDF4J implements itself ([Rdf4jSandboxFunctions.isStandard]) is evaluated by
+ *   RDF4J: a built-in wins over a custom function (SHACL 1.2 SPARQL Extensions, section 7.3). Any other function in
+ *   RDF4J's global `FunctionRegistry` (registered by an application or a library) is not visible;
  * - otherwise a custom function of [scope] is evaluated with its arguments ([SparqlFunction.bindArguments]); every
  *   failure is a SPARQL error ([ValueExprEvaluationException]: `BIND` leaves the variable unbound, `FILTER` is false),
  *   except an interrupted nested query or body ([QueryInterruptedException]; a body's [InterruptedException] keeps
  *   the thread's interrupt flag), which stops this query;
  * - any other function IRI is an error when it is called, as on Jena (RDF4J fails the whole query otherwise);
  * - calls with constant arguments are not folded while the query is optimized, so that each call runs its body once
- *   and RDF4J does not fail on an unknown function before evaluation.
+ *   and RDF4J does not fail on an unknown function before evaluation;
+ * - `SERVICE` and tuple functions fail when they are prepared, and no federated service is ever resolved: the static
+ *   check ([Rdf4jQuerySandbox.check]) refuses `SERVICE` first, this is the second barrier.
  */
 internal class KastorEvaluationStrategy(
     tripleSource: TripleSource,
@@ -181,6 +188,21 @@ internal class KastorEvaluationStrategy(
             setOptimizerPipeline { standard.optimizers.filterNot { it is ConstantOptimizer } }
         }
         return super.optimize(expr, evaluationStatistics, bindings)
+    }
+
+    override fun prepare(service: Service, context: QueryEvaluationContext): QueryEvaluationStep {
+        if (scope != null) throw QueryEvaluationException("A sandboxed query may not use SERVICE")
+        return super.prepare(service, context)
+    }
+
+    override fun prepare(call: TupleFunctionCall, context: QueryEvaluationContext): QueryEvaluationStep {
+        if (scope != null) throw QueryEvaluationException("A sandboxed query may not call the tuple function <${call.uri}>")
+        return super.prepare(call, context)
+    }
+
+    override fun getService(serviceUrl: String): FederatedService {
+        if (scope != null) throw QueryEvaluationException("A sandboxed query may not use SERVICE <$serviceUrl>")
+        return super.getService(serviceUrl)
     }
 
     override fun prepare(node: FunctionCall, context: QueryEvaluationContext): QueryValueEvaluationStep {
@@ -260,9 +282,9 @@ internal class KastorEvaluationStrategy(
     }
 
     private companion object {
-        fun isBuiltIn(iri: String) = FunctionRegistry.getInstance().has(iri)
+        fun isBuiltIn(iri: String) = Rdf4jSandboxFunctions.isStandard(iri)
 
-        /** Whether [expr] calls a function that RDF4J's registry does not know. */
+        /** Whether [expr] calls a function that is not one of RDF4J's built-ins. */
         fun callsCustomFunction(expr: TupleExpr): Boolean {
             var found = false
             expr.visit(object : AbstractQueryModelVisitor<RuntimeException>() {
