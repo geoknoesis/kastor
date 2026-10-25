@@ -61,6 +61,21 @@ and is kept as is; it was never published to Maven Central.
   computed IRI as `CALL` does; ARQ's property-path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`,
   `shortest(...)`), which Jena evaluates without checking the timeout (`<p>{1000000}` over a two-node cycle ran past
   100 s under a 500 ms timeout); and any expression class the cost table does not list (behaviour change).
+- **Security (`rdf-jena`, `rdf-rdf4j`, `rdf-sparql-contract`), review follow-up:**
+  - a regular expression whose choices can read nothing (a repetition of something that matches the empty string,
+    two empty-matchable alternatives, a lookaround, an inline `(?x)`, groups nested more than 64 deep) is refused in a
+    sandboxed query before it runs: Java's matcher explored 2^24 zero-width paths of `(?:|)` x 24 in 0.4 s without
+    reading a character, so the step budget could not see them (behaviour change);
+  - `REPLACE` measures the groups a replacement refers to from their offsets and stops as soon as the result would
+    pass the string limit, checking the deadline while it reads the replacement;
+  - `GROUP_CONCAT` and `CONCAT` count the text of IRIs and blank nodes too, and `IRI()` / `URI()` results are checked;
+  - Jena refuses a triple-term expression with variables (`<<( ?s ?p ?o )>>`; `TRIPLE(?s, ?p, ?o)` builds the same
+    term, bounded) and property paths of more than 64 steps and operators or nested more than 16 deep (its sequences
+    keep duplicates, so `(p|q)/(p|q)/...` multiplied the work of one binding); RDF4J refuses more than 64 path closures
+    and more than 16 triple-term patterns or expressions (its join optimizer took minutes to plan a chain of 40
+    `BIND(<< ?t :p ?t >> AS ?u)`, before any deadline check) (behaviour change).
+- **Fixed (`rdf-jena`):** a `SELECT *` with a property-path sequence failed with "get(...) must not be null": Jena lists
+  the path's hidden variable (`??P0`) unbound among the result variables. Rows no longer carry Jena's own variables.
 - **Fixed (`rdf-jena-reasoning`, `rdf-rdf4j-reasoning`, `rdf-reasoning-hermit`):** a `ReasonerConfig.timeout` too long
   for nanoseconds (`Duration.ofMillis(Long.MAX_VALUE)`) means no limit, as for the memory reasoner. Before, it threw
   `ArithmeticException`, and a timeout just below the nanosecond range overflowed into a deadline in the past.
