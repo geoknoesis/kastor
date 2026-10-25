@@ -68,31 +68,102 @@ def check(actual, baseline):
     if failures: raise ValueError('\n'.join(failures))
 
 
+def parse_raises(values):
+    """Parse `--raise PATH=REASON` values; every raise must carry a non-empty reason."""
+    raises = {}
+    for value in values:
+        path, separator, reason = value.partition('=')
+        if not separator or not path.strip() or not reason.strip():
+            raise ValueError(f'--raise needs PATH=REASON, got {value!r}')
+        raises[path.strip()] = reason.strip()
+    return raises
+
+
+def write_baseline(actual, previous, raises):
+    """Rebuild the baseline: ceilings only fall unless `raises` names the file with a reviewed reason.
+
+    Returns the new baseline and a human-readable summary. Raises ValueError for unapproved growth,
+    for a new over-limit file or function, and for a raise that names a file that is not measured.
+    """
+    default_lines, default_branches = previous['defaultLines'], previous['defaultBranches']
+    old_files = previous.get('files', {})
+    unknown = sorted(set(raises) - set(actual))
+    if unknown: raise ValueError('--raise names files that are not measured: ' + ', '.join(unknown))
+    files, summary, refused = {}, [], []
+
+    def ceiling(path, label, measured, old):
+        if old is not None and measured < old: summary.append(f'lowered {path}: {label} {old} -> {measured}')
+        if old is None or measured > old:
+            before = 'new' if old is None else old
+            if path in raises: summary.append(f'RAISED {path}: {label} {before} -> {measured} ({raises[path]})')
+            else: refused.append(f'{path}: {label} {before} -> {measured}')
+        return measured
+
+    for path, measured in sorted(actual.items()):
+        limits = old_files.get(path, {})
+        record = {}
+        if measured['lines'] > default_lines:
+            record['lines'] = ceiling(path, 'lines', measured['lines'], limits.get('lines'))
+        large = {name: ceiling(path, name, branches, limits.get('functions', {}).get(name))
+                 for name, branches in sorted(measured['functions'].items()) if branches > default_branches}
+        if large: record['functions'] = large
+        if record:
+            record['reason'] = raises.get(path) or limits.get('reason') or 'Growth requires explicit review.'
+            files[path] = record
+        elif path in old_files:
+            summary.append(f'removed {path}')
+    summary.extend(f'removed {path}' for path in old_files if path not in actual)
+    if refused:
+        raise ValueError('Ceilings would grow; split the code, or pass --raise PATH=REASON after review:\n'
+                         + '\n'.join(refused))
+    return {'defaultLines': default_lines, 'defaultBranches': default_branches, 'files': files}, summary
+
+
+def slack(actual, baseline):
+    """List ceilings above the measured value, so shrinking files can be ratcheted down."""
+    notes = []
+    for path, limits in baseline.get('files', {}).items():
+        measured = actual.get(path)
+        if measured is None:
+            notes.append(f'{path}: no longer measured'); continue
+        if 'lines' in limits and measured['lines'] < limits['lines']:
+            notes.append(f'{path}: lines ceiling {limits["lines"]}, measured {measured["lines"]}')
+        for name, maximum in limits.get('functions', {}).items():
+            branches = measured['functions'].get(name)
+            if branches is None: notes.append(f'{path}::{name}: no longer measured')
+            elif branches < maximum: notes.append(f'{path}::{name}: ceiling {maximum}, measured {branches}')
+    return notes
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, default=ROOT/'scripts/code-complexity-baseline.json')
-    parser.add_argument('--write-baseline', action='store_true', help='Maintainer action: review every new ceiling in the diff')
+    parser.add_argument('--write-baseline', action='store_true',
+                        help='Maintainer action: lower ceilings to the measured values and drop compliant files. '
+                             'Growth and new entries are refused unless named by --raise.')
+    parser.add_argument('--raise', dest='raises', action='append', default=[], metavar='PATH=REASON',
+                        help='With --write-baseline: accept growth of one file, recording the reviewed reason.')
     args = parser.parse_args()
+    if args.raises and not args.write_baseline: parser.error('--raise requires --write-baseline')
     paths = set(subprocess.check_output(
         ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '*.kt'], cwd=ROOT,
     ).decode('utf-8').split('\0'))
     actual = {Path(p).as_posix(): metrics((ROOT/p).read_text(encoding='utf-8-sig'))
               for p in paths if '/src/main/' in Path(p).as_posix() and (ROOT/p).is_file()}
-    if args.write_baseline:
-        baseline = {'defaultLines': 600, 'defaultBranches': 40, 'files': {}}
-        for path, measured in sorted(actual.items()):
-            record = {}
-            if measured['lines'] > baseline['defaultLines']: record['lines'] = measured['lines']
-            large = {k:v for k,v in measured['functions'].items() if v > baseline['defaultBranches']}
-            if large: record['functions'] = large
-            if record:
-                record['reason'] = 'Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling.'
-                baseline['files'][path] = record
-        args.baseline.write_text(json.dumps(baseline, indent=2)+'\n', encoding='utf-8')
-    else:
-        baseline = json.loads(args.baseline.read_text(encoding='utf-8'))
-        try: check(actual, baseline)
-        except ValueError as failure: raise SystemExit(str(failure)) from failure
+    baseline = json.loads(args.baseline.read_text(encoding='utf-8'))
+    try:
+        if args.write_baseline:
+            baseline, summary = write_baseline(actual, baseline, parse_raises(args.raises))
+            # Binary write: keep LF on Windows, where text mode would translate to CRLF.
+            args.baseline.write_bytes((json.dumps(baseline, indent=2) + '\n').encode('utf-8'))
+            print('\n'.join(summary) or 'Baseline unchanged')
+        else:
+            check(actual, baseline)
+            loose = slack(actual, baseline)
+            if loose:
+                print(f'{len(loose)} ceilings are above the measured value; ratchet them down with --write-baseline:')
+                print('\n'.join('  ' + note for note in loose))
+    except ValueError as failure: raise SystemExit(str(failure)) from failure
     print(f'Complexity growth gate: {len(actual)} production Kotlin files checked')
 
 
