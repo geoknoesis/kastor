@@ -6,6 +6,10 @@ name: Release readiness
 
 on:
   workflow_dispatch:
+  # Weekly on main, so staging, consumer builds and the performance comparison never go stale between releases
+  # (the run before 2026-10 was 177 commits old and had never staged rdf-holon). Nothing is published.
+  schedule:
+    - cron: "0 6 * * 3" # Wednesdays 06:00 UTC, the day after the weekly CI run
   # Called by publish.yml before any artifact leaves the runner.
   workflow_call:
 
