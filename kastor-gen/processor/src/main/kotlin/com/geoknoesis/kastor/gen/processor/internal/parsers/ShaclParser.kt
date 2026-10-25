@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.gen.processor.internal.parsers
 
-import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
@@ -25,8 +24,9 @@ import java.io.StringReader
  * Uses Apache Jena for proper RDF parsing.
  *
  * ## Error handling
- * - A Turtle syntax error is fatal: it is reported through [KSPLogger.error] and rethrown as
- *   [InvalidConfigurationException], so callers never mistake a broken file for an ontology without shapes.
+ * - A Turtle syntax error, or a shape that cannot be extracted, is thrown as an [IllegalArgumentException], so
+ *   callers never mistake a broken file for an ontology without shapes. The parser does not log it: the processor
+ *   reports it once, at the annotated symbol, and continues with its other requests.
  * - Constructs the generator cannot represent are skipped with a [KSPLogger.warn] naming the shape and
  *   property (complex property paths, untyped properties, literal-valued `sh:property`, shapes without a
  *   target class, ...); one bad shape never prevents the remaining shapes from being extracted.
@@ -55,7 +55,7 @@ public class ShaclParser(private val logger: KSPLogger) {
      *
      * @param inputStream The SHACL file input stream
      * @return List of extracted SHACL shapes, sorted by target class
-     * @throws InvalidConfigurationException if the content is not valid Turtle
+     * @throws IllegalArgumentException if the content is not valid Turtle or a shape cannot be extracted
      */
     public fun parseShacl(inputStream: InputStream): List<ShaclShape> {
         val content = inputStream.bufferedReader().use { it.readText() }
@@ -67,15 +67,14 @@ public class ShaclParser(private val logger: KSPLogger) {
      *
      * @param content The SHACL content as string
      * @return List of extracted SHACL shapes, sorted by target class
-     * @throws InvalidConfigurationException if the content is not valid Turtle
+     * @throws IllegalArgumentException if the content is not valid Turtle or a shape cannot be extracted
      */
     public fun parseShaclContent(content: String): List<ShaclShape> {
         val model = ModelFactory.createDefaultModel()
         try {
             model.read(StringReader(content), null, "TURTLE")
         } catch (e: Exception) {
-            logger.error("Invalid SHACL Turtle: ${e.message}")
-            throw InvalidConfigurationException(config = "SHACL", reason = "invalid Turtle: ${e.message}", cause = e)
+            throw IllegalArgumentException("invalid SHACL Turtle: ${e.message}", e)
         }
         logger.info("Successfully parsed SHACL file with ${model.size()} triples")
         return Extraction(model).run()
@@ -99,12 +98,7 @@ public class ShaclParser(private val logger: KSPLogger) {
                 try {
                     shapes += extractShape(shapeResource)
                 } catch (e: Exception) {
-                    logger.error("Failed to extract SHACL shape ${label(shapeResource)}: ${e.message}")
-                    throw InvalidConfigurationException(
-                        config = "SHACL",
-                        reason = "failed to extract shape ${label(shapeResource)}: ${e.message}",
-                        cause = e,
-                    )
+                    throw IllegalArgumentException("failed to extract SHACL shape ${label(shapeResource)}: ${e.message}", e)
                 }
             }
             return shapes.sortedWith(compareBy({ it.targetClass }, { it.shapeIri }))

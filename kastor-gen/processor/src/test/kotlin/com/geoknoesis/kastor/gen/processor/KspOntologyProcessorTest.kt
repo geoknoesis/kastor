@@ -192,6 +192,7 @@ class KspOntologyProcessorTest {
         )
         assertEquals(1, missing.errors.size, missing.errors.toString())
         assertTrue("absent.shacl.ttl" in missing.errors.single() && "tried" in missing.errors.single(), missing.errors.toString())
+        assertEquals(emptyList(), missing.unlocatedErrors, "the error is reported at the annotated file")
         assertTrue(missing.generated.isEmpty(), missing.generated.keys.toString())
     }
 
@@ -216,6 +217,57 @@ class KspOntologyProcessorTest {
         val error = result.errors.single()
         assertTrue("Unknown prefix: nope" in error && "package gen.broken" in error, error)
         assertFalse(result.generated.keys.any { "gen/broken" in it }, result.generated.keys.toString())
+        assertTrue(result.generated.keys.any { it.endsWith("gen/people/Person.kt") }, result.generated.keys.toString())
+    }
+
+    private fun brokenRequest(shacl: String) = """
+        @file:Rdf(shacl = "$shacl", packageName = "gen.broken", validationAnnotations = ValidationAnnotations.NONE)
+
+        package gen.broken
+
+        import com.geoknoesis.kastor.gen.annotations.Rdf
+        import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
+    """.trimIndent()
+
+    @Test
+    fun `an invalid SHACL Turtle file is one error at the annotated file and the other requests are still generated`() {
+        File(resources, "people.shacl.ttl").writeText(shapes)
+        File(resources, "bad.shacl.ttl").writeText("@prefix sh: <http://www.w3.org/ns/shacl#> .\n<urn:S> a sh:NodeShape ; sh:property [ sh:path ")
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/broken/Marker.kt" to brokenRequest("bad.shacl.ttl"), "gen/people/Marker.kt" to marker),
+            mapOf(OntologyProcessor.RESOURCES_OPTION to resources.absolutePath, OntologyProcessor.RESOURCES_TRACKED_OPTION to "true"),
+        )
+        assertEquals(1, result.errors.size, result.errors.toString())
+        val error = result.errors.single()
+        assertTrue("invalid SHACL Turtle" in error && "package gen.broken" in error, error)
+        assertEquals(emptyList(), result.unlocatedErrors)
+        assertFalse(result.generated.keys.any { "gen/broken" in it }, result.generated.keys.toString())
+        assertTrue(result.generated.keys.any { it.endsWith("gen/people/Person.kt") }, result.generated.keys.toString())
+    }
+
+    @Test
+    fun `shapes that cannot be generated are one error at the annotated file and the other requests are still generated`() {
+        File(resources, "people.shacl.ttl").writeText(shapes)
+        File(resources, "cyclic.shacl.ttl").writeText(
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            @prefix ex: <https://example.test/> .
+            ex:AShape a sh:NodeShape ; sh:targetClass ex:A .
+            ex:BShape a sh:NodeShape ; sh:targetClass ex:B .
+            ex:A rdfs:subClassOf ex:B .
+            ex:B rdfs:subClassOf ex:A .
+            """.trimIndent(),
+        )
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/broken/Marker.kt" to brokenRequest("cyclic.shacl.ttl"), "gen/people/Marker.kt" to marker),
+            mapOf(OntologyProcessor.RESOURCES_OPTION to resources.absolutePath, OntologyProcessor.RESOURCES_TRACKED_OPTION to "true"),
+        )
+        assertEquals(1, result.errors.size, result.errors.toString())
+        assertTrue("cyclic" in result.errors.single(), result.errors.toString())
+        assertEquals(emptyList(), result.unlocatedErrors)
         assertTrue(result.generated.keys.any { it.endsWith("gen/people/Person.kt") }, result.generated.keys.toString())
     }
 

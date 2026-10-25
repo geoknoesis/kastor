@@ -43,6 +43,7 @@ internal class OntologyExtractor(private val logger: KSPLogger) {
      * 
      * @param content The ontology content as string
      * @return List of extracted ontology classes
+     * @throws IllegalArgumentException if the content is not valid Turtle
      */
     fun extractClassesFromContent(content: String): List<OntologyClass> {
         val classes = mutableListOf<OntologyClass>()
@@ -101,8 +102,8 @@ internal class OntologyExtractor(private val logger: KSPLogger) {
             }
             
         } catch (e: Exception) {
-            logger.error("Error parsing ontology content: ${e.message}")
-            logger.exception(e)
+            // A broken ontology is the user's input error: the processor reports it at the annotated symbol.
+            throw IllegalArgumentException("invalid ontology Turtle: ${e.message}", e)
         }
         
         return classes

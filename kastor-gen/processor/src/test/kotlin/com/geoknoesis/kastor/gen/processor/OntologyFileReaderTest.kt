@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class OntologyFileReaderTest {
 
@@ -37,8 +38,9 @@ class OntologyFileReaderTest {
         assertEquals(1, reader.loadOntologyModel("shapes.ttl").shapes.size)
 
         val logger = RecordingLogger()
-        assertFailsWith<FileNotFoundException> { OntologyFileReader(logger, listOf(roots)).loadOntologyModel("missing.ttl") }
-        assertEquals(1, logger.errors.size)
+        val e = assertFailsWith<FileNotFoundException> { OntologyFileReader(logger, listOf(roots)).loadOntologyModel("missing.ttl") }
+        assertTrue(e.cause!!.message!!.contains(File(roots, "missing.ttl").path), e.cause?.message)
+        assertTrue(logger.errors.isEmpty(), "the processor reports it at the annotated symbol: ${logger.errors}")
     }
 
     @Test
