@@ -371,7 +371,16 @@ class RdfInferenceException
 class RdfConfigurationException
 
 sealed class RdfFormatException   // ParseError(parseError), UnsupportedFormat(format, availableFormats), Generic(message)
+
+// The open base for exceptions of extension modules and applications (RdfException itself is sealed):
+open class RdfExtensionException(
+    message: String,
+    errorCode: RdfErrorCode = RdfErrorCode.EXTENSION_ERROR,
+    cause: Throwable? = null
+) : RdfException(message, errorCode, cause)
 ```
+
+`rdf-holon`'s `HolonException` extends `RdfExtensionException`, so `catch (e: RdfException)` also catches holon failures.
 
 URL loading can also throw `RdfInputTooLargeException` (an `IOException`) when a body exceeds `UrlLoadOptions.maxBytes`, and invalid configurations or disallowed URL schemes throw `IllegalArgumentException`.
 
@@ -581,7 +590,8 @@ RdfException (sealed base)
 ├── RdfGraphException
 ├── RdfFederationException
 ├── RdfInferenceException
-└── RdfConfigurationException
+├── RdfConfigurationException
+└── RdfExtensionException (open: HolonException, ...)
 ```
 
 ### Best Practices

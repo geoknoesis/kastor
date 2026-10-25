@@ -30,16 +30,14 @@ enum class HolonError(val id: String) {
 }
 
 /**
- * An RDF-H processing failure, identified by [condition].
- *
- * It is unchecked and is not an [RdfException]: core's `RdfException` hierarchy is sealed to core, so
- * `catch (e: RdfException)` does not see holon failures; catch [HolonException] (or [RuntimeException]) as well.
+ * An RDF-H processing failure, identified by [condition]. It is an [RdfExtensionException], so
+ * `catch (e: RdfException)` sees holon failures too; its [errorCode] is [RdfErrorCode.EXTENSION_ERROR].
  */
 class HolonException(
   val condition: HolonError,
   detail: String = condition.id,
   cause: Throwable? = null,
-) : RuntimeException("${condition.id}: $detail", cause)
+) : RdfExtensionException("${condition.id}: $detail", RdfErrorCode.EXTENSION_ERROR, cause)
 
 /**
  * Immutable RDF graph snapshot. Blank-node identity, including nested triple terms, is retained.

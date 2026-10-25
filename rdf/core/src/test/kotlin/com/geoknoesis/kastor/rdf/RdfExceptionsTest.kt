@@ -156,5 +156,16 @@ class RdfExceptionsTest {
         assertEquals(RdfErrorCode.QUERY_EXECUTION_ERROR.code, context?.get("errorCode"))
         assertEquals("SELECT ?s", context?.get("query"))
     }
-}
 
+    @org.junit.jupiter.api.Test
+    fun `an extension exception defined outside core belongs to the RdfException hierarchy`() {
+        class PluginException(message: String) : RdfExtensionException(message)
+        val caught: RdfException = try { throw PluginException("plugin failed") } catch (e: RdfException) { e }
+        org.junit.jupiter.api.Assertions.assertTrue(caught is PluginException)
+        org.junit.jupiter.api.Assertions.assertEquals(RdfErrorCode.EXTENSION_ERROR, caught.errorCode)
+        org.junit.jupiter.api.Assertions.assertEquals(
+            RdfErrorCode.CONFIGURATION_INVALID,
+            RdfExtensionException("x", RdfErrorCode.CONFIGURATION_INVALID).errorCode,
+        )
+    }
+}
