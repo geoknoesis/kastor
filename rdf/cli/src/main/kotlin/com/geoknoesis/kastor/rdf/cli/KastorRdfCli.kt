@@ -184,7 +184,22 @@ internal fun exitCodeForFailure(e: Throwable, err: PrintStream): Int {
     return EXIT_RUNTIME_ERROR
 }
 
-internal fun oneLine(text: String?): String = (text ?: "").lines().joinToString(" ") { it.trim() }.trim()
+/**
+ * [text] as one printable line for a message: its lines joined by spaces, and every control character (a terminal
+ * escape sequence starts with one) and bidirectional formatting character written as `\uXXXX`, so that input quoted
+ * by a parser cannot forge output lines or recolour the terminal.
+ */
+internal fun oneLine(text: String?): String {
+    val joined = (text ?: "").lines().joinToString(" ") { it.trim() }.trim()
+    if (joined.none(::needsEscape)) return joined
+    return buildString(joined.length + 16) {
+        for (c in joined) if (needsEscape(c)) append("\\u%04X".format(c.code)) else append(c)
+    }
+}
+
+/** Control characters, and the bidirectional marks, embeddings, overrides and isolates (U+200E/F, U+202A-E, U+2066-9). */
+private fun needsEscape(c: Char): Boolean =
+    Character.isISOControl(c) || c.code in 0x202A..0x202E || c.code in 0x2066..0x2069 || c.code == 0x200E || c.code == 0x200F
 
 internal fun expectAtMost(rest: List<String>, max: Int) {
     if (rest.size > max) throw CliError("Unexpected argument: ${rest[max]}")
