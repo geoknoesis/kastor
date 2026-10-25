@@ -14,8 +14,8 @@ class UrlLoadingPreflightTest {
     fun `an unknown format fails before the request is sent`() {
         LoopbackHttp(threads = 2).use { http ->
             val root = http.serve { it.turtle() }
-            assertThrows(RdfFormatException::class.java) { Rdf.parseFromUrl("$root/doc.ttl", "TTL2") }
-            val async = Rdf.parseFromUrlAsync("$root/doc.ttl", "TTL2")
+            assertThrows(RdfFormatException::class.java) { Rdf.parseFromUrl("$root/doc.ttl", "TTL2", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
+            val async = Rdf.parseFromUrlAsync("$root/doc.ttl", "TTL2", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
             val error = assertThrows(ExecutionException::class.java) { async.get(60, TimeUnit.SECONDS) }
             assertTrue(error.cause is RdfFormatException, error.cause.toString())
             assertEquals(emptyList<String>(), http.requests.toList(), "no request for a format that cannot be parsed")

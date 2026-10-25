@@ -81,14 +81,15 @@ class UrlAddressPolicyTest {
     }
 
     @Test
-    fun `the default allows every address and the redirect policy is asked before the address policy`() {
-        assertEquals(UrlAddressPolicy.ALLOW_ALL, UrlLoadOptions.DEFAULT.addressPolicy)
-        assertEquals(UrlAddressPolicy.ALLOW_ALL, UrlLoadOptions().addressPolicy)
+    fun `the default allows only public addresses and the redirect policy is asked before the address policy`() {
+        assertEquals(UrlAddressPolicy.PUBLIC_ADDRESSES, UrlLoadOptions.DEFAULT.addressPolicy)
+        assertEquals(UrlAddressPolicy.PUBLIC_ADDRESSES, UrlLoadOptions().addressPolicy)
+        assertEquals(UrlAddressPolicy.ALLOW_ALL, UrlLoadOptions.ALLOW_ALL_ADDRESSES.addressPolicy)
         assertEquals("UrlAddressPolicy.ALLOW_ALL", UrlAddressPolicy.ALLOW_ALL.toString())
         assertEquals("UrlAddressPolicy.PUBLIC_ADDRESSES", UrlAddressPolicy.PUBLIC_ADDRESSES.toString())
 
         val root = serve()
-        assertEquals(1, Rdf.parseFromUrl("$root/start").size())
+        assertEquals(1, Rdf.parseFromUrl("$root/start", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).size())
         val order = CopyOnWriteArrayList<String>()
         val options = UrlLoadOptions(
             redirectPolicy = { _, to -> order.add("redirect ${to.path}"); true },

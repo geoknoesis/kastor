@@ -399,7 +399,7 @@ object Rdf {
      * 
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
@@ -445,7 +445,7 @@ object Rdf {
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
      * @param executor Executor used for the blocking operation
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A future with the parsed graph; it completes exceptionally with [IllegalArgumentException]
      *   for a disallowed scheme and [RdfInputTooLargeException] for an oversized body
      */
@@ -749,7 +749,7 @@ object Rdf {
      * 
      * @param url The URL to load RDF dataset data from
      * @param format The RDF quad format (default: "TRIG")
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed

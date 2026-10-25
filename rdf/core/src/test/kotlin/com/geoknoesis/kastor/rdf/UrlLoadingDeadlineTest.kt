@@ -47,7 +47,7 @@ class UrlLoadingDeadlineTest {
                 stalled.countDown()
             }
         }
-        val options = UrlLoadOptions(connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 1_000)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 1_000)
         try {
             val error = assertThrows(RdfLoadTimeoutException::class.java) { Rdf.parseFromUrl("$root/stall.nt", RdfFormat.N_TRIPLES, options) }
             assertEquals(1_000, error.timeoutMillis)
@@ -68,7 +68,7 @@ class UrlLoadingDeadlineTest {
                 stalled.countDown()
             }
         }
-        val options = UrlLoadOptions(connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 800)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 800)
         try {
             assertThrows(RdfLoadTimeoutException::class.java) { Rdf.parseFromUrl("$root/slow.nt", RdfFormat.N_TRIPLES, options) }
             assertEquals(1, stalled.count, "the load must end at its deadline, while the server is still silent")
@@ -125,7 +125,7 @@ class UrlLoadingDeadlineTest {
         }
         try {
             // Every call returns at once, although no load can finish: the server answers nothing yet.
-            val futures = (1..workers + queued + overload).map { Rdf.parseFromUrlAsync("$root/item$it.nt", RdfFormat.N_TRIPLES, executor) }
+            val futures = (1..workers + queued + overload).map { Rdf.parseFromUrlAsync("$root/item$it.nt", RdfFormat.N_TRIPLES, executor, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
             val rejected = futures.filter { it.isCompletedExceptionally }
             assertEquals(overload, rejected.size, "loads beyond the workers and the queue are rejected")
             assertEquals(futures.takeLast(overload), rejected, "the last ones, in the order they were submitted")

@@ -75,7 +75,7 @@ class UrlLoadingHelperTest {
         val root = serve()
         val pool = pool()
         occupy(pool)
-        val options = UrlLoadOptions(totalTimeoutMillis = 400)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, totalTimeoutMillis = 400)
         val error = assertThrows(RdfLoadTimeoutException::class.java) {
             openRdfUrlStream("$root/doc.ttl", RdfFormat.TURTLE, options, UrlLoadRuntime(helpers = pool))
         }
@@ -89,8 +89,7 @@ class UrlLoadingHelperTest {
         val pool = pool()
         val release = occupy(pool)
         val policyThreads = CopyOnWriteArrayList<String>()
-        val options = UrlLoadOptions(
-            totalTimeoutMillis = 120_000,
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, totalTimeoutMillis = 120_000,
             redirectPolicy = { _, _ -> policyThreads.add(Thread.currentThread().name); true },
         )
         val caller = Executors.newSingleThreadExecutor()
@@ -399,7 +398,7 @@ class UrlLoadingHelperTest {
     // ---- schemes other than HTTP are bound by the deadline as well ----
 
     // Generous: the steps before the one under test (helper start, opening the connection) must fit in it on a slow host.
-    private val ftpOptions = UrlLoadOptions(allowedSchemes = setOf("ftp"), totalTimeoutMillis = 3_000)
+    private val ftpOptions = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, allowedSchemes = setOf("ftp"), totalTimeoutMillis = 3_000)
     private val ftpUrl = "ftp://files.example/data.nt"
 
     @Test
@@ -466,7 +465,7 @@ class UrlLoadingHelperTest {
                 FakeUrlConnection(uri.toURL(), onConnect = { threads.add(Thread.currentThread().name) }, body = { bytes.inputStream() })
             },
         )
-        val options = UrlLoadOptions(allowedSchemes = setOf("ftp"))
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, allowedSchemes = setOf("ftp"))
         assertArrayEquals(bytes, openRdfUrlStream(ftpUrl, RdfFormat.N_TRIPLES, options, runtime()).read { it.readBytes() })
         assertTrue(threads.single().startsWith(UrlLoadHelpers.THREAD_NAME_PREFIX), threads.toString())
         threads.clear()
@@ -497,7 +496,7 @@ class UrlLoadingHelperTest {
         val done = CountDownLatch(1)
         val loader = Thread {
             failure.add(
-                runCatching { openRdfUrlStream("http://files.example/x.nt", RdfFormat.N_TRIPLES, UrlLoadOptions(totalTimeoutMillis = 600_000), runtime) }
+                runCatching { openRdfUrlStream("http://files.example/x.nt", RdfFormat.N_TRIPLES, UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, totalTimeoutMillis = 600_000), runtime) }
                     .exceptionOrNull() ?: IllegalStateException("the load returned"),
             )
             done.countDown()

@@ -36,13 +36,13 @@ class UrlLoadingHttpTest {
             }
         }
 
-        val missing = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/missing", RdfFormat.TURTLE) }
+        val missing = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/missing", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
         assertEquals(404, missing.statusCode)
         assertTrue(missing.message!!.contains("404"))
-        assertEquals(302, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/moved") }.statusCode)
-        assertEquals(500, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseDatasetFromUrl("$root/err", RdfFormat.TRIG) }.statusCode)
+        assertEquals(302, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/moved", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }.statusCode)
+        assertEquals(500, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseDatasetFromUrl("$root/err", RdfFormat.TRIG, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }.statusCode)
 
-        val async = assertThrows(ExecutionException::class.java) { Rdf.parseFromUrlAsync("$root/missing", RdfFormat.TURTLE).get(60, TimeUnit.SECONDS) }
+        val async = assertThrows(ExecutionException::class.java) { Rdf.parseFromUrlAsync("$root/missing", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).get(60, TimeUnit.SECONDS) }
         assertEquals(404, (async.cause as RdfHttpStatusException).statusCode)
     }
 
@@ -59,16 +59,16 @@ class UrlLoadingHttpTest {
         }
 
         val url = "$root/doc.ttl"
-        val graph = Rdf.parseFromUrl(url, RdfFormat.TURTLE)
+        val graph = Rdf.parseFromUrl(url, RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
         assertEquals(listOf(RdfTriple(Iri("$url#s"), Iri("urn:p"), Iri(url))), graph.getTriples())
         assertTrue(accepts.poll().contains("text/turtle"))
 
-        val asyncGraph = Rdf.parseFromUrlAsync(url, RdfFormat.TURTLE).get(60, TimeUnit.SECONDS)
+        val asyncGraph = Rdf.parseFromUrlAsync(url, RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).get(60, TimeUnit.SECONDS)
         assertEquals(graph.getTriples(), asyncGraph.getTriples())
         assertTrue(accepts.poll().contains("text/turtle"))
 
         val trigUrl = "$root/data.trig"
-        val dataset = Rdf.parseDatasetFromUrl(trigUrl, RdfFormat.TRIG) as RdfRepository
+        val dataset = Rdf.parseDatasetFromUrl(trigUrl, RdfFormat.TRIG, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) as RdfRepository
         try {
             assertEquals(listOf(RdfTriple(Iri("$trigUrl#s"), Iri("urn:p"), Iri(trigUrl))), dataset.getGraph(Iri("$trigUrl#g")).getTriples())
         } finally {
@@ -97,7 +97,7 @@ class UrlLoadingHttpTest {
         val pool = UrlLoadHelperPool(2)
         try {
             val runtime = UrlLoadRuntime(helpers = pool, open = { uri -> FakeHttpConnection(uri.toURL(), body = { trickle }) }, nanoTime = clock::get)
-            val options = UrlLoadOptions(readTimeoutMillis = 5_000, totalTimeoutMillis = 700)
+            val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, readTimeoutMillis = 5_000, totalTimeoutMillis = 700)
             val body = openRdfUrlStream("http://trickle.example/slow.nt", RdfFormat.N_TRIPLES, options, runtime)
             val error = assertThrows(RdfLoadTimeoutException::class.java) { body.read { it.readBytes() } }
             assertEquals(700, error.timeoutMillis)

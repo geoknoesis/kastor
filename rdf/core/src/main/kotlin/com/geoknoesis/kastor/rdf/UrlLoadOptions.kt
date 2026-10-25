@@ -46,11 +46,15 @@ package com.geoknoesis.kastor.rdf
  * redirect policy refuses it, or the hop limit is reached), fail with [RdfHttpStatusException] before anything is
  * parsed.
  *
- * **URLs from untrusted input.** A URL, or a redirect from it, may name a host the caller must not reach from this
- * process: loopback, a cloud metadata service, an address of the internal network. Pass an [addressPolicy] - for
- * example [UrlAddressPolicy.PUBLIC_ADDRESSES] - to have every URL of the load checked before a request is sent to
- * it: the URL the load starts with and the target of every redirect. Read the limits of that policy on
- * [UrlAddressPolicy.PUBLIC_ADDRESSES] before relying on it: it narrows what a URL can reach, it is not a guarantee.
+ * **Only public addresses by default.** A URL, or a redirect from it, may name a host the caller must not reach
+ * from this process: loopback, a cloud metadata service, an address of the internal network. The default
+ * [addressPolicy] is [UrlAddressPolicy.PUBLIC_ADDRESSES]: every URL of the load - the URL it starts with and the
+ * target of every redirect - is checked before a request is sent to it, and loopback (`127.0.0.1`, `::1`), private
+ * (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`), link-local (`169.254.169.254`) and other non-public addresses are
+ * refused with [RdfAddressRefusedException], as is a URL without a host (`file:`, `jar:`). Read the limits of that
+ * policy on [UrlAddressPolicy.PUBLIC_ADDRESSES]: it narrows what a URL can reach, it is not a guarantee. To load from
+ * localhost, the internal network or `file:` URLs you trust, opt in explicitly with [ALLOW_ALL_ADDRESSES] (or
+ * `addressPolicy = UrlAddressPolicy.ALLOW_ALL`, or a policy of your own).
  *
  * The URLs of a load are the URL it starts with and its redirect targets; nothing else is fetched. In particular a
  * JSON-LD body that names a context by URL (`"@context": "https://..."`, `@import`, also `file:` URLs) is not
@@ -62,7 +66,7 @@ package com.geoknoesis.kastor.rdf
  *   requests may go belongs in [addressPolicy].
  * @property addressPolicy Decides, for the URL the load starts with and for the target of every redirect that
  *   [redirectPolicy] allowed, whether a request may be sent to it. A refused URL fails the load with
- *   [RdfAddressRefusedException] before anything is sent to it. Default: [UrlAddressPolicy.ALLOW_ALL].
+ *   [RdfAddressRefusedException] before anything is sent to it. Default: [UrlAddressPolicy.PUBLIC_ADDRESSES].
  */
 data class UrlLoadOptions(
     val allowedSchemes: Set<String> = setOf("http", "https"),
@@ -71,7 +75,7 @@ data class UrlLoadOptions(
     val readTimeoutMillis: Int = 30_000,
     val totalTimeoutMillis: Long = DEFAULT_TOTAL_TIMEOUT_MILLIS,
     val redirectPolicy: UrlRedirectPolicy = UrlRedirectPolicy.ALLOW_ALL,
-    val addressPolicy: UrlAddressPolicy = UrlAddressPolicy.ALLOW_ALL,
+    val addressPolicy: UrlAddressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES,
 ) {
     init {
         require(allowedSchemes.isNotEmpty()) { "allowedSchemes must not be empty" }
@@ -88,8 +92,17 @@ data class UrlLoadOptions(
         /** Default overall deadline for one URL load: 5 minutes. */
         const val DEFAULT_TOTAL_TIMEOUT_MILLIS: Long = 5L * 60 * 1000
 
+        /** The defaults: `http`/`https`, 64 MiB, 5 minutes, and only public addresses ([UrlAddressPolicy.PUBLIC_ADDRESSES]). */
         @JvmField
         val DEFAULT = UrlLoadOptions()
+
+        /**
+         * The defaults, except that every address may be loaded ([UrlAddressPolicy.ALLOW_ALL]): loopback, the internal
+         * network, link-local addresses and URLs without a host. Use it only for URLs you trust, such as a local test
+         * server or an intranet service; combine it with other settings through `copy(...)`.
+         */
+        @JvmField
+        val ALLOW_ALL_ADDRESSES = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL)
     }
 }
 
@@ -111,7 +124,10 @@ fun interface UrlAddressPolicy {
     fun allows(url: java.net.URI): Boolean
 
     companion object {
-        /** Allows every URL (the default). */
+        /**
+         * Allows every URL, including loopback, private and link-local addresses. Not the default: opt in with
+         * [UrlLoadOptions.ALLOW_ALL_ADDRESSES] (or this policy) only for URLs you trust.
+         */
         @JvmField
         val ALLOW_ALL: UrlAddressPolicy = Named("ALLOW_ALL") { true }
 
@@ -262,8 +278,9 @@ fun interface UrlRedirectPolicy {
         /**
          * Follows a redirect only to a target that [UrlAddressPolicy.PUBLIC_ADDRESSES] allows, and has the limits
          * described there (the name is resolved again for the connection; a proxy resolves it itself). As a
-         * redirect policy it never sees the URL the load starts with: prefer
-         * `UrlLoadOptions(addressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES)`, which checks that URL as well.
+         * redirect policy it never sees the URL the load starts with. The default
+         * [UrlLoadOptions.addressPolicy] already is [UrlAddressPolicy.PUBLIC_ADDRESSES], which checks that URL as well;
+         * this policy is useful with an address policy that admits a trusted start URL but no non-public redirect.
          */
         @JvmField
         val PUBLIC_ADDRESSES: UrlRedirectPolicy =

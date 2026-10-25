@@ -1415,6 +1415,7 @@ public final class com/geoknoesis/kastor/rdf/UrlAddressPolicy$Companion {
 }
 
 public final class com/geoknoesis/kastor/rdf/UrlLoadOptions {
+	public static final field ALLOW_ALL_ADDRESSES Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/UrlLoadOptions$Companion;
 	public static final field DEFAULT Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
 	public static final field DEFAULT_MAX_BYTES J
