@@ -2,7 +2,6 @@ package com.geoknoesis.kastor.rdf.rdf4j
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
@@ -170,7 +169,7 @@ class Rdf4jSparqlFunctionTest {
         ))
         assertNull(value("SELECT ?v WHERE { BIND (<urn:self>() AS ?v) }", recursive))
         // Bodies run in the top query and in nested queries 1 to MAX_FUNCTION_DEPTH, on each of the two paths.
-        assertEquals(2 * (MAX_FUNCTION_DEPTH + 1), calls.get())
+        assertEquals(2 * (SparqlFunction.MAX_FUNCTION_DEPTH + 1), calls.get())
     }
 
     @Test

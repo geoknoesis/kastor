@@ -777,10 +777,10 @@ object SparqlRenderer {
         private fun term(term: RdfTerm, scope: Int) {
             when (term) {
                 is BlankNode -> {
-                    val label = term.id.removePrefix("_:")
+                    val label = SparqlSyntax.blankNode(term)
                     val first = owner.getOrPut(label) { scope }
                     require(first == scope) {
-                        "Blank node label '_:$label' is used in more than one basic graph pattern (or update operation); " +
+                        "Blank node label '$label' is used in more than one basic graph pattern (or update operation); " +
                             "SPARQL scopes blank node labels to a single basic graph pattern. Use a variable to join across patterns"
                     }
                 }
@@ -808,7 +808,7 @@ object SparqlRenderer {
     private fun renderTerm(term: RdfTerm): String = when (term) {
         is Var -> SparqlSyntax.variable(term)
         is Iri -> SparqlSyntax.iriRef(term.value)
-        is BlankNode -> SparqlSyntax.blankNode(term.id)
+        is BlankNode -> SparqlSyntax.blankNode(term)
         is Literal -> SparqlSyntax.literal(term)
         is TripleTerm -> {
             val t = term.triple

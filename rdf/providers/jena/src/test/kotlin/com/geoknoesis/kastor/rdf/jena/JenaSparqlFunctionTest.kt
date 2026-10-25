@@ -2,7 +2,6 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfConfig
 import com.geoknoesis.kastor.rdf.RdfFormat
@@ -143,7 +142,7 @@ class JenaSparqlFunctionTest {
         ))
         assertNull(value("SELECT ?v WHERE { BIND (<urn:self>() AS ?v) }", recursive))
         // Bodies run in the top query and in nested queries 1 to MAX_FUNCTION_DEPTH, on each of the two paths.
-        assertEquals(2 * (MAX_FUNCTION_DEPTH + 1), calls.get())
+        assertEquals(2 * (SparqlFunction.MAX_FUNCTION_DEPTH + 1), calls.get())
     }
 
     @Test
@@ -186,7 +185,7 @@ class JenaSparqlFunctionTest {
     }
 
     @Test
-    fun `a function IRI computed at run time in a nested query cannot load a java class`() {
+    fun `a nested query cannot compute a function IRI, so it cannot load a java class`() {
         val probe = "java:" + SandboxProbeFunction::class.java.name
         val (head, tail) = probe.substring(0, 5) to probe.substring(5)
         val nested = "SELECT ?x WHERE { BIND (CALL(IRI(CONCAT(\"$head\", \"$tail\")), 1) AS ?x) }"
@@ -196,7 +195,9 @@ class JenaSparqlFunctionTest {
             },
         ))
         val before = SandboxProbeFunction.instances.get()
-        assertEquals("unseen", lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
+        // CALL is refused in a sandboxed query: the nested query fails, so the body fails (a SPARQL error, ?v
+        // unbound) before anything is evaluated.
+        assertEquals(null, lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
         assertEquals(before, SandboxProbeFunction.instances.get())
     }
 

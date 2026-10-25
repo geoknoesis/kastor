@@ -7,122 +7,6 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 
-/** Lexical token of a SPARQL query: enough structure to rewrite variables safely (not a full parser). */
-internal class SparqlToken(val kind: Kind, val text: String) {
-    enum class Kind { WHITESPACE, COMMENT, STRING, IRI, VARIABLE, WORD, PUNCT }
-
-    /** Variable name without its `?` / `$` sigil (only meaningful for [Kind.VARIABLE]). */
-    val variableName: String get() = text.substring(1)
-
-    val significant: Boolean get() = kind != Kind.WHITESPACE && kind != Kind.COMMENT
-
-    fun isWord(keyword: String): Boolean = kind == Kind.WORD && text.equals(keyword, ignoreCase = true)
-}
-
-/**
- * Splits SPARQL text into tokens, keeping string literals, IRI references and comments intact.
- *
- * Where a token boundary decides what the restriction check sees, the lexer follows the SPARQL grammar (and the
- * JavaCC longest-match tokenizers of Jena and RDF4J): comments and short strings end at CR or LF, an unterminated
- * long-string opener is an empty string followed by a quote, and a word keeps the `\` escapes of a local name.
- * A WORD token may still span several SPARQL tokens (`trueSERVICE` is `true` then `SERVICE`); see
- * [SparqlQueryTemplate.restrictionViolation].
- */
-internal object SparqlLexer {
-    private val iriRef = java.util.regex.Pattern.compile("<[^<>\"{}|^`\\\\\\u0000-\\u0020]*>")
-
-    /** Characters a `\` escapes in a prefixed local name (SPARQL PN_LOCAL_ESC). */
-    const val LOCAL_NAME_ESCAPES = "_~.-!$&'()*+,;=/?#@%"
-
-    /** A SPARQL VARNAME character after the first: PN_CHARS_U, digits, U+00B7, U+0300..U+036F, U+203F..U+2040. */
-    fun isVariableChar(c: Int): Boolean =
-        SparqlQueryTemplate.isPnCharsU(c) || c in '0'.code..'9'.code || c == 0xB7 || c in 0x300..0x36F || c in 0x203F..0x2040
-
-    /** First character of a SPARQL VARNAME: PN_CHARS_U or a digit (the middle dot and combining marks only follow). */
-    fun isVariableStart(c: Int): Boolean = SparqlQueryTemplate.isPnCharsU(c) || c in '0'.code..'9'.code
-
-    private fun isWordStart(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c == ':'
-
-    private fun isWordChar(c: Char): Boolean = isWordStart(c) || c == '-' || c == '.' || c == '%'
-
-    private fun isLineEnd(c: Char): Boolean = c == '\n' || c == '\r'
-
-    fun tokenize(query: String): List<SparqlToken> {
-        val out = ArrayList<SparqlToken>()
-        val matcher = iriRef.matcher(query)
-        var i = 0
-        while (i < query.length) {
-            val c = query[i]
-            val start = i
-            val kind: SparqlToken.Kind
-            when {
-                c.isWhitespace() -> {
-                    while (i < query.length && query[i].isWhitespace()) i++
-                    kind = SparqlToken.Kind.WHITESPACE
-                }
-                c == '#' -> {
-                    // SPARQL ends a comment at either line-end character.
-                    while (i < query.length && !isLineEnd(query[i])) i++
-                    kind = SparqlToken.Kind.COMMENT
-                }
-                query.startsWith("\"\"\"", i) || query.startsWith("'''", i) -> {
-                    val delimiter = query.substring(i, i + 3)
-                    var j = i + 3
-                    while (j < query.length && !query.startsWith(delimiter, j)) {
-                        if (query[j] == '\\') j++
-                        j++
-                    }
-                    // Unterminated, the opener is (longest match) an empty short string, then a quote.
-                    i = if (j < query.length) j + 3 else i + 2
-                    kind = SparqlToken.Kind.STRING
-                }
-                c == '"' || c == '\'' -> {
-                    var j = i + 1
-                    while (j < query.length && query[j] != c && !isLineEnd(query[j])) {
-                        if (query[j] == '\\') j++
-                        j++
-                    }
-                    // An unterminated string stops before the line end, which the parsers reject.
-                    i = if (j < query.length && query[j] == c) j + 1 else minOf(query.length, j)
-                    kind = SparqlToken.Kind.STRING
-                }
-                c == '<' && matcher.region(i, query.length).lookingAt() -> {
-                    i = matcher.end()
-                    kind = SparqlToken.Kind.IRI
-                }
-                (c == '?' || c == '$') && i + 1 < query.length && isVariableStart(query.codePointAt(i + 1)) -> {
-                    i++
-                    while (i < query.length) {
-                        val cp = query.codePointAt(i)
-                        if (!isVariableChar(cp)) break
-                        i += Character.charCount(cp)
-                    }
-                    kind = SparqlToken.Kind.VARIABLE
-                }
-                isWordStart(c) -> {
-                    while (i < query.length) {
-                        when {
-                            // `ex:a\'` and `ex:a\#` are local names, not the start of a string or a comment.
-                            query[i] == '\\' && i + 1 < query.length && query[i + 1] in LOCAL_NAME_ESCAPES -> i += 2
-                            isWordChar(query[i]) -> i++
-                            else -> break
-                        }
-                    }
-                    // A trailing '.' terminates a triple pattern rather than belonging to the name (unless escaped).
-                    while (i - start > 1 && query[i - 1] == '.' && !(i - start > 2 && query[i - 2] == '\\')) i--
-                    kind = SparqlToken.Kind.WORD
-                }
-                else -> {
-                    i++
-                    kind = SparqlToken.Kind.PUNCT
-                }
-            }
-            out.add(SparqlToken(kind, query.substring(start, i)))
-        }
-        return out
-    }
-}
-
 /**
  * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$value` or a component's
  * parameter names) located at compile time, so pre-binding is performed by the SHACL engine itself and behaves
@@ -276,6 +160,7 @@ internal class SparqlQueryTemplate private constructor(
          */
         fun restrictionViolation(query: String, preBound: Set<String>): String? {
             val tokens = SparqlLexer.tokenize(query).filter { it.significant }
+            val valuesBinding = ValuesBindings(tokens, preBound)
             for ((index, token) in tokens.withIndex()) {
                 if (token.kind != SparqlToken.Kind.WORD) continue
                 // SPARQL splits a run like `trueSERVICE` or `1SERVICE` into a literal and a keyword, so the forbidden
@@ -285,7 +170,7 @@ internal class SparqlQueryTemplate private constructor(
                 for (part in bare) {
                     val upper = part.uppercase()
                     FORBIDDEN_KEYWORDS.firstOrNull { it in upper }?.let { return it }
-                    if ("VALUES" in upper) valuesBindingPreBound(tokens, index, preBound)?.let { return it }
+                    if ("VALUES" in upper) valuesBinding.after(index)?.let { return "VALUES for the pre-bound variable \$$it" }
                 }
                 val last = bare.lastOrNull()
                 if (last != null && token.text.endsWith(last) && last.endsWith("AS", ignoreCase = true)) {
@@ -303,17 +188,33 @@ internal class SparqlQueryTemplate private constructor(
 
         /**
          * SHACL 1.2 (Appendix A) forbids only a `VALUES` clause that mentions a potentially pre-bound variable: its
-         * variables are those between the keyword at [index] and the `{` that opens its data block (a data block holds
-         * terms and `UNDEF`, never variables). Returns a description of the violation, or null.
+         * variables are those between the keyword and the `{` that opens its data block (a data block holds terms and
+         * `UNDEF`, never variables). One backward pass over [tokens] finds, for every position, the next `{` and the
+         * next pre-bound variable, so that each `VALUES` is checked in constant time: a query of many `VALUES` words
+         * costs linear time, not one scan to the next `{` per word.
          */
-        private fun valuesBindingPreBound(tokens: List<SparqlToken>, index: Int, preBound: Set<String>): String? {
-            for (token in tokens.subList(index + 1, tokens.size)) {
-                if (token.kind == SparqlToken.Kind.PUNCT && token.text == "{") return null
-                if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
-                    return "VALUES for the pre-bound variable \$${token.variableName}"
+        private class ValuesBindings(tokens: List<SparqlToken>, preBound: Set<String>) {
+            private val nextBrace = IntArray(tokens.size + 1)
+            private val nextPreBound = IntArray(tokens.size + 1)
+            private val names = arrayOfNulls<String>(tokens.size)
+
+            init {
+                nextBrace[tokens.size] = tokens.size
+                nextPreBound[tokens.size] = tokens.size
+                for (i in tokens.indices.reversed()) {
+                    val t = tokens[i]
+                    nextBrace[i] = if (t.kind == SparqlToken.Kind.PUNCT && t.text == "{") i else nextBrace[i + 1]
+                    val preBoundHere = t.kind == SparqlToken.Kind.VARIABLE && t.variableName in preBound
+                    if (preBoundHere) names[i] = t.variableName
+                    nextPreBound[i] = if (preBoundHere) i else nextPreBound[i + 1]
                 }
             }
-            return null
+
+            /** The pre-bound variable the `VALUES` keyword at [index] mentions before its data block, or null. */
+            fun after(index: Int): String? {
+                val variable = nextPreBound[index + 1]
+                return if (variable < nextBrace[index + 1]) names[variable] else null
+            }
         }
 
         /**
@@ -455,8 +356,23 @@ internal class SparqlQueryTemplate private constructor(
                     }
                 }
             }
+            // A codepoint escape can spell a pre-bound variable (`?th`, the escape of `i`, `s`), or end a string or comment early so that
+            // one appears: the template, built from the text as written, has no slot for it, and RDF4J, which decodes
+            // the escapes first, would see the variable unbound. Every view must mention the same pre-bound variables.
+            val asWritten = preBoundMentions(query, preBound)
+            for (view in listOf(decodeCodepointEscapes(query, strict = true), decodeCodepointEscapes(query, strict = false))) {
+                if (preBoundMentions(view, preBound) != asWritten) {
+                    throw SparqlPreBindingRestrictionException(
+                        "$subject spells a pre-bound variable with a codepoint escape, which is not supported with pre-bound variables",
+                    )
+                }
+            }
             return compile(query, preBound)
         }
+
+        /** The pre-bound variables [query] mentions as variable tokens, in order. */
+        private fun preBoundMentions(query: String, preBound: Set<String>): List<String> =
+            SparqlLexer.tokenize(query).mapNotNull { t -> t.variableName.takeIf { t.kind == SparqlToken.Kind.VARIABLE && it in preBound } }
 
         /**
          * Replaces every `$PATH` / `?PATH` variable token (outside strings, IRIs and comments) with the rendered

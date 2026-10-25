@@ -100,6 +100,12 @@ object ConformanceAllowlist {
     }
 }
 
+// Tests per format in the pinned corpus (see Rdf12ConformanceRunner.MINIMUM_CASES).
+private const val MINIMUM_TURTLE_CASES = 419
+private const val MINIMUM_TRIG_CASES = 418
+private const val MINIMUM_N_TRIPLES_CASES = 99
+private const val MINIMUM_N_QUADS_CASES = 114
+
 /**
  * Drives the W3C RDF 1.2 syntax test suites against a Kastor provider.
  *
@@ -131,39 +137,47 @@ object Rdf12ConformanceRunner {
 
     /**
      * Build a [DynamicContainer] tree for one manifest file plus all the
-     * sub-manifests it includes, exercised against [conformer].
+     * sub-manifests it includes, exercised against [conformer]. A manifest that is not there, cannot be parsed or
+     * names no test the harness runs is one **failing** test: this entry point is for manifests that must exist (the
+     * bundled fixture); [forRoot] is the one that knows about an absent corpus.
      */
     fun forManifest(conformer: Conformer, displayName: String, manifest: Path): DynamicContainer {
-        if (!Files.isRegularFile(manifest)) {
-            val skip = dynamicTest("submodule not initialised") {
-                Assumptions.assumeTrue(
-                    false,
-                    "W3C test data not present at $manifest. Run " +
-                        "`git submodule update --init --recursive` to enable " +
-                        "the RDF 1.2 conformance suite.",
-                )
-            }
-            return DynamicContainer.dynamicContainer(displayName, listOf(skip))
-        }
-
         val cases = try {
             Rdf12ManifestParser.parse(manifest)
         } catch (e: Exception) {
+            return DynamicContainer.dynamicContainer(displayName, listOf(dynamicTest("manifest parse error") { throw e }))
+        }
+        if (cases.isEmpty()) {
             return DynamicContainer.dynamicContainer(
                 displayName,
-                listOf(dynamicTest("manifest parse error") { throw e }),
+                listOf(dynamicTest("no RDF 1.2 syntax tests in manifest") { throw AssertionError("The manifest at $manifest has no recognised RDF 1.2 entries") }),
             )
         }
+        return container(conformer, displayName, cases)
+    }
 
-        if (cases.isEmpty()) {
-            val skip = dynamicTest("no RDF 1.2 syntax tests in manifest") {
-                Assumptions.assumeTrue(false, "manifest at $manifest has no recognised RDF 1.2 entries")
-            }
-            return DynamicContainer.dynamicContainer(displayName, listOf(skip))
-        }
+    private fun container(conformer: Conformer, displayName: String, cases: List<W3cTestCase>): DynamicContainer =
+        DynamicContainer.dynamicContainer("$displayName (${cases.size} tests)", cases.map { asDynamicTest(conformer, it) })
 
-        val nodes: List<DynamicNode> = cases.map { asDynamicTest(conformer, it) }
-        return DynamicContainer.dynamicContainer("$displayName (${cases.size} tests)", nodes)
+    /**
+     * The fewest tests per format that the pinned corpus (`scripts/fetch-conformance-data.py`) yields: the RDF 1.2
+     * suites with the RDF 1.1 suites they include, XML and C14N rows excluded. A corpus with fewer fails [forRoot], so
+     * rows that stop being recognised (a renamed type, a manifest that is no longer included) fail the suite instead
+     * of shrinking it. Raise these when the pin moves to a larger corpus.
+     */
+    val MINIMUM_CASES: Map<TestFormat, Int> = mapOf(
+        TestFormat.TURTLE to MINIMUM_TURTLE_CASES,
+        TestFormat.TRIG to MINIMUM_TRIG_CASES,
+        TestFormat.N_TRIPLES to MINIMUM_N_TRIPLES_CASES,
+        TestFormat.N_QUADS to MINIMUM_N_QUADS_CASES,
+    )
+
+    /** Why [cases] are fewer than [MINIMUM_CASES] allows, or null. */
+    fun shortfall(cases: List<W3cTestCase>): String? {
+        val counts = cases.groupingBy { it.format }.eachCount()
+        val short = MINIMUM_CASES.filter { (format, minimum) -> (counts[format] ?: 0) < minimum }
+        if (short.isEmpty()) return null
+        return short.entries.joinToString("; ") { (format, minimum) -> "$format: ${counts[format] ?: 0} tests, expected at least $minimum" }
     }
 
     /** System property that turns a missing corpus into a skip instead of a failure (see [forRoot]). */
@@ -206,7 +220,12 @@ object Rdf12ConformanceRunner {
                 missingCorpus("no RDF 1.2 syntax tests in manifest", "The manifest at $rdf12Manifest has no recognised RDF 1.2 entries.", allowMissingData),
             )
         }
-        return listOf(forManifest(conformer, "rdf12", rdf12Manifest))
+        // A corpus that is there but smaller than the pinned one is not a missing corpus: it always fails.
+        val shortfall = shortfall(cases)
+        val floor = dynamicTest("corpus holds the expected number of tests") {
+            if (shortfall != null) throw AssertionError("The corpus at $rootDir has fewer tests than the pinned one ($shortfall).")
+        }
+        return listOf(floor, container(conformer, "rdf12", cases))
     }
 
     /**

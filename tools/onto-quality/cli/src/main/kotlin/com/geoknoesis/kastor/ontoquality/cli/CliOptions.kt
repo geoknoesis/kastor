@@ -2,7 +2,9 @@ package com.geoknoesis.kastor.ontoquality.cli
 
 import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
+import com.geoknoesis.kastor.rdf.LiteralValidation
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededException
+import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchLimits
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
 import com.github.ajalt.clikt.parameters.options.check
 import com.github.ajalt.clikt.parameters.options.default
@@ -41,17 +43,23 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     val similarityMaxWork by
         option(
             "--similarity-max-work",
-            help = "Max distance evaluations for the similarity search (default: scaled to the number of labelled entities, at least 50000000)",
+            help = "Max distance evaluations for the similarity search (default: scaled to the number of labelled entities, 50000000 to 3000000000)",
         ).long().restrictTo(min = 1L)
     val similarityTimeout by
-        option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, at least 30)")
+        option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, 30 to 600)")
             .int()
-            .restrictTo(1..86_400)
+            .restrictTo(1..MAX_SIMILARITY_TIMEOUT_SECONDS)
     val similarityMaxPairs by
         option(
             "--similarity-max-pairs",
             help = "Max similar pairs the search may return before failing (default: 1000000); raise --threshold instead when this is hit",
         ).int().restrictTo(min = 1)
+    val labelLanguage by
+        option(
+            "--label-language",
+            help = "Language tag of the labels to embed, e.g. fr (default: the ontology's most common label language; " +
+                "an entity without a label in it falls back to untagged labels, then to its smallest language tag)",
+        )
     val similarityMode by
         option(
             "--similarity-mode",
@@ -62,6 +70,11 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     fun toOptions(): EmbeddingCliOptions {
         try {
             OnnxEmbeddingModel.validateCliOptions(model, onnx, tokenizer, embeddingDim, maxTokens)
+            labelLanguage?.let {
+                require(it.isNotEmpty() && LiteralValidation.isWellFormedLanguageTag(it)) {
+                    "--label-language must be a language tag such as en or pt-BR, got '$it'"
+                }
+            }
         } catch (e: IllegalArgumentException) {
             throw usageError(e.message ?: "Invalid embedding options")
         }
@@ -78,6 +91,7 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
             similarityMaxWork = similarityMaxWork,
             similarityTimeout = similarityTimeout?.let { Duration.ofSeconds(it.toLong()) },
             similarityMaxPairs = similarityMaxPairs,
+            labelLanguage = labelLanguage,
             similarityMode =
                 if (similarityMode.equals("approximate", ignoreCase = true)) SimilaritySearchMode.ApproximateLsh() else SimilaritySearchMode.Exact,
         )
@@ -224,21 +238,34 @@ internal const val OUTPUT_HELP =
 
 internal const val OVERWRITE_INPUT_HELP = "Allow --output to be the input ontology file (refused by default)"
 
-internal const val SIMILARITY_BUDGET_HINT =
-    "Re-run with a larger --similarity-max-work (distance evaluations) or --similarity-timeout (seconds), " +
-        "or use --similarity-mode approximate for large vocabularies."
+private val MAX_WORK_OPTION =
+    "--similarity-max-work <evaluations> (the scaled default is ${SimilaritySearchLimits.DEFAULT_MAX_DISTANCE_EVALUATIONS} " +
+        "to ${SimilaritySearchLimits.MAX_SCALED_DISTANCE_EVALUATIONS})"
 
-/** Advice for an exhausted similarity budget, targeted at the limit that was hit. */
+private val TIMEOUT_OPTION =
+    "--similarity-timeout <seconds> (1 to $MAX_SIMILARITY_TIMEOUT_SECONDS; the scaled default is " +
+        "${SimilaritySearchLimits.DEFAULT_TIMEOUT.seconds} to ${SimilaritySearchLimits.MAX_SCALED_TIMEOUT.seconds})"
+
+private const val APPROXIMATE_ADVICE = "or use --similarity-mode approximate for large vocabularies."
+
+/** Advice for an exhausted budget of unknown kind: every option that raises a similarity limit. */
+internal val SIMILARITY_BUDGET_HINT = "Re-run with a larger $MAX_WORK_OPTION or $TIMEOUT_OPTION, $APPROXIMATE_ADVICE"
+
+/**
+ * Advice for an exhausted similarity budget (exit status 5), naming the exact option that raises the limit that was
+ * hit and the range the scaled default takes.
+ */
 internal fun similarityBudgetHint(e: SimilaritySearchBudgetExceededException): String =
     when (e.limit) {
         SimilaritySearchBudgetExceededException.Limit.RESULT_PAIRS ->
             "Too many similar pairs: re-run with a higher --threshold or a larger --similarity-max-pairs."
-        SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS ->
-            "Re-run with a larger --similarity-max-work (distance evaluations), or use --similarity-mode approximate for large vocabularies."
-        SimilaritySearchBudgetExceededException.Limit.DEADLINE ->
-            "Re-run with a larger --similarity-timeout (seconds), or use --similarity-mode approximate for large vocabularies."
+        SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS -> "Re-run with a larger $MAX_WORK_OPTION, $APPROXIMATE_ADVICE"
+        SimilaritySearchBudgetExceededException.Limit.DEADLINE -> "Re-run with a larger $TIMEOUT_OPTION, $APPROXIMATE_ADVICE"
         null -> SIMILARITY_BUDGET_HINT
     }
+
+/** Upper bound of `--similarity-timeout`. */
+internal const val MAX_SIMILARITY_TIMEOUT_SECONDS = 86_400
 
 /**
  * Default base IRI prefix for relative references in the input. It is independent of the directory the file is in, so

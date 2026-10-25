@@ -57,13 +57,16 @@ class SimilarityIndex internal constructor(
         private fun elapsed(): Long = accumulated + if (paused) 0L else clock() - runningSince
         fun check() {
             kotlin.check(!Thread.currentThread().isInterrupted) { "Similarity search interrupted" }
-            if (elapsed() >= timeout) throw SimilaritySearchBudgetExceededException("Similarity search deadline exceeded", SimilaritySearchBudgetExceededException.Limit.DEADLINE)
+            if (elapsed() >= timeout) throw SimilaritySearchBudgetExceededException(
+                "Similarity search deadline exceeded (limit ${seconds(limits.timeout)} s)",
+                SimilaritySearchBudgetExceededException.Limit.DEADLINE,
+            )
         }
         fun evaluate() {
             check()
             if (evaluations++ >= limits.maxDistanceEvaluations) {
                 throw SimilaritySearchBudgetExceededException(
-                    "Similarity distance-evaluation limit exceeded",
+                    "Similarity distance-evaluation limit exceeded (limit ${limits.maxDistanceEvaluations} evaluations)",
                     SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS,
                 )
             }
@@ -232,3 +235,7 @@ class SimilarityIndex internal constructor(
         }
     }
 }
+
+/** [d] in seconds, exactly, without trailing zeros ("30", "0.5", "0.000000001"). */
+private fun seconds(d: java.time.Duration): String =
+    java.math.BigDecimal.valueOf(d.seconds).add(java.math.BigDecimal.valueOf(d.nano.toLong(), 9)).stripTrailingZeros().toPlainString()

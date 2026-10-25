@@ -124,6 +124,23 @@ internal class Dependency(val key: AtomKey, val node: RdfTerm, val shape: RdfRes
 internal class Atom(val node: RdfTerm, val shape: RdfResource) {
     /** Questions of the same component read by the recorded evaluation (observed, not predicted). */
     var dependencies: List<Dependency> = emptyList()
+        set(value) {
+            field = value
+            recordedPolarity = null
+        }
+
+    /** [dependencies] by question: true when one of the reads is negative. Built on first use. */
+    private var recordedPolarity: HashMap<AtomKey, Boolean>? = null
+
+    /** Whether [dependencies] has a read of [key] that is at least as negative as a read with [negative]. */
+    fun recorded(key: AtomKey, negative: Boolean): Boolean {
+        val index = recordedPolarity ?: HashMap<AtomKey, Boolean>(dependencies.size * 2).also { map ->
+            for (d in dependencies) map.merge(d.key, d.negative, Boolean::or)
+            recordedPolarity = map
+        }
+        val recordedNegative = index[key] ?: return false
+        return recordedNegative || !negative
+    }
     /** Answer of the recorded evaluation, in which every recursive read was answered "conforms". */
     var optimistic = Conformance.CONFORMS
     var value = Conformance.CONFORMS

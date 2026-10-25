@@ -66,8 +66,19 @@ Check that new checksums belong to the artifacts the PR updates. This step is de
 
 ### Quality regression gates
 
-`python scripts/check-code-complexity.py` prevents growth beyond reviewed Kotlin file/function ceilings.
-Prefer extracting responsibilities to raising a ceiling. Dependency advice is required in CI:
+`./gradlew check` runs the repository-level Python gates as the root task `verifyQualityGates`, alongside
+the module checks: the unit tests of the gate scripts, `check-doc-versions.py`, `check-build-pins.py`,
+`check-readme-imports.py` and the complexity ratchet `check-code-complexity.py`. CI runs the same task through
+`check`, so a gate that fails in CI also fails locally. Run the gates alone with `./gradlew verifyQualityGates`. They
+need Python 3: `python` on Windows, `python3` elsewhere, or `-Pkastor.python=<path>`.
+
+The complexity ratchet prevents growth beyond reviewed Kotlin file and function ceilings in
+`scripts/code-complexity-baseline.json`. Prefer extracting responsibilities to raising a ceiling. After you shrink a
+file, `python scripts/check-code-complexity.py --write-baseline` lowers its ceilings; the normal run lists ceilings
+that can be lowered. `--write-baseline` never raises a ceiling or adds a file on its own: growth needs
+`--raise PATH=REASON`, which records the reviewed reason, and the change then needs review in the pull request.
+
+Dependency advice and the test-population gates need build outputs, so they stay CI steps:
 
 ```bash
 ./gradlew buildHealth
@@ -89,9 +100,9 @@ Suites that must never disappear are named with `--require-suite CLASS=MIN`. The
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` and reviewed dependency advice (Linux, Windows; macOS on push/schedule); `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check --continue` (including the quality gates), conformance smoke, test-count/skip gate, `buildHealth` and reviewed dependency advice (Linux, Windows; macOS on push/schedule). Later verification steps run even when `check` fails, so one red gate does not hide test results. `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
 | [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
-| [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
+| [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Weekly + manual; called by `publish.yml` | Staging (every module the BOM manages), metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
 | [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | OSV audit of dependencies introduced by the PR, secret-pattern scan, GitHub dependency review |
 | [`live-llm.yml`](.github/workflows/live-llm.yml) | Manual | Bounded live OpenAI integration, execution gate and coverage |
@@ -111,7 +122,7 @@ Useful variants:
 
 1. **Fork** the repository and create a **feature branch** from `main`.
 2. Keep changes **focused** on one concern when possible (easier review, cleaner history).
-3. **Run tests** locally before opening a PR (at minimum `./gradlew check -x :rdf:conformance:test conformanceSmokeTest`). Fix any failures and add tests for new behavior.
+3. **Run tests** locally before opening a PR (at minimum `./gradlew check -x :rdf:conformance:test conformanceSmokeTest`, which includes the quality gates). Fix any failures and add tests for new behavior.
 4. In the PR description, explain **what** changed and **why** (link issues with `Fixes #123` when applicable).
 5. Match existing **Kotlin style** and patterns in the touched modules; avoid unrelated reformatting.
 

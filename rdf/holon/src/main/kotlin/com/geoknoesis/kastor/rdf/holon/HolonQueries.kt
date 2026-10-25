@@ -11,6 +11,11 @@ import com.geoknoesis.kastor.rdf.*
  * the full RDF-H result remains available through [HolonResolution.attributedGraphs].
  * Providers that cannot retain empty named graphs also report unsupported-capability for those datasets.
  * [repositoryFactory] must return a fresh, empty repository whose ownership transfers to this method.
+ *
+ * The snapshot is copied into that repository once. Queries then run in place on it, with or without [attributed]
+ * (no per-query copy), when it has a SPARQL engine; the graph-only `memory` provider is copied for every query, as
+ * any [Dataset] over it is. With [attributed], the scope union is stored in a private named graph whose IRI is never
+ * one of the dataset's named graphs.
  */
 fun HolonResolution.asDataset(
   attributed: Boolean = false,
@@ -23,11 +28,18 @@ fun HolonResolution.asDataset(
   val repository = repositoryFactory()
   try {
     val names = if (attributed) attributedGraphs.keys.filterIsInstance<Iri>() else emptyList()
-    if ((repository as? DatasetClauseSupport)?.let { support -> names.any { !support.supportsDatasetGraph(it) } } == true) {
+    // With named graphs, the scope union is stored in a private named graph rather than the store's default graph:
+    // a dataset of the store's default graph and named graphs cannot be queried in place (the default graph has no
+    // IRI for FROM), so every query would copy the whole repository. The private graph is named only by FROM.
+    val defaultName = if (names.isEmpty()) null else privateDefaultGraphName(names)
+    if ((repository as? DatasetClauseSupport)?.let { support -> (names + listOfNotNull(defaultName)).any { !support.supportsDatasetGraph(it) } } == true) {
       fail(HolonError.UNSUPPORTED_CAPABILITY, "The query provider cannot represent the selected graph names")
     }
     repository.transaction {
-      editDefaultGraph().addTriples(graph.getTriples())
+      if (defaultName == null) editDefaultGraph().addTriples(graph.getTriples()) else {
+        createGraph(defaultName)
+        editGraph(defaultName).addTriples(graph.getTriples())
+      }
       names.forEach { name ->
         createGraph(name) // An attributed empty holon still names a graph.
         editGraph(name).addTriples(attributedGraphs.getValue(name).getTriples())
@@ -37,7 +49,8 @@ fun HolonResolution.asDataset(
       fail(HolonError.UNSUPPORTED_CAPABILITY, "The query provider cannot retain empty named graphs; use attributedGraphs")
     }
     val view = Dataset {
-      defaultGraph(repository)
+      if (defaultName == null) defaultGraph(repository)
+      else defaultGraph(repository.getGraph(defaultName).asGraphRef(repository, defaultName))
       names.forEach { namedGraph(it, repository, it) }
     }
     return OwnedHolonDataset(view, repository)
@@ -46,6 +59,10 @@ fun HolonResolution.asDataset(
     throw error
   }
 }
+
+/** A graph name that is not one of [names], for the scope union of an attributed query dataset. */
+private fun privateDefaultGraphName(names: List<Iri>): Iri =
+  generateSequence { Iri("urn:uuid:${java.util.UUID.randomUUID()}") }.first { it !in names }
 
 private class OwnedHolonDataset(
   private val view: Dataset,

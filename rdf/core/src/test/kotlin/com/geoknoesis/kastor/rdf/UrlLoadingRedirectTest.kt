@@ -42,12 +42,12 @@ class UrlLoadingRedirectTest {
             }
         }
         // No trailing slash: the request URL has an empty path.
-        val graph = Rdf.parseFromUrl(root)
+        val graph = Rdf.parseFromUrl(root, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
         assertEquals(listOf(RdfTriple(Iri("$root/data.ttl#s"), Iri("urn:p"), Iri("$root/data.ttl"))), graph.getTriples())
         assertEquals(listOf("/", "/data.ttl"), requests.toList())
 
         requests.clear()
-        val query = Rdf.parseFromUrl("$root?start")
+        val query = Rdf.parseFromUrl("$root?start", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
         assertEquals(listOf(RdfTriple(Iri("$root/?page=2#s"), Iri("urn:p"), Iri("$root/?page=2"))), query.getTriples())
         assertEquals(listOf("/?start", "/?page=2"), requests.toList())
     }
@@ -62,11 +62,11 @@ class UrlLoadingRedirectTest {
                 else -> exchange.turtle("<urn:s> <urn:p> <urn:o> .")
             }
         }
-        assertEquals(1, Rdf.parseFromUrl("$root/a").size())
+        assertEquals(1, Rdf.parseFromUrl("$root/a", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).size())
         assertEquals("/my%20docs/a%7Cb.ttl?q=x%20y", requests.last())
-        assertEquals(1, Rdf.parseFromUrl("$root/b").size())
+        assertEquals(1, Rdf.parseFromUrl("$root/b", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).size())
         assertEquals("/sub%20dir/caf%C3%A9.ttl", requests.last())
-        assertEquals(1, Rdf.parseFromUrl("$root/c").size())
+        assertEquals(1, Rdf.parseFromUrl("$root/c", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).size())
         assertEquals("/100%25/done%20already.ttl", requests.last())
     }
 
@@ -84,7 +84,7 @@ class UrlLoadingRedirectTest {
         )
         val root = serve { exchange -> exchange.redirect(locations.getValue(exchange.requestURI.path)) }
         for ((path, location) in locations) {
-            val error = assertThrows(RdfHttpStatusException::class.java, { Rdf.parseFromUrl("$root$path") }, location)
+            val error = assertThrows(RdfHttpStatusException::class.java, { Rdf.parseFromUrl("$root$path", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }, location)
             assertEquals(302, error.statusCode, location)
             assertTrue(error.message!!.contains("not followed"), error.message)
             assertEquals("$root$path", error.url)
@@ -102,11 +102,11 @@ class UrlLoadingRedirectTest {
             }
         }
         // Ten redirects are followed.
-        assertEquals(1, Rdf.parseFromUrl("$root/ten/0").size())
+        assertEquals(1, Rdf.parseFromUrl("$root/ten/0", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).size())
         assertEquals((0..10).map { "/ten/$it" }, requests.toList())
 
         requests.clear()
-        val error = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/loop/0") }
+        val error = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/loop/0", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
         assertEquals(302, error.statusCode)
         assertTrue(error.message!!.contains("more than $MAX_URL_REDIRECTS redirects"), error.message)
         assertTrue(error.message!!.contains("$root/loop/10"), error.message)
@@ -132,7 +132,7 @@ class UrlLoadingRedirectTest {
         // The load runs on an executor of the test, so that the test can wait for the load to be over.
         val loader = Executors.newSingleThreadExecutor()
         try {
-            val future = Rdf.parseFromUrlAsync("$root/start", RdfFormat.TURTLE, loader)
+            val future = Rdf.parseFromUrlAsync("$root/start", RdfFormat.TURTLE, loader, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
             assertTrue(arrived.await(60, TimeUnit.SECONDS), "the second hop must be requested")
             assertTrue(future.cancel(true))
             assertTrue(future.isCancelled)
@@ -165,7 +165,7 @@ class UrlLoadingRedirectTest {
             assertEquals(UrlRedirectPolicy.ALLOW_ALL, UrlLoadOptions.DEFAULT.redirectPolicy)
             assertEquals(
                 listOf(RdfTriple(Iri("$other/doc.ttl#s"), Iri("urn:p"), Iri("$other/doc.ttl"))),
-                Rdf.parseFromUrl("$root/start").getTriples(),
+                Rdf.parseFromUrl("$root/start", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).getTriples(),
             )
             assertEquals(listOf("/doc.ttl"), otherHost.requests.toList())
 
@@ -173,7 +173,7 @@ class UrlLoadingRedirectTest {
                 requests.clear()
                 otherHost.requests.clear()
                 val error = assertThrows(RdfHttpStatusException::class.java) {
-                    Rdf.parseFromUrl("$root/start", RdfFormat.TURTLE, UrlLoadOptions(redirectPolicy = policy))
+                    Rdf.parseFromUrl("$root/start", RdfFormat.TURTLE, UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, redirectPolicy = policy))
                 }
                 assertEquals(302, error.statusCode)
                 assertTrue(error.message!!.contains("refused by the redirect policy"), error.message)
@@ -195,12 +195,12 @@ class UrlLoadingRedirectTest {
             }
         }
         val seen = CopyOnWriteArrayList<Pair<String, String>>()
-        val options = UrlLoadOptions(redirectPolicy = { from, to -> seen.add(from.toString() to to.toString()); true })
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, redirectPolicy = { from, to -> seen.add(from.toString() to to.toString()); true })
         assertEquals(1, Rdf.parseFromUrl("$root/a", RdfFormat.TURTLE, options).size())
         assertEquals(listOf("$root/a" to "$root/b/", "$root/b/" to "$root/c.ttl?x=1"), seen.toList())
 
         // Same-host redirects pass SAME_HOST; a different port is a different host.
-        assertEquals(1, Rdf.parseFromUrl("$root/a", RdfFormat.TURTLE, UrlLoadOptions(redirectPolicy = UrlRedirectPolicy.SAME_HOST)).size())
+        assertEquals(1, Rdf.parseFromUrl("$root/a", RdfFormat.TURTLE, UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, redirectPolicy = UrlRedirectPolicy.SAME_HOST)).size())
         val same = UrlRedirectPolicy.SAME_HOST
         assertTrue(same.allows(java.net.URI("http://Example.org/a"), java.net.URI("http://example.ORG:80/b")))
         assertTrue(same.allows(java.net.URI("https://example.org/a"), java.net.URI("https://example.org:443/b")))
@@ -208,7 +208,7 @@ class UrlLoadingRedirectTest {
         assertFalse(same.allows(java.net.URI("http://example.org/a"), java.net.URI("http://www.example.org/b")))
 
         // A failing policy fails the load with its own exception.
-        val failing = UrlLoadOptions(redirectPolicy = { _, _ -> throw IllegalStateException("policy failed") })
+        val failing = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, redirectPolicy = { _, _ -> throw IllegalStateException("policy failed") })
         val error = assertThrows(IllegalStateException::class.java) { Rdf.parseFromUrl("$root/a", RdfFormat.TURTLE, failing) }
         assertEquals("policy failed", error.message)
     }
@@ -245,8 +245,7 @@ class UrlLoadingRedirectTest {
             if (exchange.requestURI.path == "/start") exchange.redirect("/doc.ttl") else exchange.turtle()
         }
         val release = CountDownLatch(1)
-        val options = UrlLoadOptions(
-            totalTimeoutMillis = 3_000,
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, totalTimeoutMillis = 3_000,
             redirectPolicy = { _, _ -> release.await(20, TimeUnit.SECONDS); true },
         )
         try {
@@ -283,8 +282,8 @@ class UrlLoadingRedirectTest {
     fun `options have defaults for their policies, and equality`() {
         val five = UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L)
         assertEquals(UrlRedirectPolicy.ALLOW_ALL, five.redirectPolicy)
-        assertEquals(UrlAddressPolicy.ALLOW_ALL, five.addressPolicy)
-        assertEquals(five, UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L, UrlRedirectPolicy.ALLOW_ALL, UrlAddressPolicy.ALLOW_ALL))
+        assertEquals(UrlAddressPolicy.PUBLIC_ADDRESSES, five.addressPolicy)
+        assertEquals(five, UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L, UrlRedirectPolicy.ALLOW_ALL, UrlAddressPolicy.PUBLIC_ADDRESSES))
         // One constructor: no overloads kept for earlier, unreleased shapes of the class.
         // (Kotlin adds a no-argument constructor to a class whose parameters all have defaults.)
         assertEquals(

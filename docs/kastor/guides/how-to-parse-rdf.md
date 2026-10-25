@@ -63,28 +63,35 @@ val future = Rdf.parseFromUrlAsync(
 val remoteGraphAsync = future.get() // or attach callbacks
 ```
 
-URL loading is restricted by `UrlLoadOptions`. By default only `http` and `https` URLs are accepted, and response bodies larger than 64 MiB fail with `RdfInputTooLargeException`. Pass options to change this:
+URL loading is restricted by `UrlLoadOptions`. By default:
+
+- only `http` and `https` URLs are accepted;
+- only public addresses are reached (`UrlAddressPolicy.PUBLIC_ADDRESSES`, see below), for the URL the load starts with and for every redirect target: `localhost`, `127.0.0.1`, `10.x`, `192.168.x`, `169.254.169.254`, `::1` and `fd00::/8` fail with `RdfAddressRefusedException` before any request is sent;
+- response bodies larger than 64 MiB fail with `RdfInputTooLargeException`.
+
+To load from a local server, the internal network or a `file:` URL you trust, opt in explicitly with `UrlLoadOptions.ALLOW_ALL_ADDRESSES` (and `copy(...)` for other settings):
 
 ```kotlin
+val intranet = Rdf.parseFromUrl("http://localhost:8080/data.ttl", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
+
 val local = Rdf.parseFromUrl(
     "file:///data/big.ttl",
     format = "TURTLE",
-    options = UrlLoadOptions(allowedSchemes = setOf("file"), maxBytes = 512L * 1024 * 1024)
+    options = UrlLoadOptions.ALLOW_ALL_ADDRESSES.copy(allowedSchemes = setOf("file"), maxBytes = 512L * 1024 * 1024)
 )
 ```
 
-HTTP redirects are followed (up to 10 hops, never from `https` down to `http`), including redirects to another host. When the URL comes from untrusted input and your process can reach hosts the caller must not (loopback, cloud metadata, other internal addresses), pass an address policy. It is asked about the URL the load starts with and about every redirect target:
+HTTP redirects are followed (up to 10 hops, never from `https` down to `http`), including redirects to another host, as long as the target passes the address policy. To restrict URLs further, pass your own address policy:
 
 ```kotlin
 val graph = Rdf.parseFromUrl(
     userSuppliedUrl,
     format = "TURTLE",
-    // or your own: UrlAddressPolicy { url -> url.host in allowedHosts }
-    options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES)
+    options = UrlLoadOptions(addressPolicy = UrlAddressPolicy { url -> url.host in allowedHosts })
 )
 ```
 
-`UrlAddressPolicy.PUBLIC_ADDRESSES` allows a URL only if its host is, or resolves only to, public unicast addresses. It refuses loopback, link-local, private, carrier-grade NAT, unique-local, documentation, reserved, wildcard and multicast ranges, also when an IPv4 address is embedded in an IPv6 one (IPv4-mapped, NAT64, 6to4). A refused URL fails with `RdfAddressRefusedException`. It narrows what a URL can reach; it is not a guarantee: host names are looked up when the policy is asked and again by the connection, so it does not stop DNS rebinding, and behind an HTTP proxy the local lookup says nothing about where the proxy connects. Use network-level controls where that matters. `UrlLoadOptions.redirectPolicy` remains for rules about redirects only (for example `UrlRedirectPolicy.SAME_HOST`).
+`UrlAddressPolicy.PUBLIC_ADDRESSES` (the default) allows a URL only if its host is, or resolves only to, public unicast addresses. It refuses loopback, link-local, private, carrier-grade NAT, unique-local, documentation, reserved, wildcard and multicast ranges, also when an IPv4 address is embedded in an IPv6 one (IPv4-mapped, NAT64, 6to4). A refused URL fails with `RdfAddressRefusedException`. It narrows what a URL can reach; it is not a guarantee: host names are looked up when the policy is asked and again by the connection, so it does not stop DNS rebinding, and behind an HTTP proxy the local lookup says nothing about where the proxy connects. Use network-level controls where that matters. `UrlLoadOptions.redirectPolicy` remains for rules about redirects only (for example `UrlRedirectPolicy.SAME_HOST`).
 
 ### Step 4: Add parsed graph to a repository
 

@@ -107,6 +107,12 @@ Has people graph: true
 - `Dataset` composition is **read‑only** at this layer for the pattern above; use **`RdfRepository`** for transactional edits.
 - The default graph supplied via `defaultGraph(...)` reflects the **union** you attach there (see [Datasets](../concepts/datasets.md)).
 - **`RdfRepository`** implements **`Dataset`** where applicable — you can often query a single repo as a dataset without wrapping.
+- A **`SandboxedSelectQuery`** (untrusted query text, with its own custom functions) stays sandboxed on every
+  dataset path: a dataset whose graphs live in one repository rewrites the text (dataset clauses, `GRAPH` patterns)
+  but sends a `SandboxedSelectQuery` with the same function library, and a materialized dataset passes the query on as
+  it is. The provider then refuses `SERVICE` and `java:` code as usual. The timed
+  `withSelectRows(query, bindings, timeout, consume)` is not supported on a `Dataset` view and throws
+  `UnsupportedOperationException`.
 
 
 ## RDF-H holon scopes
@@ -247,6 +253,8 @@ and retains empty holons. The default scope graph is a set union; a triple filed
 `resolved.asDataset(attributed = true)` also exposes IRI-named holons to ordinary `GRAPH ?h` queries.
 Without attribution, the query dataset has no named graphs. Joins still span the entire default scope union.
 Queries cannot replace the resolved dataset with their own `FROM`/`FROM NAMED` clauses.
+The snapshot is copied into the query repository once; queries then run in place on it (with a SPARQL provider such
+as Jena or RDF4J), so a query costs no copy of the holon content.
 
 Kastor's public query `Dataset` supports IRI graph names. Blank-node attributed names therefore cause
 `unsupported-capability` in the bridge. Providers that cannot retain empty named graphs also cause

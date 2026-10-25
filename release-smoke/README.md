@@ -7,4 +7,4 @@ From the repository root:
 ./gradlew -p release-smoke run
 ```
 
-The dependency graph exercises the BOM, both RDF providers, runtime, and both validation adapters. A separate TestKit fixture in the Gradle plugin tests compilation and execution of generated cross-package domain types.
+The dependency graph exercises the BOM, both RDF providers, `rdf-holon` (with SHACL validation), runtime, and both validation adapters. A separate TestKit fixture in the Gradle plugin tests compilation and execution of generated cross-package domain types.

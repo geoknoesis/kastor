@@ -7,7 +7,6 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
 import org.junit.jupiter.api.Assumptions.assumeFalse
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.junit.jupiter.api.MethodOrderer
 import org.junit.jupiter.api.Order
@@ -30,7 +29,7 @@ import kotlin.system.measureNanoTime
  * * `kastor.oops.benchmark.embeddingIterations` (default **3**)
  * * `kastor.oops.benchmark.embeddingWarmup` (default **1**)
  *
- * Semantic tests are skipped when **`KASTOR_SKIP_EMBEDDING_TESTS=1`**.
+ * The semantic case downloads the ONNX model and also needs **`KASTOR_RUN_EMBEDDING_TESTS=1`**.
  */
 @EnabledIfEnvironmentVariable(named = "KASTOR_OOPS_BENCHMARK", matches = "1")
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
@@ -150,7 +149,7 @@ class OopsBenchmarkTest {
 
     @Test
     @Order(2)
-    @DisabledIfEnvironmentVariable(named = "KASTOR_SKIP_EMBEDDING_TESTS", matches = "1")
+    @EnabledIfEnvironmentVariable(named = "KASTOR_RUN_EMBEDDING_TESTS", matches = "1")
     fun `benchmark semantic embedding catalogue against bundled OOPS fixtures`() {
         val parsed =
             loadCorpus(

@@ -105,7 +105,7 @@ kastorGen {
             vocabularyNamespace = "http://www.w3.org/ns/dcat#" // vocabulary generation
             vocabularyPrefix = "dcat"
 
-            outputDirectory = "src/generated/kotlin"           // default: build/generated/sources/kastor-gen
+            outputDirectory = layout.projectDirectory.dir("src/generated/kotlin") // default: build/generated/sources/kastor-gen
         }
     }
 }
@@ -113,25 +113,30 @@ kastorGen {
 
 ## Configuration properties (`OntologyConfig`)
 
-Every optional setting is `null` until you assign it; the task then applies the default below.
+Every setting is a lazy Gradle property (`Property<String>`, `Property<Boolean>`, `DirectoryProperty`). In the
+Kotlin DSL assign it with `=` (Gradle's property assignment, as in the examples above); in plain Kotlin code use
+`.set(...)`. A value can come from a provider (`interfacePackage = providers.gradleProperty("pkg")`), and a value
+assigned after the `generateOntology<Name>` task was realized is still used: the task reads the settings lazily,
+and they are configuration-cache safe. An unassigned setting has no value; the task then applies the default
+below. The name of a configuration is the one it was created with and cannot be changed.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `shaclPath` | `String` | required | SHACL file. Absolute, or relative to the project directory; if not found there, relative to `src/main/resources` |
-| `contextPath` | `String` | optional | JSON-LD context file, resolved the same way. Without it, type and property names come from IRI local names and `sh:name` |
-| `interfacePackage` | `String?` | **required** — the task fails with `interfacePackage must be set` | Package for interfaces |
-| `wrapperPackage` | `String?` | `interfacePackage` | Package for wrappers |
-| `vocabularyPackage` | `String?` | `interfacePackage` | Package for the vocabulary object |
-| `dslPackage` | `String?` | `<interfacePackage>.dsl` | Package for the DSL |
-| `generateInterfaces` | `Boolean?` | `true` | Generate interfaces |
-| `generateWrappers` | `Boolean?` | `true` | Generate wrappers |
-| `generateVocabulary` | `Boolean?` | `true` when `vocabularyName`, `vocabularyNamespace` and `vocabularyPrefix` are all set, else `false` | Generate a vocabulary object; if set to `true`, all three are required |
-| `vocabularyName` | `String?` | — | Vocabulary object name (converted to an upper-case identifier, e.g. `DCAT`) |
-| `vocabularyNamespace` | `String?` | — | Namespace IRI |
-| `vocabularyPrefix` | `String?` | — | Prefix |
-| `generateDsl` | `Boolean?` | `false` | Generate the instance DSL |
-| `dslName` | `String?` | derived from the context file name (the SHACL file name when no context is set) | Top-level DSL function name; an explicit value must match `[a-zA-Z][a-zA-Z0-9]*` |
-| `outputDirectory` | `String?` | `build/generated/sources/kastor-gen` | Output base directory, relative to the project directory; the ontology name is appended |
+| `shaclPath` | `Property<String>` | required | SHACL file. Absolute, or relative to the project directory; if not found there, relative to `src/main/resources` |
+| `contextPath` | `Property<String>` | optional | JSON-LD context file, resolved the same way. Without it, type and property names come from IRI local names and `sh:name` |
+| `interfacePackage` | `Property<String>` | **required** — the task fails with `interfacePackage must be set` | Package for interfaces |
+| `wrapperPackage` | `Property<String>` | `interfacePackage` | Package for wrappers |
+| `vocabularyPackage` | `Property<String>` | `interfacePackage` | Package for the vocabulary object |
+| `dslPackage` | `Property<String>` | `<interfacePackage>.dsl` | Package for the DSL |
+| `generateInterfaces` | `Property<Boolean>` | `true` | Generate interfaces |
+| `generateWrappers` | `Property<Boolean>` | `true` | Generate wrappers |
+| `generateVocabulary` | `Property<Boolean>` | `true` when `vocabularyName`, `vocabularyNamespace` and `vocabularyPrefix` are all set, else `false` | Generate a vocabulary object; if set to `true`, all three are required |
+| `vocabularyName` | `Property<String>` | — | Vocabulary object name (converted to an upper-case identifier, e.g. `DCAT`) |
+| `vocabularyNamespace` | `Property<String>` | — | Namespace IRI |
+| `vocabularyPrefix` | `Property<String>` | — | Prefix |
+| `generateDsl` | `Property<Boolean>` | `false` | Generate the instance DSL |
+| `dslName` | `Property<String>` | derived from the context file name (the SHACL file name when no context is set) | Top-level DSL function name; an explicit value must match `[a-zA-Z][a-zA-Z0-9]*` |
+| `outputDirectory` | `DirectoryProperty` | `build/generated/sources/kastor-gen` | Output base directory (e.g. `layout.projectDirectory.dir("src/generated/kotlin")`); the ontology name is appended |
 
 Validation performed before anything is written:
 

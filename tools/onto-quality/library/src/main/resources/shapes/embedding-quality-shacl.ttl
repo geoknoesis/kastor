@@ -111,6 +111,7 @@ oqsh:LabelDefinitionDriftShape
     rdfs:comment     "Convention. When enrichment emits oqsh:labelDefinitionDriftScore as (1 - cosine(label, definition)), values above 0.5 indicate the label and definition diverge." ;
     sh:targetClass   owl:Class ;
     sh:property      [ sh:path oqsh:labelDefinitionDriftScore ;
+                       sh:severity sh:Info ;
                        sh:datatype xsd:decimal ;
                        sh:maxInclusive "0.5"^^xsd:decimal ;
                        sh:message "Label and definition embed to cosine similarity below 0.5 — the label may no longer reflect the definition." ] ;

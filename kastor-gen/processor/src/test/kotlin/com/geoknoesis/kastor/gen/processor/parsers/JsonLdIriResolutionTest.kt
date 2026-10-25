@@ -1,0 +1,63 @@
+package com.geoknoesis.kastor.gen.processor.parsers
+
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.rdf.Iri
+import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.symbol.KSNode
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+/**
+ * `@base`, relative `@vocab` and base-relative term IRIs are resolved with RFC 3986 reference resolution, as
+ * JSON-LD 1.1 context processing (§4.1.3, §4.1.2) requires, not by string concatenation.
+ */
+class JsonLdIriResolutionTest {
+
+    private val logger = object : KSPLogger {
+        override fun logging(message: String, symbol: KSNode?) {}
+        override fun info(message: String, symbol: KSNode?) {}
+        override fun warn(message: String, symbol: KSNode?) {}
+        override fun error(message: String, symbol: KSNode?) {}
+        override fun exception(e: Throwable) {}
+    }
+
+    private fun parse(context: String): JsonLdContext = JsonLdContextParser(logger).parseContextContent("""{ "@context": $context }""")
+
+    @Test
+    fun `a term without vocabulary is resolved against a base that does not end with a slash`() {
+        val context = parse("""{ "@base": "http://ex.org/a/b", "Thing": "c", "Up": "../d", "Frag": "#e" }""")
+        assertEquals(Iri("http://ex.org/a/c"), context.typeMappings["Thing"])
+        assertEquals(Iri("http://ex.org/d"), context.typeMappings["Up"])
+        assertEquals(Iri("http://ex.org/a/b#e"), context.typeMappings["Frag"])
+        assertEquals(Iri("http://ex.org/a/b"), context.baseIri)
+    }
+
+    @Test
+    fun `a relative vocabulary is resolved against the base`() {
+        val fragment = parse("""{ "@base": "http://ex.org/doc", "@vocab": "#", "Person": {} }""")
+        assertEquals(Iri("http://ex.org/doc#"), fragment.vocabIri)
+        assertEquals(Iri("http://ex.org/doc#Person"), fragment.typeMappings["Person"])
+
+        val path = parse("""{ "@base": "http://ex.org/a/doc", "@vocab": "terms/", "Person": {} }""")
+        assertEquals(Iri("http://ex.org/a/terms/Person"), path.typeMappings["Person"])
+    }
+
+    @Test
+    fun `a relative base is resolved against the previous base and a base without a path gets one`() {
+        val context = parse("""[{ "@base": "http://ex.org/a/b" }, { "@base": "sub/", "Thing": "c" }]""")
+        assertEquals(Iri("http://ex.org/a/sub/"), context.baseIri)
+        assertEquals(Iri("http://ex.org/a/sub/c"), context.typeMappings["Thing"])
+        assertEquals(Iri("http://ex.org/c"), parse("""{ "@base": "http://ex.org", "Thing": "c" }""").typeMappings["Thing"])
+    }
+
+    @Test
+    fun `a relative base or vocabulary without an absolute base is rejected`() {
+        val base = assertThrows(IllegalArgumentException::class.java) { parse("""{ "@base": "relative/", "Thing": "c" }""") }
+        assertTrue("@base" in base.message!! && "relative/" in base.message!!, base.message)
+        val vocab = assertThrows(IllegalArgumentException::class.java) { parse("""{ "@vocab": "#", "Person": {} }""") }
+        assertTrue("@vocab" in vocab.message!! && "#" in vocab.message!!, vocab.message)
+    }
+}

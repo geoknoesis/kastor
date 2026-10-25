@@ -1,8 +1,10 @@
 package com.geoknoesis.kastor.ontoquality.integration
 
 import com.geoknoesis.kastor.ontoquality.QualityFinding
+import com.geoknoesis.kastor.ontoquality.explanation.FindingIdentityEncoding
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
+import java.util.IdentityHashMap
 
 /**
  * Sorts a list of [QualityFinding] by importance, then severity, then IRI.
@@ -10,9 +12,12 @@ import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
  * Sort order (descending where appropriate):
  *   1. Importance score (higher first; absent entities use [MetricsContext.DEFAULT_IMPORTANCE])
  *   2. Severity (Violation / Error > Warning > Info > Debug / Trace)
- *   3. Focus node IRI (alphabetical, for stability)
+ *   3. Focus node IRI (alphabetical; blank and literal focus nodes sort as "")
+ *   4. Finding identity ([FindingRef], the label-free SHA-256 of the finding)
  *
- * The result is deterministic for the same inputs.
+ * The last key makes the order total: findings on blank nodes (restrictions, class expressions) and several
+ * findings on one IRI no longer keep the SHACL engine's order, which can follow parser blank-node labels. The result
+ * is the same for the same ontology on every parse.
  */
 internal object FindingPrioritizer {
 
@@ -20,6 +25,7 @@ internal object FindingPrioritizer {
         findings: List<QualityFinding>,
         importance: Map<String, Double>,
     ): List<QualityFinding> {
+        val refs = IdentityHashMap<QualityFinding, String>()
         return findings.sortedWith(
             compareByDescending<QualityFinding> { f ->
                 val focusIri = extractFocusNodeIri(f)
@@ -29,6 +35,8 @@ internal object FindingPrioritizer {
                 severityRank(f.violation.severity)
             }.thenBy { f ->
                 extractFocusNodeIri(f) ?: ""
+            }.thenBy { f ->
+                refs.getOrPut(f) { FindingIdentityEncoding.digest(f) }
             },
         )
     }

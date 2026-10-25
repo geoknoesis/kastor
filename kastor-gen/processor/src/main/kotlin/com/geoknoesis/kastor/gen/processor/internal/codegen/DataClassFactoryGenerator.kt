@@ -124,7 +124,9 @@ public class DataClassFactoryGenerator(
             objectBuilder.addFunction(
                 writer.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties),
             )
-            objectBuilder.addFunction(writer.buildReplaceInGraphFunction(shape, dcClassName, context, knownTypes, writtenProperties))
+            objectBuilder.addFunction(
+                writer.buildReplaceInGraphFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties),
+            )
         }
 
         file.addType(objectBuilder.build())

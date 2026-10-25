@@ -21,6 +21,8 @@ dependencies {
     implementation("com.geoknoesis.kastor:rdf-core")
     implementation("com.geoknoesis.kastor:rdf-jena")
     implementation("com.geoknoesis.kastor:rdf-rdf4j")
+    // RDF-H: also pulls rdf-shacl-validation and rdf-sparql-contract through the staged BOM.
+    implementation("com.geoknoesis.kastor:rdf-holon")
     implementation("com.geoknoesis.kastor:kastor-gen-runtime")
     implementation("com.geoknoesis.kastor:kastor-gen-validation-jena")
     implementation("com.geoknoesis.kastor:kastor-gen-validation-rdf4j")

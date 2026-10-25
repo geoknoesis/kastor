@@ -35,6 +35,29 @@ class EmbeddingBatchingTest {
     }
 
     @Test
+    fun `an interrupt stops embedding between batches`() {
+        var batches = 0
+        try {
+            assertFailsWith<InterruptedException> {
+                EmbeddingBatching.embedInBatches(
+                    listOf("a", "b", "c", "d"),
+                    batchSize = 1,
+                    encode = { it },
+                    embedBatch = { batch ->
+                        batches++
+                        Thread.currentThread().interrupt()
+                        batch.map { floatArrayOf(1f) }
+                    },
+                )
+            }
+            assertEquals(1, batches)
+            assertEquals(false, Thread.currentThread().isInterrupted, "the interrupt is consumed by the exception")
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
     fun `manual truncation keeps the closing special token`() {
         val ids = longArrayOf(101, 7, 8, 9, 102)
         assertContentEquals(longArrayOf(101, 7, 102), EmbeddingBatching.fit(ids, 3, keepLastToken = true))

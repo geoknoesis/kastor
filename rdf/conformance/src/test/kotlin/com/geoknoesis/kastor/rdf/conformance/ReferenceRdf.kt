@@ -25,10 +25,12 @@ import java.nio.file.Path
 data class KastorQuad(val graph: String?, val triple: RdfTriple)
 
 /**
- * Reference side of the eval comparison, independent of the providers under test.
+ * Reference side of the eval comparison, independent of the providers' adapters.
  *
  * - Expected result files are parsed with Jena RIOT **directly** and kept as raw Jena nodes, so a bug in a
- *   provider's parser or term adapter cannot also corrupt the expectation (symmetric bugs would cancel).
+ *   provider's term adapter cannot also corrupt the expectation (symmetric bugs would cancel). For the RDF4J
+ *   provider the parsers are independent too. The Jena provider parses with RIOT itself, so for it this side is
+ *   independent of the adapter only: a bug in RIOT that affects the input and its expected file alike can cancel out.
  * - The provider's output (Kastor terms) is mapped to Jena nodes by the minimal mapping below, which lives
  *   in the test sources and does not use any provider adapter.
  * - Results are compared as **datasets** with a single isomorphism over all quads, so blank nodes shared

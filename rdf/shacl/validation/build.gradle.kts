@@ -18,6 +18,7 @@ dependencies {
 
     testImplementation(project(":rdf:jena"))
     testImplementation(project(":rdf:rdf4j"))
+    testImplementation(libs.rdf4j.query)
     testImplementation(libs.jena.arq)
     testImplementation(libs.jena.shacl)
 }

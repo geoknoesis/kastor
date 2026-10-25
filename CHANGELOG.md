@@ -14,6 +14,299 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### Providers (Jena, RDF4J, HermiT)
+
+- **Security (`rdf-reasoning-hermit`):** HermiT no longer follows `owl:imports`. The OWL API's default loader
+  dereferenced every import IRI of the reasoned graph (HTTP with redirects, or `file:`) and merged what it found into
+  the closure, so graph data could choose a request (SSRF), read a local file into the inferred triples, or hold a
+  load permit past the deadline. The graph is now loaded as one in-memory document: every other document source is
+  refused, and an unresolvable import is ignored instead of failing the call. To reason over an imported ontology,
+  merge it into the graph first under your own `UrlLoadOptions`.
+- **Security (`rdf-jena`):** the sandbox of a `SandboxedSelectQuery` is now an allowlist. Before, it refused only
+  `java:` IRIs and otherwise used Jena's whole function registry, whose lookup loads ARQ's `afn:` library by name:
+  `afn:wait` slept through the query timeout and cleared the thread's interrupt flag (one call per row could hold a
+  worker for days), `afn:print` wrote to stdout and `afn:context` exposed execution-context values. Now:
+  - ARQ's `CALL(iri, ...)`, which computes a function IRI from data, constant `afn:` / `apf:` function and
+    property-function IRIs (both the `jena.apache.org` and the old `jena.hpl.hp.com` namespaces) and custom aggregates
+    are refused with `IllegalArgumentException` before evaluation (behaviour change for sandboxed queries only);
+  - at run time only already-registered functions in the XSD, XPath `fn:` / `math:` and `http://www.w3.org/ns/sparql#`
+    namespaces and the query's custom functions are found; nothing is class-loaded or registered globally;
+  - property functions are off in sandboxed queries, so `rdfs:member` or `list:member` are matched as ordinary
+    predicates, as standard SPARQL does (behaviour change).
+- **Security (`rdf-rdf4j`):** a sandboxed query calls only RDF4J's own built-in functions (from
+  `rdf4j-queryalgebra-evaluation`) besides its custom functions; a function another library or the application
+  registered in RDF4J's global `FunctionRegistry` is an unknown function to it. Its evaluation strategy also fails
+  `SERVICE` and tuple functions and never resolves a federated service, a second barrier behind the static check.
+- **Performance:** a nested query of a custom SPARQL function is parsed and checked once per call site (Jena) or once
+  per query text within a top-level query (RDF4J), instead of once per call; RDF4J parses a top-level sandboxed query
+  once instead of twice.
+- **Tests:** `JenaInferencePoisonScopeTest` ("a cancelled step stops between two results", the scheduled-CI flake at
+  line 153) no longer races with the task that closes the find's reasoner iterator, which the reader queues after its
+  failure: it waits (bounded) for the worker's queue to drain instead of asserting it is already empty.
+
+#### SPARQL endpoint, CLI, examples and conformance (round eleven)
+
+- Security: `SparqlRepository.select()` now refuses a `SandboxedSelectQuery` with `UnsupportedOperationException`
+  before sending anything, like both `withSelectRows` overloads already did. Before, `select()` POSTed the untrusted
+  query unchanged, so its `SERVICE` clauses were left to the remote server's federation.
+- `kastor-rdf diff` compares datasets whose graphs are named by blank nodes (TriG `_:g { }`, N-Quads `_:g`) up to
+  blank node relabelling. Before, the provider's skolem names (`urn:kastor:skolem:<load>:<id>`, new on every parse)
+  made a file NOT ISOMORPHIC to itself, and the output showed those internal names. A blank node that names a graph
+  and occurs in triples must correspond as one node; a different number of such graphs is reported as such.
+- `kastor-rdf`: a parse error names its input (`Parse error in <file>: ...`) and is printed once; Jena RIOT no
+  longer logs the same error a second time.
+- `kastor-rdf parse`, `to-turtle` and `diff` take `--base <iri>`, an absolute IRI that relative IRIs are resolved
+  against. Without it relative IRIs stay a parse error (now documented); the file location is never used as base.
+- The `kastor-rdf` start scripts run a launcher compiled for Java 8 (`KastorRdfLauncher`), which refuses a Java
+  older than 21 with a one-line message and status 3, instead of an `UnsupportedClassVersionError` with status 1.
+  The help text and the CLI guide state the Java 21 requirement.
+- API (additions only): `SparqlEndpointConfig` and the `SparqlRepository(endpoint, maxResponseBytes, ...)`
+  constructor carry `@JvmOverloads`, so Java can write `new SparqlEndpointConfig(url)` with the Kotlin defaults.
+- `SparqlProvider.version` is the module's Kastor version (its jar's `Implementation-Version`, `development` outside
+  the jar) instead of a hard-coded `1.0.0`.
+- Docs: the SPARQL provider guide says that sandboxed (SHACL) queries are refused and what that means for validating
+  data held by an endpoint, and that `getTriples()` is one buffered `SELECT` capped by `maxResponseBytes`.
+- Tests: `SparqlEndpointProtocolTest`'s stalled-header test no longer fails when the 500 ms deadline ends before
+  the client has connected (on a loaded host the exchange is then cancelled before it reaches the server, which saw
+  "6 of 8 connections"). Such an attempt is repeated until each call shape has a connection whose closing is checked.
+- Conformance harness: an `rdft:Test*` type that is neither run nor listed as out of scope (RDF/XML, C14N) fails the
+  manifest parse, as does a test without a local `mf:action`; before, such rows were dropped silently. The full suite
+  also fails when the corpus has fewer tests per format than the pinned one (Turtle 419, TriG 418, N-Triples 99,
+  N-Quads 114). `forManifest` fails instead of skipping a missing or empty manifest. The conformance guide no longer
+  says that a missing corpus is skipped (it fails unless `-PconformanceAllowMissingData=true`), and `ReferenceRdf`
+  no longer claims parser independence for the Jena provider.
+- Examples: `ExampleMainsSmokeTest` runs every example `main` (output captured, 2 min timeout) and fails on a throw,
+  no output, or a failure the example caught and printed. It found `ShaclValidatorProviderExample` crashing on
+  `parallelValidation = true` / `streamingMode = true`, which the native SHACL engine refuses; the example no longer
+  sets them.
+
+#### kastor-gen
+
+Fixed:
+
+- Data classes generated with Bean Validation annotations (`validationAnnotations = JAKARTA`, the default, or
+  `JAVAX`) compile again: they named `NotNull`, `NotEmpty` and `Size` as classes nested in a class `constraints`.
+- The generated `<Record>Factory.replaceInGraph` no longer loses data of the predicates it writes. It goes through
+  the new runtime `mergeRecord`: a value the record still holds keeps its original term (language tag, datatype,
+  lexical form, the timezone of an `xsd:date`), an unchanged single-valued member keeps the values beyond
+  `sh:maxCount` that its reader did not return, a term the record cannot represent is kept, and only changed values
+  are removed and added. `toTriples` is unchanged.
+- `XsdLiterals` decoders read a literal only when it is well formed for its own datatype, so values outside the
+  range of a derived integer type (`"300"^^xsd:unsignedByte`, `"-1"^^xsd:unsignedInt`, `"-5"^^xsd:positiveInteger`)
+  and forms that are ill typed for their datatype (`"INF"^^xsd:decimal`, `"1e5"^^xsd:integer`) follow
+  `MaterializationPolicy.illTyped` instead of being read. The read path, `isWellFormed` and the generated
+  validators now agree.
+- `@Rdf` members inherited from a generic supertype (`interface Tag : Named<String>`) are read with the substituted
+  type argument instead of being rejected with a misleading "annotate T with @Rdf" error.
+- JSON-LD contexts: `@base`, base-relative term IRIs and a relative `@vocab` (such as `"#"`) are resolved with RFC 3986
+  instead of being concatenated (`http://ex.org/a/b` + `c` is `http://ex.org/a/c`). A relative reference without an
+  absolute base is an error.
+- `writeToGraph` writes blank nodes inside RDF 1.2 triple terms as fresh nodes too, so they no longer merge with
+  same-labelled nodes of the target graph.
+- The Gradle plugin reads each ontology setting lazily, so a value assigned after its `generateOntology<Name>` task
+  was realized is used instead of being silently ignored (see the breaking change below).
+
+Changed (behaviour):
+
+- `XsdLiterals.encode` throws `IllegalArgumentException` for a value that would not be a well-formed literal of the
+  declared datatype (`300` as `xsd:unsignedByte`, `BigInteger.ZERO` as `xsd:positiveInteger`, `"yesterday"` as
+  `xsd:dateTime`), as its KDoc stated. Generated `toTriples`, `replaceInGraph`, mutable wrapper properties and DSL
+  setters therefore reject such values instead of writing ill-typed literals.
+- `XsdLiterals.isWellFormed` (and so `hasDatatype` and generated `sh:datatype` checks) also checks `xsd:dateTime`,
+  `xsd:dateTimeStamp`, `xsd:time`, the Gregorian types and the duration types.
+- String members that declare a datatype other than `xsd:string` (`xsd:dateTime`, `xsd:duration`, custom datatypes)
+  read only well-formed literals of that datatype: `"2020"^^xsd:gYear` in an `xsd:dateTime` member is ill typed
+  (it follows `MaterializationPolicy`) instead of being read as `"2020"`.
+- KSP: a missing ontology file or an invalid shapes or JSON-LD context file is reported once, at the annotated
+  symbol, and the other `@Rdf` requests are still processed; it no longer adds a stack trace and a processor crash.
+- String members without a datatype, or with `xsd:string`, still read the lexical form of any literal (also
+  language-tagged ones); this is intended, and `replaceInGraph` keeps the original term while the value is unchanged.
+- **Breaking for Gradle plugin users:** `OntologyConfig` settings are lazy Gradle properties (`Property<String>`,
+  `Property<Boolean>`, `DirectoryProperty`) wired into the `generateOntology<Name>` tasks as providers, so values
+  assigned late or derived from providers are used and the configuration is configuration-cache safe. Kotlin DSL
+  scripts keep `shaclPath = "…"` (Gradle property assignment); plain Kotlin code uses `.set(…)`. `outputDirectory`
+  takes a directory (`layout.projectDirectory.dir("…")` or `file("…")`) instead of a string. `OntologyConfig` is
+  created by Gradle with its name fixed (`Named`), `OntoMapperExtension` is abstract with a non-null managed
+  `ontologies` container, and `ontology(name, …)` / `ontologies(…)` take a Gradle `Action`.
+
+API:
+
+- Added (kastor-gen runtime): `RecordField`, `MutableRdfGraph.mergeRecord(subject, types, fields)` and
+  `XsdLiterals.lexical(literal, datatype)`. The generated `replaceInGraph` calls `mergeRecord`, so code generated by
+  this version needs a runtime of this version.
+- Changed (Gradle plugin): `OntologyConfig` (lazy properties, `Named`, created by Gradle) and `OntoMapperExtension`
+  (abstract, non-null `ontologies`, `Action` parameters); see "Changed (behaviour)".
+
+#### onto-quality
+
+- **Fixed: Warning and Info detectors reported `sh:Violation`.** A result has the severity of the shape that produced
+  it, and in 20 bundled shapes (14 OWL, 4 SKOS, `LabelNotSentenceShape`, `LabelDefinitionDriftShape`) the constraint
+  sat in a nested `sh:property` shape without `sh:severity`, so it defaulted to `sh:Violation` although the node shape
+  said `sh:Warning`/`sh:Info`. Each nested property shape now repeats the severity. **Behaviour change:** findings
+  such as "Class has no rdfs:label." or "Object property has no rdfs:range." are now WARNING (or INFO), so the
+  default `onto-qa check` (`--severity violation`) no longer exits 1 on documentation and declaration gaps, and
+  severity counts, ordering and `--explain-min-severity` change accordingly.
+- **Fixed: anonymous OWL class expressions were reported as unlabelled, undocumented and badly named classes.** The
+  label, definition and domain/range detectors (`Class|ObjectProperty|DatatypePropertyHasLabelShape`,
+  `ClassHasDefinitionShape`, `*HasDomainShape`, `*HasRangeShape`) and `ClassNameUpperCamelShape` now select their
+  focus nodes with SHACL 1.2 `sh:targetWhere` and the new membership shapes `oqsh:NamedClass`,
+  `oqsh:NamedObjectProperty` and `oqsh:NamedDatatypeProperty` (instances that are IRIs), so the blank nodes of
+  `owl:unionOf`/`intersectionOf`/`complementOf`/`oneOf` expressions are no longer findings. The `sh:nodeKind sh:IRI`
+  constraint of `ClassNameUpperCamelShape`, which reported every blank class as an INFO finding, is gone.
+- **Fixed: the SKOS broader-cycle and S27 detectors ignored `skos:narrower`.** Both now walk
+  `(skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+`, so a hierarchy stated only with
+  `skos:narrower` (or `skos:narrowerTransitive`) is checked, with or without a reasoner.
+- **Changed: what the semantic tier embeds** (`LabelExtractor`). An entity is embedded in one language (the
+  ontology's dominant label language, else untagged, else the smallest tag), with preferred labels before
+  `skos:altLabel`, de-duplicated and sorted; definitions follow the label's language. Before, every label in every
+  language was joined in graph order. Similarity scores, `oqsh:semanticallyCloseTo` pairs and drift scores of
+  multilingual vocabularies change. The language is configurable: `LabelExtractor.extractLabelTexts` and
+  `extractLabelAndDefinitionTexts` take a `language` parameter (`@JvmOverloads`; null, the default, keeps the
+  dominant language), `SemanticEnricher` has a constructor with a `labelLanguage` argument, and `onto-qa enrich` /
+  `pipeline` have `--label-language`. **ABI:** the two `LabelExtractor` functions gained a parameter (their
+  `$default` bridges changed); the dump is updated.
+- **Changed: `ClassLabelUniqueLangShape` is a Warning.** Two same-language `rdfs:label`s on a class were a Violation
+  (the shape declared no severity); the node shape and its property shape now declare `sh:Warning`.
+- **Changed: the scaled similarity limits are capped** at a 10-minute deadline and 3,000,000,000 distance
+  evaluations (`SimilaritySearchLimits.forEntityCount`); before, 200,000 labels got a 66-minute default. Explicit
+  limits are not capped. Embedding stops at the next batch boundary when the thread is interrupted. The bounds are
+  public (`SimilaritySearchLimits.DEFAULT_MAX_DISTANCE_EVALUATIONS`, `MAX_SCALED_DISTANCE_EVALUATIONS`,
+  `DEFAULT_TIMEOUT`, `MAX_SCALED_TIMEOUT`). The budget-exceeded messages carry the limit's value, and the exit-5 hint
+  of `onto-qa` names the exact option and range (`--similarity-timeout <seconds>`, `--similarity-max-work
+  <evaluations>`, `--similarity-mode approximate`).
+- **Fixed:** the Markdown "Metrics summary" and the "centrality" hint used the default locale (`3,50` under
+  `de-DE`); they use `Locale.ROOT`.
+- **Fixed:** with metrics, findings on blank nodes and several findings on one IRI kept the SHACL engine's order;
+  the importance sort now ends with the finding's `FindingRef`, so the order is the same on every parse.
+- **Fixed:** `shacl-era-cli` printed a multi-line parser message over several stderr lines; whitespace runs are now
+  collapsed, so an error is one line as documented. The `:benchmarks:shacl` build script's pyshacl hint lost its
+  mojibake, and `NativeComplexShapesBenchmark` documents that "cold" covers the shapes side only.
+- **Tests: model-download and billed OpenAI tests are opt-in.** `OopsCalibrationTest.SemanticTierAfterEnrichment` and
+  the semantic `OopsBenchmarkTest` case need `KASTOR_RUN_EMBEDDING_TESTS=1`, and `OpenAiExplanationIntegrationTest`
+  needs `KASTOR_RUN_OPENAI_LLM_TESTS=1` (it then fails without `OPENAI_API_KEY`). Before, an API key in the shell
+  made a plain `gradle test` spend money, and an offline box tried a 90 MB download. `live-llm.yml` sets the new
+  switch; `KASTOR_SKIP_OPENAI_LLM_TESTS` and `KASTOR_SKIP_EMBEDDING_TESTS` no longer gate these tests.
+- ABI additions and changes in `onto-quality-embed` only, listed above; the dump is updated.
+
+#### SHACL (`rdf-shacl-validation`)
+
+- Fixed: a per-focus-node `sh:deactivated` (of a shape, an `sh:sparql` constraint or a reifier of a parameter
+  triple) that read a conformance answer the recursion solver had not settled yet made the shape or constraint
+  undefined, even when its constraints held. Such a shape never settled, and a run that fails closed on undecided
+  checks aborted. "Deactivated, or the constraints hold" is now evaluated as a Kleene disjunction: constraints that
+  hold make the shape conform, whatever the deactivation turns out to be.
+- Fixed: the recursion solver could settle a question undefined by recursion as conforming when an evaluation read
+  a question of its group that the question's recording pass had not read (the recording answered the shape's
+  `sh:deactivated` "conforms" and skipped its constraints). Such a read now restarts the solve with it recorded,
+  like any other missed read.
+- Changed: the recursion analysis no longer makes every shape a dependency of a computed shape reference whose
+  possible outputs are constants (`shnex:if` / list functions over shape IRIs), and a shape that runs SPARQL now
+  depends only on the bodies of the functions its queries may call, not on every function body. Fewer shapes join
+  recursive components, so fewer data cycles are undefined. Computed references read from the data, and queries
+  whose calls are not known (a relative function IRI without an absolute `BASE`), still depend on every shape.
+  The compile closure and the recursion analysis are now derived from one description of what a shape reads.
+- Changed: a SPARQL query that spells a pre-bound variable with a codepoint escape (`?th`, then the escape of `i`, then `s`), or
+  in which a decoded escape makes one appear, is rejected with `SparqlPreBindingRestrictionException`. RDF4J
+  decodes escapes before parsing and would have seen the variable unbound.
+- Fixed: the `VALUES` check of the pre-binding restrictions took quadratic time on a query of many `VALUES` words;
+  it is now linear.
+- Changed: `shnex:nodesMatching` is computed once per shape and run outside the recursion solver, instead of once
+  per focus node.
+- Changed: an `sh:expression` that is a `shnex:conformsToShape` with a constant shape, or a `shnex:matchAll`, whose
+  other argument reads no shape and runs no query, is monotone: its shape reads are positive dependencies, like
+  those of `sh:node`. A data cycle through it now conforms (greatest fixpoint) instead of being undefined recursion,
+  which failed validation. Every other shape-reading expression keeps negative reads.
+
+#### Core (core, sparql-contract, sparql-lang, testkit, reasoning, holon)
+
+- **Breaking (URL loading): only public addresses by default.** `UrlLoadOptions.addressPolicy` now defaults to
+  `UrlAddressPolicy.PUBLIC_ADDRESSES`, for `UrlLoadOptions()`, `UrlLoadOptions.DEFAULT` and every
+  `Rdf.parseFromUrl` / `parseFromUrlAsync` / `parseDatasetFromUrl` call without options. The policy checks the URL a
+  load starts with and every redirect target. Loopback (`localhost`, `127.0.0.1`, `::1`), private (`10/8`,
+  `172.16/12`, `192.168/16`, `fc00::/7`), link-local (`169.254.169.254`) and other non-public addresses, and URLs
+  without a host (`file:`, `jar:`), now fail with `RdfAddressRefusedException` before any request is sent. Host names
+  are resolved to check them.
+  - **Migration:** to load from localhost, the internal network or a trusted `file:` URL, pass the new
+    `UrlLoadOptions.ALLOW_ALL_ADDRESSES`, or `addressPolicy = UrlAddressPolicy.ALLOW_ALL`. Combine either with other
+    settings through `copy(...)`, for example `UrlLoadOptions.ALLOW_ALL_ADDRESSES.copy(allowedSchemes = setOf("file"))`.
+  - The limits of `PUBLIC_ADDRESSES` are unchanged and documented: DNS rebinding, and proxies resolving names
+    themselves. All in-repo tests that use local servers opt in explicitly.
+- Added (core): `RdfExtensionException`, the open, `@JvmOverloads` base of the sealed `RdfException` hierarchy for
+  exceptions defined in extension modules and applications. It comes with the error code
+  `RdfErrorCode.EXTENSION_ERROR`.
+- **Breaking (rdf-holon):** `HolonException` extends `RdfExtensionException` instead of `RuntimeException`, so
+  `catch (e: RdfException)` catches holon failures. Its `errorCode` is `EXTENSION_ERROR`, and `condition` still names
+  the RDF-H error. For Java callers it is now a checked exception, like every `RdfException`.
+- Security: a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
+  function library. This covers dataset clauses added for graphs of one repository, and `GRAPH` patterns rewritten for
+  a dataset of the store's default graph. Before, it sent a plain `SparqlSelectQuery`: the provider ran the untrusted
+  text without its sandbox, so `SERVICE` calls went out, and the custom functions were lost. The materialized path was
+  already correct. A new testkit contract, `SandboxedQueryContractTest`, covers every repository and `Dataset` path of
+  the memory, Jena and RDF4J providers through `select`, `withSelectRows` and the timed `withSelectRows`. Each path must
+  either honour the sandbox or refuse the query.
+- Added (core): the sandboxed-query API that SHACL-SPARQL uses. It was in the API dump but not in this CHANGELOG.
+  - `SandboxedSelectQuery` holds untrusted SELECT text. The provider checks it with the parser that runs it. It
+    refuses `SERVICE` and `java:` code with `IllegalArgumentException`, or the whole query with
+    `UnsupportedOperationException` when it cannot check it.
+  - `SparqlFunctionLibrary` (`EMPTY`, `of`), `SparqlFunction` and `SparqlFunctionCall` define custom functions that
+    are visible to one query.
+  - `SparqlFunction.MAX_FUNCTION_DEPTH` (16) and the provider helper `SparqlFunction.bindArguments`.
+  - The graph-only `memory` provider refuses every query. A `Dataset` view keeps the sandbox, as described above, and
+    refuses the timed `withSelectRows`.
+- API: `MAX_FUNCTION_DEPTH` and `bindArguments` are now members of `SparqlFunction`: the constant is
+  `SparqlFunction.MAX_FUNCTION_DEPTH` (a companion `const`, a static field for Java) and `bindArguments(evaluated)` is
+  a member function. The top-level `MAX_FUNCTION_DEPTH` and the extension `SparqlFunction.bindArguments` (the
+  `SparqlFunctionsKt` facade class) are removed without deprecation, since neither was ever released. Kotlin calls of
+  `function.bindArguments(...)` compile unchanged without the import; other code writes
+  `SparqlFunction.MAX_FUNCTION_DEPTH`.
+- API: `SparqlFunctionLibrary.EMPTY` is now a `@JvmField` and `SparqlFunctionLibrary.of` a `@JvmStatic`. Java callers
+  write `SparqlFunctionLibrary.EMPTY` (`Companion.getEMPTY()` is gone). Kotlin source is unchanged.
+- `Rdf.parseFromUrl` and `Rdf.parseFromUrlAsync` reject an unknown format name with `RdfFormatException` before they
+  send the request. Before, they downloaded the body (up to 64 MiB) first. `parseDatasetFromUrl` already did this.
+- `UrlRedirectPolicy.SAME_HOST` refuses a redirect from or to a URL that `java.net.URI` reads without a host, such as
+  `http://my_host.example/` (registry-based authority). Before, it threw `NullPointerException`.
+- `parseFromUrlAsync` cancellation: when every helper thread is busy, releases queue on a shared releaser with two
+  daemon threads (`kastor-url-cancel-N`). Before, each `cancel()` started its own thread, and each such thread could
+  block for up to the connect or read timeout.
+- Memory RDFS reasoner: a `ReasonerConfig.timeout` too long to count in nanoseconds (over about 292 years) means no
+  limit. Before, it threw `ArithmeticException`.
+- SPARQL DSL: blank nodes are written with core's injective label (`BlankNode.toString()`). `BlankNode("a")` and
+  `BlankNode("_:a")` are no longer joined in one pattern. Ids that are not valid labels, such as Virtuoso's
+  `nodeID://b1`, are encoded instead of rejected.
+- `rdf-holon`: `asDataset(attributed = true)` queries its private repository in place. Before, it copied the whole
+  holon for every query. The scope union is stored in a private named graph whose IRI is never a dataset name.
+  `HolonGraph` lookups on M use subject and predicate indexes, so conversion and resolution no longer scan M once per
+  holon.
+- Docs: KDoc relates `SparqlExtensionFunction` (engine metadata, never executed) to `SparqlFunction` (executable, one
+  query). `how-to-use-datasets.md` describes sandboxed queries on datasets and the cost of holon query datasets.
+  `how-to-parse-rdf.md`, `core-api.md` and `api-reference.md` describe the new URL default and `RdfExtensionException`.
+- Code organization: the SPARQL dataset-clause scanner moved from `DatasetImpl.kt` to `SparqlDatasetClauses.kt`, and
+  `UrlLoadCancellation` moved out of `Rdf.kt`. The complexity ceilings follow: `DatasetImpl.kt` no longer needs one, and
+  the `Rdf.kt` ceiling drops from 971 to 928 lines.
+
+#### Build and docs
+
+- Build: `./gradlew check` now runs the repository-level Python gates as the root task `verifyQualityGates`: the unit
+  tests of the gate scripts, `check-doc-versions.py`, `check-build-pins.py`, `check-readme-imports.py` and the
+  complexity ratchet `check-code-complexity.py`. They used to run only as CI steps, so a local `check` could pass while
+  CI failed. The interpreter is `python` on Windows and `python3` elsewhere, or `-Pkastor.python=<path>`; skip the gates
+  with `-x verifyQualityGates`.
+- CI: `ci.yml` runs the gates through `check --continue`, and every later verification step (dependency health, test
+  counts and skips, module populations, coverage, benchmark smoke) runs whenever `check` ran. One failing gate or module
+  no longer skips every other module's tests: before, a ratchet failure ahead of `Gradle check` skipped the Linux and
+  Windows test runs for about 100 commits.
+- `scripts/check-code-complexity.py --write-baseline` only lowers ceilings and drops files that meet the defaults. Growth,
+  a new over-limit file and a renamed over-limit function are refused unless named with `--raise PATH=REASON`, which
+  records the reviewed reason; the summary lists every lowered, removed and raised ceiling. A normal run lists ceilings
+  that can be lowered. The baseline is written with LF line endings on Windows too.
+- Release readiness: `release-smoke` consumes `rdf-holon` (with `rdf-shacl-validation` and `rdf-sparql-contract`)
+  through the staged BOM, and `check-staged-publications.py` fails when a module the BOM manages was not staged.
+  `release-readiness.yml` also runs weekly on `main` (nothing is published).
+- Coverage: `:rdf:holon` has a branch-coverage floor of 72% (measured 77.1%), and its line floor rises from 80% to 88%
+  (measured 93.0%).
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
@@ -59,6 +352,76 @@ and is kept as is; it was never published to Maven Central.
   unsupported feature; any other blank node that is no constant and no node expression is a compile error. A computed
   `sh:closed` must be the only `sh:closed` value, and at most one `sh:ignoredProperties` value may be computed. With
   computed `sh:flags`, a constant `sh:pattern` is compiled at run time with the resolved flags.
+
+### Added (SHACL 1.2 SPARQL)
+
+- `rdf-shacl`: SPARQL-based constraint components (SHACL 1.2 SPARQL section 4). A SHACL instance of
+  `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is compiled and evaluated like a built-in component.
+  SELECT validators come from `sh:nodeValidator` / `sh:propertyValidator` and ASK validators from `sh:validator`,
+  chosen as in section 4.2.3; a component with no validator that fits the shape kind is ignored. Parameter values are
+  pre-bound, and a shape with several values for a parameter yields one constraint per combination, up to 1024 per shape
+  and component (more makes the shapes graph ill-formed). `$PATH` is substituted for property shapes and the Appendix A
+  restrictions are checked. Results report the component IRI as `sh:sourceConstraintComponent`, and the message comes
+  from the validator, else the component, else the shape, with `{$param}` substitution. `SPARQL_CONSTRAINT_COMPONENT` is
+  no longer reported as an unsupported feature.
+- `rdf-shacl`: custom SPARQL functions (SHACL 1.2 SPARQL section 7). A `sh:ListParameterExpressionFunction` whose
+  `sh:bodyExpression` is a `sh:select`, a `sh:sparqlExpr` or a `shnex:` node expression can be called by its IRI from any
+  SHACL-SPARQL query. A SPARQL body sees `$this` (the function IRI) and `$arg<i>`. Functions can call each other up to
+  16 levels deep (`SparqlFunction.MAX_FUNCTION_DEPTH`), and a built-in function wins over a declaration with the same IRI. Parameters
+  must be a contiguous run `shnex:arg0`, `shnex:arg1`, ..., and an optional parameter cannot be followed by a mandatory
+  one; otherwise the shapes graph is ill-formed (`ShapeCompileException`). A function error is an ordinary SPARQL error
+  (`BIND` leaves its variable unbound, `FILTER` is false), except that an undecided conformance check inside a `shnex:`
+  body fails the calling query. `SHACL_FUNCTION` is now reported only for a body that is no node expression. When
+  functions are declared, SHACL-SPARQL queries run on the engine's private copy of the data, never in place on the
+  caller's dataset. See [SPARQL functions](docs/kastor/features/shacl-validation.md#sparql-functions).
+- `rdf-shacl`: SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) at `sh:values`, `sh:defaultValue`, `sh:targetNode`,
+  `sh:expression`, a computed `sh:nodeByExpression` and computed parameters, and constant IRI or literal `sh:values`. They are not
+  supported as `sh:targetWhere` values.
+- `rdf-shacl`: SHACL 1.2 prefix declaration rules. `sh:prefixes` is followed through `owl:imports` and
+  `owl:versionIRI`. Graph-level `sh:declare` on SHACL instances of `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and
+  `sh:RulesGraph` applies to a node only when it has no `sh:prefixes`. Conflicting namespaces, a `sh:prefix` or
+  `sh:namespace` of the wrong datatype, and a `sh:prefix` that is no SPARQL `PN_PREFIX` make the shapes graph
+  ill-formed, so a declaration cannot inject query text.
+- `rdf-jena`, `rdf-rdf4j`: per-query custom functions for sandboxed queries. The `SparqlFunctionLibrary` of a
+  `SandboxedSelectQuery` is visible to that one execution only, and no global function registry is ever modified. Jena
+  consults it from the per-execution registry the sandbox installs. RDF4J consults it from `KastorEvaluationStrategy`,
+  which every store the repository factories create now uses (memory, native, and the RDFS and SHACL sails wrapping
+  them). Nested queries made by a function body are sandboxed again (no `SERVICE`, no `java:` code), run on the calling
+  query's dataset with their initial bindings checked, and stop at the calling query's deadline; a call deeper than
+  `SparqlFunction.MAX_FUNCTION_DEPTH` is an error. On RDF4J an unknown function in a sandboxed query is an error at
+  evaluation, as on Jena; ordinary queries keep RDF4J's behaviour.
+- W3C SHACL 1.2 suite: every `sht:Validate` and `sht:EvalNodeExpr` case of the pinned corpus passes on Jena, including
+  the SPARQL-based constraint component, SPARQL function and SPARQL node expression cases, except `hasLang.ttl`, which
+  is accepted as ill-formed (spec override). `W3cKnownDeviations` lists no unsupported feature; it lists one spec
+  override (`unsupported-sparql-002`, see the `VALUES` entry below).
+
+### API (SHACL 1.2 SPARQL)
+
+- `rdf-core`: new provider-neutral function contract: `SparqlFunction(iri, optional, body)`, `SparqlFunctionCall`
+  (the evaluated `arguments`, and `select(query, bindings, consume)` for a nested query), `SparqlFunctionLibrary`
+  (`function(iri)`, `EMPTY`, `of(functions)`), and on `SparqlFunction` the provider helper `bindArguments(arguments)`
+  and the constant `SparqlFunction.MAX_FUNCTION_DEPTH` (16).
+- **Breaking (binary):** `SandboxedSelectQuery` moved from `rdf-sparql-contract` to `rdf-core`, in the same package
+  `com.geoknoesis.kastor.rdf`. It is now a regular class instead of a `@JvmInline value class`, with a second
+  constructor parameter `functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY`. Source that calls
+  `SandboxedSelectQuery(text)` compiles unchanged (`rdf-sparql-contract` depends on `rdf-core`); code compiled against
+  the value class must be recompiled. Two queries are equal when their text is equal and they carry the same library
+  instance.
+
+### Changed (SHACL 1.2 SPARQL behaviour)
+
+- **Breaking (behaviour):** `sh:sparql` constraints no longer pre-bind `$currentShape` and `$shapesGraph`. SHACL 1.2
+  SPARQL removed these optional variables (Appendix F, issue 426). Only `$this` is pre-bound; the two names are now
+  ordinary variables, unbound unless the query binds them, and the shapes graph is no longer copied into the private
+  query repository. A query that filtered on `$currentShape` or read `GRAPH $shapesGraph { ... }` now matches
+  differently, without an error. Write the shape IRI into the query instead of `$currentShape`, and put the triples the
+  query needs into the data graph.
+- `VALUES` is now allowed in SHACL-SPARQL queries when it mentions no potentially pre-bound variable (`$this`, a
+  component parameter, or `$value` in an ASK validator), as SHACL 1.2 SPARQL Appendix A and F specify. SHACL 1.0, and
+  Kastor before, rejected every `VALUES`. The approved W3C case `sparql/pre-binding/unsupported-sparql-002` still expects
+  `VALUES ?any` to fail; the harness runs it as a listed spec override.
+- A node with `sh:prefixes` no longer also receives the graph-level `sh:declare` declarations, and declarations that
+  bind one prefix to two namespaces are now ill-formed.
 
 ### Changed (Dynamic SHACL behaviour)
 
@@ -970,11 +1333,11 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
   - `sh:pattern` supports the `q` and `x` flags and is compiled at shape compile time.
   - Reports carry `sh:message` with language, full result paths, spec-conformant `sh:value`, one `sh:closed` result per triple, and `sh:sourceConstraint`.
 - **SHACL-SPARQL:**
-  - `sh:prefixes`/`sh:declare` and `$PATH` are supported, and `$this`, `$currentShape` and `$shapesGraph` are pre-bound.
+  - `sh:prefixes`/`sh:declare` and `$PATH` are supported, and `$this` is pre-bound. (`$currentShape` and `$shapesGraph` were also pre-bound at this point; SHACL 1.2 removed them, see [Changed (SHACL 1.2 SPARQL behaviour)](#changed-shacl-12-sparql-behaviour).)
   - Each solution row produces one result; message templates and `sh:deactivated` are honoured.
   - Queries run over the data graph.
   - Without `rdf-jena` or `rdf-rdf4j` on the runtime classpath, validation fails with a `ShaclValidationException` naming them, and capability flags reflect engine availability.
-- **W3C SHACL 1.2 suite:** 154 of 163 cases pass. The 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions) are listed in `W3cKnownDeviations`.
+- **W3C SHACL 1.2 suite:** at this point 154 of the 163 cases of the corpus then pinned passed, with 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions). All of them have since been implemented: every case of the current pinned corpus passes and `W3cKnownDeviations` lists no unsupported feature (see [Added (SHACL 1.2 SPARQL)](#added-shacl-12-sparql)).
 - **SHACL DSL:**
   - `and`/`or`/`xone` and `ignoredProperties` emit RDF lists.
   - `prefixes { }` in SPARQL constraints emits `sh:declare [ sh:prefix ; sh:namespace ]`.

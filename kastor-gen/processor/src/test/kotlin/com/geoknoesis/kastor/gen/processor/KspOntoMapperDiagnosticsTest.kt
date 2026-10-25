@@ -300,6 +300,47 @@ class KspOntoMapperDiagnosticsTest {
         assertFalse(result.generated.keys.any { it.endsWith("BoxWrapper.kt") }, result.generated.keys.toString())
     }
 
+    @Test
+    fun `a member inherited from a generic supertype is read with the substituted type argument`() {
+        val source = """
+            package com.acme.inherit
+
+            import com.geoknoesis.kastor.gen.annotations.Rdf
+
+            interface Named<T> {
+                @Rdf(iri = "https://example.test/value")
+                val value: T
+                @Rdf(iri = "https://example.test/values")
+                val values: List<T>
+            }
+
+            @Rdf(iri = "https://example.test/Tag")
+            interface Tag : Named<Int>
+        """.trimIndent()
+        val probe = """
+            package com.acme.inherit
+
+            import com.geoknoesis.kastor.gen.runtime.*
+            import com.geoknoesis.kastor.rdf.*
+            import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+            import com.geoknoesis.kastor.rdf.vocab.XSD
+
+            fun probe(): String {
+                val g = MemoryGraph()
+                val t = Iri("urn:tag")
+                g.addTriple(RdfTriple(t, Iri("https://example.test/value"), TypedLiteral("7", XSD.int)))
+                g.addTriple(RdfTriple(t, Iri("https://example.test/values"), TypedLiteral("8", XSD.int)))
+                val tag = OntoMapper.materialize(RdfRef(t, g), Tag::class.java)
+                return "" + (tag.value + 1) + "|" + tag.values
+            }
+        """.trimIndent()
+        val result = run("com/acme/inherit/Tag.kt" to source)
+        assertEquals(emptyList(), result.errors)
+        val compiled = KotlinSourceCompiler.compile(emptyList(), result.sources + ("com/acme/inherit/Probe.kt" to probe))
+        compiled.assertOk()
+        assertEquals("8|[8]", compiled.classLoader().loadClass("com.acme.inherit.ProbeKt").getMethod("probe").invoke(null))
+    }
+
     private fun assertRejected(decl: String, qualified: String, vararg fragments: String) {
         val fine = """
             @Rdf(iri = "https://example.test/Fine")

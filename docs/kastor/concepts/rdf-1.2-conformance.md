@@ -50,7 +50,9 @@ python scripts/fetch-conformance-data.py
 ./gradlew :rdf:conformance:test
 ```
 
-If the test data has not been fetched, the harness still compiles; full-suite factories emit a **skipped** test with instructions instead of failing the build.
+If the test data has not been fetched, the harness still compiles, but the full suite **fails** with one test that says how to fetch it: a suite that skipped itself would go green without having run anything. To skip it on purpose (a checkout without the corpus), pass `-PconformanceAllowMissingData=true`; the suite is then one skipped test. A corpus that is there but has fewer tests per format than the pinned one also fails (`Rdf12ConformanceRunner.MINIMUM_CASES`), whatever that property says.
+
+Every W3C test type in the manifests is either run or listed as out of scope (`Rdf12ManifestParser.OUT_OF_SCOPE_TYPES`: RDF/XML, and canonical N-Triples/N-Quads output). Any other `rdft:Test*` type fails the manifest parse, so rows cannot silently drop out of the suite when a type is renamed upstream.
 
 `./gradlew check` does **not** run `:rdf:conformance` tests (see `:rdf:conformance/build.gradle.kts`). Use **`conformanceSmokeTest`** or **`:rdf:conformance:test`** explicitly.
 

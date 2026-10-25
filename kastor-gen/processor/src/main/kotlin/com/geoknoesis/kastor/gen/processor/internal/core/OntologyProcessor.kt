@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.processor.api.exceptions.FileNotFoundException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.ProcessingException
 import com.google.devtools.ksp.processing.*
@@ -67,6 +68,26 @@ public class OntologyProcessor internal constructor(
     }
   }
 
+  /**
+   * Reports a failed generation request. A problem in the user's input is reported once, at [symbol], and processing
+   * continues with the other requests: a missing file (already reported by [OntologyFileReader] with the locations
+   * it tried) or an invalid shapes or context file ([IllegalArgumentException], e.g. an unknown JSON-LD prefix).
+   * An [InvalidConfigurationException] (reported where it is raised) and any unexpected failure are rethrown; the
+   * latter with its stack trace, as a [ProcessingException].
+   */
+  private fun reportFailure(request: String, symbol: KSAnnotated, e: Exception) {
+    when (e) {
+      is InvalidConfigurationException -> throw e
+      is FileNotFoundException -> Unit
+      is IllegalArgumentException -> logger.error("$request on ${describe(symbol)}: ${e.message}", symbol)
+      else -> {
+        logger.error("Error processing $request on ${describe(symbol)}: ${e.message}", symbol)
+        logger.exception(e)
+        throw ProcessingException(message = "Failed to process $request", annotationName = "Rdf", cause = e)
+      }
+    }
+  }
+
   override fun process(resolver: Resolver): List<KSAnnotated> {
     logger.info("Ontology processor starting…")
     val deferred = mutableListOf<KSAnnotated>()
@@ -103,16 +124,8 @@ public class OntologyProcessor internal constructor(
               owner = "@Rdf(generateDsl = true, dslName = \"${request.dslName}\", shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
               at = symbol,
             )
-          } catch (e: InvalidConfigurationException) {
-            throw e
           } catch (e: Exception) {
-            logger.error("Error processing @Rdf instance DSL: ${e.message}", symbol)
-            logger.exception(e)
-            throw ProcessingException(
-              message = "Failed to process @Rdf(generateDsl = true)",
-              annotationName = "Rdf",
-              cause = e,
-            )
+            reportFailure("@Rdf(generateDsl = true)", symbol, e)
           }
         }
 
@@ -145,16 +158,8 @@ public class OntologyProcessor internal constructor(
               owner = "@Rdf(shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
               at = symbol,
             )
-          } catch (e: InvalidConfigurationException) {
-            throw e
           } catch (e: Exception) {
-            logger.error("Error processing @Rdf ontology generation: ${e.message}", symbol)
-            logger.exception(e)
-            throw ProcessingException(
-              message = "Failed to process @Rdf ontology generation",
-              annotationName = "Rdf",
-              cause = e,
-            )
+            reportFailure("@Rdf(shacl = \"${request.shaclPath}\")", symbol, e)
           }
         }
       }
@@ -200,7 +205,7 @@ public class OntologyProcessor internal constructor(
   /** The annotated declaration or file, for messages. */
   private fun describe(symbol: KSAnnotated): String = when (symbol) {
     is KSDeclaration -> symbol.qualifiedName?.asString() ?: symbol.simpleName.asString()
-    is KSFile -> "file ${symbol.fileName}"
+    is KSFile -> "file ${symbol.fileName} (package ${symbol.packageName.asString()})"
     else -> symbol.toString()
   }
 

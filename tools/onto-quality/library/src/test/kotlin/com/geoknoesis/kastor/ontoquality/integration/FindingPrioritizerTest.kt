@@ -3,6 +3,8 @@ package com.geoknoesis.kastor.ontoquality.integration
 import com.geoknoesis.kastor.ontoquality.QualityCategory
 import com.geoknoesis.kastor.ontoquality.QualityFinding
 import com.geoknoesis.kastor.ontoquality.QualityTier
+import com.geoknoesis.kastor.ontoquality.explanation.FindingRef
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
@@ -56,6 +58,35 @@ class FindingPrioritizerTest {
         val sorted1 = FindingPrioritizer.sort(findings, importance)
         val sorted2 = FindingPrioritizer.sort(findings, importance)
         assertEquals(sorted1, sorted2)
+    }
+
+    @Test
+    fun `blank-node and same-focus findings are ordered by identity, not by engine order`() {
+        fun blank(label: String, key: String, message: String) =
+            QualityFinding(
+                violation =
+                    ValidationViolation(
+                        severity = ViolationSeverity.WARNING,
+                        constraint = ShaclConstraint(constraintType = ConstraintType.NODE),
+                        focusNode = BlankNode(label),
+                        message = message,
+                        shapeUri = "http://example.org/shapes/TestShape",
+                    ),
+                category = QualityCategory.OWL_METADATA,
+                pitfall = null,
+                tier = QualityTier.STRUCTURAL,
+                blankNodeKeys = mapOf(BlankNode(label) to key),
+            )
+        // The parser labels (b0, b1 ...) differ between runs; the label-free keys do not.
+        val first = listOf(blank("b0", "_:kaaa", "m"), blank("b1", "_:kbbb", "m"), blank("b2", "_:kccc", "n"))
+        val second = listOf(blank("x9", "_:kccc", "n"), blank("x8", "_:kbbb", "m"), blank("x7", "_:kaaa", "m"))
+        val sameIri = listOf(fakeFinding("ex:A", ViolationSeverity.WARNING), fakeFinding("ex:A", ViolationSeverity.WARNING).let {
+            it.copy(violation = it.violation.copy(message = "other message"))
+        })
+        fun refs(list: List<QualityFinding>) = FindingPrioritizer.sort(list, emptyMap()).map { FindingRef.from(it).hexSha256 }
+        assertEquals(refs(first), refs(second))
+        assertEquals(refs(first).sorted(), refs(first))
+        assertEquals(refs(sameIri), refs(sameIri.reversed()))
     }
 
     private fun fakeFinding(focus: String, severity: ViolationSeverity): QualityFinding {

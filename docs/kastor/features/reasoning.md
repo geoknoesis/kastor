@@ -29,9 +29,11 @@ Which types are actually served depends on the providers on the classpath:
 | Memory (built in) | `RDFS` | RDFS rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9 and rdfs11 applied to a fixpoint; no axiomatic triples |
 | Jena (`rdf-jena-reasoning`) | `RDFS`, `OWL_MICRO`, `OWL_RL`, `CUSTOM` | `OWL_MICRO` uses Jena's OWL Micro rule reasoner (fast, incomplete OWL fragment); `OWL_RL` uses Jena's OWL rule reasoner, which is close to but not a complete OWL 2 RL implementation; `CUSTOM` requires at least one `customRules` entry; `OWL_EL`, `OWL_QL`, `OWL_DL` are rejected |
 | RDF4J (`rdf-rdf4j-reasoning`) | `RDFS` | RDF4J ships no OWL reasoner |
-| HermiT (`rdf-reasoning-hermit`) | `HERMIT`, `OWL_DL` | OWL 2 DL; defaults to `streamingMode = false`; the timeout is enforced by a watchdog that interrupts the reasoner |
+| HermiT (`rdf-reasoning-hermit`) | `HERMIT`, `OWL_DL` | OWL 2 DL; defaults to `streamingMode = false`; the timeout is enforced by a watchdog that interrupts the reasoner; `owl:imports` is never followed (see below) |
 
 Consistency results come from the engine's own checks rather than being assumed.
+
+**HermiT never resolves `owl:imports`.** The graph you pass is the whole input: an `owl:imports` triple in it is kept as a declaration, but its target is not fetched over HTTP, not read from a `file:` IRI, and contributes nothing to the result; an import that could not be resolved anyway does not fail the call. Reasoning over an imported ontology means merging it into the graph first, loaded under your own policy (for example `Rdf.parseFromUrl(url, format, UrlLoadOptions(...))`).
 
 **Provider selection is deterministic.** When several providers support a type, the one with the highest `priority()` wins: HermiT 100, Jena 50, RDF4J 40, memory −100. `RdfReasoning.reasoner(type)` uses `ReasonerConfig.forType(type)`, which picks the recommended settings for that type (for example, `hermit()` / `owlDl()` for `HERMIT` / `OWL_DL`).
 

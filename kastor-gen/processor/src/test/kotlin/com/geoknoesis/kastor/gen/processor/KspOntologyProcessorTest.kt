@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -184,18 +183,40 @@ class KspOntologyProcessorTest {
         assertEquals(emptyList(), untracked.errors)
         assertTrue(untracked.warnings.any { "does not track changes" in it && "people.shacl.ttl" in it }, untracked.warnings.toString())
 
-        // A missing ontology file aborts processing (nothing is generated from a file that was not read).
-        val failure = assertFailsWith<Exception> {
-            KspRunner.run(
-                OntologyProcessorProvider(),
-                mapOf("gen/people/Marker.kt" to marker.replace("people.shacl.ttl", "absent.shacl.ttl")),
-                mapOf(OntologyProcessor.RESOURCES_OPTION to resources.absolutePath),
-            )
-        }
-        assertTrue(
-            generateSequence<Throwable>(failure) { it.cause }.any { "absent.shacl.ttl" in it.message.orEmpty() },
-            failure.stackTraceToString(),
+        // A missing ontology file is one error (naming the file and the locations tried), with no stack trace and no
+        // processor crash; nothing is generated from a file that was not read.
+        val missing = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/people/Marker.kt" to marker.replace("people.shacl.ttl", "absent.shacl.ttl")),
+            mapOf(OntologyProcessor.RESOURCES_OPTION to resources.absolutePath),
         )
+        assertEquals(1, missing.errors.size, missing.errors.toString())
+        assertTrue("absent.shacl.ttl" in missing.errors.single() && "tried" in missing.errors.single(), missing.errors.toString())
+        assertTrue(missing.generated.isEmpty(), missing.generated.keys.toString())
+    }
+
+    @Test
+    fun `an invalid JSON-LD context is one error at the annotated file and the other requests are still generated`() {
+        File(resources, "people.shacl.ttl").writeText(shapes)
+        File(resources, "bad.context.jsonld").writeText("""{ "@context": { "Person": "nope:Person" } }""")
+        val broken = """
+            @file:Rdf(shacl = "people.shacl.ttl", context = "bad.context.jsonld", packageName = "gen.broken", validationAnnotations = ValidationAnnotations.NONE)
+
+            package gen.broken
+
+            import com.geoknoesis.kastor.gen.annotations.Rdf
+            import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
+        """.trimIndent()
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/broken/Marker.kt" to broken, "gen/people/Marker.kt" to marker),
+            mapOf(OntologyProcessor.RESOURCES_OPTION to resources.absolutePath, OntologyProcessor.RESOURCES_TRACKED_OPTION to "true"),
+        )
+        assertEquals(1, result.errors.size, result.errors.toString())
+        val error = result.errors.single()
+        assertTrue("Unknown prefix: nope" in error && "package gen.broken" in error, error)
+        assertFalse(result.generated.keys.any { "gen/broken" in it }, result.generated.keys.toString())
+        assertTrue(result.generated.keys.any { it.endsWith("gen/people/Person.kt") }, result.generated.keys.toString())
     }
 
     private val prefixed = """

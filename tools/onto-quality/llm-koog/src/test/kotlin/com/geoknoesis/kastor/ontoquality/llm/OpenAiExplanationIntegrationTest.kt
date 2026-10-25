@@ -14,29 +14,26 @@ import com.geoknoesis.kastor.ontoquality.explanation.FindingRef
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assumptions.assumeFalse
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 
 /**
- * Live call to OpenAI via Koog. Skipped unless `OPENAI_API_KEY` is set (non-blank).
+ * Live, billed call to OpenAI via Koog. Opt-in: it runs only with `KASTOR_RUN_OPENAI_LLM_TESTS=1`, so an
+ * `OPENAI_API_KEY` that happens to be in the shell never spends money on a plain `gradle test`. Once opted in, a
+ * missing key fails the test instead of skipping it.
  *
- * Example (PowerShell): `./gradlew :tools:onto-quality-llm-koog:test`
- *
- * To skip even when a key is present (e.g. shared CI agent), set `KASTOR_SKIP_OPENAI_LLM_TESTS=1`.
+ * Example (PowerShell): `$env:KASTOR_RUN_OPENAI_LLM_TESTS='1'; ./gradlew :tools:onto-quality-llm-koog:test`
+ * (the `live-llm.yml` workflow does this).
  */
+@EnabledIfEnvironmentVariable(named = "KASTOR_RUN_OPENAI_LLM_TESTS", matches = "1")
 class OpenAiExplanationIntegrationTest {
 
     @Test
     fun enrichesReportWithOpenAi() =
         runBlocking {
-            assumeFalse(
-                System.getenv("KASTOR_SKIP_OPENAI_LLM_TESTS") == "1",
-                "Skipped: KASTOR_SKIP_OPENAI_LLM_TESTS=1",
-            )
-            assumeTrue(
+            assertTrue(
                 !System.getenv("OPENAI_API_KEY").isNullOrBlank(),
-                "Set OPENAI_API_KEY to run this integration test.",
+                "KASTOR_RUN_OPENAI_LLM_TESTS=1 needs OPENAI_API_KEY.",
             )
 
             val report = sampleQualityReport()

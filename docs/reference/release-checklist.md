@@ -1,6 +1,6 @@
 # Release checklist
 
-This is the exact procedure for the first release from the hardened build. `release-readiness.yml` is `workflow_dispatch`-only: it ran green on `main` when last dispatched manually, but it does not run on every push and a green run on an older commit says nothing about the release commit. `main` CI itself has had intermittent failures from flaky concurrency tests. `publish.yml` has never run (nothing is published yet). Every step below must run for real before a tag is pushed. Local runs do not replace them.
+This is the exact procedure for the first release from the hardened build. `release-readiness.yml` runs weekly on `main` and on manual dispatch, but not on every push: a green run on an older commit says nothing about the release commit. `main` CI must be green on the release commit, including the quality gates that `check` runs. `publish.yml` has never run (nothing is published yet). Every step below must run for real before a tag is pushed. Local runs do not replace them.
 
 Expected runtimes: CI about 20 minutes on Windows (Linux is shorter); release readiness about 60–90 minutes per OS plus 25–40 minutes for the signing job; publish about 20 minutes plus Central Portal validation (up to 30 minutes).
 

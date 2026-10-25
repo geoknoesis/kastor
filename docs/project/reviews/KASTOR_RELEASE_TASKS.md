@@ -1,6 +1,6 @@
 # Release-readiness acceptance ledger
 
-> Historical ledger for the September candidate. For the October audit, six subsequent fixes, current verification evidence and outstanding release decisions, see [the current release review](KASTOR_RELEASE_REVIEW.md#current-score---5-october-2026-800100). The 9.4 score below is historical.
+> Historical ledger for the September candidate. For the October audit, six subsequent fixes, current verification evidence and outstanding release decisions, see [the release review](KASTOR_RELEASE_REVIEW.md). The 9.4 score below is historical.
 
 This historical ledger records the September tasks requested after the 82/100 reassessment. Its 94.15/100
 self-assessment was superseded by later audits; the September verification does not establish acceptance of

@@ -110,7 +110,7 @@ data class QualityReport(
                     ?: MetricsContext.DEFAULT_IMPORTANCE
                 val hintParts = mutableListOf<String>()
                 focusIri?.let { ctx.entityHints[it] }?.trim()?.takeIf { it.isNotEmpty() }?.let(hintParts::add)
-                hintParts.add("centrality ${"%.2f".format(imp)}")
+                hintParts.add("centrality ${"%.2f".format(java.util.Locale.ROOT, imp)}")
                 appendLine("*${hintParts.joinToString("; ")}*")
                 appendLine()
                 val pit = f.pitfall?.shortLabel()?.let { " [$it]" } ?: ""

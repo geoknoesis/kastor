@@ -13,11 +13,15 @@ dependencies {
   testImplementation(libs.junit.params)
 
   implementation(libs.rdf4j.common.exception)
-  testImplementation(libs.rdf4j.common.iterator)
+  // KastorEvaluationStrategy (per-query custom functions) builds on the evaluation strategy API and its iterations.
+  implementation(libs.rdf4j.common.iterator)
+  implementation(libs.rdf4j.common.order)
+  implementation(libs.rdf4j.common.transaction)
   api(libs.rdf4j.model.api)
   implementation(libs.rdf4j.model.vocabulary)
   implementation(libs.rdf4j.model)
   implementation(libs.rdf4j.query)
+  implementation(libs.rdf4j.queryalgebra.evaluation)
   implementation(libs.rdf4j.queryalgebra.model)
   implementation(libs.rdf4j.queryparser.api)
   implementation(libs.rdf4j.queryparser.sparql)

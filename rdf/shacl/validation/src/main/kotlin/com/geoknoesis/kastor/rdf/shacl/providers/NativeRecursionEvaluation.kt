@@ -201,7 +201,12 @@ internal fun NativeShaclValidator.readInSolver(solver: RecursionSolver, ctx: Nat
         return Conformance.CONFORMS
     }
     val atom = solver.atoms[key]
-    if (atom == null || (!atom.resolved && !atom.inGroup)) {
+    val reader = solver.evaluating
+    // An unsettled question of the group being evaluated that the reader's recording did not read (the recording
+    // answered a read of the reader's own `sh:deactivated` "conforms", say, and skipped the constraints), or read
+    // only positively: answering it would order the group as if the reader did not depend on it.
+    val unrecordedInGroup = atom != null && !atom.resolved && atom.inGroup && reader != null && !reader.recorded(key, negative)
+    if (atom == null || (!atom.resolved && !atom.inGroup) || unrecordedInGroup) {
         // Fail safe: a question the recording did not register, or a dependency it did not record (so the
         // question may not be settled yet), is never answered by default; the solve restarts with it recorded.
         solver.restart = true
@@ -209,7 +214,6 @@ internal fun NativeShaclValidator.readInSolver(solver: RecursionSolver, ctx: Nat
             solver.atoms[key] = Atom(value, ref)
             solver.discovered++
         } else {
-            val reader = solver.evaluating
             if (reader != null && reader.missedReads.none { it.key == key && it.negative == negative }) {
                 reader.missedReads.add(Dependency(key, value, ref, negative))
                 solver.discovered++

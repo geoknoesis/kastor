@@ -111,5 +111,6 @@ publication coordinates and descriptive/license/SCM/developer metadata. Kastor's
 JVM library publications must contain a main JAR with nonempty class entries,
 Kotlin sources and HTML documentation; archives are checked for CRC corruption.
 POM-only BOM and plugin-marker publications are exempt from JAR requirements.
-The gate's seven CLI regression tests run in release CI. These structural checks
+The gate's regression tests (`scripts/test_check_staged_publications.py`) run in every `gradle check`. The gate
+also fails when a module the BOM manages was not staged. These structural checks
 do not replace signature verification or execution of independent consumers.

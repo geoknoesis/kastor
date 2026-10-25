@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.ontoquality.metrics.MetricsConfig
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetrics
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
 import com.geoknoesis.kastor.rdf.RdfGraph
+import java.util.Locale
 
 /**
  * Default implementation of [MetricsProvider] using Kastor's
@@ -73,7 +74,7 @@ class KastorMetricsProvider(
             )
         }
 
-    private fun formatDouble(d: Double): String = "%.2f".format(d)
+    private fun formatDouble(d: Double): String = "%.2f".format(Locale.ROOT, d)
 
-    private fun formatPercent(d: Double): String = "%.1f%%".format(d * 100.0)
+    private fun formatPercent(d: Double): String = "%.1f%%".format(Locale.ROOT, d * 100.0)
 }

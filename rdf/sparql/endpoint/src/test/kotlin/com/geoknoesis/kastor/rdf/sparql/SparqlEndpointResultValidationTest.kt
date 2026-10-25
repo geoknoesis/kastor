@@ -27,11 +27,11 @@ import java.util.logging.LogRecord
 import java.util.logging.Logger
 
 /**
- * Eighth audit of the SPARQL HTTP adapter: rows with malformed terms, what an HTTP error body may
+ * Rows with malformed terms, what an HTTP error body may
  * put into a message, headers the adapter sets itself, credentials in custom headers, and rows
  * that are not triples.
  */
-class SparqlEndpointHardeningTest {
+class SparqlEndpointResultValidationTest {
 
     private val selectAll = SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")
     private val url = "https://sparql.example/sparql"

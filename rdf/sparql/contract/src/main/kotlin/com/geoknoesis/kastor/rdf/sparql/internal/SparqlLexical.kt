@@ -95,7 +95,13 @@ object SparqlLexical {
         return lang
     }
 
-    /** Render a blank node label (`_:label`); a leading `_:` in [id] is accepted. */
+    /**
+     * Render a blank node label (`_:label`); a leading `_:` in [id] is accepted.
+     *
+     * This checks a label that is already valid; it is not how Kastor writes a blank node term. Terms are written
+     * with core's `BlankNode.toString()`, which encodes any id and never maps two ids to one label (here `a` and
+     * `_:a` would both give `_:a`). Use that for `BlankNode` values.
+     */
     fun blankNode(id: String): String {
         val label = id.removePrefix("_:")
         require(BNODE_LABEL.matches(label)) { "Invalid blank node label for SPARQL: '$id'" }

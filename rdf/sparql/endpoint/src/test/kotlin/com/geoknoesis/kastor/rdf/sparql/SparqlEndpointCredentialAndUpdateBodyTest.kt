@@ -10,8 +10,8 @@ import java.io.StringWriter
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
-/** Tenth audit of the SPARQL HTTP adapter: credentials in exception chains, header deadlines, update bodies. */
-class SparqlEndpointRound10Test {
+/** No part of a credential reaches an exception chain; the header wait of a timed stream; successful updates whose response body is too large or stalls. */
+class SparqlEndpointCredentialAndUpdateBodyTest {
 
     private val selectAll = SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")
     private val insert = UpdateQuery("INSERT DATA { <urn:a> <urn:b> <urn:c> }")

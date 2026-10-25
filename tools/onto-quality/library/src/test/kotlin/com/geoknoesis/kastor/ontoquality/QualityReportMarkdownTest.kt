@@ -60,6 +60,14 @@ class QualityReportMarkdownTest {
             )
         assertTrue(md.contains("[WARNING]"), md)
         assertFalse(md.contains("🟡"), md)
+        val previous = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            val german = report.describeMarkdown(MarkdownReportOptions(useAsciiSeverityMarkers = true, maxTopFindings = 5))
+            assertTrue(german.contains("centrality 0.95"), german)
+        } finally {
+            java.util.Locale.setDefault(previous)
+        }
     }
 
     @Test

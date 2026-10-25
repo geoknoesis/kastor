@@ -117,8 +117,12 @@ val updated = record.copy(name = "New Name")
 PersonRecordFactory.replaceInGraph(graph, updated, subject)   // atomic, scoped to the record's predicates
 ```
 
-`replaceInGraph` replaces the values of the predicates the record models and writes, and adds the
-`rdf:type`. Everything else about the subject is kept: other types, predicates the shape does not model,
+`replaceInGraph` edits only the values of the predicates the record models and writes, and adds the
+`rdf:type`. Within those predicates it changes only what the record changed: a value the record still holds
+keeps its original term (language tag, datatype, lexical form), an unchanged single-valued member keeps the
+values beyond `sh:maxCount` its reader did not return, and a term the record cannot represent is kept (see
+`mergeRecord` in the [runtime reference](runtime.md#write-support-extensions)). Everything else about the
+subject is kept: other types, predicates the shape does not model,
 triples of complex `sh:path`s (which are not generated), and object links that `toTriples` cannot write
 (`NestedMode.DATA_CLASS` snapshots carry no subject for nested objects). Do **not** use
 `graph.replaceResource(subject, toTriples(...))` for this: `replaceResource` removes *every* triple of the
@@ -127,7 +131,7 @@ subject, so it would delete all of those.
 Replacement helpers require `AtomicMutableRdfGraph`: standalone `MemoryGraph` and graphs of
 Memory, Jena, and RDF4J repositories support it. Graphs without atomic support (including standalone
 Jena model adapters) reject the edit before changing data. Replacement triples must match the supplied
-subject, and `replaceValues` also checks the predicate (`replacePredicates`, used by `replaceInGraph`, checks the subject). An edit joins an existing repository transaction;
+subject, and `replaceValues` also checks the predicate (`replacePredicates` checks the subject; `mergeRecord`, used by `replaceInGraph`, builds its triples for the subject itself). An edit joins an existing repository transaction;
 there is no nested savepoint, so let failures escape that transaction to roll it back.
 
 **Example — data class only (no live wrappers):**

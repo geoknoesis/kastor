@@ -99,7 +99,7 @@ public final class com/geoknoesis/kastor/rdf/holon/HolonError : java/lang/Enum {
 	public static fun values ()[Lcom/geoknoesis/kastor/rdf/holon/HolonError;
 }
 
-public final class com/geoknoesis/kastor/rdf/holon/HolonException : java/lang/RuntimeException {
+public final class com/geoknoesis/kastor/rdf/holon/HolonException : com/geoknoesis/kastor/rdf/RdfExtensionException {
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/holon/HolonError;Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/holon/HolonError;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getCondition ()Lcom/geoknoesis/kastor/rdf/holon/HolonError;

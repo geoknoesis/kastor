@@ -573,9 +573,10 @@ class Rdf4jRepository(
      * overload for how their nested queries are bounded in time.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        val declared = if (query is SandboxedSelectQuery) checkSandboxed(query.sparql).dataset else null
+        val prepared = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql) }
+        val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, query.sparql).dataset else null
         val result = withFunctions(query, Long.MAX_VALUE, declared, conn) {
-            queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
+            queryOperation(query.sparql) { prepared.onKastorDataset(conn).evaluate() }
         }
         result.use { consume(it.rows(query.sparql)) }
     }
@@ -583,7 +584,8 @@ class Rdf4jRepository(
     /**
      * Runs [block], which prepares and evaluates [query] on [conn], with the custom functions of a sandboxed [query]
      * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none),
-     * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset).
+     * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset). The nested
+     * queries' parses are shared within this one query ([Rdf4jQuerySandbox.NestedParses]).
      * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
      * is RDF4J's unknown-function error.
      */
@@ -595,48 +597,13 @@ class Rdf4jRepository(
         block: () -> T,
     ): T =
         if (query !is SandboxedSelectQuery) block()
-        else Rdf4jFunctionScope.with(
-            query.functions, 0, deadline, clock, { nested, bindings, caller -> prepareNested(nested, bindings, caller, conn) }, declared, block,
-        )
-
-    /**
-     * A nested query of a custom function, prepared as [withSelectRows] prepares a sandboxed query with bindings, on the
-     * dataset of its calling query ([caller]; null for Kastor's dataset, see [onKastorDataset]). Its own dataset clauses
-     * select among the named graphs of [caller] ([within]).
-     */
-    private fun prepareNested(
-        query: SandboxedSelectQuery,
-        bindings: Map<String, RdfTerm>,
-        caller: org.eclipse.rdf4j.query.Dataset?,
-        conn: RepositoryConnection,
-    ): Rdf4jNestedQuery {
-        val bound = bind(query.sparql, bindings)
-        val parsed = checkSandboxed(bound.sparql)
-        val placeholders = org.eclipse.rdf4j.query.impl.MapBindingSet()
-        bound.placeholders.forEach { (name, value) -> placeholders.addBinding(name, value) }
-        val own = parsed.dataset
-        val dataset = when {
-            caller == null -> own ?: kastorDataset(parsed.tupleExpr, conn)
-            own == null -> caller
-            else -> within(own, caller)
+        else Rdf4jQuerySandbox.NestedParses(::checkSandboxed).let { parses ->
+            Rdf4jFunctionScope.with(
+                query.functions, 0, deadline, clock,
+                { nested, bindings, caller -> Rdf4jQuerySandbox.prepareNested(nested, bindings, caller, parses::get) { kastorDataset(it, conn) } },
+                declared, block,
+            )
         }
-        return Rdf4jNestedQuery(parsed, dataset, if (caller == null && own == null) null else dataset, placeholders, bound.hidden)
-    }
-
-    /**
-     * The graphs [own] selects among the named graphs of [caller], as Jena's dynamic dataset over the calling query's
-     * dataset selects them: any other graph reads as empty.
-     */
-    private fun within(own: org.eclipse.rdf4j.query.Dataset, caller: org.eclipse.rdf4j.query.Dataset): org.eclipse.rdf4j.query.Dataset {
-        val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
-        own.defaultGraphs.filter { it in caller.namedGraphs }.forEach(dataset::addDefaultGraph)
-        own.namedGraphs.filter { it in caller.namedGraphs }.forEach(dataset::addNamedGraph)
-        // RDF4J reads every context for a dataset without any graph: a graph name that no store holds reads nothing.
-        if (dataset.defaultGraphs.isEmpty() && dataset.namedGraphs.isEmpty()) {
-            dataset.addDefaultGraph(SimpleValueFactory.getInstance().createIRI("urn:kastor:no-graph:" + java.util.UUID.randomUUID()))
-        }
-        return dataset
-    }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
@@ -710,16 +677,17 @@ class Rdf4jRepository(
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
-        val bound = bind(query.sparql, bindings)
+        val bound = Rdf4jInitialBindings.bind(query.sparql, bindings)
         val sparql = bound.sparql
-        // The rewritten text is the one prepared below, so that is the text checked.
-        val declared = if (query is SandboxedSelectQuery) checkSandboxed(sparql).dataset else null
         return withConnection { conn ->
+            // The rewritten text is the one prepared, so that is the text checked.
+            val prepared = queryOperation(sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql) }
+            val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, sparql).dataset else null
             // A timeout too long for a nanosecond deadline (about 292 years) is no deadline and no time limit.
-            val deadline = deadlineAfter(clock(), timeout)
+            val deadline = Rdf4jQuerySandbox.deadlineAfter(clock(), timeout)
             val result = withFunctions(query, deadline, declared, conn) {
                 queryOperation(sparql) {
-                    val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
+                    prepared.onKastorDataset(conn)
                     bound.placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
                     if (deadline != Long.MAX_VALUE) {
                         prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
@@ -731,95 +699,13 @@ class Rdf4jRepository(
         }
     }
 
-    /** [now] plus [timeout] (at least 1 ns); [Long.MAX_VALUE] (no deadline) when that does not fit in a Long. */
-    private fun deadlineAfter(now: Long, timeout: java.time.Duration): Long = try {
-        Math.addExact(now, timeout.toNanos().coerceAtLeast(1)).let { if (it == Long.MAX_VALUE) it - 1 else it }
-    } catch (e: ArithmeticException) {
-        Long.MAX_VALUE
-    }
+    /** [Rdf4jQuerySandbox.check] of [sparql], parsed by RDF4J's own SPARQL parser; parse errors are query errors. */
+    private fun checkSandboxed(sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery =
+        Rdf4jQuerySandbox.check(queryOperation(sparql) { org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(sparql, null) })
 
-    /**
-     * A query text with initial bindings applied (see the timed [withSelectRows]): [placeholders] are bound natively and
-     * [hidden] variables are not returned in rows.
-     */
-    private class BoundQuery(val sparql: String, val placeholders: Map<String, org.eclipse.rdf4j.model.Value>, val hidden: Set<String>)
-
-    /** Applies [bindings] to [sparql]; a query the substitution rejects fails with [IllegalArgumentException]. */
-    private fun bind(sparql: String, bindings: Map<String, RdfTerm>): BoundQuery {
-        // Fresh variables: bound natively with setBinding, or declared with BIND for triple terms in expressions.
-        val placeholders = LinkedHashMap<String, org.eclipse.rdf4j.model.Value>()
-        val expressions = HashMap<String, String>()
-        val constants = bindings.mapValues { (name, term) ->
-            val spelled = sparqlConstant(term)
-            when {
-                spelled == null && term is TripleTerm -> throw IllegalArgumentException(
-                    "Initial binding ?$name is a triple term that contains a blank node or a directional language string. " +
-                        "RDF4J can neither write such a triple term into the query text nor bind a triple value natively; " +
-                        "bind its components to separate variables and match the triple term in the query " +
-                        "(e.g. ?x ?y << ?s ?p ?o >>) instead."
-                )
-                spelled == null -> placeholderFor(name, sparql, placeholders.keys + expressions.values)
-                    .also { placeholders[it] = Rdf4jTerms.toRdf4jValue(term) }.let { "?$it" }
-                term is TripleTerm -> spelled.also {
-                    expressions[name] = placeholderFor(name, sparql, placeholders.keys + expressions.values)
-                }
-                else -> spelled
-            }
-        }
-        // Outside queryOperation: a query the substitution rejects is the caller's error (IllegalArgumentException).
-        val rewritten = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(sparql, constants, expressions)
-        return BoundQuery(rewritten, placeholders, placeholders.keys + expressions.values)
-    }
-
-    /**
-     * Refuses a [SandboxedSelectQuery] whose [sparql] text, parsed by RDF4J's own SPARQL parser (the one that prepares
-     * it), contains `SERVICE`, with [IllegalArgumentException], and returns the parsed query. RDF4J resolves functions
-     * by IRI from its registry and never loads classes by name, so `SERVICE` is the only way such a query reaches
-     * outside the repository.
-     */
-    private fun checkSandboxed(sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery {
-        val parsed = queryOperation(sparql) { org.eclipse.rdf4j.query.parser.sparql.SPARQLParser().parseQuery(sparql, null) }
-        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-            override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) {
-                val ref = node.serviceRef
-                throw IllegalArgumentException("A sandboxed query may not use SERVICE ${ref.value?.stringValue()?.let { "<$it>" } ?: "?" + ref.name}")
-            }
-        })
-        return parsed
-    }
-
-    /** A variable name for a natively bound term that occurs nowhere in [sparql] and is not in [taken]. */
-    private fun placeholderFor(name: String, sparql: String, taken: Set<String>): String {
-        var candidate = "kastorInitial_$name"
-        var n = 0
-        while (sparql.contains(candidate) || candidate in taken) candidate = "kastorInitial_${name}_${++n}"
-        return candidate
-    }
-
-    /**
-     * SPARQL text for a binding substituted into the query (as the SPARQL endpoint adapter renders terms),
-     * or null for terms bound natively.
-     */
-    private fun sparqlConstant(term: RdfTerm): String? {
-        val lexical = com.geoknoesis.kastor.rdf.sparql.internal.SparqlLexical
-        return when (term) {
-            is Iri -> lexical.iriRef(term.value)
-            is LangString -> if (term.direction == null) lexical.langLiteral(term.lexical, term.lang) else null
-            is TypedLiteral ->
-                if (term.datatype == com.geoknoesis.kastor.rdf.vocab.XSD.string) lexical.quoted(term.lexical)
-                else lexical.typedLiteral(term.lexical, term.datatype.value)
-            is TrueLiteral -> "\"true\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
-            is FalseLiteral -> "\"false\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
-            // RDF4J's SPARQL-star syntax for a triple term whose components can all be spelled (triple patterns only);
-            // null when a component is a blank node or a directional language string (the caller rejects the binding).
-            is TripleTerm -> {
-                val subject = (term.triple.subject as? Iri)?.let { sparqlConstant(it) } ?: return null
-                val obj = sparqlConstant(term.triple.obj) ?: return null
-                "<< $subject ${lexical.iriRef(term.triple.predicate.value)} $obj >>"
-            }
-            else -> null
-        }
-    }
+    /** [Rdf4jQuerySandbox.check] of [prepared] (the query of [sparql]), on the parse it is evaluated from when it has one. */
+    private fun checkSandboxed(prepared: org.eclipse.rdf4j.query.Query, sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery =
+        (prepared as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery?.let(Rdf4jQuerySandbox::check) ?: checkSandboxed(sparql)
 
     private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String, hidden: Set<String> = emptySet()): Sequence<BindingSet> =
         iterator().asSequence().map { row ->
@@ -907,28 +793,6 @@ class Rdf4jRepository(
         val out = LinkedHashSet<IRI>()
         conn.contextIDs.use { contexts -> while (contexts.hasNext()) (contexts.next() as? IRI)?.let(out::add) }
         return out
-    }
-
-    /** Whether the patterns of a query (or of the `WHERE` clause of an update) read outside and inside `GRAPH`. */
-    private class GraphReads(val default: Boolean, val named: Boolean) {
-        companion object {
-            fun of(expr: org.eclipse.rdf4j.query.algebra.TupleExpr?): GraphReads {
-                var readsDefault = false
-                var readsNamed = false
-                fun note(scope: org.eclipse.rdf4j.query.algebra.StatementPattern.Scope) {
-                    if (scope == org.eclipse.rdf4j.query.algebra.StatementPattern.Scope.NAMED_CONTEXTS) readsNamed = true else readsDefault = true
-                }
-                expr?.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-                    override fun meet(node: org.eclipse.rdf4j.query.algebra.StatementPattern) { note(node.scope); super.meet(node) }
-                    override fun meet(node: org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) { note(node.scope); super.meet(node) }
-                    override fun meet(node: org.eclipse.rdf4j.query.algebra.ZeroLengthPath) { note(node.scope); super.meet(node) }
-                    override fun meet(node: org.eclipse.rdf4j.query.algebra.DescribeOperator) { readsDefault = true; super.meet(node) }
-                    // The patterns of a SERVICE clause are evaluated by the remote endpoint against its own dataset.
-                    override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) = Unit
-                })
-                return GraphReads(readsDefault, readsNamed)
-            }
-        }
     }
 
     /**

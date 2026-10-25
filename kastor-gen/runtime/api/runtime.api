@@ -246,6 +246,19 @@ public final class com/geoknoesis/kastor/gen/runtime/RdfRef {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/gen/runtime/RecordField {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDecode ()Lkotlin/jvm/functions/Function1;
+	public final fun getEncode ()Lkotlin/jvm/functions/Function1;
+	public final fun getPredicate-tqZU9bw ()Ljava/lang/String;
+	public final fun getSingleValued ()Z
+	public final fun getValues ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/RecordWriteKt {
+	public static final fun mergeRecord (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Collection;Ljava/util/Collection;)V
+}
+
 public abstract interface class com/geoknoesis/kastor/gen/runtime/Resource {
 	public fun addValue-UeRWmDE (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
 	public fun as (Lkotlin/reflect/KClass;)Ljava/lang/Object;
@@ -466,6 +479,7 @@ public final class com/geoknoesis/kastor/gen/runtime/XsdLiterals {
 	public final fun int (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Integer;
 	public final fun isWellFormed (Lcom/geoknoesis/kastor/rdf/Literal;)Z
 	public final fun langString (Lcom/geoknoesis/kastor/rdf/Literal;)Lcom/geoknoesis/kastor/rdf/LangString;
+	public final fun lexical-AqFvXrU (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;)Ljava/lang/String;
 	public final fun localDate (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/time/LocalDate;
 	public final fun long (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Long;
 	public final fun string (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/String;

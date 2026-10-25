@@ -229,9 +229,6 @@ class JenaRepository private constructor(
         /** Most graph keys [lastWrite] holds; beyond it every graph counts as written and tracking starts over. */
         private const val MAX_TRACKED_GRAPHS = 10_000
 
-        /** The start of a SPARQL codepoint escape (a backslash and `u`; the `U` form is matched ignoring case). */
-        private val UNICODE_ESCAPE: String = Char(92) + "u"
-
         /** Prefix of the graph names Jena reserves (see "Special graph names" in the class documentation). */
         private const val RESERVED_GRAPH_PREFIX = "urn:x-arq:"
 
@@ -1023,28 +1020,13 @@ class JenaRepository private constructor(
         exec.use { consumeRows(it, query.sparql, consume) }
     }
 
-    /**
-     * Parses [query] once, so a [SandboxedSelectQuery] is checked ([JenaQuerySandbox]) on the very query that is
-     * executed. A refused sandboxed query fails with [IllegalArgumentException] before evaluation.
-     */
-    private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query {
-        val parsed = queryOperation(query.sparql) { QueryFactory.create(query.sparql) }
-        if (query is SandboxedSelectQuery) JenaQuerySandbox.check(parsed)
-        return parsed
-    }
+    /** [JenaQuerySandbox.parseSelect], with the engine's parse errors wrapped as query errors. */
+    private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query =
+        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(query.sparql) } }
 
-    /**
-     * An execution of [parsed] over the query dataset, restricted ([JenaQuerySandbox.restrict]) for a sandboxed [query],
-     * whose custom functions then run their nested queries until [deadline] ([hooks] clock; [Long.MAX_VALUE] for none).
-     */
-    private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder {
-        val builder = QueryExecution.dataset(queryDataset()).query(parsed)
-        return if (query is SandboxedSelectQuery) {
-            JenaQuerySandbox.restrict(builder, query.functions, 0, deadline) { hooks.clock() }
-        } else {
-            builder
-        }
-    }
+    /** [JenaQuerySandbox.execution] over the query dataset, with the nested-query deadline [deadline] on the [hooks] clock. */
+    private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder =
+        JenaQuerySandbox.execution(queryDataset(), query, parsed, deadline) { hooks.clock() }
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
         queryOperation(query.sparql) {
@@ -1077,7 +1059,7 @@ class JenaRepository private constructor(
         // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation),
         // and the nested queries of custom functions.
         // A timeout too long for a nanosecond deadline (about 292 years) is no deadline.
-        val deadline = deadlineAfter(hooks.clock(), timeout)
+        val deadline = JenaQuerySandbox.deadlineAfter(hooks.clock(), timeout)
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
             bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
@@ -1086,13 +1068,6 @@ class JenaRepository private constructor(
             builder.build()
         }
         exec.use { consumeRows(it, query.sparql, deadline.takeIf { it != Long.MAX_VALUE }, consume) }
-    }
-
-    /** [now] plus [timeout] (at least 1 ns); [Long.MAX_VALUE] (no deadline) when that does not fit in a Long. */
-    private fun deadlineAfter(now: Long, timeout: java.time.Duration): Long = try {
-        Math.addExact(now, timeout.toNanos().coerceAtLeast(1)).let { if (it == Long.MAX_VALUE) it - 1 else it }
-    } catch (e: ArithmeticException) {
-        Long.MAX_VALUE
     }
 
     private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T =
@@ -1186,11 +1161,11 @@ class JenaRepository private constructor(
      */
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
-            if (!textMayCreateBlankGraph(query.sparql)) {
+            if (!JenaBlankGraphs.textMayCreateBlankGraph(query.sparql)) {
                 org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset)
             } else {
                 val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
-                val foreign = if (mayCreateBlankGraph(request)) blankGraphNames() else null
+                val foreign = if (JenaBlankGraphs.mayCreateBlankGraph(request)) JenaBlankGraphs.blankGraphNames(dataset) else null
                 var failure: Throwable? = null
                 try {
                     org.apache.jena.update.UpdateAction.execute(request, dataset)
@@ -1201,57 +1176,13 @@ class JenaRepository private constructor(
                     // An outer transaction may catch the error and retain earlier successful operations.
                     if (foreign != null) {
                         try {
-                            skolemizeBlankGraphs(foreign)
+                            JenaBlankGraphs.skolemizeBlankGraphs(dataset, foreign)
                         } catch (e: Exception) {
                             failure?.addSuppressed(e) ?: throw e
                         }
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * A cheap, conservative look at the text of an update request: false only when it certainly has neither a `LOAD`
-     * nor a `GRAPH` with a variable (the two ways of naming a graph by a blank node). Codepoint escapes could spell
-     * either keyword, so a text with a backslash-u escape always counts as "may".
-     */
-    private fun textMayCreateBlankGraph(sparql: String): Boolean =
-        sparql.contains("LOAD", ignoreCase = true) ||
-            sparql.contains(UNICODE_ESCAPE, ignoreCase = true) ||
-            (sparql.contains("GRAPH", ignoreCase = true) && (sparql.contains('?') || sparql.contains('$')))
-
-    /** Whether [request] can create a graph named by a blank node (see [update]). */
-    private fun mayCreateBlankGraph(request: org.apache.jena.update.UpdateRequest): Boolean = request.operations.any { operation ->
-        when (operation) {
-            is org.apache.jena.sparql.modify.request.UpdateLoad -> operation.dest == null
-            // The default graph of a template is a (generated) IRI too.
-            is org.apache.jena.sparql.modify.request.UpdateModify -> operation.insertQuads.any { !it.graph.isURI }
-            else -> false
-        }
-    }
-
-    private fun blankGraphNames(): Set<Node> {
-        val names = dataset.asDatasetGraph().listGraphNodes()
-        try {
-            return names.asSequence().filter { it.isBlank }.toSet()
-        } finally {
-            org.apache.jena.atlas.iterator.Iter.close(names)
-        }
-    }
-
-    /** Moves every blank-node graph that is not in [keep] to its skolem graph name (see [update]). */
-    private fun skolemizeBlankGraphs(keep: Set<Node>) {
-        val created = blankGraphNames() - keep
-        if (created.isEmpty()) return
-        val store = dataset.asDatasetGraph()
-        val load = java.util.UUID.randomUUID().toString().replace("-", "")
-        for (blank in created) {
-            val name = NodeFactory.createURI(JenaParsing.skolemGraphName(load, blank.blankNodeLabel))
-            val quads = store.find(blank, Node.ANY, Node.ANY, Node.ANY)
-            val triples = try { quads.asSequence().map { it.asTriple() }.toList() } finally { org.apache.jena.atlas.iterator.Iter.close(quads) }
-            triples.forEach { store.add(name, it.subject, it.predicate, it.`object`) }
-            store.deleteAny(blank, Node.ANY, Node.ANY, Node.ANY)
         }
     }
 

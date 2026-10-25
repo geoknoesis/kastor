@@ -1,4 +1,4 @@
-> **Historical document.** The current score (80.0/100, round-nine audit, 5 October 2026) is in [the release review](KASTOR_RELEASE_REVIEW.md). The 9.4/10 reassessment and the original findings below are superseded.
+> **Historical document.** The latest independent audit scores are in [the release review](KASTOR_RELEASE_REVIEW.md). The 9.4/10 reassessment and the original findings below are superseded.
 
 > Historical pre-fix review. The [post-fix reassessment](KASTOR_POST_FIX_REVIEW.md) rated an earlier remediation snapshot **82/100 (+34 points)**. Current release-readiness work and verification are tracked in [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md).
 

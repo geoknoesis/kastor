@@ -9,7 +9,8 @@ import org.junit.jupiter.api.Test
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
 
-class ReleaseRegressionTest {
+/** Writes, bound reads, blank nodes and early termination against a Jena-backed endpoint, end to end. */
+class SparqlEndpointJenaRoundTripTest {
     private fun <T> endpoint(response: ((String, String) -> String)? = null, run: (SparqlRepository) -> T): T {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val pool = Executors.newSingleThreadExecutor()

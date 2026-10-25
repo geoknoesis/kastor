@@ -423,10 +423,27 @@ class NodeExpressionConstraintTest {
         assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c . ex:c ex:name 3 .", shapes).isValid)
         val report = validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:c .", shapes)
         assertEquals(listOf<RdfTerm?>(ex("b")), report.violations.map { it.value })
-        // A cycle in the data: an expression is not known to be monotone, so its shape reads are negative ones and
-        // a cycle through them is undefined recursion, which is a validation failure for an expression.
+        // A cycle in the data: a constant-shape shnex:conformsToShape at sh:expression is monotone, so its reads are
+        // positive ones and the cycle conforms (greatest fixpoint), as through sh:node.
+        assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", shapes).isValid)
+        // So does shnex:matchAll; one node without ex:name fails the cycle definitely.
+        val matchAll = shapes.replace(
+            "sh:property [ sh:path ex:next ; sh:expression [ shnex:conformsToShape ( [ shnex:var \"value\" ] ex:S ) ] ]",
+            "sh:expression [ shnex:matchAll ex:S ; shnex:nodes [ shnex:pathValues ex:next ] ]",
+        )
+        assertTrue(validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", matchAll).isValid)
+        assertEquals(
+            listOf(ex("a") to ConstraintType.EXPRESSION),
+            validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:next ex:a .", matchAll).violations.map { it.focusNode to it.constraint.constraintType },
+        )
+        // Through sparql:logical-not the expression is not monotone: its reads are negative ones, and a cycle through
+        // them is undefined recursion, which is a validation failure for an expression.
+        val negated = shapes.replace(
+            "sh:expression [ shnex:conformsToShape ( [ shnex:var \"value\" ] ex:S ) ]",
+            "sh:expression [ sparql:logical-not ( [ sparql:logical-not ( [ shnex:conformsToShape ( [ shnex:var \"value\" ] ex:S ) ] ) ] ) ]",
+        )
         assertThrows(ShaclValidationException::class.java) {
-            validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", shapes)
+            validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", negated)
         }
     }
 

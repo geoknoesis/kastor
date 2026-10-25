@@ -1,13 +1,19 @@
 package com.geoknoesis.kastor.ontoquality
 
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoning
+import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 
 /**
  * Valid OWL 2 patterns the OWL quality catalogue must not report (and the real pitfalls next to them it must keep
@@ -33,10 +39,18 @@ class OwlQualityFalsePositiveTest {
         <http://example.org/onto> a owl:Ontology .
         """.trimIndent()
 
+    /**
+     * The findings of [pitfall]. Every fixture here is valid OWL 2 around its one pitfall, so a finding on a blank node
+     * (an anonymous class expression or restriction) is a false positive whatever detector produced it.
+     */
     private fun findings(turtle: String, pitfall: String): List<QualityFinding> {
         val report = checker.check(Rdf.parse(prefixes + "\n" + turtle, RdfFormat.TURTLE))
+        assertEquals(emptyList<String>(), report.findings.blankFocus(), "findings on blank nodes")
         return report.findings.filter { (it.pitfall as? PitfallReference.Oops)?.number == pitfall }
     }
+
+    private fun List<QualityFinding>.blankFocus(): List<String> =
+        filter { it.violation.focusNode is BlankNode }.map { "${it.violation.shapeUri}: ${it.violation.message}" }
 
     private fun List<QualityFinding>.focusIris(): Set<String> =
         mapNotNull { (it.violation.focusNode as? Iri)?.value }.toSet()
@@ -138,5 +152,63 @@ class OwlQualityFalsePositiveTest {
         assertTrue("http://xmlns.com/foaf/0.1/Person" !in focus, "bare external declaration reported: $focus")
         assertTrue("http://xmlns.com/foaf/0.1/Persona" in focus, "redefinition not reported: $focus")
         assertTrue("http://xmlns.com/foaf/0.1/knowsAbout" in focus, "redefinition not reported: $focus")
+    }
+
+    @ParameterizedTest
+    @EnumSource(OntoQualityReasoningProfile::class)
+    fun `no bundled detector reports a documented ontology's anonymous class expressions`(profile: OntoQualityReasoningProfile) {
+        assumeTrue(OntoQualityReasoning.supports(profile), "reasoner $profile not on the classpath")
+        val ontology =
+            Rdf.parse(
+                prefixes + "\n" +
+                    """
+                    @prefix dct: <http://purl.org/dc/terms/> .
+                    @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+                    <http://example.org/onto> rdfs:label "Fruit"@en ; rdfs:comment "Fruit and their parts."@en ;
+                        dct:creator "Kastor" ; dct:license <http://example.org/license> ; owl:versionInfo "1" .
+                    ex:Apple a owl:Class ; rdfs:label "Apple"@en ; rdfs:comment "An apple."@en .
+                    ex:Pear a owl:Class ; rdfs:label "Pear"@en ; rdfs:comment "A pear."@en .
+                    ex:Fruit a owl:Class ; rdfs:label "Fruit"@en ; rdfs:comment "A fruit."@en ;
+                        owl:equivalentClass [ a owl:Class ; owl:unionOf ( ex:Apple ex:Pear ) ] .
+                    ex:Core a owl:Class ; rdfs:label "Core"@en ; rdfs:comment "The core of a fruit."@en ;
+                        rdfs:subClassOf [ a owl:Class ; owl:complementOf ex:Fruit ] .
+                    ex:Seed a owl:Class ; rdfs:label "Seed"@en ; rdfs:comment "A seed."@en ;
+                        rdfs:subClassOf [ a owl:Class ; owl:intersectionOf ( ex:Core
+                            [ a owl:Restriction ; owl:onProperty ex:partOf ; owl:someValuesFrom ex:Fruit ] ) ] .
+                    ex:Colour a owl:Class ; rdfs:label "Colour"@en ; rdfs:comment "A colour."@en ;
+                        owl:equivalentClass [ a owl:Class ; owl:oneOf ( ex:red ex:green ) ] .
+                    ex:red a owl:NamedIndividual , ex:Colour ; rdfs:label "red"@en .
+                    ex:green a owl:NamedIndividual , ex:Colour ; rdfs:label "green"@en .
+                    ex:partOf a owl:ObjectProperty ; rdfs:label "part of"@en ; rdfs:comment "Relates a part to its whole."@en ;
+                        rdfs:domain [ a owl:Class ; owl:unionOf ( ex:Core ex:Seed ) ] ; rdfs:range ex:Fruit .
+                    ex:hasPart a owl:ObjectProperty ; rdfs:label "has part"@en ; rdfs:comment "Inverse of part of."@en ;
+                        owl:inverseOf ex:partOf ; rdfs:domain ex:Fruit ; rdfs:range [ a owl:Class ; owl:unionOf ( ex:Core ex:Seed ) ] .
+                    """.trimIndent(),
+                RdfFormat.TURTLE,
+            )
+        val report = QualityChecker.default(ShaclValidation.validator()).check(ontology, profile)
+        assertEquals(emptyList<String>(), report.findings.blankFocus(), "findings on blank nodes with $profile")
+    }
+
+    @Test
+    fun `absence detectors still report named classes and properties`() {
+        val report =
+            checker.check(
+                Rdf.parse(
+                    prefixes + "\n" + "ex:bare a owl:Class . ex:p a owl:ObjectProperty . ex:d a owl:DatatypeProperty .",
+                    RdfFormat.TURTLE,
+                ),
+            )
+        val messages = report.findings.groupBy({ (it.violation.focusNode as? Iri)?.value }, { it.violation.message })
+        for (expected in listOf("Class has no rdfs:label.", "Class has neither rdfs:comment nor skos:definition.")) {
+            assertTrue(expected in messages[ex("bare")].orEmpty(), "missing '$expected': $messages")
+        }
+        for ((p, kind) in listOf("p" to "Object", "d" to "Datatype")) {
+            for (what in listOf("label", "domain", "range")) {
+                val expected = "$kind property has no rdfs:$what."
+                assertTrue(expected in messages[ex(p)].orEmpty(), "missing '$expected': $messages")
+            }
+        }
+        assertTrue(messages[ex("bare")].orEmpty().any { "UpperCamelCase" in it }, "ex:bare naming not reported: $messages")
     }
 }

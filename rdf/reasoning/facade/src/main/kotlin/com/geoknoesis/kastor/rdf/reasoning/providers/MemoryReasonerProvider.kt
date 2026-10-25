@@ -134,6 +134,9 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         )
     }
 
+    /** [ReasonerConfig.timeout] in nanoseconds; one too long for a Long (about 292 years) means no time limit. */
+    private fun budgetNanos(): Long = try { config.timeout.toNanos() } catch (_: ArithmeticException) { Long.MAX_VALUE }
+
     /**
      * Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), asserted triples first.
      *
@@ -142,14 +145,17 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
      * joined from both of its premises, so every pair of premises meets when the later of the two is taken; the
      * result is the same fixpoint as re-applying all rules to all triples until nothing changes, without rescanning.
      *
-     * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted)
+     * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted; a
+     * timeout too long to count in nanoseconds means no limit)
      * and [ReasonerConfig.materializationThreshold] bounds the number of entailed triples ([IllegalArgumentException]).
      */
     internal fun closure(asserted: Collection<RdfTriple>, nanoTime: () -> Long = System::nanoTime): Set<RdfTriple> {
-        val deadline = nanoTime() + config.timeout.toNanos()
+        val start = nanoTime()
+        val budget = budgetNanos()
         var steps = 0L
         fun checkBudget() {
-            check(nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
+            // Elapsed time, not a deadline: now + budget would overflow for a long budget or a clock near its top.
+            check(nanoTime() - start < budget && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
         }
         val rules = config.enabledRules
         val subClass = ReasoningRule.RDFS_SUBCLASS in rules

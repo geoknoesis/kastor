@@ -4,6 +4,11 @@ The 19 October 2026 working-tree self-review of Kastor, based on `5c8c8280`, sco
 three correctness defects. This ledger tracks the requested fixes and the engineering work toward 9.5/10.
 Scores are engineering judgments. Independent review of a final candidate remains a separate requirement.
 
+> **Status 24 October 2026.** The independent round-ten audit of `5c8c8280` scored 78.8/100, not the target above.
+> Since then about 100 commits reached `main` while its CI was red, and the round-eleven review found the gates
+> described below had not been run on them. Read this ledger as the record of the October fixes, not as current
+> verification evidence.
+
 ## Correctness fixes
 
 | Finding | Result | Regression coverage |
@@ -26,7 +31,9 @@ dependencies are narrowed; parser plugins and the relocated NativeStore LZ4 impl
 roles. Dependency analysis must pass `scripts/check-quality-gates.py dependencies`; each remaining exception
 must have a specific reason in `scripts/dependency-advice-exceptions.json`.
 
-CI enforces module test populations, line and branch coverage, and lexical complexity growth. Native and live
+CI enforces module test populations, line and branch coverage, and lexical complexity growth. Since 24 October
+the complexity ratchet and the other Python gates also run inside `gradle check` (task `verifyQualityGates`), and CI
+runs `check --continue`, so a failing gate no longer skips the test runs. Native and live
 coverage policies are separate from offline thresholds. `scripts/code-complexity-baseline.json` freezes existing
 large declarations; its exceptions remain design debt and must not be increased without review.
 
@@ -37,9 +44,10 @@ from command orchestration. Public entry points remain in place.
 ## Conformance and candidate evidence
 
 The preceding pinned RDF run reported 2,117 harness tests: 1,913 passed, 64 unapproved cases were excluded, and
-140 backend deviations were allowlisted. These categories must remain separate. The SHACL harness executes
-166 cases, including explicit rejection tests for known unsupported features; harness success does not mean
-every SHACL 1.2 feature is implemented.
+140 backend deviations were allowlisted. These categories must remain separate. At that point the SHACL harness executed
+166 cases, including explicit rejection tests for known unsupported features. Since then the SHACL-SPARQL
+features were implemented and `W3cKnownDeviations` lists no unsupported feature; harness success still does not
+mean every SHACL 1.2 feature is implemented (see the unsupported features in `docs/kastor/features/shacl-validation.md`).
 
 The baseline for performance comparisons is pinned in `benchmarks/shacl/jmh/baselines/reference.json`.
 Release readiness runs the same harness on baseline and candidate with a 15% latency/allocation budget.

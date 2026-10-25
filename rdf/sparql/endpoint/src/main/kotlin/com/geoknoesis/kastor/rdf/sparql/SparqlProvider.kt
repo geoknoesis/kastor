@@ -14,7 +14,11 @@ class SparqlProvider : RdfProvider {
 
     override val name: String = "SPARQL Repository"
 
-    override val version: String = "1.0.0"
+    /**
+     * The Kastor version of this module: the `Implementation-Version` of its jar manifest, or `"development"` when
+     * the classes are not loaded from the built jar (a build directory, a shaded jar without the manifest).
+     */
+    override val version: String = SparqlProvider::class.java.`package`?.implementationVersion ?: DEVELOPMENT_VERSION
 
     override fun variants(): List<RdfVariant> {
         return listOf(RdfVariant("sparql", "Remote SPARQL endpoint"))
@@ -56,7 +60,11 @@ class SparqlProvider : RdfProvider {
                 "CONSTRUCT and DESCRIBE are not supported (no RDF parser in this adapter)",
                 "No transactions",
                 "RDF 1.2 triple terms and directional literals are not decoded from results",
+                "Sandboxed (untrusted) SELECT queries are refused: the endpoint, not Kastor, evaluates them",
             ),
         )
     }
 }
+
+/** [SparqlProvider.version] when no jar manifest names the version. */
+internal const val DEVELOPMENT_VERSION = "development"

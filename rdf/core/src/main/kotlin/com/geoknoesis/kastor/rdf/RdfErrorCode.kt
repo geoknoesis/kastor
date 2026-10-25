@@ -19,6 +19,7 @@ package com.geoknoesis.kastor.rdf
  * - `GRAPH_*` - Graph operation errors
  * - `VALIDATION_*` - Validation errors
  * - `CONFIGURATION_*` - Configuration errors
+ * - `EXTENSION_*` - Errors of extension modules ([RdfExtensionException])
  * 
  */
 enum class RdfErrorCode(
@@ -81,6 +82,9 @@ enum class RdfErrorCode(
     INFERENCE_REASONER_NOT_FOUND("INFERENCE_REASONER_NOT_FOUND", "INFERENCE", "Reasoner not found"),
     INFERENCE_UNSUPPORTED("INFERENCE_UNSUPPORTED", "INFERENCE", "Inference not supported"),
     
+    // Extension modules (EXTENSION_*)
+    EXTENSION_ERROR("EXTENSION_ERROR", "EXTENSION", "An extension module failed (see the exception type and message)"),
+
     // Generic/Unknown
     UNKNOWN_ERROR("UNKNOWN_ERROR", "GENERIC", "Unknown error occurred");
     

@@ -25,6 +25,9 @@ internal object EmbeddingBatching {
      * [batchSize] encodings are alive at once whatever the number of texts. Batches group texts of similar character
      * length (a proxy for token length that needs no tokenisation), so each batch pads only to its own longest
      * member. Vectors are returned in the order of [texts].
+     *
+     * The calling thread's interrupt status is checked before each batch, so a cancelled run stops at the next batch
+     * boundary with [InterruptedException] (the status is cleared) instead of embedding the whole vocabulary.
      */
     fun <E> embedInBatches(
         texts: List<String>,
@@ -35,6 +38,7 @@ internal object EmbeddingBatching {
         if (texts.isEmpty()) return emptyList()
         val results = arrayOfNulls<FloatArray>(texts.size)
         for (batch in plan(texts.map { it.length }, batchSize)) {
+            if (Thread.interrupted()) throw InterruptedException("Embedding interrupted")
             val vectors = embedBatch(batch.map { encode(texts[it]) })
             check(vectors.size == batch.size) { "Expected ${batch.size} vectors for a batch, got ${vectors.size}" }
             batch.forEachIndexed { position, index -> results[index] = vectors[position] }

@@ -68,7 +68,7 @@ class UrlLoadingAsyncCancelTest {
             val canceller = Executors.newSingleThreadExecutor()
             try {
                 val runtime = UrlLoadRuntime(helpers = pool, open = { connection })
-                val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", loader, UrlLoadOptions(), runtime)
+                val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", loader, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
                 assertTrue(connecting.await(60, TimeUnit.SECONDS))
                 val cancel = canceller.submit<Boolean> { future.cancel(true) }
                 assertTrue(cancel.get(30, TimeUnit.SECONDS), "cancel() must not wait for the connection to be released")
@@ -79,6 +79,35 @@ class UrlLoadingAsyncCancelTest {
                 release.countDown()
                 loader.shutdownNow()
                 canceller.shutdownNow()
+            }
+        }
+    }
+
+    @Test
+    fun `a burst of cancels while every helper is busy starts no more threads than the overflow releaser has`() {
+        val hold = CountDownLatch(1)
+        val released = CountDownLatch(20)
+        val releasers = java.util.concurrent.ConcurrentHashMap.newKeySet<Thread>()
+        UrlLoadHelperPool(1).use { pool ->
+            val overflow = UrlLoadCancellation.overflowExecutor(2)
+            try {
+                // The only helper is busy, so every release goes to the overflow releaser.
+                assertTrue(pool.tryExecute { hold.await(60, TimeUnit.SECONDS) } != null)
+                repeat(20) {
+                    val connection = FakeHttp(onDisconnect = {
+                        releasers.add(Thread.currentThread())
+                        hold.await(60, TimeUnit.SECONDS)
+                        released.countDown()
+                    })
+                    UrlLoadCancellation(pool, overflow).apply { connecting(connection) }.cancel()
+                }
+                assertEquals(20L, released.count, "cancel() hands the release on and returns at once")
+                hold.countDown()
+                assertTrue(released.await(60, TimeUnit.SECONDS), "every queued release runs")
+                assertTrue(releasers.size <= 2, "releases ran on ${releasers.size} threads")
+            } finally {
+                hold.countDown()
+                overflow.shutdownNow()
             }
         }
     }
@@ -98,7 +127,7 @@ class UrlLoadingAsyncCancelTest {
                 Thread({ start.await(60, TimeUnit.SECONDS); try { task.run() } finally { done.countDown() } }, "test-loader").start()
             }
             val runtime = UrlLoadRuntime(helpers = pool, open = { connection }, nanoTime = clock)
-            val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", executor, UrlLoadOptions(), runtime)
+            val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", executor, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
             futureRef.set(future)
             start.countDown()
             assertTrue(done.await(60, TimeUnit.SECONDS))

@@ -6,8 +6,24 @@ plugins {
 application {
   // The name used by the help text and the documentation: the distribution has bin/kastor-rdf and bin/kastor-rdf.bat.
   applicationName = "kastor-rdf"
-  mainClass.set("com.geoknoesis.kastor.rdf.cli.KastorRdfCli")
+  // A launcher compiled for Java 8: it refuses an older Java with a message (exit 3) before loading the CLI.
+  mainClass.set("com.geoknoesis.kastor.rdf.cli.KastorRdfLauncher")
 }
+
+// The start scripts' main class (src/launcher/java), compiled for Java 8 in a source set of its own, so that an old
+// runtime can load it and be told which Java is needed; it reaches the CLI by reflection. It goes into the main jar.
+val launcher = sourceSets.create("launcher")
+tasks.named<JavaCompile>(launcher.compileJavaTaskName) {
+  options.release.set(8)
+  // javac warns that release 8 is obsolete; that is the point here.
+  options.compilerArgs.add("-Xlint:-options")
+}
+// The source set has no Kotlin; its (empty) Kotlin task must not insist on the Java target matching its own.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>("compileLauncherKotlin") {
+  jvmTargetValidationMode.set(org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode.IGNORE)
+}
+tasks.named<Jar>("jar") { from(launcher.output) }
+tasks.named<Jar>("sourcesJar") { from(launcher.allSource) }
 
 // Resources of the application only (the configuration of its SLF4J binding). They are not in src/main/resources,
 // so the published rdf-cli jar has no simplelogger.properties that could shadow a consumer's own; the distribution
@@ -35,7 +51,7 @@ tasks.named<CreateStartScripts>("startScripts") {
 distributions.named("main") {
   contents { into("lib") { from(launcherJar) } }
 }
-tasks.named<JavaExec>("run") { classpath(applicationResources) }
+tasks.named<JavaExec>("run") { classpath(applicationResources, launcher.output) }
 
 // The application's main class and start scripts, exposed to the tests as resources so CliLaunchTest starts the same
 // class as the start script and checks the scripts themselves (a wrong mainClass or a script cmd.exe cannot run must
@@ -54,6 +70,9 @@ val generateCliLaunchInfo = tasks.register("generateCliLaunchInfo") {
   }
 }
 sourceSets.named("test") {
+  // The launcher classes (CliJavaVersionTest), as a source set output rather than a file dependency.
+  compileClasspath += launcher.output
+  runtimeClasspath += launcher.output
   resources.srcDir(generateCliLaunchInfo)
   resources.srcDir(tasks.named("startScripts"))
   resources.srcDir(applicationResources)
@@ -77,13 +96,14 @@ configurations.named("runtimeClasspath") { extendsFrom(applicationRuntimeOnly.ge
 configurations.named("testRuntimeClasspath") { extendsFrom(applicationRuntimeOnly.get()) }
 
 dependencies {
-  testImplementation(libs.jena.arq)
   testImplementation(libs.jena.base)
-  testImplementation(libs.slf4j.api)
 
   implementation(project(":rdf:core"))
   // Parsing and serialization. `diff` uses rdf-core's graph isomorphism, so the test kit is not an application dependency.
   implementation(project(":rdf:jena"))
+  // KastorRdfCli installs RIOT's default error handler (an SLF4J logger), so a parse error is printed only once.
+  implementation(libs.jena.arq)
+  implementation(libs.slf4j.api)
   // SLF4J binding for the application: Jena RIOT warnings go to stderr at WARN (see src/application/resources).
   add(applicationRuntimeOnly.name, libs.slf4j.simple)
 }
