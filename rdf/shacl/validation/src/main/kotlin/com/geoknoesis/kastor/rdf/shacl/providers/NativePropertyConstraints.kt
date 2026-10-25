@@ -202,7 +202,7 @@ private fun NativeShaclValidator.evaluateText(
         is PropertyConstraint.LanguageIn ->
             eachValue(values, sink) { v ->
                 val lang = (v as? LangString)?.lang?.takeIf { it.isNotEmpty() }
-                val ok = lang != null && c.langs.any { allowed -> languageTagMatchesLanguageRange(lang, allowed) }
+                val ok = lang != null && c.ranges.matches(lang)
                 if (!ok) tpl.add(focus, sink, ConstraintType.LANGUAGE_IN, "languageIn violated for $v", v)
             }
         is PropertyConstraint.UniqueLang ->
@@ -237,7 +237,7 @@ private fun NativeShaclValidator.evaluateValueSet(
             if (values.size > c.n) tpl.add(focus, sink, ConstraintType.MAX_COUNT, "Maximum cardinality ${c.n} allowed, found ${values.size}", params = mapOf("max" to c.n, "actual" to values.size))
         is PropertyConstraint.In ->
             eachValue(values, sink) { v ->
-                if (!c.allowed.any { shaclRdfTermEquals(it, v) }) tpl.add(focus, sink, ConstraintType.IN, "Value $v not in sh:in", v)
+                if (shaclRdfTermFingerprint(v) !in c.keys) tpl.add(focus, sink, ConstraintType.IN, "Value $v not in sh:in", v)
             }
         is PropertyConstraint.HasValue ->
             if (values.none { shaclRdfTermEquals(it, c.value) }) tpl.add(focus, sink, ConstraintType.HAS_VALUE, "sh:hasValue missing ${c.value}")
