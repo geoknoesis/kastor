@@ -13,10 +13,6 @@
       "lines": 942,
       "reason": "Cache lifecycle and admission orchestration; handle matching extracted and all function branch counts now within the default limit. Remaining file length is frozen for further design review."
     },
-    "rdf/cli/src/main/kotlin/com/geoknoesis/kastor/rdf/cli/KastorRdfCli.kt": {
-      "lines": 787,
-      "reason": "Round-ten upstream b5cfef13: bounded diagnostics for a known dataset difference. Frozen at integration; further growth requires review."
-    },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/DatasetImpl.kt": {
       "lines": 1082,
       "functions": {

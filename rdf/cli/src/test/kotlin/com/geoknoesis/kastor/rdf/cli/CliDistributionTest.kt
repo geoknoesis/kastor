@@ -79,7 +79,7 @@ class CliDistributionTest {
     fun `the installed start script is named kastor-rdf and prints help`() {
         val result = runScript("--help")
         assertEquals(0, result.code, result.err)
-        assertTrue(result.out.contains("kastor-rdf parse <file>"), result.out)
+        assertTrue(result.out.contains("kastor-rdf parse [--base <iri>] <file>"), result.out)
         assertEquals("", result.err.trim(), "the start script wrote to stderr")
     }
 
@@ -91,6 +91,30 @@ class CliDistributionTest {
         assertEquals(0, result.code, result.err)
         assertTrue(result.out.contains("OK - triples: 1"), result.out)
         assertFalse(result.err.contains("SLF4J"), "no SLF4J binding in the distribution: ${result.err}")
+    }
+
+    @Test
+    fun `a parse error is reported once, naming the input it is in`() {
+        val good = dir.resolve("a.nt")
+        val bad = dir.resolve("rel.ttl")
+        Files.writeString(good, "<http://example.org/s> <http://example.org/p> <http://example.org/o> .\n")
+        Files.writeString(bad, "<rel> <http://example.org/p> <http://example.org/o> .\n")
+        val result = runScript("diff", good.toString(), bad.toString())
+        assertEquals(1, result.code, result.err)
+        val lines = result.err.trim().lines()
+        assertEquals(1, lines.size, "the parse error is printed once, not also by Jena's logger: ${result.err}")
+        assertTrue(lines[0].startsWith("Parse error in ") && lines[0].contains("rel.ttl") && lines[0].contains("Relative IRI"), result.err)
+    }
+
+    @Test
+    fun `relative IRIs are resolved against --base`() {
+        val relative = dir.resolve("rel.ttl")
+        val absolute = dir.resolve("abs.nt")
+        Files.writeString(relative, "<s> <http://example.org/p> <o> .\n")
+        Files.writeString(absolute, "<http://example.org/data/s> <http://example.org/p> <http://example.org/data/o> .\n")
+        val result = runScript("diff", "--base", "http://example.org/data/", relative.toString(), absolute.toString())
+        assertEquals(0, result.code, result.err)
+        assertTrue(result.out.startsWith("ISOMORPHIC"), result.out)
     }
 
     /**

@@ -170,7 +170,7 @@ class KastorRdfCliTest {
         val result = run("help")
         assertEquals(EXIT_OK, result.code)
         assertTrue(result.out.contains("Exit status: 0 success; 1 usage or input error"), result.out)
-        assertTrue(result.out.contains("3 runtime error (I/O, RDF provider, internal, out of memory)"), result.out)
+        assertTrue(result.out.contains("3 runtime error (I/O, RDF provider, internal, out of memory,"), result.out)
         assertTrue(result.out.contains("onto-qa uses a different convention: 0 success; 1 findings"), result.out)
     }
 

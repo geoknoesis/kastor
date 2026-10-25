@@ -21,6 +21,17 @@ and is kept as is; it was never published to Maven Central.
 - Security: `SparqlRepository.select()` now refuses a `SandboxedSelectQuery` with `UnsupportedOperationException`
   before sending anything, like both `withSelectRows` overloads already did. Before, `select()` POSTed the untrusted
   query unchanged, so its `SERVICE` clauses were left to the remote server's federation.
+- `kastor-rdf diff` compares datasets whose graphs are named by blank nodes (TriG `_:g { }`, N-Quads `_:g`) up to
+  blank node relabelling. Before, the provider's skolem names (`urn:kastor:skolem:<load>:<id>`, new on every parse)
+  made a file NOT ISOMORPHIC to itself, and the output showed those internal names. A blank node that names a graph
+  and occurs in triples must correspond as one node; a different number of such graphs is reported as such.
+- `kastor-rdf`: a parse error names its input (`Parse error in <file>: ...`) and is printed once; Jena RIOT no
+  longer logs the same error a second time.
+- `kastor-rdf parse`, `to-turtle` and `diff` take `--base <iri>`, an absolute IRI that relative IRIs are resolved
+  against. Without it relative IRIs stay a parse error (now documented); the file location is never used as base.
+- The `kastor-rdf` start scripts run a launcher compiled for Java 8 (`KastorRdfLauncher`), which refuses a Java
+  older than 21 with a one-line message and status 3, instead of an `UnsupportedClassVersionError` with status 1.
+  The help text and the CLI guide state the Java 21 requirement.
 
 ### Added
 
