@@ -16,7 +16,21 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
  * forked, so duplicate triples are dropped here and every value list is duplicate-free.
  */
-internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
+internal class ShapeGraphIndex(triples: List<RdfTriple>, budget: ValidationBudget = ValidationBudget.NONE) {
+    /**
+     * The budget of the compilation that built this index. A compiled graph keeps its index across runs
+     * ([NativeCompileCache]), so [ShapesCompiler.compile] [detaches][detachBudget] it once compilation ends: a later
+     * run must never be timed by the clock of the run that compiled the graph.
+     */
+    @Volatile
+    var budget: ValidationBudget = budget
+        private set
+
+    /** Ends the compile-time use of [budget] (see there). */
+    fun detachBudget() {
+        budget = ValidationBudget.NONE
+    }
+
     /** All (distinct) shapes-graph triples. */
     val triples: List<RdfTriple>
     private val bySubject = HashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
