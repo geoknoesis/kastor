@@ -303,4 +303,26 @@ class SparqlEndpointResultValidationTest {
             assertEquals(listOf(RdfTriple(Iri("urn:s"), Iri("urn:p"), Iri("urn:o")), RdfTriple(Iri("urn:s"), Iri("urn:p"), Literal("v", XSD.string))), found)
         }
     }
+    @Test
+    fun `an invalid triple count is quoted as printable text`() {
+        val body = result("\"count\"", """{"count":{"type":"literal","value":"\u001b[31m${"9".repeat(2_000)}"}}""")
+        SparqlRepository(SparqlEndpointConfig(url), answering(200, body)).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.defaultGraph.size() }
+            assertFalse(e.message!!.contains('\u001b'), e.message)
+            assertTrue(e.message!!.length < 1_000, "message of ${e.message!!.length} characters")
+        }
+    }
+    @Test
+    fun `a graph name that is not an IRI fails listGraphs instead of being left out`() {
+        for (g in listOf("""{"type":"bnode","value":"b0"}""", """{"type":"literal","value":"g"}""")) {
+            val body = result("\"g\"", """{"g":${uri("urn:g1")}}""", """{"g":$g}""")
+            SparqlRepository(SparqlEndpointConfig(url), answering(200, body)).use { repo ->
+                val e = assertThrows(RdfQueryException::class.java) { repo.listGraphs() }
+                assertTrue(e.message!!.contains("not an IRI"), e.message)
+            }
+        }
+        SparqlRepository(SparqlEndpointConfig(url), answering(200, result("\"g\"", """{"g":${uri("urn:g1")}}"""))).use { repo ->
+            assertEquals(listOf(Iri("urn:g1")), repo.listGraphs())
+        }
+    }
 }

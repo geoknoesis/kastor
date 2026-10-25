@@ -53,7 +53,8 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   that label JSON results differently need [SparqlEndpointConfig.strictContentType] `false`.
  * - No single result row (or other JSON value) larger than
  *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory; rows are decoded one
- *   at a time, straight from the stream.
+ *   at a time, straight from the stream. The heap that the rows of a buffered [select] retain is
+ *   capped by [SparqlEndpointConfig.maxBufferedResultBytes], not only the bytes of the response.
  * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
  *   timeout share one HTTP client, which is shut down when the last of them is closed, and all
  *   repositories share the daemon thread that enforces read deadlines, which ends when the last of
@@ -80,6 +81,7 @@ class SparqlRepository internal constructor(
     val config: SparqlEndpointConfig,
     transport: HttpTransport?,
     private val watchdog: ReadWatchdog = ReadWatchdog.shared,
+    nanoTime: () -> Long = System::nanoTime,
 ) : RdfRepository {
 
     constructor(config: SparqlEndpointConfig) : this(config, null)
@@ -105,6 +107,7 @@ class SparqlRepository internal constructor(
         config,
         transport ?: HttpTransport { client.sendAsync(it, HttpResponse.BodyHandlers.ofInputStream()) },
         watchdog,
+        nanoTime,
     )
 
     init {
@@ -133,12 +136,23 @@ class SparqlRepository internal constructor(
         return ask(query)
     }
 
+    /**
+     * The names of the graphs that hold at least one triple (see [hasGraph]). A row whose `?g` is not an IRI (unbound,
+     * a literal, or a blank node, which some stores use for graphs loaded without a name) fails with
+     * [RdfQueryException]: leaving it out would hide that graph's triples from whoever reads the dataset graph by graph.
+     */
     override fun listGraphs(): List<Iri> {
         val query = SparqlSelectQuery("SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }")
         val result = select(query)
-        return result.mapNotNull { binding ->
-            binding.get("g")?.let { term ->
-                if (term is Iri) term else null
+        return result.map { binding ->
+            when (val term = binding.get("g")) {
+                is Iri -> term
+                else -> throw RdfQueryException(
+                    "SPARQL endpoint returned a graph name that is not an IRI: ?g is " +
+                        (if (term == null) "unbound" else "a ${term.javaClass.simpleName} (${errorDetail(term.toString())})") +
+                        "; such a graph cannot be addressed by name, so it is not left out silently",
+                    query = query.sparql,
+                )
             }
         }
     }
@@ -162,10 +176,16 @@ class SparqlRepository internal constructor(
         return getGraph(name) as MutableRdfGraph
     }
 
-    /** Buffers every row; capped by [SparqlEndpointConfig.maxResponseBytes]. A [SandboxedSelectQuery] is refused (see [withSelectRows]). */
+    /**
+     * Buffers every row; capped by [SparqlEndpointConfig.maxResponseBytes] (the response) and
+     * [SparqlEndpointConfig.maxBufferedResultBytes] (the estimated heap of the decoded rows). A [SandboxedSelectQuery]
+     * is refused (see [withSelectRows]).
+     */
     override fun select(query: SparqlSelect): SparqlQueryResult {
         refuseSandboxed(query)
-        return selectRows(query.sparql, config.maxResponseBytes, EndpointHttp.Timeouts.buffered(config.requestTimeout)) { ListSparqlQueryResult(it.toList()) }
+        return selectRows(
+            query.sparql, config.maxResponseBytes, EndpointHttp.Timeouts.buffered(config.requestTimeout), config.maxBufferedResultBytes,
+        ) { ListSparqlQueryResult(it.toList()) }
     }
 
     /**
@@ -175,7 +195,7 @@ class SparqlRepository internal constructor(
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T {
         refuseSandboxed(query)
-        return selectRows(query.sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
+        return selectRows(query.sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(config.requestTimeout, config.streamingRequestTimeout), null, consume)
     }
 
     /**
@@ -209,7 +229,7 @@ class SparqlRepository internal constructor(
         val overall = config.streamingRequestTimeout?.let { minOf(it, timeout) } ?: timeout
         // The response headers are awaited until the earliest of requestTimeout and the whole-call deadline.
         val headers = config.requestTimeout?.let { minOf(it, timeout) } ?: timeout
-        return selectRows(sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(headers, overall), consume)
+        return selectRows(sparql, config.maxStreamedResponseBytes, EndpointHttp.Timeouts(headers, overall), null, consume)
     }
 
     /**
@@ -223,15 +243,25 @@ class SparqlRepository internal constructor(
         }
     }
 
-    private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: EndpointHttp.Timeouts, consume: (Sequence<BindingSet>) -> T): T {
+    /** [retainedLimit] caps the estimated heap of the decoded rows of a buffered call; `null` for streamed rows. */
+    private fun <T> selectRows(
+        sparql: String,
+        byteLimit: Long?,
+        timeouts: EndpointHttp.Timeouts,
+        retainedLimit: Long?,
+        consume: (Sequence<BindingSet>) -> T,
+    ): T {
         ensureOpen()
         val startTime = System.currentTimeMillis()
         var rows = 0
         var decoder: JsonBindingRows? = null
+        // The rows can only be read while the response is open: inside consume.
+        val open = AtomicBoolean(true)
         try {
             val result = http.exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
-                val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms).also { decoder = it }.rows()
-                    .guarded(sparql, checkDeadline)
+                val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms, maxRetainedBytes = retainedLimit)
+                    .also { decoder = it }.rows()
+                    .guarded(sparql, checkDeadline, open)
                     .onEach { rows++ }
                 consume(sequence)
             }
@@ -241,6 +271,7 @@ class SparqlRepository internal constructor(
             RdfDebug.logQueryError("SELECT", sparql, "Failed to execute: ${e.message}")
             throw e
         } finally {
+            open.set(false)
             // Once per query, however it ended: the rows that were left out are not in what the caller saw.
             decoder?.let { read ->
                 if (read.skippedRows > 0) {
@@ -393,16 +424,30 @@ class SparqlRepository internal constructor(
 
     /**
      * Wrap failures while producing rows (I/O, size cap, malformed JSON) as [RdfQueryException],
-     * without touching exceptions thrown by the code consuming the rows.
+     * without touching exceptions thrown by the code consuming the rows. Once [open] is false (the
+     * consumer returned and the response is closed) the rows fail with [IllegalStateException]
+     * instead of a confusing "stream closed" read failure.
      */
-    private fun <R> Sequence<R>.guarded(sparql: String, checkDeadline: () -> Unit): Sequence<R> {
+    private fun <R> Sequence<R>.guarded(sparql: String, checkDeadline: () -> Unit, open: AtomicBoolean): Sequence<R> {
         val source = this
+        fun checkOpen() = check(open.get()) {
+            "SPARQL result rows can only be read inside the withSelectRows consumer: the response is closed once it returns " +
+                "(collect them, for example with toList(), inside the consumer)"
+        }
         return Sequence {
+            checkOpen()
             val iterator = source.iterator()
             object : Iterator<R> {
                 // Rows already buffered are served without a read, so check the deadline per row too.
-                override fun hasNext(): Boolean = readResponse(sparql) { checkDeadline(); iterator.hasNext() }
-                override fun next(): R = readResponse(sparql) { iterator.next() }
+                override fun hasNext(): Boolean {
+                    checkOpen()
+                    return readResponse(sparql) { checkDeadline(); iterator.hasNext() }
+                }
+
+                override fun next(): R {
+                    checkOpen()
+                    return readResponse(sparql) { iterator.next() }
+                }
             }
         }
     }

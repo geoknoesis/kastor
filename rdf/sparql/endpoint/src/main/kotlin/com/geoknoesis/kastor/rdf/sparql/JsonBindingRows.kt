@@ -5,13 +5,9 @@ import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MapBindingSet
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.io.InputStream
-import java.io.InputStreamReader
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
 
 /**
  * Streaming decoder for the SPARQL 1.1 Query Results JSON Format (`application/sparql-results+json`):
@@ -21,9 +17,13 @@ import java.nio.charset.CodingErrorAction
  * Only what a result needs is stored: the variable names of `head.vars` (when `head` precedes the
  * rows), the variable names of a row and, per binding, its `type`, `value`, `xml:lang` and
  * `datatype`. Everything else (the other members of `head`, unknown members, nested values) is
- * checked and skipped without being stored.
+ * checked and skipped without being stored. What repeats across rows is held once ([RowAssembler]):
+ * the variable names, the set of names of rows that bind the same variables, datatype IRIs and
+ * language tags; a row that binds nothing is one shared instance. [retainedBytes] estimates the heap
+ * the delivered rows retain, and [maxRetainedBytes], when set (buffered results), fails the result
+ * once that estimate exceeds it.
  *
- * JSON: the whole document, skipped content included, must match the JSON grammar (RFC 8259), with
+ * JSON (read by [JsonLexer]): the whole document, skipped content included, must match the JSON grammar (RFC 8259), with
  * nothing after it.
  * - The input must be UTF-8; malformed byte sequences are an error, not replaced. One leading byte
  *   order mark is ignored.
@@ -65,10 +65,21 @@ import java.nio.charset.CodingErrorAction
  */
 internal class JsonBindingRows(
     input: InputStream,
-    private val maxValueChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS,
+    maxValueChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS,
     private val malformedTerms: MalformedTermPolicy = MalformedTermPolicy.FAIL,
-    private val created: (() -> Unit)? = null,
-) {
+    created: (() -> Unit)? = null,
+    private val maxRetainedBytes: Long? = null,
+) : JsonLexer(input, maxValueChars, created) {
+    /** Shares what repeats across rows and estimates what each row retains. */
+    private val assembler = RowAssembler()
+
+    /** Estimated heap held by the caches that rows share (already part of [retainedBytes] once charged). */
+    internal val cacheBytes: Long get() = assembler.cacheBytes
+
+    /** Estimated heap retained by the rows delivered so far (see [maxRetainedBytes]). */
+    var retainedBytes = 0L
+        private set
+
     /** Rows left out under [MalformedTermPolicy.SKIP_ROW] so far. */
     var skippedRows = 0L
         private set
@@ -86,347 +97,11 @@ internal class JsonBindingRows(
     /** Why the row being decoded is skipped, once a malformed term was met in it. */
     private var defect: String? = null
 
-    // Decoding in 8K chunks into a private buffer: no per-character lock (PushbackReader and the
-    // buffered reader it wrapped synchronize every read call).
-    private val source = InputStreamReader(
-        input,
-        Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT),
-    )
-    private val buffer = CharArray(8192)
-    private var position = 0
-    private var limit = 0
-    private var started = false
-
-    /** Characters the value being decoded may still take; unlimited between values. */
-    private var remaining = Long.MAX_VALUE
-
-    /** Scratch space for one string or scalar. */
-    private var text = StringBuilder()
-
-
-    private fun fill(): Boolean {
-        val count = try {
-            source.read(buffer, 0, buffer.size)
-        } catch (e: CharacterCodingException) {
-            throw IllegalStateException("Malformed SPARQL JSON: the response is not valid UTF-8", e)
-        }
-        if (count <= 0) return false
-        position = 0
-        limit = count
-        if (!started) {
-            started = true
-            if (buffer[0].code == BYTE_ORDER_MARK) position = 1
-        }
-        return true
-    }
-
-    /** The next character without consuming it, or -1 at the end of the input. */
-    private fun peek(): Int {
-        while (position == limit) if (!fill()) return -1
-        return buffer[position].code
-    }
-
-    /** Consumes [count] buffered characters, charging them to the value being decoded. */
-    private fun charge(count: Int) {
-        remaining -= count
-        check(remaining >= 0) { "SPARQL JSON result row or value exceeds $maxValueChars characters (maxResultRowChars)" }
-    }
-
-    /** Consumes the character [peek] returned. */
-    private fun advance() {
-        charge(1)
-        position++
-    }
-
-    /** Skips white space; returns the next character (not consumed), or -1. */
-    private fun skipWhitespace(): Int {
-        while (true) {
-            val c = peek()
-            if (!isWhitespace(c)) return c
-            advance()
-        }
-    }
-
-    private fun malformed(next: Int, expected: String): Nothing =
-        error(if (next < 0) "Truncated SPARQL JSON" else "Malformed SPARQL JSON: expected $expected")
-
-    private fun expect(c: Char) {
-        val next = skipWhitespace()
-        if (next != c.code) malformed(next, "$c")
-        advance()
-    }
-
-    /** Runs [decode] for one value, whose characters count against [maxValueChars]. */
-    private inline fun <T> bounded(decode: () -> T): T {
-        remaining = maxValueChars.toLong()
-        try {
-            return decode()
-        } finally {
-            remaining = Long.MAX_VALUE
-        }
-    }
-
-    private fun checkDepth(depth: Int) =
-        check(depth < MAX_DEPTH) { "SPARQL JSON result is nested more than $MAX_DEPTH levels deep" }
-
-    // ------------------------------------------------------------------ skipping
-
-    /** Checks and skips the value that starts at the next non-white-space character; stores nothing. */
-    private fun skip(depth: Int) {
-        when (val c = skipWhitespace()) {
-            '{'.code -> {
-                checkDepth(depth)
-                advance()
-                var next = skipWhitespace()
-                if (next == '}'.code) {
-                    advance()
-                    return
-                }
-                while (true) {
-                    if (next != '"'.code) malformed(next, "a field name")
-                    string(null)
-                    expect(':')
-                    skip(depth + 1)
-                    next = skipWhitespace()
-                    if (next == '}'.code) {
-                        advance()
-                        return
-                    }
-                    if (next != ','.code) malformed(next, "',' or '}'")
-                    advance()
-                    next = skipWhitespace()
-                }
-            }
-            '['.code -> {
-                checkDepth(depth)
-                advance()
-                var next = skipWhitespace()
-                if (next == ']'.code) {
-                    advance()
-                    return
-                }
-                while (true) {
-                    skip(depth + 1)
-                    next = skipWhitespace()
-                    if (next == ']'.code) {
-                        advance()
-                        return
-                    }
-                    if (next != ','.code) malformed(next, "',' or ']'")
-                    advance()
-                }
-            }
-            '"'.code -> string(null)
-            else -> if (c < 0) malformed(c, "a value") else scalar(null)
-        }
-    }
-
-    /** Skips a top-level value, bounded like a row. */
-    private fun skipValue() {
-        skipWhitespace()
-        bounded { skip(0) }
-    }
-
-    // ------------------------------------------------------------------ strings and scalars
-
-    /**
-     * Reads the string whose opening quote is the next character, into [out] when given (which is
-     * cleared first); with `null` the string is only checked.
-     */
-    private fun string(out: StringBuilder?) {
-        advance()
-        out?.setLength(0)
-        // Whether the character before was the escape of a high surrogate, which only the escape of a low one may follow.
-        var high = false
-        while (true) {
-            if (position == limit && !fill()) malformed(-1, "'\"'")
-            // Take the run of plain characters in the buffer in one go.
-            var end = position
-            while (end < limit) {
-                val plain = buffer[end]
-                if (plain == '"' || plain == '\\' || plain < ' ') break
-                end++
-            }
-            if (end > position) {
-                if (high) {
-                    unpairedSurrogate()
-                    high = false
-                }
-                charge(end - position)
-                out?.append(buffer, position, end - position)
-                position = end
-                if (end == limit) continue
-            }
-            val c = buffer[position]
-            if (c < ' ') error("Malformed SPARQL JSON: a control character (U+%04X) inside a string must be escaped".format(c.code))
-            advance()
-            if (c == '"') {
-                if (high) unpairedSurrogate()
-                return
-            }
-            val escape = peek()
-            if (escape < 0) malformed(escape, "an escape")
-            advance()
-            val decoded = when (escape.toChar()) {
-                '"', '\\', '/' -> escape.toChar()
-                'b' -> '\b'
-                'f' -> '\u000C'
-                'n' -> '\n'
-                'r' -> '\r'
-                't' -> '\t'
-                'u' -> {
-                    var code = 0
-                    repeat(4) {
-                        val digit = peek()
-                        val value = when (digit) {
-                            in '0'.code..'9'.code -> digit - '0'.code
-                            in 'a'.code..'f'.code -> digit - 'a'.code + 10
-                            in 'A'.code..'F'.code -> digit - 'A'.code + 10
-                            else -> malformed(digit, "four hex digits in a unicode escape")
-                        }
-                        advance()
-                        code = code * 16 + value
-                    }
-                    code.toChar()
-                }
-                else -> malformed(escape, "a JSON escape after '\\'")
-            }
-            val low = escape == 'u'.code && Character.isLowSurrogate(decoded)
-            if (high != low) unpairedSurrogate()
-            high = escape == 'u'.code && Character.isHighSurrogate(decoded)
-            out?.append(decoded)
-        }
-    }
-
-    /**
-     * An unpaired surrogate escape: a fault of the term it is in when rows with such terms are
-     * skipped, and an error anywhere else.
-     */
-    private fun unpairedSurrogate() {
-        if (!skipping) error("Malformed SPARQL JSON: a string holds an unpaired surrogate escape")
+    /** An unpaired surrogate escape: a fault of the term it is in when rows with such terms are skipped. */
+    override fun unpairedSurrogate() {
+        if (!skipping) super.unpairedSurrogate()
         if (defect == null) defect = "a string holds an unpaired surrogate escape"
     }
-
-    /** Decodes the string whose opening quote is the next character. */
-    private fun string(): String {
-        string(text)
-        return takeText()
-    }
-
-    /** Reads the field name whose opening quote is the next character into [text], without creating a string. */
-    private fun fieldName() = string(text)
-
-    private fun nameIs(name: String): Boolean = text.length == name.length && text.contentEquals(name)
-
-    /**
-     * Reads `true`, `false`, `null` or a number, into [out] when given (cleared first), and returns
-     * which of them it is ([TRUE], [FALSE], [NULL], [NUMBER]). The number grammar is that of JSON.
-     */
-    private fun scalar(out: StringBuilder?): Int {
-        out?.setLength(0)
-        val first = peek()
-        val kind = when (first) {
-            't'.code -> word("true", out, TRUE)
-            'f'.code -> word("false", out, FALSE)
-            'n'.code -> word("null", out, NULL)
-            else -> number(out)
-        }
-        val next = peek()
-        if (next >= 0 && !isWhitespace(next) && next != ','.code && next != ']'.code && next != '}'.code) malformed(next, "a value")
-        return kind
-    }
-
-    private fun word(word: String, out: StringBuilder?, kind: Int): Int {
-        for (expected in word) {
-            val c = peek()
-            if (c != expected.code) malformed(c, "a value")
-            advance()
-        }
-        out?.append(word)
-        return kind
-    }
-
-    private fun number(out: StringBuilder?): Int {
-        fun take(c: Int) {
-            out?.append(c.toChar())
-            advance()
-        }
-        fun digits(): Int {
-            var count = 0
-            while (true) {
-                val c = peek()
-                if (c < '0'.code || c > '9'.code) return count
-                take(c)
-                count++
-            }
-        }
-        var c = peek()
-        if (c == '-'.code) {
-            take(c)
-            c = peek()
-        }
-        when {
-            c == '0'.code -> take(c)
-            c >= '1'.code && c <= '9'.code -> digits()
-            else -> malformed(c, "a value")
-        }
-        c = peek()
-        if (c == '.'.code) {
-            take(c)
-            if (digits() == 0) malformed(peek(), "a digit")
-            c = peek()
-        }
-        if (c == 'e'.code || c == 'E'.code) {
-            take(c)
-            c = peek()
-            if (c == '+'.code || c == '-'.code) take(c)
-            if (digits() == 0) malformed(peek(), "a digit")
-        }
-        return NUMBER
-    }
-
-    private fun takeText(): String {
-        val result = text.toString()
-        created?.invoke()
-        // One unusually large value must not keep a large buffer alive for the rest of the stream.
-        if (text.capacity() > RETAINED_TEXT_CHARS) text = StringBuilder()
-        return result
-    }
-
-    // ------------------------------------------------------------------ document structure
-
-    /**
-     * Runs [member] for each member of the object that starts next, with its name in [text] and the
-     * reader in front of its value. The object is part of one bounded value.
-     */
-    private inline fun members(what: String, member: () -> Unit) {
-        val open = skipWhitespace()
-        if (open != '{'.code) malformed(open, what)
-        advance()
-        var c = skipWhitespace()
-        if (c == '}'.code) {
-            advance()
-            return
-        }
-        while (true) {
-            if (c != '"'.code) malformed(c, "a field name")
-            fieldName()
-            expect(':')
-            member()
-            c = skipWhitespace()
-            if (c == '}'.code) {
-                advance()
-                return
-            }
-            if (c != ','.code) malformed(c, "',' or '}'")
-            advance()
-            c = skipWhitespace()
-        }
-    }
-
-    private fun once(seen: Boolean, name: String) = check(!seen) { "Malformed SPARQL JSON: more than one '$name' member" }
-
-    private fun end() = check(skipWhitespace() == -1) { "Trailing content in SPARQL JSON" }
 
     /**
      * Reads `head`, which counts as one value: the variables of its `vars`, or `null` when it has
@@ -492,7 +167,7 @@ internal class JsonBindingRows(
                         headRead = true
                         val vars = head()
                         // A head that follows the rows cannot be held against them: they were delivered.
-                        if (!resultsRead) declared = vars
+                        if (!resultsRead) declared = vars?.also(assembler::declare)
                     }
                     isResults -> {
                         once(resultsRead, "results")
@@ -554,7 +229,10 @@ internal class JsonBindingRows(
         while (true) {
             if (c != '{'.code) malformed(c, "a result row (an object)")
             val row = bounded { row(declared) }
-            if (row != null) yield(row)
+            if (row != null) {
+                retain(assembler.lastRowBytes)
+                yield(row)
+            }
             c = skipWhitespace()
             if (c == ']'.code) {
                 advance()
@@ -563,6 +241,17 @@ internal class JsonBindingRows(
             if (c != ','.code) malformed(c, "',' or ']' in the bindings array")
             advance()
             c = skipWhitespace()
+        }
+    }
+
+    /** Charges a delivered row to [maxRetainedBytes]. */
+    private fun retain(bytes: Long) {
+        retainedBytes += bytes
+        val cap = maxRetainedBytes ?: return
+        check(retainedBytes <= cap) {
+            "SPARQL SELECT result is too large to buffer: its rows would retain more than $cap bytes of heap " +
+                "(maxBufferedResultBytes, an estimate of the decoded rows); stream it with withSelectRows, " +
+                "page it with LIMIT/OFFSET, or raise maxBufferedResultBytes"
         }
     }
 
@@ -647,8 +336,8 @@ internal class JsonBindingRows(
         skipping = malformedTerms == MalformedTermPolicy.SKIP_ROW
         defect = null
         try {
-            val terms = terms(declared)
-            val reason = defect ?: return MapBindingSet(terms)
+            val row = terms(declared)
+            val reason = defect ?: return row
             skippedRows++
             if (firstSkipped == null) firstSkipped = "row $rowNumber: $reason"
             return null
@@ -657,19 +346,19 @@ internal class JsonBindingRows(
         }
     }
 
-    private fun terms(declared: Set<String>?): Map<String, RdfTerm> {
+    private fun terms(declared: Set<String>?): BindingSet {
         advance()
-        val terms = LinkedHashMap<String, RdfTerm>()
+        assembler.begin()
         created?.invoke()
         var c = skipWhitespace()
         if (c == '}'.code) {
             advance()
-            return terms
+            return assembler.finish()
         }
         while (true) {
             if (c != '"'.code) malformed(c, "a field name")
             val variable = string()
-            check(variable !in terms) { "Malformed SPARQL JSON: more than one binding for variable '${excerpt(variable)}' in a row" }
+            check(!assembler.binds(variable)) { "Malformed SPARQL JSON: more than one binding for variable '${excerpt(variable)}' in a row" }
             check(declared == null || variable in declared) {
                 "Malformed SPARQL JSON: a row binds variable '${excerpt(variable)}', which 'vars' in 'head' does not declare"
             }
@@ -678,16 +367,16 @@ internal class JsonBindingRows(
             if (open != '{'.code) malformed(open, "a binding (an object)")
             val term = binding(variable)
             if (term != null) {
-                terms[variable] = term
+                assembler.add(variable, term)
                 created?.invoke()
             } else {
                 // The row is skipped; the name still stands for its binding, so that a repeat is noticed.
-                terms[variable] = PLACEHOLDER
+                assembler.add(variable, PLACEHOLDER)
             }
             c = skipWhitespace()
             if (c == '}'.code) {
                 advance()
-                return terms
+                return assembler.finish()
             }
             if (c != ','.code) malformed(c, "',' or '}'")
             advance()
@@ -782,8 +471,8 @@ internal class JsonBindingRows(
                 kind == "uri" -> Iri(text)
                 // Kept verbatim (e.g. Virtuoso `nodeID://b1`); see SparqlGraph for what can be done with it.
                 kind == "bnode" -> BlankNode(text)
-                tag != null -> LangString(text, tag)
-                datatypeIri != null -> Literal(text, Iri(datatypeIri))
+                tag != null -> LangString(text, assembler.share(tag))
+                datatypeIri != null -> Literal(text, assembler.datatype(datatypeIri))
                 else -> Literal(text, XSD.string)
             }
         } catch (e: IllegalArgumentException) {
@@ -806,24 +495,14 @@ internal class JsonBindingRows(
     }
 
     private companion object {
-        /** Far deeper than any SPARQL result (RDF 1.2 triple terms nest a few levels); bounds the decoder's recursion. */
-        const val MAX_DEPTH = 128
-
         /** A row is at depth 0, its bindings at 1, their members at 2. */
         const val BINDING_MEMBER_DEPTH = 2
-        const val RETAINED_TEXT_CHARS = 64 * 1024
-        const val BYTE_ORDER_MARK = 0xFEFF
         const val TRIPLE_TYPE = "triple"
         const val LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
 
         /** Stands for the binding of a variable in a row that is skipped. */
         val PLACEHOLDER: RdfTerm = BlankNode("skipped")
         const val NOT_AN_ASK_RESULT = "SPARQL ASK response is neither a SPARQL JSON result nor true/false"
-
-        const val NUMBER = 0
-        const val TRUE = 1
-        const val FALSE = 2
-        const val NULL = 3
 
         const val OTHER = 0
         const val TYPE = 1
@@ -837,9 +516,6 @@ internal class JsonBindingRows(
 
         const val EXCERPT_CHARS = 80
         const val VARIABLE_EXCERPT_CHARS = 40
-
-        /** JSON white space (RFC 8259): space, tab, line feed, carriage return. */
-        fun isWhitespace(c: Int): Boolean = c == ' '.code || c == '\t'.code || c == '\n'.code || c == '\r'.code
 
         /** At most [EXCERPT_CHARS] characters of [text], with anything that is not printable ASCII replaced. */
         fun excerpt(text: String, chars: Int = EXCERPT_CHARS): String {

@@ -40,7 +40,7 @@ class SparqlEndpointCredentialAndUpdateBodyTest {
     @Test
     fun `user information with an unencoded at sign is cut out up to the last one`() {
         assertEquals("http://***@host/", HttpTarget.redact("http://u:p@ss@host/"))
-        assertEquals("http://***@host/ds?x=a@b", HttpTarget.redact("http://u:p@ss@host/ds?x=a@b"))
+        assertEquals("http://***@host/ds?...", HttpTarget.redact("http://u:p@ss@host/ds?x=a@b"))
         // Without a path, an '@' in the query is over-redacted: safe, and never the password.
         assertFalse(HttpTarget.redact("http://u:p@ss@host?x=a@b").contains("ss@"))
         assertEquals("http://host/ds", HttpTarget.redact("http://host/ds"))
@@ -147,5 +147,21 @@ class SparqlEndpointCredentialAndUpdateBodyTest {
                 assertThrows(RdfQueryException::class.java) { repo.update(insert) }
             }
         }
+    }
+    @Test
+    fun `an API key in the endpoint query string is never printed`() {
+        val config = SparqlEndpointConfig(
+            "http://h.example/sparql?apikey=SECRET1",
+            updateEndpoint = "http://h.example/update?token=SECRET2",
+            headers = mapOf("X-Api-Key" to "SECRET3"),
+        )
+        val text = config.toString()
+        assertFalse(text.contains("SECRET"), text)
+        assertTrue(text.contains("endpoint=http://h.example/sparql?..."), text)
+        val warning = SparqlRepository.insecureAuthorizationWarning(config)!!
+        assertFalse(warning.contains("SECRET"), warning)
+        // A URL the configuration refuses is reported without its query too.
+        val e = assertThrows(IllegalArgumentException::class.java) { SparqlEndpointConfig("ftp://h.example/sparql?apikey=SECRET4") }
+        assertFalse(everything(e).contains("SECRET"), everything(e))
     }
 }

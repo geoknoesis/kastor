@@ -198,6 +198,60 @@ entries are regrouped under those kind headings.
   deadline test no longer asserts that the request reached the server; the interrupt test of URL loading runs in
   well under a second and now fails if a socket timeout, rather than the interrupt, ends the load.
 
+### Round twelve
+
+#### SPARQL endpoint, CLI and examples
+
+- **Fixed (`rdf-cli`):** `diff`, `parse` and `to-turtle` no longer drop the named graphs of a JSON-LD input. Only TriG
+  and N-Quads were read as datasets; JSON-LD went through the graph parser, which drops named-graph quads with a
+  logged warning, so `diff` printed `ISOMORPHIC` and exited 0 for two JSON-LD datasets that differed in a named
+  graph, `parse` under-counted, and `to-turtle` printed only the default graph instead of refusing the input. Every
+  input is now read as a dataset; a graph format simply has no named graphs.
+- **Security (`rdf-cli`):** error messages escape control and bidirectional formatting characters as `\uXXXX`. A
+  parse error quotes the offending input, so a file could write terminal escape sequences (or forge a line) on
+  stderr. Tests also pin that an RDF/XML external entity reads no local file and that a JSON-LD context named by URL
+  is refused without a connection.
+- **Fixed (`rdf-sparql`):** `maxResponseBytes` bounded the bytes of a buffered `select` but not the heap of its
+  decoded rows: a 31 MB response of empty rows retained about 900 MB. Decoding now shares what repeats across rows
+  (variable names, the name set of rows that bind the same variables, datatype IRIs, language tags; rows that bind
+  nothing are one object), which brings that response to under 20 MB and rows of short terms to at most about
+  3.5 times their response size, and the new `SparqlEndpointConfig.maxBufferedResultBytes` (default 256 MiB,
+  provider option `maxBufferedResultBytes`) caps an estimate of the retained heap of `select`, graph reads and
+  `listGraphs`: a result above it fails with `RdfQueryException` naming the setting. Streamed rows are not held to it.
+  The sharing caches are bounded by entries, by string and shape length and by one 4 MiB budget, and what they hold
+  is charged to the estimate, so distinct huge datatype IRIs or variable names cannot grow them outside the cap.
+- **Security (`rdf-sparql`):** a cross-origin redirect followed with `followCrossOriginRedirects = true` must now pass
+  the new `SparqlEndpointConfig.redirectAddressPolicy`, default `UrlAddressPolicy.PUBLIC_ADDRESSES` (the core URL
+  loading default): a redirect to loopback, a private or link-local address (`169.254.169.254`) or an unresolvable
+  host fails before anything is sent there (behaviour change; `UrlAddressPolicy.ALLOW_ALL` restores the old
+  behaviour, provider option `redirectAddressPolicy`). The check runs on a daemon thread within the header wait.
+- **Security (`rdf-sparql`):** `SparqlEndpointConfig.toString()`, the plain-http credential warning and configuration
+  errors print endpoint URLs without their query string (`https://host/sparql?...`): an API key in the query
+  (`?apikey=...`) was printed verbatim.
+- **Fixed (`rdf-sparql`):** request deadlines are compared by difference, as `System.nanoTime()` requires, and a
+  deadline whose clock sum wraps around is kept: it used to be dropped as "no deadline", which would have disabled the
+  read timeout and the request deadline on a JVM whose clock reads close to `Long.MAX_VALUE`.
+- **Docs (`rdf-sparql`):** `SparqlGraph` and the provider guide say that blank-node labels in results are scoped to one
+  result set: equal labels from two calls are in general different nodes.
+- **Examples (`rdf-examples`):** a new `SparqlEndpointExample` shows `SparqlRepository` (buffered and streamed
+  `select`, `ask`, the heap cap) against a local canned endpoint. Examples report a caught failure through one helper
+  with a fixed marker, and the smoke test looks for it on standard output and standard error (three failure messages
+  used to slip through). `JenaBridgeExample` uses `serialize(RdfFormat)` instead of the deprecated string overload.
+- **Conformance (`rdf-conformance`):** serializer rows driven by the W3C manifests: every eval test's parsed output is
+  written back by the provider in the same format and re-read by the reference parser. Jena passes all 334; RDF4J
+  loses 27 (numeric literals rewritten to canonical form, RDF 1.2 triple terms written as `urn:rdf4j:triple:` IRIs),
+  listed with reasons in `serializer-roundtrip-allowlist.tsv` as expected failures. PR CI now runs the full corpus
+  for the Jena provider (syntax and serializer rows), not only the bundled fixture.
+- **Fixed (`rdf-sparql`):** rows of `withSelectRows` that escape the consumer (a returned `Sequence` or iterator) fail
+  with `IllegalStateException` saying they must be read inside the consumer, instead of a "stream closed" read error.
+- **Fixed (`rdf-sparql`):** `listGraphs` fails with `RdfQueryException` when the endpoint names a graph by something
+  other than an IRI (a blank node, a literal, unbound) instead of leaving that graph out silently (behaviour change).
+  An invalid triple count in `SparqlGraph.size` is quoted as escaped, truncated text.
+- **API (`rdf-sparql`):** `SparqlEndpointConfig.fromOptions` is `@JvmStatic` (callable from Java without `Companion`).
+- **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
+  and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
+  accordingly (binary change for compiled callers of `copy`; nothing has been published).
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)

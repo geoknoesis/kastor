@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.RdfQueryException
+import com.geoknoesis.kastor.rdf.UrlAddressPolicy
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
@@ -31,6 +32,8 @@ internal class EndpointHttp(
     private val config: SparqlEndpointConfig,
     private val transport: HttpTransport,
     private val watchdog: ReadWatchdog,
+    /** The clock of the header budget ([HeaderBudget]); tests advance their own instead of sleeping. */
+    private val nanoTime: () -> Long = System::nanoTime,
 ) {
     private val queryTarget = HttpTarget.parse(config.endpoint)
     private val updateTarget = config.updateEndpoint?.let(HttpTarget::parse) ?: queryTarget
@@ -58,11 +61,12 @@ internal class EndpointHttp(
     }
 
     /**
-     * The one budget for the wait for response headers, measured from [startNanos] across all redirect hops: the
+     * The one budget for the wait for response headers, measured from its creation across all redirect hops: the
      * earlier of the header deadline and the overall deadline, or the read timeout when there is no header deadline
      * (and it ends first).
      */
-    private inner class HeaderBudget(timeouts: Timeouts, private val startNanos: Long, private val sparql: String) {
+    private inner class HeaderBudget(timeouts: Timeouts, val sparql: String) {
+        private val startNanos = nanoTime()
         private val deadline = listOfNotNull(timeouts.headers, timeouts.overall).minOrNull()
         private val boundedByReadTimeout = timeouts.headers == null && (deadline == null || config.readTimeout < deadline)
         private val limit = if (boundedByReadTimeout) config.readTimeout else deadline!!
@@ -70,7 +74,7 @@ internal class EndpointHttp(
 
         /** What is left of the budget; throws when nothing is. */
         fun remainingNanos(): Long {
-            val remaining = if (limitNanos == Durations.UNBOUNDED) Durations.UNBOUNDED else limitNanos - (System.nanoTime() - startNanos)
+            val remaining = if (limitNanos == Durations.UNBOUNDED) Durations.UNBOUNDED else limitNanos - (nanoTime() - startNanos)
             if (remaining <= 0) throw exceeded(null)
             return remaining
         }
@@ -119,13 +123,13 @@ internal class EndpointHttp(
         val startNanos = System.nanoTime()
         val target = if (update) updateTarget else queryTarget
         val hop = Hop(request(sparql, update), configuredAuthorization ?: target.userInfoAuthorization)
-        val budget = HeaderBudget(timeouts, startNanos, sparql)
+        val budget = HeaderBudget(timeouts, sparql)
         val overallDeadlineNanos = timeouts.overall?.let { Durations.deadline(startNanos, Durations.nanos(it)) }
         while (true) {
             val remainingNanos = budget.remainingNanos()
             val httpRequest = build(hop.request, update, if (hop.sendCustomHeaders) config.headers else emptyMap(), hop.authorization, sparql)
             val response = send(httpRequest, sparql, remainingNanos, budget::exceeded)
-            val input = openBody(response, hop, update, plainTextAllowed, sparql, overallDeadlineNanos, timeouts.overall) ?: continue
+            val input = openBody(response, hop, update, plainTextAllowed, sparql, overallDeadlineNanos, timeouts.overall, budget) ?: continue
             try {
                 return handle(if (byteLimit == null) input else BoundedInputStream(input, byteLimit), input::checkDeadline)
             } catch (e: RdfQueryException) {
@@ -151,6 +155,7 @@ internal class EndpointHttp(
         sparql: String,
         overallDeadlineNanos: Long?,
         overall: Duration?,
+        budget: HeaderBudget,
     ): GuardedInputStream? {
         var open: InputStream? = null
         try {
@@ -159,7 +164,7 @@ internal class EndpointHttp(
             if (status in REDIRECT_STATUSES) {
                 val location = response.headers().firstValue("Location").orElse(null)
                 closeQuietly(open)
-                follow(hop, status, location, sparql)
+                follow(hop, status, location, sparql, budget)
                 return null
             }
             val guarded = GuardedInputStream(open, watchdog, config.readTimeout, overallDeadlineNanos, overall)
@@ -173,7 +178,7 @@ internal class EndpointHttp(
     }
 
     /** Points [hop] at the target of a redirect, or throws when the redirect must not be followed. */
-    private fun follow(hop: Hop, status: Int, location: String?, sparql: String) {
+    private fun follow(hop: Hop, status: Int, location: String?, sparql: String, budget: HeaderBudget) {
         val current = hop.request
         val next = redirectTarget(current, status, location, sparql)
         if (++hop.redirects > config.maxRedirects) {
@@ -183,6 +188,16 @@ internal class EndpointHttp(
             throw RdfQueryException("SPARQL endpoint redirected (HTTP $status) $refusal", query = sparql)
         }
         if (!Redirects.sameOrigin(current.uri, next)) {
+            if (!addressAllowed(next, budget)) {
+                throw RdfQueryException(
+                    "SPARQL endpoint redirected (HTTP $status) to ${Redirects.origin(next)}, which redirectAddressPolicy " +
+                        "(${config.redirectAddressPolicy}) refuses (by default only public addresses: loopback, private and link-local " +
+                        "addresses and host names that do not resolve are refused). " +
+                        "Configure that endpoint URL directly, or set redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL if the " +
+                        "redirect is trusted",
+                    query = sparql,
+                )
+            }
             if (hop.sendCustomHeaders && (config.headers.isNotEmpty() || hop.authorization != null)) {
                 LOGGER.log(
                     System.Logger.Level.WARNING,
@@ -194,6 +209,31 @@ internal class EndpointHttp(
             hop.authorization = null
         }
         hop.request = Request(next, current.contentType, current.body)
+    }
+
+    /**
+     * Whether [config]'s redirect address policy lets a request go to [target]. The policy may look the host name up,
+     * which the JDK cannot interrupt: it runs on a daemon thread and is waited for only as long as the header [budget]
+     * allows, so a resolver that hangs ends the call with the header-wait timeout instead of holding it.
+     */
+    private fun addressAllowed(target: URI, budget: HeaderBudget): Boolean {
+        val policy = config.redirectAddressPolicy
+        if (policy === UrlAddressPolicy.ALLOW_ALL) return true
+        val check = CompletableFuture.supplyAsync({ policy.allows(target) }, AddressChecks.executor)
+        return try {
+            check.get(budget.remainingNanos(), TimeUnit.NANOSECONDS)
+        } catch (e: TimeoutException) {
+            check.cancel(true)
+            throw budget.exceeded(e)
+        } catch (e: InterruptedException) {
+            check.cancel(true)
+            Thread.currentThread().interrupt()
+            throw RdfQueryException("SPARQL request was interrupted", query = budget.sparql, cause = e)
+        } catch (e: ExecutionException) {
+            val cause = e.cause ?: e
+            if (cause is Error) throw cause
+            throw RdfQueryException("SPARQL redirect address check failed: ${errorDetail(cause.message ?: cause.javaClass.simpleName)}", query = budget.sparql, cause = cause)
+        }
     }
 
     /** Throws unless [response] is a success whose Content-Type can hold the results asked for. */
@@ -341,6 +381,14 @@ internal class EndpointHttp(
 
     private fun closeQuietly(input: InputStream) {
         try { input.close() } catch (_: Exception) { }
+    }
+}
+
+/** The daemon threads that run redirect address checks (host name lookups), shared by all repositories. */
+private object AddressChecks {
+    private val counter = java.util.concurrent.atomic.AtomicInteger()
+    val executor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newCachedThreadPool { task ->
+        Thread(task, "kastor-sparql-address-check-${counter.incrementAndGet()}").apply { isDaemon = true }
     }
 }
 

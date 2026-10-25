@@ -34,10 +34,30 @@ class Conformer(
      * listed signature may be skipped; a listed test that starts passing fails so the entry gets removed.
      */
     val allowlist: Map<String, AllowlistEntry> = emptyMap(),
+    /**
+     * Eval tests whose output this provider is known not to write back losslessly, with the reason
+     * (`serializer-roundtrip-allowlist.tsv`, see [SerializerRoundTrip]).
+     */
+    val roundTripAllowlist: Map<String, String> = emptyMap(),
 ) {
     /** Parses a graph and materialises every triple, so term-conversion failures surface here. */
     fun parseGraph(stream: InputStream, formatName: String, baseIri: String? = null): List<KastorQuad> =
         provider.parseGraph(stream, formatName, baseIri).getTriples().map { KastorQuad(null, it) }
+
+    /**
+     * Serializes [quads] with the provider: as a graph, or (for [dataset] formats) as a dataset of a fresh repository
+     * holding the default graph and one graph per name.
+     */
+    fun serialize(quads: List<KastorQuad>, formatName: String, dataset: Boolean): String {
+        if (!dataset) return provider.serializeGraph(com.geoknoesis.kastor.rdf.provider.MemoryGraph(quads.map { it.triple }), formatName)
+        return newDatasetRepo().use { repo ->
+            for ((graph, triples) in quads.groupBy({ it.graph }, { it.triple })) {
+                val target = if (graph == null) repo.editDefaultGraph() else repo.editGraph(com.geoknoesis.kastor.rdf.Iri(graph))
+                target.addTriples(triples)
+            }
+            provider.serializeDataset(repo, formatName)
+        }
+    }
 
     /** Parses a dataset (TriG or N-Quads) into a fresh repository and returns all of its statements. */
     fun parseDataset(stream: InputStream, formatName: String, baseIri: String? = null): List<KastorQuad> =
@@ -346,7 +366,7 @@ object Rdf12ConformanceRunner {
         allowlisted(conformer, case)?.let { staleAllowlistEntry(conformer, case, it) }
     }
 
-    private fun expectedFormat(case: W3cTestCase, path: Path): TestFormat =
+    internal fun expectedFormat(case: W3cTestCase, path: Path): TestFormat =
         when (path.toString().lowercase().substringAfterLast('.')) {
             "nt" -> TestFormat.N_TRIPLES
             "nq" -> TestFormat.N_QUADS
@@ -355,9 +375,9 @@ object Rdf12ConformanceRunner {
             else -> case.format
         }
 
-    private fun isDataset(format: TestFormat) = format == TestFormat.TRIG || format == TestFormat.N_QUADS
+    internal fun isDataset(format: TestFormat) = format == TestFormat.TRIG || format == TestFormat.N_QUADS
 
-    private fun parseAction(conformer: Conformer, case: W3cTestCase): List<KastorQuad> =
+    internal fun parseAction(conformer: Conformer, case: W3cTestCase): List<KastorQuad> =
         case.action.toFile().inputStream().use { stream ->
             if (isDataset(case.format)) conformer.parseDataset(stream, case.format.parserKey, case.assumedBaseIri)
             else conformer.parseGraph(stream, case.format.parserKey, case.assumedBaseIri)

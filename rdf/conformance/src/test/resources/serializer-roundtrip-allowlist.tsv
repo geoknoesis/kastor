@@ -1,0 +1,29 @@
+# Eval tests whose parsed output a provider does not write back losslessly (SerializerRoundTrip).
+# provider<TAB>test IRI<TAB>reason
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-bnode-1	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-01	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-01	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-02	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-03	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-04	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-05	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-bnode-01	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-02	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-01	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-09	rdf-rdf4j writes RDF 1.2 triple terms as urn:rdf4j:triple: IRIs (reifier as an encoded blank node): the triple term is lost
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#bareword_double	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#double_lower_case_e	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#numeric_with_leading_0	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#positive_numeric	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-subm-11	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-subm-19	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-subm-20	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-subm-26	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#bareword_double	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#double_lower_case_e	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#numeric_with_leading_0	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#positive_numeric	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-subm-11	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-subm-19	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-subm-20	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-subm-26	rdf-rdf4j writes numeric literals in canonical form (1.0e0 as 1.0E0, +1 as 1, 01 as 1): the lexical form changes

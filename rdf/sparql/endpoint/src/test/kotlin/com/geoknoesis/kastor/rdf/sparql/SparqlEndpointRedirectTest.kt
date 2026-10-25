@@ -47,7 +47,14 @@ class SparqlEndpointRedirectTest {
                 }
                 assertTrue(other.requests.isEmpty())
 
+                // Followed redirects are still held to the address policy: the other origin is loopback.
                 SparqlRepository(config.copy(followCrossOriginRedirects = true)).use { repo ->
+                    val e = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+                    assertTrue(e.message!!.contains("redirectAddressPolicy"), e.message)
+                }
+                assertTrue(other.requests.isEmpty())
+
+                SparqlRepository(config.copy(followCrossOriginRedirects = true, redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL)).use { repo ->
                     assertEquals(1, repo.select(selectAll).count())
                 }
                 val forwarded = other.requests.single()

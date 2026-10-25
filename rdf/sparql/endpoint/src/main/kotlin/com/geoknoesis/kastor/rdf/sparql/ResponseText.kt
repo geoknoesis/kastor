@@ -43,11 +43,18 @@ internal fun errorDetail(body: String): String {
  * user information, query and fragment (they can carry credentials or signed tokens), and
  * sanitised and truncated like an error body by [errorDetail].
  */
-internal fun urlDetail(url: String): String {
+internal fun urlDetail(url: String): String = errorDetail(withoutSecrets(url))
+
+/**
+ * [url] without what can carry a secret: its user information becomes `***@` and its query and fragment become
+ * `?...` (an API key or a signed token is often a query parameter: `?apikey=...`). Used wherever a URL reaches a
+ * message, a log line or `toString()`.
+ */
+internal fun withoutSecrets(url: String): String {
     // User information first: a password may hold a raw '?' or '#', which must not end it early.
     val withoutUserInfo = url.replace(USER_INFO, "***@")
     val cut = withoutUserInfo.indexOfFirst { it == '?' || it == '#' }
-    return errorDetail((if (cut < 0) withoutUserInfo else withoutUserInfo.substring(0, cut)) + if (cut < 0) "" else "?...")
+    return if (cut < 0) withoutUserInfo else withoutUserInfo.substring(0, cut) + "?..."
 }
 
 /**

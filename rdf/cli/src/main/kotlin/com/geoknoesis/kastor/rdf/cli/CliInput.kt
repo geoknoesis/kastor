@@ -25,7 +25,7 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 
 /**
- * Parsed input: the default graph plus named graphs (empty for graph formats).
+ * Parsed input: the default graph plus named graphs (empty for graph formats, and for datasets without named graphs).
  *
  * A graph is named by an [Iri] or, when the input names it by a blank node (TriG `_:g { }`, an N-Quads graph label),
  * by that [BlankNode]: the provider loads such a graph under a skolem IRI (`urn:kastor:skolem:<load>:<id>`, see
@@ -93,16 +93,15 @@ internal fun read(path: Path, format: String, runtime: CliRuntime, baseIri: Stri
     try {
         val provider = JenaProvider()
         val input = IoTrackingInputStream(runtime.open(path)).also { stream = it }
-        return if (RdfFormat.isQuadFormat(format)) {
-            JenaRepository.MemoryRepository().use { repo ->
-                input.use { provider.parseDataset(repo, it, format, baseIri) }
-                ParsedInput(
-                    MemoryGraph(repo.defaultGraph.getTriples()),
-                    repo.listGraphs().associate { name: Iri -> graphName(name) to MemoryGraph(repo.getGraph(name).getTriples()) },
-                )
-            }
-        } else {
-            ParsedInput(input.use { provider.parseGraph(it, format, baseIri) }, emptyMap())
+        // Every format is read as a dataset, not only the quad formats (TriG, N-Quads): JSON-LD can name graphs too,
+        // and reading it as a graph would drop them (Jena only logs a warning), so that `diff` would call two datasets
+        // that differ in a named graph isomorphic. A graph format simply yields no named graphs.
+        return JenaRepository.MemoryRepository().use { repo ->
+            input.use { provider.parseDataset(repo, it, format, baseIri) }
+            ParsedInput(
+                MemoryGraph(repo.defaultGraph.getTriples()),
+                repo.listGraphs().associate { name: Iri -> graphName(name) to MemoryGraph(repo.getGraph(name).getTriples()) },
+            )
         }
     } catch (e: Exception) {
         // A parser reports a read that failed half-way like a syntax error; the file could not be read, which is a
