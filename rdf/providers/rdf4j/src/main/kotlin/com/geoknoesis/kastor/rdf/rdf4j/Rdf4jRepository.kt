@@ -40,8 +40,6 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * [Rdf4jGraph]). Repositories wrapping an externally created store (whose content other code may change) are never
  * tracked: their state is always unknown, and `size()` always counts in one pass.
  *
- * **Sandboxed queries** are refused on a store the factory methods did not create ([Rdf4jQuerySandbox.evaluatesSandboxed]).
- *
  * **No state outside the store:** which `rdf:reifies` triples are explicit is recorded by stored statements (see
  * [Rdf4jGraph]), so several repositories may wrap one RDF4J repository, and a persistent store can be reopened.
  *
