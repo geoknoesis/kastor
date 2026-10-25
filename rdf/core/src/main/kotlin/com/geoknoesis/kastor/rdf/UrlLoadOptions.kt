@@ -248,10 +248,15 @@ fun interface UrlRedirectPolicy {
         @JvmField
         val ALLOW_ALL: UrlRedirectPolicy = Named("ALLOW_ALL") { _, _ -> true }
 
-        /** Follows a redirect only to the same host (ignoring case) and the same effective port. */
+        /**
+         * Follows a redirect only to the same host (ignoring case) and the same effective port. A URL that
+         * `java.net.URI` reads without a host (a registry-based authority such as `my_host.example`) is never the
+         * same host, so such a redirect is refused.
+         */
         @JvmField
         val SAME_HOST: UrlRedirectPolicy = Named("SAME_HOST") { from, to ->
-            from.host.equals(to.host, ignoreCase = true) && effectivePort(from) == effectivePort(to)
+            val host: String? = from.host
+            host != null && host.equals(to.host, ignoreCase = true) && effectivePort(from) == effectivePort(to)
         }
 
         /**

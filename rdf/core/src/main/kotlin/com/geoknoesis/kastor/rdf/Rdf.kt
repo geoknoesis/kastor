@@ -416,7 +416,8 @@ object Rdf {
         format: String = "TURTLE",
         options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
     ): MutableRdfGraph {
-        val body = openRdfUrlStream(url, RdfFormat.fromString(format), options)
+        // An unknown format fails before the request is sent, not after the body was downloaded.
+        val body = openRdfUrlStream(url, RdfFormat.fromStringOrThrow(format), options)
         return body.read { stream -> parseFromInputStream(stream, format, body.baseIri) }
     }
     
@@ -474,7 +475,7 @@ object Rdf {
                 try {
                     // Checked on the thread that connects, right before connect(), under the lock cancel() takes:
                     // a cancel that came first stops the request; one that comes later finds the connection.
-                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options, runtime, cancellation::connecting)
+                    val body = openRdfUrlStream(url, RdfFormat.fromStringOrThrow(format), options, runtime, cancellation::connecting)
                     body.read { stream ->
                         cancellation.reading(stream)
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
