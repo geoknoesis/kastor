@@ -100,10 +100,6 @@ public class DataClassGenerator(
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
 
-        if (validationAnnotations != ValidationAnnotations.NONE) {
-            file.addImport("${validationPackage()}.constraints", "NotNull", "NotEmpty", "Size")
-        }
-
         val constructor = FunSpec.constructorBuilder()
         val classBuilder = TypeSpec.classBuilder(className)
             .addModifiers(DATA)
@@ -166,46 +162,8 @@ public class DataClassGenerator(
 
     // ── Validation annotations ────────────────────────────────────────────────
 
-    private fun validationAnnotationsForProperty(property: ShaclProperty): List<AnnotationSpec> {
-        if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
-
-        val annotations = mutableListOf<AnnotationSpec>()
-        val isList = Cardinality.isList(property)
-        val min = property.minCount
-        val max = property.maxCount
-
-        val fieldTarget = AnnotationSpec.UseSiteTarget.FIELD
-
-        if (!isList) {
-            if (min != null && min > 0) {
-                annotations += AnnotationSpec
-                    .builder(ClassName(validationPackage(), "constraints", "NotNull"))
-                    .useSiteTarget(fieldTarget)
-                    .build()
-            }
-        } else {
-            if (min != null && min > 0) {
-                annotations += AnnotationSpec
-                    .builder(ClassName(validationPackage(), "constraints", "NotEmpty"))
-                    .useSiteTarget(fieldTarget)
-                    .build()
-            }
-            if (min != null || max != null) {
-                val sizeBuilder = AnnotationSpec
-                    .builder(ClassName(validationPackage(), "constraints", "Size"))
-                    .useSiteTarget(fieldTarget)
-                min?.let { sizeBuilder.addMember("min = %L", it) }
-                max?.let { sizeBuilder.addMember("max = %L", it) }
-                annotations += sizeBuilder.build()
-            }
-        }
-
-        return annotations
-    }
-
-    private fun validationPackage() = when (validationAnnotations) {
-        ValidationAnnotations.JAKARTA -> "jakarta.validation"
-        ValidationAnnotations.JAVAX   -> "javax.validation"
-        ValidationAnnotations.NONE    -> "jakarta.validation"
-    }
+    private fun validationAnnotationsForProperty(property: ShaclProperty): List<AnnotationSpec> =
+        ValidationAnnotationSpecs.forCardinality(
+            validationAnnotations, Cardinality.isList(property), property.minCount, property.maxCount, AnnotationSpec.UseSiteTarget.FIELD,
+        )
 }
