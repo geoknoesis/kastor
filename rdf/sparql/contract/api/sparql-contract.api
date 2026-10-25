@@ -84,6 +84,32 @@ public final class com/geoknoesis/kastor/rdf/UpdateQuery {
 	public final synthetic fun unbox-impl ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimitException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits {
+	public static final field CHECK_INTERVAL I
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits;
+	public static final field MAX_DECIMAL_SCALE I
+	public static final field MAX_GROUP_CONCAT_LENGTH J
+	public static final field MAX_INTEGER_BITS I
+	public static final field MAX_NUMERIC_LEXICAL_LENGTH I
+	public static final field MAX_REGEX_STEPS J
+	public static final field MAX_STRING_LENGTH I
+	public static final fun checkDecimal (JJLjava/lang/String;)V
+	public static final fun checkIntegerBits (JLjava/lang/String;)V
+	public static final fun checkNumericLexical (ILjava/lang/String;)V
+	public static final fun checkStringLength (JLjava/lang/String;)V
+	public static final fun powerBits (Ljava/math/BigInteger;J)J
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex;
+	public static final fun find (Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/lang/Runnable;)Z
+	public static final fun replace (Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Runnable;)Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings;
 	public final fun apply (Ljava/lang/String;Ljava/util/Map;)Ljava/lang/String;
