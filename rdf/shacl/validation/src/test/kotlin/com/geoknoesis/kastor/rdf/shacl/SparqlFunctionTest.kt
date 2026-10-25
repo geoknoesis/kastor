@@ -8,7 +8,6 @@ import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
-import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -46,8 +45,11 @@ class SparqlFunctionTest {
 
     private fun validate(provider: String, data: String, shapes: String) = validator(provider).validate(g(data), g(shapes))
 
+    /** A W3C `sparql/functions` example, bundled with the test fixture (`w3c-shacl12-fixture/sparql/functions/`). */
     private fun w3c(name: String): String =
-        File("test-data/w3c-shacl12/tests/sparql/functions/$name").readText()
+        checkNotNull(SparqlFunctionTest::class.java.getResource("/w3c-shacl12-fixture/sparql/functions/$name")) {
+            "bundled W3C example $name missing from the test classpath"
+        }.readText()
 
     private fun w3cGraph(name: String) = Rdf.parse(w3c(name), RdfFormat.TURTLE, "http://example.com/test/$name")
 

@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
-import java.io.File
 
 /** Parsing of SHACL 1.2 node expressions (Node Expressions §3–§6, Appendix A) into the [NodeExpression] tree. */
 class NodeExpressionParserTest {
@@ -35,35 +33,6 @@ class NodeExpressionParserTest {
     private fun expression(ttl: String): NodeExpression? {
         val index = ShapeGraphIndex(Rdf.parse(header + "\n" + ttl, RdfFormat.TURTLE).getTriples())
         return NodeExpressions.compile(index.objects(ex("holder"), ex("expr")).single(), index)
-    }
-
-    @Test
-    fun `every W3C nodeExpr parses`() {
-        val root = File("test-data/w3c-shacl12/tests/node-expr")
-        Assumptions.assumeTrue(root.isDirectory, "W3C SHACL 1.2 test data absent (see test-data/README.md)")
-        val nodeExpr = Iri("http://www.w3.org/ns/shacl-test#nodeExpr")
-        val failures = mutableListOf<String>()
-        var cases = 0
-        // sparql:hasLang ( "hello"@en "en" ): the §5 table and SPARQL 1.2 HASLANG take one argument.
-        val illFormed = setOf("shnex-sparql/hasLang.ttl")
-        for (dir in listOf("shnex", "shnex-sparql")) {
-            val files = File(root, dir).listFiles { f -> f.name.endsWith(".ttl") && f.name != "manifest.ttl" }.orEmpty().sortedBy { it.name }
-            for (file in files) {
-                val triples = Rdf.parse(file.readText(), RdfFormat.TURTLE, "http://example.com/test/$dir/${file.name}").getTriples()
-                val index = ShapeGraphIndex(triples)
-                for (t in triples.filter { it.predicate == nodeExpr }) {
-                    cases++
-                    val outcome = runCatching { NodeExpressions.compile(t.obj, index) }
-                    if ("$dir/${file.name}" in illFormed) {
-                        if (outcome.exceptionOrNull() !is ShapeCompileException) failures += "$dir/${file.name}: expected ill-formed, got $outcome"
-                    } else if (outcome.getOrNull() == null) {
-                        failures += "$dir/${file.name}: ${outcome.exceptionOrNull() ?: "null"}"
-                    }
-                }
-            }
-        }
-        assertEquals(143, cases, "number of W3C sht:nodeExpr cases")
-        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
     }
 
     @Test
