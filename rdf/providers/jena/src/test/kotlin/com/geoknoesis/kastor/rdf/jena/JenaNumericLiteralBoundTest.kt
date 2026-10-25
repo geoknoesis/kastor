@@ -7,11 +7,11 @@ import org.junit.jupiter.api.Test
 /**
  * Jena computes the value of every `xsd:integer` / `xsd:decimal` literal it parses, in time quadratic in the number of
  * digits (`BigInteger(String)`: about 12 s for 800,000 digits). Kastor refuses a numeric lexical form longer than
- * [JenaLiteralBounds.MAX_NUMERIC_LEXICAL_LENGTH] before Jena builds the node, on every parse path.
+ * [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH] before Jena builds the node, on every parse path.
  */
 class JenaNumericLiteralBoundTest {
 
-    private val limit = JenaLiteralBounds.MAX_NUMERIC_LEXICAL_LENGTH
+    private val limit = LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH
     private val xsd = "http://www.w3.org/2001/XMLSchema#"
     private val tooLong = "7".repeat(limit + 1)
     private val longest = "7".repeat(limit)
@@ -50,6 +50,28 @@ class JenaNumericLiteralBoundTest {
         )
         for ((doc, expected) in documents) {
             assertEquals(expected, JenaProvider().parseGraph(doc.byteInputStream(), "TURTLE").getTriples().single().obj)
+        }
+    }
+
+    @Test
+    fun `the graph API and SPARQL text refuse numbers longer than the limit`() {
+        JenaRepository.MemoryRepository().use { repo ->
+            val graph = repo.editDefaultGraph()
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                graph.addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), TypedLiteral(tooLong, Iri("${xsd}integer"))))
+            }
+            assertTrue(error.message!!.contains("$limit"), error.message)
+            graph.addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), TypedLiteral(longest, Iri("${xsd}integer"))))
+            assertEquals(1, graph.size())
+            for (run in listOf(
+                { repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $tooLong }")) },
+                { repo.ask(SparqlAskQuery("ASK { ?s ?p \"$tooLong\"^^<${xsd}decimal> }")) },
+                { repo.update(UpdateQuery("INSERT DATA { <http://example.org/s> <http://example.org/p> $tooLong }")) },
+            )) {
+                val refused = assertThrows(RdfQueryException::class.java) { run() }
+                assertTrue(refused.message!!.contains("$limit"), refused.message)
+            }
+            assertEquals(1, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $longest }")).toList().size)
         }
     }
 }

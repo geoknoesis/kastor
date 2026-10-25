@@ -20,6 +20,32 @@ object LiteralValidation {
     const val RDF_DIR_LANG_STRING: String = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
 
     /**
+     * The longest lexical form of an `xsd:decimal` literal, or of an `xsd:integer` literal or one of a type derived
+     * from it ([BOUNDED_NUMERIC_DATATYPES]), that Kastor's parsers accept, and that the Jena provider accepts through
+     * its graph API. Computing the value of such a literal (`BigInteger` / `BigDecimal`, as Jena does for every one it
+     * parses and SPARQL engines do to compare them) takes time quadratic in its length: 12 s for 800,000 digits.
+     * Both providers apply this limit to every parse ([numericLengthProblem]).
+     */
+    const val MAX_NUMERIC_LEXICAL_LENGTH: Int = 10_000
+
+    /** The datatype IRIs [MAX_NUMERIC_LEXICAL_LENGTH] applies to: `xsd:decimal`, `xsd:integer` and its derived types. */
+    @JvmField
+    val BOUNDED_NUMERIC_DATATYPES: Set<String> = listOf(
+        "decimal", "integer", "long", "int", "short", "byte", "nonNegativeInteger", "positiveInteger",
+        "nonPositiveInteger", "negativeInteger", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
+    ).mapTo(HashSet()) { "http://www.w3.org/2001/XMLSchema#$it" }
+
+    /**
+     * Why a literal with [lexical] form and [datatypeIri] is refused for its length ([MAX_NUMERIC_LEXICAL_LENGTH]),
+     * or `null` when it is not.
+     */
+    @JvmStatic
+    fun numericLengthProblem(datatypeIri: String?, lexical: String): String? =
+        if (lexical.length <= MAX_NUMERIC_LEXICAL_LENGTH || datatypeIri !in BOUNDED_NUMERIC_DATATYPES) null
+        else "the ${datatypeIri!!.substringAfter('#')} literal has a lexical form of ${lexical.length} characters, more " +
+            "than the $MAX_NUMERIC_LEXICAL_LENGTH Kastor accepts (computing its value takes time quadratic in its length)"
+
+    /**
      * True if [tag] matches the Turtle/SPARQL `LANGTAG` grammar `[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*` (either case) with
      * subtags of at most 8 characters (BCP 47 well-formedness, required by RDF 1.2).
      * This is the single language-tag rule used by [LangString] and [normalizeLanguageTag].

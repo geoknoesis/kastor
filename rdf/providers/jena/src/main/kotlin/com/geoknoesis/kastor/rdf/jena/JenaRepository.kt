@@ -1022,7 +1022,7 @@ class JenaRepository private constructor(
 
     /** [JenaQuerySandbox.parseSelect], with the engine's parse errors wrapped as query errors. */
     private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query =
-        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(query.sparql) } }
+        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)) } }
 
     /** [JenaQuerySandbox.execution] over the query dataset, with the nested-query deadline [deadline] on the [hooks] clock. */
     private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder =
@@ -1030,7 +1030,7 @@ class JenaRepository private constructor(
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
         queryOperation(query.sparql) {
-            QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()).use { it.execAsk() }
+            QueryExecutionFactory.create(QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)), queryDataset()).use { it.execAsk() }
         }
     }
 
@@ -1087,7 +1087,7 @@ class JenaRepository private constructor(
         if (deadline == null) block() else InferenceCancellation.withDeadline(deadline, { hooks.clock() }) { block() }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withRead {
-        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
+        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)), queryDataset()) }
         exec.use {
             val triples = queryOperation(query.sparql) { it.execConstructTriples() }
             consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql, null) { hooks.clock() })
@@ -1122,9 +1122,9 @@ class JenaRepository private constructor(
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
             if (!JenaBlankGraphs.textMayCreateBlankGraph(query.sparql)) {
-                org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset)
+                org.apache.jena.update.UpdateAction.parseExecute(JenaLiteralBounds.requireBoundedQuery(query.sparql), dataset)
             } else {
-                val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
+                val request = org.apache.jena.update.UpdateFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql))
                 val foreign = if (JenaBlankGraphs.mayCreateBlankGraph(request)) JenaBlankGraphs.blankGraphNames(dataset) else null
                 var failure: Throwable? = null
                 try {

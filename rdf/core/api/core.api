@@ -325,10 +325,13 @@ public final class com/geoknoesis/kastor/rdf/Literal$Companion {
 }
 
 public final class com/geoknoesis/kastor/rdf/LiteralValidation {
+	public static final field BOUNDED_NUMERIC_DATATYPES Ljava/util/Set;
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/LiteralValidation;
+	public static final field MAX_NUMERIC_LEXICAL_LENGTH I
 	public static final field RDF_DIR_LANG_STRING Ljava/lang/String;
 	public static final field RDF_LANG_STRING Ljava/lang/String;
 	public final fun isWellFormedLanguageTag (Ljava/lang/String;)Z
+	public static final fun numericLengthProblem (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public final fun problem (Ljava/lang/String;Ljava/lang/String;Z)Ljava/lang/String;
 	public final fun requireWellFormed (Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
 }

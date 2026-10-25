@@ -24,12 +24,12 @@ internal object JenaDescribe {
 
     /** The description of the `DESCRIBE` query [sparql] over [dataset], read inside the caller's read transaction. */
     fun describe(sparql: String, dataset: Dataset): Sequence<RdfTriple> {
-        val parsed = QueryFactory.create(sparql)
+        val parsed = QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(sparql))
         if (!parsed.isDescribeType) throw IllegalArgumentException("Not a DESCRIBE query")
         val resources = LinkedHashSet<Node>()
         if (parsed.queryPattern != null) {
             // The same query as a SELECT of the described variables (DESCRIBE * selects every variable).
-            val select = QueryFactory.create(sparql).apply { setQuerySelectType() }
+            val select = QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(sparql)).apply { setQuerySelectType() }
             QueryExecutionFactory.create(select, dataset).use { exec ->
                 val rows = exec.execSelect()
                 val names = rows.resultVars

@@ -66,7 +66,7 @@ import org.apache.jena.sparql.util.MappedLoader
 internal object JenaQuerySandbox {
 
     /** Parses the text of a sandboxed query (see [parseSelect]) and [check]s it. */
-    fun parseChecked(sparql: String): Query = QueryFactory.create(sparql).also { check(it) }
+    fun parseChecked(sparql: String): Query = QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(sparql)).also { check(it) }
 
     fun check(query: Query) = check(Algebra.compile(query))
 
