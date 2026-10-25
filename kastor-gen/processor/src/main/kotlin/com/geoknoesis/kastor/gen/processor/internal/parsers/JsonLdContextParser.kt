@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContainer
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdProperty
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdType
+import com.geoknoesis.kastor.gen.processor.internal.utils.Rfc3986
 import com.google.devtools.ksp.processing.KSPLogger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -356,14 +357,9 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
     private fun resolveReference(what: String, base: String?, reference: String): String {
         val ref = parseUri(what, reference)
         if (ref.isAbsolute) return reference
-        val absoluteBase = base?.let { parseUri(what, it) }?.takeIf { it.isAbsolute }
+        val absoluteBase = base?.takeIf { parseUri(what, it).isAbsolute }
             ?: fail("$what: the relative IRI \"$reference\" needs an absolute @base to resolve against")
-        // java.net.URI resolves against an empty path as if it had none (http://ex.org + c = http://ex.orgc).
-        val rooted = if (absoluteBase.isOpaque || absoluteBase.rawPath.isNotEmpty()) absoluteBase
-        else URI("${absoluteBase.scheme}://${absoluteBase.rawAuthority.orEmpty()}/" + absoluteBase.rawQuery?.let { "?$it" }.orEmpty())
-        // A bare fragment keeps the whole base, query included (RFC 3986 §5.2.2).
-        if (reference.startsWith("#")) return rooted.toString().substringBefore('#') + reference
-        return rooted.resolve(ref).toString()
+        return Rfc3986.resolve(absoluteBase, reference)
     }
 
     private fun parseUri(what: String, value: String): URI = try {

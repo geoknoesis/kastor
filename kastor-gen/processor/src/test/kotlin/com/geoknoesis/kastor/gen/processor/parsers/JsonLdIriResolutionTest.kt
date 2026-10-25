@@ -36,6 +36,14 @@ class JsonLdIriResolutionTest {
     }
 
     @Test
+    fun `query-only and over-climbing references follow RFC 3986, not RFC 2396`() {
+        val context = parse("""{ "@base": "http://a/b/c/d;p?q", "Query": "?y", "Climb": "../../../g", "Seg": "g;x=1/../y" }""")
+        assertEquals(Iri("http://a/b/c/d;p?y"), context.typeMappings["Query"])
+        assertEquals(Iri("http://a/g"), context.typeMappings["Climb"])
+        assertEquals(Iri("http://a/b/c/y"), context.typeMappings["Seg"])
+    }
+
+    @Test
     fun `a relative vocabulary is resolved against the base`() {
         val fragment = parse("""{ "@base": "http://ex.org/doc", "@vocab": "#", "Person": {} }""")
         assertEquals(Iri("http://ex.org/doc#"), fragment.vocabIri)
