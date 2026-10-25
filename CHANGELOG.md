@@ -46,6 +46,42 @@ and is kept as is; it was never published to Maven Central.
   line 153) no longer races with the task that closes the find's reasoner iterator, which the reader queues after its
   failure: it waits (bounded) for the worker's queue to drain instead of asserting it is already empty.
 
+#### SPARQL endpoint, CLI, examples and conformance (round eleven)
+
+- Security: `SparqlRepository.select()` now refuses a `SandboxedSelectQuery` with `UnsupportedOperationException`
+  before sending anything, like both `withSelectRows` overloads already did. Before, `select()` POSTed the untrusted
+  query unchanged, so its `SERVICE` clauses were left to the remote server's federation.
+- `kastor-rdf diff` compares datasets whose graphs are named by blank nodes (TriG `_:g { }`, N-Quads `_:g`) up to
+  blank node relabelling. Before, the provider's skolem names (`urn:kastor:skolem:<load>:<id>`, new on every parse)
+  made a file NOT ISOMORPHIC to itself, and the output showed those internal names. A blank node that names a graph
+  and occurs in triples must correspond as one node; a different number of such graphs is reported as such.
+- `kastor-rdf`: a parse error names its input (`Parse error in <file>: ...`) and is printed once; Jena RIOT no
+  longer logs the same error a second time.
+- `kastor-rdf parse`, `to-turtle` and `diff` take `--base <iri>`, an absolute IRI that relative IRIs are resolved
+  against. Without it relative IRIs stay a parse error (now documented); the file location is never used as base.
+- The `kastor-rdf` start scripts run a launcher compiled for Java 8 (`KastorRdfLauncher`), which refuses a Java
+  older than 21 with a one-line message and status 3, instead of an `UnsupportedClassVersionError` with status 1.
+  The help text and the CLI guide state the Java 21 requirement.
+- API (additions only): `SparqlEndpointConfig` and the `SparqlRepository(endpoint, maxResponseBytes, ...)`
+  constructor carry `@JvmOverloads`, so Java can write `new SparqlEndpointConfig(url)` with the Kotlin defaults.
+- `SparqlProvider.version` is the module's Kastor version (its jar's `Implementation-Version`, `development` outside
+  the jar) instead of a hard-coded `1.0.0`.
+- Docs: the SPARQL provider guide says that sandboxed (SHACL) queries are refused and what that means for validating
+  data held by an endpoint, and that `getTriples()` is one buffered `SELECT` capped by `maxResponseBytes`.
+- Tests: `SparqlEndpointProtocolTest`'s stalled-header test no longer fails when the 500 ms deadline ends before
+  the client has connected (on a loaded host the exchange is then cancelled before it reaches the server, which saw
+  "6 of 8 connections"). Such an attempt is repeated until each call shape has a connection whose closing is checked.
+- Conformance harness: an `rdft:Test*` type that is neither run nor listed as out of scope (RDF/XML, C14N) fails the
+  manifest parse, as does a test without a local `mf:action`; before, such rows were dropped silently. The full suite
+  also fails when the corpus has fewer tests per format than the pinned one (Turtle 419, TriG 418, N-Triples 99,
+  N-Quads 114). `forManifest` fails instead of skipping a missing or empty manifest. The conformance guide no longer
+  says that a missing corpus is skipped (it fails unless `-PconformanceAllowMissingData=true`), and `ReferenceRdf`
+  no longer claims parser independence for the Jena provider.
+- Examples: `ExampleMainsSmokeTest` runs every example `main` (output captured, 2 min timeout) and fails on a throw,
+  no output, or a failure the example caught and printed. It found `ShaclValidatorProviderExample` crashing on
+  `parallelValidation = true` / `streamingMode = true`, which the native SHACL engine refuses; the example no longer
+  sets them.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,

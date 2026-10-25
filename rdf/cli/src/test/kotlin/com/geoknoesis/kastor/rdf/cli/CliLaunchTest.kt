@@ -57,7 +57,7 @@ class CliLaunchTest {
     fun `the configured main class starts and prints help`() {
         val result = launch("--help")
         assertEquals(0, result.code, result.errText)
-        assertTrue(result.outText.contains("kastor-rdf parse <file>"), result.outText)
+        assertTrue(result.outText.contains("kastor-rdf parse [--base <iri>] <file>"), result.outText)
         assertFalse(result.errText.contains("ClassNotFoundException"), result.errText)
     }
 

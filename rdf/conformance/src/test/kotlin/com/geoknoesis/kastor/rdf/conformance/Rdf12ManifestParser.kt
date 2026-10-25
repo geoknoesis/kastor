@@ -122,6 +122,23 @@ object Rdf12ManifestParser {
     )
 
     /**
+     * W3C test types the harness deliberately does not run: RDF/XML (Kastor's conformance scope is Turtle, TriG,
+     * N-Triples and N-Quads) and canonical N-Triples/N-Quads output (C14N; Kastor does not claim canonical
+     * serialization). Every other `rdft:Test*` type fails the manifest parse ([parse]), so a test type that is renamed
+     * upstream, or spelled differently (`rdft:TestTriGPositiveSyntax`), cannot make its rows vanish while the suite
+     * stays green.
+     */
+    val OUT_OF_SCOPE_TYPES: Set<String> = setOf(
+        RDFT + "TestXMLEval",
+        RDFT + "TestXMLNegativeSyntax",
+        RDFT + "TestNTriplesPositiveC14N",
+        RDFT + "TestNQuadsPositiveC14N",
+    )
+
+    /** Prefix of the W3C test types that must be either handled or listed in [OUT_OF_SCOPE_TYPES]. */
+    private const val TEST_TYPE_PREFIX = RDFT + "Test"
+
+    /**
      * Parse the manifest file at [manifestPath] and return all tests it
      * declares (recursing through `mf:include`).
      *
@@ -129,6 +146,8 @@ object Rdf12ManifestParser {
      * @return A list of test cases. Empty if the manifest declares no tests
      *   whose type we recognise.
      * @throws java.io.FileNotFoundException if the manifest does not exist.
+     * @throws IllegalStateException for an entry whose `rdft:Test*` type is neither handled nor in
+     *   [OUT_OF_SCOPE_TYPES], and for a handled entry without a name or a local `mf:action` file.
      */
     fun parse(manifestPath: Path): List<W3cTestCase> {
         if (!manifestPath.toFile().isFile) {
@@ -183,14 +202,22 @@ object Rdf12ManifestParser {
         manifest: Path,
         assumedBase: String?,
     ): W3cTestCase? {
-        val typeStmt = entry.listProperties(RDF.type).toList().firstOrNull { it.`object`.isURIResource }
-            ?: return null
-        val typeIri = typeStmt.`object`.asResource().uri
-        val (kind, format) = typeToKindAndFormat[typeIri] ?: return null
+        val types = entry.listProperties(RDF.type).toList().filter { it.`object`.isURIResource }.map { it.`object`.asResource().uri }
+        val typeIri = types.firstOrNull { it in typeToKindAndFormat }
+        if (typeIri == null) {
+            val unknown = types.filter { it.startsWith(TEST_TYPE_PREFIX) && it !in OUT_OF_SCOPE_TYPES }
+            check(unknown.isEmpty()) {
+                "Unrecognised W3C test type $unknown for ${entry.uri ?: "a blank-node entry"} in $manifest: map it to a " +
+                    "test kind in Rdf12ManifestParser, or list it in OUT_OF_SCOPE_TYPES with the reason"
+            }
+            // Entailment tests (mf:*EntailmentTest), out-of-scope formats: not run, on purpose.
+            return null
+        }
+        val (kind, format) = typeToKindAndFormat.getValue(typeIri)
 
-        val name = stringValue(entry, mfName, model) ?: entry.uri ?: return null
-        val actionUri = uriValue(entry, mfAction, model) ?: return null
-        val action = uriToPath(actionUri, manifest) ?: return null
+        val name = checkNotNull(stringValue(entry, mfName, model) ?: entry.uri) { "A $typeIri entry in $manifest has no mf:name" }
+        val actionUri = checkNotNull(uriValue(entry, mfAction, model)) { "Test $name in $manifest has no mf:action" }
+        val action = checkNotNull(uriToPath(actionUri, manifest)) { "Test $name in $manifest: mf:action $actionUri is not a local file" }
 
         val resultUri = uriValue(entry, mfResult, model)
         val result = resultUri?.let { uriToPath(it, manifest) }
@@ -250,9 +277,8 @@ object Rdf12ManifestParser {
     }
 
     /**
-     * Resolve a manifest-relative `file:` or absolute IRI to an on-disk Path.
-     * Returns null if the IRI is not a file IRI we can resolve - we silently
-     * skip such tests (they typically reference HTTP-only fragments).
+     * Resolve a manifest-relative `file:` or absolute IRI to an on-disk Path, or null when it is not a file IRI (an
+     * `mf:include` of such an IRI is not followed; a test whose action is one fails [parse]).
      */
     private fun uriToPath(iri: String, manifest: Path): Path? {
         return try {
