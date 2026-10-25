@@ -60,6 +60,9 @@ and is kept as is; it was never published to Maven Central.
   for the Jena provider (syntax and serializer rows), not only the bundled fixture.
 - **Fixed (`rdf-sparql`):** rows of `withSelectRows` that escape the consumer (a returned `Sequence` or iterator) fail
   with `IllegalStateException` saying they must be read inside the consumer, instead of a "stream closed" read error.
+- **Fixed (`rdf-sparql`):** `listGraphs` fails with `RdfQueryException` when the endpoint names a graph by something
+  other than an IRI (a blank node, a literal, unbound) instead of leaving that graph out silently (behaviour change).
+  An invalid triple count in `SparqlGraph.size` is quoted as escaped, truncated text.
 - **API (`rdf-sparql`):** `SparqlEndpointConfig.fromOptions` is `@JvmStatic` (callable from Java without `Companion`).
 - **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed

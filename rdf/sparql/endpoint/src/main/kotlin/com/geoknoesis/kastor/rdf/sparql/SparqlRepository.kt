@@ -136,12 +136,23 @@ class SparqlRepository internal constructor(
         return ask(query)
     }
 
+    /**
+     * The names of the graphs that hold at least one triple (see [hasGraph]). A row whose `?g` is not an IRI (unbound,
+     * a literal, or a blank node, which some stores use for graphs loaded without a name) fails with
+     * [RdfQueryException]: leaving it out would hide that graph's triples from whoever reads the dataset graph by graph.
+     */
     override fun listGraphs(): List<Iri> {
         val query = SparqlSelectQuery("SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }")
         val result = select(query)
-        return result.mapNotNull { binding ->
-            binding.get("g")?.let { term ->
-                if (term is Iri) term else null
+        return result.map { binding ->
+            when (val term = binding.get("g")) {
+                is Iri -> term
+                else -> throw RdfQueryException(
+                    "SPARQL endpoint returned a graph name that is not an IRI: ?g is " +
+                        (if (term == null) "unbound" else "a ${term.javaClass.simpleName} (${errorDetail(term.toString())})") +
+                        "; such a graph cannot be addressed by name, so it is not left out silently",
+                    query = query.sparql,
+                )
             }
         }
     }

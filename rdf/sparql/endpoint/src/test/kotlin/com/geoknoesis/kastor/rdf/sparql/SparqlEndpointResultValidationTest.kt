@@ -312,4 +312,17 @@ class SparqlEndpointResultValidationTest {
             assertTrue(e.message!!.length < 1_000, "message of ${e.message!!.length} characters")
         }
     }
+    @Test
+    fun `a graph name that is not an IRI fails listGraphs instead of being left out`() {
+        for (g in listOf("""{"type":"bnode","value":"b0"}""", """{"type":"literal","value":"g"}""")) {
+            val body = result("\"g\"", """{"g":${uri("urn:g1")}}""", """{"g":$g}""")
+            SparqlRepository(SparqlEndpointConfig(url), answering(200, body)).use { repo ->
+                val e = assertThrows(RdfQueryException::class.java) { repo.listGraphs() }
+                assertTrue(e.message!!.contains("not an IRI"), e.message)
+            }
+        }
+        SparqlRepository(SparqlEndpointConfig(url), answering(200, result("\"g\"", """{"g":${uri("urn:g1")}}"""))).use { repo ->
+            assertEquals(listOf(Iri("urn:g1")), repo.listGraphs())
+        }
+    }
 }
