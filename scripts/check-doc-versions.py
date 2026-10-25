@@ -1,6 +1,6 @@
 """Keep documented Kastor coordinates in sync with the single version in gradle.properties.
 
-Scans README.md and docs/**/*.md for Gradle/Maven coordinates, plugin versions and
+Scans the root Markdown files (README, CONTRIBUTING, ...) and docs/**/*.md for Gradle/Maven coordinates, plugin versions and
 "Kastor X.Y.Z" prose/banner mentions, and checks the JDK in docs/_includes banners against
 the jvmToolchain in build.gradle.kts. Pages that describe past releases are listed in HISTORICAL.
 """
@@ -41,22 +41,23 @@ def check_text(relative, text, version, jdk):
     return problems
 
 
+def scan(root, version, jdk):
+    """Problems in every checked document: the root Markdown files and docs/**/*.md, minus history pages."""
+    problems = []
+    for path in [*sorted(root.glob("*.md")), *sorted((root / "docs").rglob("*.md"))]:
+        relative = path.relative_to(root).as_posix()
+        if relative in HISTORICAL or relative.startswith(SKIPPED_TREES):
+            continue
+        problems += check_text(relative, path.read_text(encoding="utf-8"), version, jdk)
+    return problems
+
+
 def main():
     version = next(line.split("=", 1)[1].strip()
                    for line in (ROOT / "gradle.properties").read_text(encoding="utf-8").splitlines()
                    if line.startswith("version="))
     jdk = re.search(r"jvmToolchain\((\d+)\)", (ROOT / "build.gradle.kts").read_text(encoding="utf-8")).group(1)
-    problems = []
-    for path in [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]:
-        relative = path.relative_to(ROOT).as_posix()
-        if relative in HISTORICAL or relative.startswith(SKIPPED_TREES):
-            continue
-        text = path.read_text(encoding="utf-8")
-        for pattern in PATTERNS:
-            for match in pattern.finditer(text):
-                if match.group("v") != version:
-                    line = text.count("\n", 0, match.start()) + 1
-                    problems.append(f"{relative}:{line}: {match.group('v')}")
+    problems = scan(ROOT, version, jdk)
     if problems:
         raise SystemExit(f"Documented Kastor versions differ from gradle.properties version={version}:\n  "
                          + "\n  ".join(problems))
