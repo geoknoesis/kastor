@@ -95,10 +95,14 @@ internal object Durations {
  *
  * @param newThread creates the watching thread for the given body; it is started by the watchdog.
  *   Tests pass their own to count and observe the threads.
+ * @param nanoTime the clock of every deadline the watchdog sees: [GuardedInputStream] and the overall deadline of a
+ *   call read it too, so that deadlines and the readings they are compared with come from one clock. Tests pass a
+ *   clock they advance instead of sleeping.
  */
 internal class ReadWatchdog(
     private val report: (Throwable) -> Unit = ::logFailure,
     private val newThread: (Runnable) -> Thread = ::daemonThread,
+    val nanoTime: () -> Long = System::nanoTime,
 ) {
     interface Watched {
         /** Expire the pending read if its deadline is at or before [now]; returns the pending deadline, or [Long.MAX_VALUE]. */
@@ -177,7 +181,7 @@ internal class ReadWatchdog(
             while (true) {
                 // A read publishing from here on sees MAX_VALUE and raises the flag, so the wait below is skipped.
                 nextWakeNanos = Long.MAX_VALUE
-                val now = System.nanoTime()
+                val now = nanoTime()
                 var next = Long.MAX_VALUE
                 for (stream in streams) {
                     val pending = try {
@@ -202,7 +206,7 @@ internal class ReadWatchdog(
                             wake.await()
                         } else {
                             nextWakeNanos = next
-                            wake.awaitNanos(next - System.nanoTime())
+                            wake.awaitNanos(next - nanoTime())
                         }
                     }
                     signalled = false

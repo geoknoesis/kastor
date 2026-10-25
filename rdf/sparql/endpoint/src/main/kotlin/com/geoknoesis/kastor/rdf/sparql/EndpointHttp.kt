@@ -120,7 +120,8 @@ internal class EndpointHttp(
         plainTextAllowed: Boolean = false,
         handle: (InputStream, checkDeadline: () -> Unit) -> T,
     ): T {
-        val startNanos = System.nanoTime()
+        // The clock of the response stream's deadlines (GuardedInputStream), which the overall deadline is one of.
+        val startNanos = watchdog.nanoTime()
         val target = if (update) updateTarget else queryTarget
         val hop = Hop(request(sparql, update), configuredAuthorization ?: target.userInfoAuthorization)
         val budget = HeaderBudget(timeouts, sparql)

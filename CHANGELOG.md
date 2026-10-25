@@ -386,6 +386,10 @@ entries are regrouped under those kind headings.
   and JSON-LD keep RDF4J's encoding: Rio 5.3.2 reads RDF-star in none of them.
 - **Conformance:** the 27 RDF4J serializer round-trip known losses are fixed and removed from
   `serializer-roundtrip-allowlist.tsv`, which now lists none.
+- **Tests (SPARQL endpoint):** the response-stream deadlines (`GuardedInputStream`, the overall deadline of a call)
+  and the read watchdog read one injected clock. `SparqlEndpointTimeoutTest`'s request-timeout / per-call-timeout test
+  runs on a test clock and a fake transport instead of a local server, sleeps and a 1 s budget for local headers, so
+  its outcome no longer depends on the host's speed.
 
 ### Round twelve
 
