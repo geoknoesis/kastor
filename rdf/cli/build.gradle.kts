@@ -70,6 +70,9 @@ val generateCliLaunchInfo = tasks.register("generateCliLaunchInfo") {
   }
 }
 sourceSets.named("test") {
+  // The launcher classes (CliJavaVersionTest), as a source set output rather than a file dependency.
+  compileClasspath += launcher.output
+  runtimeClasspath += launcher.output
   resources.srcDir(generateCliLaunchInfo)
   resources.srcDir(tasks.named("startScripts"))
   resources.srcDir(applicationResources)
@@ -93,14 +96,14 @@ configurations.named("runtimeClasspath") { extendsFrom(applicationRuntimeOnly.ge
 configurations.named("testRuntimeClasspath") { extendsFrom(applicationRuntimeOnly.get()) }
 
 dependencies {
-  testImplementation(libs.jena.arq)
   testImplementation(libs.jena.base)
-  testImplementation(libs.slf4j.api)
-  testImplementation(files(launcher.output))
 
   implementation(project(":rdf:core"))
   // Parsing and serialization. `diff` uses rdf-core's graph isomorphism, so the test kit is not an application dependency.
   implementation(project(":rdf:jena"))
+  // KastorRdfCli installs RIOT's default error handler (an SLF4J logger), so a parse error is printed only once.
+  implementation(libs.jena.arq)
+  implementation(libs.slf4j.api)
   // SLF4J binding for the application: Jena RIOT warnings go to stderr at WARN (see src/application/resources).
   add(applicationRuntimeOnly.name, libs.slf4j.simple)
 }
