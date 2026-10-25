@@ -167,6 +167,12 @@ internal object JenaQuerySandbox {
                 }
             }
             override fun visit(eAgg: ExprAggregator) = aggregate(eAgg.aggregator)
+
+            // A triple-term expression with variables builds a term from its bindings without any bound (a chain of
+            // them doubles the term at every step); TRIPLE(?s, ?p, ?o) builds the same term with its size checked.
+            override fun tripleTerm(term: org.apache.jena.sparql.expr.ExprTripleTerm) {
+                if (!term.node.isConcrete) refuse("the triple-term expression $term with variables (use TRIPLE(?s, ?p, ?o))")
+            }
         }
         val ops = object : OpVisitorBase() {
             override fun visit(opService: OpService) = refuse("SERVICE <${opService.service}>")
@@ -187,12 +193,26 @@ internal object JenaQuerySandbox {
     }
 
     /**
-     * Refuses ARQ's path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`, `shortest(...)`): Jena evaluates
+     * Refuses a path longer than [MAX_PATH_NODES] or deeper than [MAX_PATH_DEPTH], and ARQ's path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`, `shortest(...)`): Jena evaluates
      * one of them for a binding without checking the timeout (`<p>{1000000}` over a two-node cycle ran past 100 s under
      * a 500 ms timeout), and standard SPARQL has none of them. The standard operators are allowed: their evaluation is
      * bounded by the graph.
      */
     private fun path(path: Path) {
+        var nodes = 0
+        fun count(depth: Int) {
+            if (++nodes > MAX_PATH_NODES) refuse("a property path of more than $MAX_PATH_NODES steps and operators")
+            if (depth > MAX_PATH_DEPTH) refuse("a property path nested more than $MAX_PATH_DEPTH deep")
+        }
+        fun depthOf(p: Path, depth: Int) {
+            count(depth)
+            when (p) {
+                is P_Path1 -> depthOf(p.subPath, depth + 1)
+                is P_Path2 -> { depthOf(p.left, depth + 1); depthOf(p.right, depth + 1) }
+                is P_NegPropSet -> p.nodes.forEach { _ -> count(depth + 1) }
+            }
+        }
+        depthOf(path, 0)
         path.visit(object : PathVisitorBase() {
             override fun visit(path: P_Mod) = refuse("the ARQ path extension ${path}")
             override fun visit(path: P_FixedLength) = refuse("the ARQ path extension ${path}")
@@ -219,6 +239,14 @@ internal object JenaQuerySandbox {
             refuse("the Jena or Java property function <${node.uri}>")
         }
     }
+
+    /**
+     * Most steps and operators one property path may have, and its deepest nesting: Jena evaluates a path for one
+     * binding without checking the timeout, and its sequences keep duplicates, so `(p|p)/(p|p)/...` multiplies the
+     * work at every step.
+     */
+    private const val MAX_PATH_NODES = 64
+    private const val MAX_PATH_DEPTH = 16
 
     /** ARQ's own namespaces: its function and property-function libraries and its script functions. */
     private val ARQ_NAMESPACES = listOf("http://jena.apache.org/ARQ/", "http://jena.hpl.hp.com/ARQ/")

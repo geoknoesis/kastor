@@ -238,8 +238,7 @@ internal class CountedExpr(
     override fun evalSpecial(binding: Binding, env: FunctionEnv): NodeValue = JenaSandboxBounds.failing {
         budget.check(env)
         val value = expr.eval(binding, env)
-        val node = value.asNode()
-        val length = if (node.isLiteral) node.literalLexicalForm.length else 0
+        val length = JenaSandboxBounds.textLength(value.asNode())
         val total = counter.addAndGet(length.toLong() + separator)
         if (total > SandboxLimits.MAX_GROUP_CONCAT_LENGTH) {
             throw SandboxLimitException("GROUP_CONCAT would accumulate more than ${SandboxLimits.MAX_GROUP_CONCAT_LENGTH} characters")
@@ -282,6 +281,18 @@ internal object JenaSandboxBounds {
     /** Most nodes a computed triple term may hold (a chain of `TRIPLE(?t, :p, ?t)` doubles them at every step). */
     const val MAX_TRIPLE_TERM_NODES: Int = 4096
 
+    /**
+     * The length of the text `GROUP_CONCAT` appends for [node]: the lexical form of a literal, the IRI of an IRI, the
+     * label of a blank node; a triple term counts its components.
+     */
+    fun textLength(node: org.apache.jena.graph.Node): Int = when {
+        node.isLiteral -> node.literalLexicalForm.length
+        node.isURI -> node.uri.length
+        node.isBlank -> node.blankNodeLabel.length
+        node.isTripleTerm -> node.triple.let { textLength(it.subject) + textLength(it.predicate) + textLength(it.`object`) }
+        else -> 0
+    }
+
     /** Fails with [SandboxLimitException] when [value], computed by [what], exceeds the [SandboxLimits]. */
     fun checkResult(value: NodeValue, what: String) {
         when {
@@ -321,6 +332,10 @@ internal object JenaSandboxBounds {
             if (func !is BoundedExpr && func !is CountedExpr && func !is ExprFunctionOp) {
                 throw IllegalStateException("The sandboxed plan holds an unbounded expression: $func")
             }
+        }
+
+        override fun tripleTerm(term: ExprTripleTerm) {
+            if (!term.node.isConcrete) throw IllegalStateException("The sandboxed plan holds an unbounded triple-term expression: $term")
         }
     }, org.apache.jena.sparql.algebra.OpVisitorBase())
 
@@ -366,13 +381,16 @@ internal object JenaSandboxBounds {
     /** An [ExprVisitor] that hands every function expression to [function] and ignores the rest. */
     abstract class ExprVisitorAdapter : ExprVisitor {
         abstract fun function(func: ExprFunction)
+
+        /** A triple-term expression `<<( s p o )>>`; ignored unless overridden. */
+        open fun tripleTerm(term: ExprTripleTerm) = Unit
         override fun visit(func: ExprFunction0) = function(func)
         override fun visit(func: ExprFunction1) = function(func)
         override fun visit(func: ExprFunction2) = function(func)
         override fun visit(func: ExprFunction3) = function(func)
         override fun visit(func: ExprFunctionN) = function(func)
         override fun visit(funcOp: ExprFunctionOp) = function(funcOp)
-        override fun visit(exprTripleTerm: ExprTripleTerm) = Unit
+        override fun visit(exprTripleTerm: ExprTripleTerm) = tripleTerm(exprTripleTerm)
         override fun visit(nv: NodeValue) = Unit
         override fun visit(nv: ExprVar) = Unit
         override fun visit(eAgg: ExprAggregator) = Unit

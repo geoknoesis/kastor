@@ -145,7 +145,7 @@ internal class JenaLibraryFunction(
                 val rows = exec.execSelect()
                 JenaQuerySandbox.requireBounded(exec)
                 consume(rows.asSequence().map { row ->
-                    MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
+                    MapBindingSet(JenaTerms.rowValues(row)) as BindingSet
                 })
             }
         }

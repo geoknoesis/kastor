@@ -30,6 +30,16 @@ import org.apache.jena.rdf.model.Literal as JenaLiteral
 internal object JenaTerms {
 
     /**
+     * The values of a result [row] by variable name, without the variables Jena adds itself (named with a leading `?`,
+     * such as the `??P0` of a property-path sequence under `SELECT *`, which `varNames()` lists unbound).
+     */
+    fun rowValues(row: org.apache.jena.query.QuerySolution): Map<String, RdfTerm> =
+        row.varNames().asSequence()
+            .filterNot { it.startsWith("?") }
+            .mapNotNull { name -> row.get(name)?.let { name to fromNode(it) } }
+            .toMap()
+
+    /**
      * Converts a Kastor RDF term to a Jena RDFNode.
      */
     fun toNode(term: RdfTerm?): RDFNode? {

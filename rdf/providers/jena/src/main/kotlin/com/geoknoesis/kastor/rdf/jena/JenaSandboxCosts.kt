@@ -16,8 +16,8 @@ import java.util.regex.Pattern
  *
  * - [GENERIC]: linear in its arguments and fixed-size results (comparisons, tests, dates, hashes, `NOW`, `RAND`,
  *   `UUID`). Its result is checked against the limits ([JenaSandboxBounds.checkResult]).
- * - [COPYING]: the result is (a part of) an argument, at most a fixed text longer (`STR`, `SUBSTR`, `IRI`, `IF`,
- *   `COALESCE`): not checked, so a function such as `STR` still works on a large literal of the data.
+ * - [COPYING]: the result is (a part of) an argument (`STR`, `SUBSTR`, `IF`, `COALESCE`): not checked, so a function
+ *   such as `STR` still works on a large literal of the data. `IRI` resolves against a base, so it is checked.
  * - The others are checked **before** they compute, from their evaluated arguments: a power from the bits of its
  *   result, a multiplication, division or modulo from its operands, `CONCAT` from the sum of its arguments, case
  *   mapping, URI encoding and Unicode normalization from their largest expansion, a conversion to a number, date or
@@ -41,7 +41,7 @@ internal enum class JenaCost {
         private val CLASSES: Map<Class<out ExprFunction>, JenaCost> = buildMap {
             listOf<KClass<out ExprFunction>>(
                 E_Str::class, E_StrSubstring::class, E_StrBefore::class, E_StrAfter::class, E_StrLang::class,
-                E_StrLangDir::class, E_IRI::class, E_IRI2::class, E_URI::class, E_URI2::class, E_BNode.BNode0::class, E_BNode.BNode1::class,
+                E_StrLangDir::class, E_BNode.BNode0::class, E_BNode.BNode1::class,
                 E_Coalesce::class, E_If::class, E_Lang::class, E_LangDir::class, E_Datatype::class, E_TripleSubject::class,
                 E_TriplePredicate::class, E_TripleObject::class, E_UnaryPlus::class, E_UnaryMinus::class, E_NumAbs::class,
                 E_NumRound::class, E_NumCeiling::class, E_NumFloor::class,
@@ -67,7 +67,7 @@ internal enum class JenaCost {
                 E_Random::class, E_UUID::class, E_StrUUID::class, E_Version::class, E_TripleFn::class,
                 E_DateTimeYear::class, E_DateTimeMonth::class, E_DateTimeDay::class, E_DateTimeHours::class,
                 E_DateTimeMinutes::class, E_DateTimeSeconds::class, E_DateTimeTimezone::class, E_DateTimeTZ::class,
-                E_AdjustToTimezone::class, E_Function::class,
+                E_AdjustToTimezone::class, E_Function::class, E_IRI::class, E_IRI2::class, E_URI::class, E_URI2::class,
             ).forEach { put(it.java, GENERIC) }
         }
 
@@ -81,7 +81,7 @@ internal enum class JenaCost {
                 "${FN}substring", "${FN}substring-before", "${FN}substring-after", "${FN}normalize-space", "${FN}abs",
                 "${FN}ceiling", "${FN}floor", "${XSD}string", "${XSD}anyURI",
             ) + listOf(
-                "str", "substr", "strbefore", "strafter", "strlang", "strlangdir", "iri", "uri", "bnode", "lang", "langdir",
+                "str", "substr", "strbefore", "strafter", "strlang", "strlangdir", "bnode", "lang", "langdir",
                 "datatype", "subject", "predicate", "object", "abs", "ceil", "floor", "round", "unary-minus", "unary-plus",
             ).map { SPARQL + it }
             copying.forEach { put(it, COPYING) }
@@ -116,7 +116,7 @@ internal enum class JenaCost {
                 .forEach { put(MATH + it, GENERIC) }
             listOf(
                 "add", "and", "contains", "day", "equals", "greater-than", "greater-than-or-equals", "haslang", "haslangdir",
-                "hours", "isBlank", "isIRI", "isLiteral", "isNumeric", "isTriple", "isURI", "langMatches", "less-than",
+                "hours", "iri", "uri", "isBlank", "isIRI", "isLiteral", "isNumeric", "isTriple", "isURI", "langMatches", "less-than",
                 "less-than-or-equal", "md5", "minus", "minutes", "month", "not", "not-equals", "now", "or", "plus", "rand",
                 "sameTerm", "sameValue", "seconds", "sha1", "sha224", "sha256", "sha384", "sha512", "strends", "strlen",
                 "strstarts", "struuid", "subtract", "timezone", "triple", "tz", "uuid", "year",
@@ -166,7 +166,7 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
             JenaCost.POWER -> if (args.size == 2 && args[0].isInteger && args[1].isInteger) power(args[0].integer, args[1].integer)
             JenaCost.EXP10 -> if (args.size == 1 && args[0].isInteger) power(BigInteger.TEN, args[0].integer)
             JenaCost.MULTIPLICATIVE -> args.forEach(::operand)
-            JenaCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { lexicalLength(it).toLong() }, label)
+            JenaCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { JenaSandboxBounds.textLength(it.asNode()).toLong() }, label)
             JenaCost.CASE -> expansion(args, 3)
             JenaCost.ENCODE -> expansion(args, 9)
             JenaCost.NORMALIZE_UNICODE -> expansion(args, 18)

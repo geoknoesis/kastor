@@ -1077,7 +1077,7 @@ class JenaRepository private constructor(
         val results = queryOperation(sparql) { withDeadline(deadline) { exec.execSelect() } }
         JenaQuerySandbox.requireBounded(exec)
         val rows = results.asSequence().map { row ->
-            MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
+            MapBindingSet(JenaTerms.rowValues(row)) as BindingSet
         }
         return consume(rows.guardedBy(sparql, deadline))
     }

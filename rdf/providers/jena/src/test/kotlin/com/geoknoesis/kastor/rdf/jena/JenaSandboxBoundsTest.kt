@@ -114,6 +114,39 @@ class JenaSandboxBoundsTest {
         assertLimited("SELECT ?t40 { ${doublings(40, seed = "<urn:a>", step = { "TRIPLE($it, <urn:p>, $it)" })} }")
     }
 
+    /** A triple-term expression with variables is refused (a chain of them doubles the term); TRIPLE() is bounded. */
+    @Test
+    fun `a triple-term expression with variables is refused, a constant one is not`() {
+        val chain = doublings(30, seed = "<urn:a>", step = { "<<( $it <urn:p> $it )>>" })
+        assertThrows(IllegalArgumentException::class.java) { plain("SELECT ?x30 { $chain }") }
+        assertEquals(1, plain("SELECT ?t { BIND (<<( <urn:a> <urn:p> 1 )>> AS ?t) }").size)
+        // The plan verification rejects such an expression too, should it ever pass the check.
+        val op = Algebra.compile(org.apache.jena.query.QueryFactory.create("SELECT * { BIND (<<( ?s <urn:p> ?s )>> AS ?t) }"))
+        assertThrows(IllegalStateException::class.java) {
+            JenaSandboxBounds.verify(JenaSandboxRewrite(JenaSandboxBudget(Long.MAX_VALUE, System::nanoTime)).bound(op))
+        }
+    }
+
+    /** GROUP_CONCAT counts the text it appends for every kind of term, IRIs too; IRI() results are checked. */
+    @Test
+    fun `group concat of IRIs and computed IRIs are bounded`() {
+        val values = (1..64).joinToString(" ")
+        assertLimited("SELECT (STRLEN(GROUP_CONCAT(?i)) AS ?n) { ${doublings(20)} BIND (IRI(CONCAT(\"urn:\", SUBSTR(?x20, 1, 4000000))) AS ?i) VALUES ?a { $values } VALUES ?b { $values } }")
+        assertLimited("SELECT ?i { ${doublings(23)} BIND (IRI(CONCAT(\"urn:\", ?x23)) AS ?i) }")
+    }
+
+    @Test
+    fun `a property path is bounded in size and depth`() {
+        val wide = (1..40).joinToString("/") { "(<urn:p>|<urn:q>)" }
+        assertThrows(IllegalArgumentException::class.java) { plain("SELECT * { <urn:a> $wide ?o }") }
+        val deep = "(".repeat(20) + "<urn:p>" + ")*".repeat(20)
+        assertThrows(IllegalArgumentException::class.java) { plain("SELECT * { <urn:a> $deep ?o }") }
+        assertEquals(2, plain("SELECT * { <urn:a> (<urn:p>|<urn:q>)/^<urn:p> ?o }").size)
+        // Jena lists the hidden variable of a path sequence (??P0) unbound under SELECT *: it is not a column.
+        val trusted = repository.withSelectRows(com.geoknoesis.kastor.rdf.SparqlSelectQuery("SELECT * { <urn:a> <urn:p>/^<urn:p> ?o }")) { it.toList() }
+        assertEquals(listOf(listOf("o"), listOf("o")), trusted.map { it.getVariableNames().toList() })
+    }
+
     /** The bounds reach every place an expression can be: Jena's walker and transformer skip some of them. */
     @ParameterizedTest
     @ValueSource(strings = [
