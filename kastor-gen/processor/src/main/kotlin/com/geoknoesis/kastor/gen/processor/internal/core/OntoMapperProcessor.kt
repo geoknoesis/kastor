@@ -310,7 +310,7 @@ public class OntoMapperProcessor(
         }
         return@forEach
       }
-      val propertyModel = analyzeProperty(property, prefixMappings, resolver)
+      val propertyModel = analyzeProperty(property, classDecl, prefixMappings, resolver)
       if (propertyModel != null) {
         properties.add(propertyModel)
       } else {
@@ -384,6 +384,24 @@ public class OntoMapperProcessor(
     return null
   }
 
+  /**
+   * The type of [property] as a member of [owner]: a member inherited from a generic supertype (`val value: T` of
+   * `Named<T>`, inherited by `Tag : Named<String>`) has the supertype's type argument substituted. `null` (after an
+   * error) when a type parameter remains, which a generated wrapper could not name.
+   */
+  private fun memberType(property: KSPropertyDeclaration, owner: KSClassDeclaration): KSType? {
+    val type = property.asMemberOf(owner.asStarProjectedType())
+    val element = type.arguments.firstOrNull()?.type?.resolve()
+    val unresolved = listOfNotNull(type, element).firstOrNull { it.declaration is KSTypeParameter } ?: return type
+    logger.error(
+      "@Rdf member '${property.simpleName.asString()}' of ${property.parentDeclaration?.qualifiedName?.asString()} has " +
+        "type ${unresolved.declaration.simpleName.asString()}, a type parameter that ${owner.qualifiedName?.asString()} does " +
+        "not bind: members inherited from a generic supertype are supported only with concrete type arguments.",
+      property,
+    )
+    return null
+  }
+
   /** [type] with type aliases replaced by the type they stand for (a nullable alias or use stays nullable). */
   private fun expandAliases(type: KSType): KSType {
     var current = type
@@ -417,7 +435,12 @@ public class OntoMapperProcessor(
       .any { resolver.getClassDeclarationByName(resolver.getKSNameFromString(it)) != null }
   }
 
-  private fun analyzeProperty(property: KSPropertyDeclaration, prefixMappings: Map<String, String>, resolver: Resolver): PropertyModel? {
+  private fun analyzeProperty(
+    property: KSPropertyDeclaration,
+    owner: KSClassDeclaration,
+    prefixMappings: Map<String, String>,
+    resolver: Resolver,
+  ): PropertyModel? {
     val rdfPropertyAnnotation = rdfAnnotationOf(property) ?: return null
 
     val predicateIriRaw = rdfPropertyAnnotation.arguments
@@ -439,7 +462,7 @@ public class OntoMapperProcessor(
     // Literal member types follow the SHACL generators (XsdLiterals codecs): String, Int, Long, Float, Double,
     // Boolean, BigInteger, BigDecimal, LocalDate, LangString and enums. Iri / RdfResource members read RDF terms.
     // Type aliases (of the member type and of a List element) are resolved to the types they stand for.
-    val returnType = expandAliases(property.type.resolve())
+    val returnType = expandAliases(memberType(property, owner) ?: return null)
     val isList = returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List"
     val elementType = if (isList) returnType.arguments.firstOrNull()?.type?.resolve()?.let(::expandAliases) else returnType
     val elementDeclaration = elementType?.declaration
