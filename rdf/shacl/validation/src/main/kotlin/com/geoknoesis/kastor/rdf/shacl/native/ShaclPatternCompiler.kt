@@ -149,6 +149,9 @@ internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
     }
 }
 
+/** The deepest nesting of character class subtractions (`[a-[b-[c]]]`) accepted: the translator recurses per level. */
+private const val MAX_CLASS_NESTING = 64
+
 /** Flags a leading inline flag group may set (see [compileShaclPattern]). */
 private const val LEADING_INLINE_FLAGS = "imsx"
 
@@ -303,8 +306,10 @@ private class XPathRegexTranslator(
         when (n) {
             'x' ->
                 if (i < p.length && p[i] == '{') {
+                    // Unterminated, java.util.regex rejects it too; going on would search for '}' again at every `\x{`.
                     val close = p.indexOf('}', i)
-                    if (close >= 0) i = close + 1
+                    if (close < 0) reject("the hexadecimal escape at index $from is not terminated: '}' expected")
+                    i = close + 1
                 } else {
                     skipWhile(2) { it.isHexDigit() }
                 }
@@ -377,7 +382,10 @@ private class XPathRegexTranslator(
      * Translates the character class expression starting at [i] (`[`) into an expression that matches one character
      * and moves past its closing `]`.
      */
-    private fun charClass(): ClassExpr {
+    private fun charClass(depth: Int = 0): ClassExpr {
+        if (depth >= MAX_CLASS_NESTING) {
+            reject("character class subtractions are nested more than $MAX_CLASS_NESTING levels deep at index $i")
+        }
         val open = i
         i++ // [
         val negated = i < p.length && p[i] == '^'
@@ -435,7 +443,7 @@ private class XPathRegexTranslator(
                         )
                     }
                     i++
-                    val excluded = charClass()
+                    val excluded = charClass(depth + 1)
                     if (i >= p.length || p[i] != ']') {
                         reject(
                             "the character class subtraction at index $at must end its class: ']' expected after " +
