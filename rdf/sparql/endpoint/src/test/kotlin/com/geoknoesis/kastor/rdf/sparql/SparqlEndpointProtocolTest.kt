@@ -89,14 +89,13 @@ class SparqlEndpointProtocolTest {
     }
 
     @Test
-    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    @Timeout(value = 300, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a stalled wait for response headers times out and abandons the exchange`() {
         val limit = Duration.ofMillis(500)
         val long = Duration.ofSeconds(60)
         SilentServer().use { server ->
             val byDeadline = SparqlEndpointConfig(server.url, readTimeout = long, requestTimeout = limit)
             val byReadTimeout = SparqlEndpointConfig(server.url, readTimeout = limit, requestTimeout = null)
-            var calls = 0
             for ((config, expected) in listOf(
                 byDeadline to "exceeded its 500 ms deadline waiting for the response",
                 byReadTimeout to "timed out after 500 ms waiting for the response",
@@ -108,18 +107,27 @@ class SparqlEndpointProtocolTest {
                         "ask" to { repo.ask(askAny) },
                         "update" to { repo.update(UpdateQuery("CLEAR DEFAULT")) },
                     ).forEach { (name, call) ->
-                        val start = System.nanoTime()
-                        val e = assertThrows(RdfQueryException::class.java, { call() }, name)
-                        assertTrue(e.message!!.contains(expected), "$name: ${e.message}")
-                        assertEndedAtLimit(limit, start, name)
-                        calls++
+                        // On a loaded host the client may not even have connected when the 500 ms are up: the
+                        // exchange is then cancelled before it reaches the server, and there is no connection whose
+                        // closing could be checked. Such an attempt proves nothing either way, so it is repeated
+                        // until one connection per call shape has reached the server (accepted by the server's
+                        // own thread, so it is waited for).
+                        var attempts = 0
+                        var reached: Boolean
+                        do {
+                            attempts++
+                            val start = System.nanoTime()
+                            val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                            assertTrue(e.message!!.contains(expected), "$name: ${e.message}")
+                            assertEndedAtLimit(limit, start, name)
+                            reached = server.awaitAccepted(1, CONNECTION_ARRIVAL_MILLIS)
+                        } while (!reached && attempts < MAX_ATTEMPTS)
+                        assertTrue(reached, "$name: none of $attempts attempts reached the server")
                     }
                 }
             }
-            // Every timed-out exchange was cancelled: the server sees its connection closed, not left waiting.
-            // The connections are accepted by the server's own thread, so they are waited for before they are counted.
-            assertTrue(server.awaitAccepted(calls), "the server accepted ${server.accepted.size} of $calls connections")
-            assertEquals(calls, server.accepted.size)
+            // Every timed-out exchange that reached the server was cancelled: the server sees its connection closed,
+            // not left waiting.
             for (socket in server.accepted) {
                 socket.soTimeout = SLOW_HOST_SLACK_MILLIS.toInt()
                 try {
@@ -389,5 +397,13 @@ class SparqlEndpointProtocolTest {
                 assertTrue(endpoint.requests.last().body.contains("?s <urn:p> ?o"), endpoint.requests.last().body)
             }
         }
+    }
+
+    private companion object {
+        /** How long a connection the client made may take to be accepted by the server's thread. */
+        const val CONNECTION_ARRIVAL_MILLIS = 2_000L
+
+        /** Attempts per call shape to get one exchange to the server before it times out. */
+        const val MAX_ATTEMPTS = 5
     }
 }

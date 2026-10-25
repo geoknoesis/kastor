@@ -172,7 +172,8 @@ internal class SilentServer : AutoCloseable {
      * Waits until [count] connections (more than those waited for before) are in [accepted]: they are
      * accepted by another thread, which may lag behind the client that connected.
      */
-    fun awaitAccepted(count: Int): Boolean = arrivals.tryAcquire(count, SLOW_HOST_SLACK_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)
+    fun awaitAccepted(count: Int, timeoutMillis: Long = SLOW_HOST_SLACK_MILLIS): Boolean =
+        arrivals.tryAcquire(count, timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
 
     override fun close() {
         server.close()

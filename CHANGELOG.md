@@ -38,6 +38,9 @@ and is kept as is; it was never published to Maven Central.
   the jar) instead of a hard-coded `1.0.0`.
 - Docs: the SPARQL provider guide says that sandboxed (SHACL) queries are refused and what that means for validating
   data held by an endpoint, and that `getTriples()` is one buffered `SELECT` capped by `maxResponseBytes`.
+- Tests: `SparqlEndpointProtocolTest`'s stalled-header test no longer fails when the 500 ms deadline ends before
+  the client has connected (on a loaded host the exchange is then cancelled before it reaches the server, which saw
+  "6 of 8 connections"). Such an attempt is repeated until each call shape has a connection whose closing is checked.
 
 ### Added
 
