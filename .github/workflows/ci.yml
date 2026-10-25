@@ -44,35 +44,13 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Test the report gates
-        run: |
-          python scripts/test_check_test_results.py
-          python scripts/test_check_staged_publications.py
-          python scripts/test_check_build_pins.py
-          python scripts/test_check_readme_imports.py
-          python scripts/test_check_performance.py
-          python scripts/test_run_performance_comparison.py
-          python scripts/test_check_doc_versions.py
-          python scripts/test_check_release_provenance.py
-          python scripts/test_check_quality_gates.py
-          python scripts/test_check_code_complexity.py
-
-      - name: Documentation version references
-        run: python scripts/check-doc-versions.py
-
-      - name: Build pins match the version catalog
-        # Literal versions in build scripts must equal their catalog entry. No pin is active at present; the check
-        # guards a reintroduced one (see docs/reference/dependency-upgrade-plan.md, "Temporary pins").
-        run: python scripts/check-build-pins.py
-
-      - name: README samples import what they use
-        run: python scripts/check-readme-imports.py
-
-      - name: Prevent growth of large or complex Kotlin components
-        run: python scripts/check-code-complexity.py
-
-      - name: Gradle check (tests, ABI, BOM coverage, coverage floors)
-        run: ./gradlew check --no-daemon -x :rdf:conformance:test
+      # The Python quality gates (gate-script unit tests, documentation versions, build pins, README imports and the
+      # complexity ratchet) run inside `check` as :verifyQualityGates, exactly as they do locally. `--continue` keeps
+      # one failing gate or module from hiding the results of every other module; each later verification step
+      # runs whenever this one ran, so a red gate never skips the test, coverage or ABI evidence.
+      - name: Gradle check (quality gates, tests, ABI, BOM coverage, coverage floors)
+        id: check
+        run: ./gradlew check --continue --no-daemon -x :rdf:conformance:test
         shell: bash
 
       # A Windows run once failed with "No buffer space available (maximum connections reached?)" on a loopback
@@ -87,26 +65,32 @@ jobs:
 
       - name: Dependency health
         id: build-health
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: ./gradlew buildHealth --no-daemon
         shell: bash
 
       - name: Require reviewed dependency advice
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python scripts/check-quality-gates.py dependencies build/reports/dependency-analysis/build-health-report.json scripts/dependency-advice-exceptions.json
 
       - name: RDF 1.2 conformance smoke
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: ./gradlew :rdf:conformance:conformanceSmokeTest --no-daemon
         shell: bash
 
       - name: Verify executed test counts and skips
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         # Floor is about 95% of the October offline population with the bundled SHACL fixture.
         # Per-module floors below prevent another module from hiding a missing suite.
         # New skips must be listed in scripts/test-skip-allowlist.json.
         run: python scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Require each tested module to remain populated
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 
       - name: Coverage reports
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: ./gradlew jacocoTestReport --no-daemon
         shell: bash
 
@@ -118,6 +102,7 @@ jobs:
           path: build/modules/**/reports/
 
       - name: Compile SHACL benchmark modules and smoke-test workloads
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         # JMH + ERA CLI are not pulled in by `test`; compile explicitly and run every workload once so they do not rot.
         run: ./gradlew :benchmarks:shacl:jmhCompileGeneratedClasses :benchmarks:shacl:test :benchmarks:shacl-era-cli:classes --no-daemon
         shell: bash
@@ -184,14 +169,17 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Gradle check
-        run: ./gradlew check :rdf:conformance:conformanceSmokeTest --no-daemon -x :rdf:conformance:test
+      - name: Gradle check (quality gates included)
+        id: check
+        run: ./gradlew check :rdf:conformance:conformanceSmokeTest --continue --no-daemon -x :rdf:conformance:test
         shell: bash
 
       - name: Verify executed test counts and skips
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python3 scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Require each tested module to remain populated
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python3 scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 
       - name: Upload verification reports

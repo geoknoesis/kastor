@@ -12,6 +12,8 @@ plugins {
 }
 
 apply(plugin = "com.autonomousapps.dependency-analysis")
+// Root `check` and the repository-level Python gates (complexity ratchet, doc versions, build pins, README imports).
+apply(from = "gradle/quality-gates.gradle.kts")
 
 // The version is defined once, in gradle.properties (`version=`). Releases are tagged `vX.Y.Z`.
 allprojects {
@@ -399,6 +401,7 @@ val collectArtifacts = tasks.register<org.gradle.api.tasks.Sync>("collectArtifac
 // Root aggregate build task
 tasks.register("build") {
   dependsOn(collectArtifacts)
+  dependsOn("check")
   dependsOn(subprojects.filter { it.buildFile.isFile }.map { "${it.path}:check" })
   dependsOn("conformanceSmokeTest")
 }
