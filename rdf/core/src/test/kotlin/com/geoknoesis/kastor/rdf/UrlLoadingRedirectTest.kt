@@ -284,10 +284,9 @@ class UrlLoadingRedirectTest {
         assertEquals(UrlRedirectPolicy.ALLOW_ALL, five.redirectPolicy)
         assertEquals(UrlAddressPolicy.PUBLIC_ADDRESSES, five.addressPolicy)
         assertEquals(five, UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L, UrlRedirectPolicy.ALLOW_ALL, UrlAddressPolicy.PUBLIC_ADDRESSES))
-        // One constructor: no overloads kept for earlier, unreleased shapes of the class.
-        // (Kotlin adds a no-argument constructor to a class whose parameters all have defaults.)
+        // The constructor is @JvmOverloads, for Java: one overload per number of leading arguments.
         assertEquals(
-            listOf(0, 7),
+            (0..7).toList(),
             UrlLoadOptions::class.java.constructors.filterNot { it.isSynthetic }.map { it.parameterCount }.sorted(),
         )
         assertEquals(UrlLoadOptions(), UrlLoadOptions.DEFAULT)

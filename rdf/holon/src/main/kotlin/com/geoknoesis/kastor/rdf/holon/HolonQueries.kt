@@ -16,7 +16,13 @@ import com.geoknoesis.kastor.rdf.*
  * (no per-query copy), when it has a SPARQL engine; the graph-only `memory` provider is copied for every query, as
  * any [Dataset] over it is. With [attributed], the scope union is stored in a private named graph whose IRI is never
  * one of the dataset's named graphs.
+ *
+ * @throws HolonException with [HolonError.UNSUPPORTED_CAPABILITY] for the GLOBAL scope, a blank-node graph name
+ *   with [attributed], or graph names or empty graphs the query provider cannot represent
+ * @throws RdfException if [repositoryFactory] or the copy into its repository fails
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun HolonResolution.asDataset(
   attributed: Boolean = false,
   repositoryFactory: () -> RdfRepository = { Rdf.memory() },

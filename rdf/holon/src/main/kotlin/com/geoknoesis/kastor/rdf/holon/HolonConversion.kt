@@ -21,7 +21,13 @@ class HolonConversion internal constructor(
  * Convert content before entailment. M and all CG(H) are preserved or conversion fails.
  * Assertion preservation also retains unfiled records, without activating them in M.
  * Original graph placement, reifier identity and occurrence multiplicity are not additional guarantees.
+ *
+ * @throws HolonException with [HolonError.UNSUPPORTED_CAPABILITY] for a MIXED target,
+ *   [HolonError.UNREPRESENTABLE_CONVERSION] when the target cannot keep M, a holon's content or (with
+ *   [HolonPreservation.ASSERTION]) every asserted statement, or the condition of an invalid source declaration
  */
+@JvmOverloads
+@Throws(HolonException::class)
 fun HolonContext.convert(
   target: HolonProfile,
   preservation: HolonPreservation = HolonPreservation.CONTENT,

@@ -72,7 +72,8 @@ class UrlLoadingDeadlineTest {
         try {
             assertThrows(RdfLoadTimeoutException::class.java) { Rdf.parseFromUrl("$root/slow.nt", RdfFormat.N_TRIPLES, options) }
             assertEquals(1, stalled.count, "the load must end at its deadline, while the server is still silent")
-            assertEquals(listOf("/slow.nt"), http.requests.toList())
+            // Whether the request reached the handler before the deadline depends on the load of the machine, so it
+            // is not asserted: the timeout is what this test is about, wherever the load was when it struck.
         } finally {
             release.countDown()
         }
@@ -108,7 +109,7 @@ class UrlLoadingDeadlineTest {
         val workers = 2
         val queued = 3
         val overload = 4
-        val executor = Rdf.newUrlIoExecutor(threads = workers, queueCapacity = queued)
+        val executor = RdfUrlParsing.newUrlIoExecutor(threads = workers, queueCapacity = queued)
         val release = CountDownLatch(1)
         val arrived = CountDownLatch(workers)
         val loading = AtomicInteger()
@@ -150,9 +151,9 @@ class UrlLoadingDeadlineTest {
 
     @Test
     fun `the default async executor has four workers and a queue of 256`() {
-        assertEquals(4, Rdf.URL_IO_THREADS)
-        assertEquals(256, Rdf.URL_IO_QUEUE_CAPACITY)
-        val executor = Rdf.newUrlIoExecutor()
+        assertEquals(4, RdfUrlParsing.URL_IO_THREADS)
+        assertEquals(256, RdfUrlParsing.URL_IO_QUEUE_CAPACITY)
+        val executor = RdfUrlParsing.newUrlIoExecutor()
         try {
             assertEquals(4, executor.maximumPoolSize)
             assertEquals(256, executor.queue.remainingCapacity())

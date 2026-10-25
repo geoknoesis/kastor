@@ -68,7 +68,7 @@ class UrlLoadingAsyncCancelTest {
             val canceller = Executors.newSingleThreadExecutor()
             try {
                 val runtime = UrlLoadRuntime(helpers = pool, open = { connection })
-                val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", loader, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
+                val future = RdfUrlParsing.graphAsync("http://example.org/doc.ttl", "TURTLE", loader, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
                 assertTrue(connecting.await(60, TimeUnit.SECONDS))
                 val cancel = canceller.submit<Boolean> { future.cancel(true) }
                 assertTrue(cancel.get(30, TimeUnit.SECONDS), "cancel() must not wait for the connection to be released")
@@ -127,7 +127,7 @@ class UrlLoadingAsyncCancelTest {
                 Thread({ start.await(60, TimeUnit.SECONDS); try { task.run() } finally { done.countDown() } }, "test-loader").start()
             }
             val runtime = UrlLoadRuntime(helpers = pool, open = { connection }, nanoTime = clock)
-            val future = Rdf.parseFromUrlAsync("http://example.org/doc.ttl", "TURTLE", executor, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
+            val future = RdfUrlParsing.graphAsync("http://example.org/doc.ttl", "TURTLE", executor, UrlLoadOptions.ALLOW_ALL_ADDRESSES, runtime)
             futureRef.set(future)
             start.countDown()
             assertTrue(done.await(60, TimeUnit.SECONDS))

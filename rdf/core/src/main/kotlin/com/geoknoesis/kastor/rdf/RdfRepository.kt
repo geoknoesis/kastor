@@ -110,7 +110,7 @@ interface RdfRepository : Dataset, SparqlMutable {
      * **Error Handling:**
      * - Throws [RdfQueryException] if the query fails to parse or execute
      * - The exception includes the query string for debugging
-     * - Use [selectOrNull] or [selectResult] for functional error handling
+     * - Use [com.geoknoesis.kastor.rdf.selectOrNull] or [com.geoknoesis.kastor.rdf.selectResult] for functional error handling
      * 
      * **Error Handling Pattern:**
      * - **Technical failures** (parsing, execution) → [RdfQueryException]
@@ -121,26 +121,31 @@ interface RdfRepository : Dataset, SparqlMutable {
      * @return SparqlQueryResult containing the query results
      * @throws RdfQueryException if the query fails to parse or execute
      */
+    @Throws(RdfException::class)
     override fun select(query: SparqlSelect): SparqlQueryResult
     
     /**
      * Execute a SPARQL ASK query.
      */
+    @Throws(RdfException::class)
     override fun ask(query: SparqlAsk): Boolean
     
     /**
      * Execute a SPARQL CONSTRUCT query.
      */
+    @Throws(RdfException::class)
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple>
     
     /**
      * Execute a SPARQL DESCRIBE query.
      */
+    @Throws(RdfException::class)
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple>
     
     /**
      * Execute a SPARQL UPDATE operation.
      */
+    @Throws(RdfException::class)
     override fun update(query: UpdateQuery)
     
     // === TRANSACTION OPERATIONS ===
@@ -167,6 +172,7 @@ interface RdfRepository : Dataset, SparqlMutable {
      *   thrown by [operations] itself propagates unchanged: the bundled in-memory provider rolls back and rethrows it
      *   (an exception from the rollback is attached to it as suppressed), without wrapping it.
      */
+    @Throws(RdfException::class)
     fun transaction(operations: RdfRepository.() -> Unit)
     
     /**
@@ -181,6 +187,7 @@ interface RdfRepository : Dataset, SparqlMutable {
      * @throws RdfTransactionException if the provider fails to begin or end the transaction; a failure thrown by
      *   [operations] itself propagates unchanged
      */
+    @Throws(RdfException::class)
     fun readTransaction(operations: RdfRepository.() -> Unit)
     
     // === UTILITY OPERATIONS ===

@@ -31,8 +31,23 @@ package com.geoknoesis.kastor.rdf
  * - Use [RdfException.errorCode] for programmatic error handling
  * - Use [RdfQueryException.query] to access the failed query string
  * - Use [RdfException.context] for additional debugging information
- * - Consider using [selectOrNull] or [selectResult] for functional error handling
- * 
+ * - Consider using [com.geoknoesis.kastor.rdf.selectOrNull] or [com.geoknoesis.kastor.rdf.selectResult] for
+ *   functional error handling
+ *
+ * ## Java callers and I/O failures
+ *
+ * [RdfException] extends [Exception], so it is a checked exception for Java. The public entry points declare it with
+ * `@Throws` (the parse functions of [Rdf], the query, update and transaction methods of [SparqlQueryable],
+ * [SparqlMutable] and [RdfRepository], [ProviderRegistry.create], the [RdfProvider] parse and serialize methods, and
+ * the `rdf-holon` operations), so Java can `catch (RdfException e)`, or a subclass, around them. Graph accessors
+ * ([RdfGraph], [MutableRdfGraph]) do not declare it: the bundled providers do not throw it from them.
+ *
+ * Failures to *read* input are [java.io.IOException]s, not [RdfException]s: an [java.io.InputStream] that fails, a
+ * missing file, and every URL-loading failure - network errors, and Kastor's own [RdfAddressRefusedException],
+ * [RdfHttpStatusException], [RdfLoadTimeoutException] and [RdfInputTooLargeException]. The functions that read a
+ * stream, a file or a URL declare both. So `catch (e: RdfException)` sees every Kastor processing failure, and
+ * `catch (e: java.io.IOException)` every failure to obtain the input.
+ *
  * ## Error Codes
  * 
  * All exceptions include an [errorCode] property for programmatic error handling.
@@ -64,7 +79,9 @@ sealed class RdfException(
  *
  * A subclass passes its own [errorCode] when one of [RdfErrorCode] fits, and otherwise keeps
  * [RdfErrorCode.EXTENSION_ERROR]; it identifies its failures more precisely with its own type and properties.
- * Like every [RdfException] it is a checked exception for Java callers.
+ * Like every [RdfException] it is a checked exception for Java callers: a Java `catch` of it compiles only around a
+ * call that declares it (or a superclass) with `@Throws`, so every public function of an extension module that can
+ * throw it must carry `@Throws`.
  *
  * @param message Human-readable error message
  * @param errorCode Error code for programmatic handling (defaults to [RdfErrorCode.EXTENSION_ERROR])
@@ -116,7 +133,7 @@ class RdfTransactionException(
  * Exception thrown when provider operations fail.
  * 
  * @param message Human-readable error message
- * @param errorCode Error code for programmatic handling (defaults to PROVIDER_OPERATION_FAILED)
+ * @param errorCode Error code for programmatic handling (defaults to [RdfErrorCode.PROVIDER_NOT_SUPPORTED])
  * @param cause The underlying exception that caused this error
  */
 class RdfProviderException(

@@ -19,7 +19,15 @@ class HolonValidation internal constructor(
  * [shapes] must be a separately supplied dataset with one shared blank-node scope. It never enters G.
  * Shapes are checked before domain validation; syntax failures are distinct from ordinary violations.
  * This helper supports simple entailment without ontology inputs.
+ *
+ * @throws HolonException with [HolonError.UNSUPPORTED_CAPABILITY] for another entailment regime or an unsupported
+ *   SHACL feature, [HolonError.MISSING_SHAPES_GRAPH] for an imported graph missing from [shapes],
+ *   [HolonError.ILL_FORMED_SHAPES_GRAPH] for an effective shapes union that is not well-formed SHACL, or the
+ *   condition of an invalid declaration of the context
+ * @throws ShaclValidationException (unchecked) for resource limits or execution failures of the validator
  */
+@JvmOverloads
+@Throws(HolonException::class)
 fun HolonContext.validate(
   holon: RdfResource,
   shapes: Map<Iri, RdfGraph>,
