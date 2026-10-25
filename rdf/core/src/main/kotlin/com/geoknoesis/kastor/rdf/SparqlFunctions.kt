@@ -65,6 +65,37 @@ class SparqlFunction(
 ) {
     /** One entry per declared parameter, in argument order: true when the parameter is optional (a private copy). */
     val optional: List<Boolean> = optional.toList()
+
+    /**
+     * Provider helper (a provider calls it before [SparqlFunction.body]; applications do not need it).
+     *
+     * The arguments a provider passes to [SparqlFunction.body]: [evaluated] holds one entry per actual argument
+     * (null = evaluation error).
+     *
+     * Section 7.3: "Where the evaluation has caused an error, the result of the SPARQL function call is also an error,
+     * unless the corresponding sh:parameter for the argument has sh:optional true. In that case, the argument will be
+     * unbound in the scope." and "blank nodes cannot be passed as arguments ... an argument that evaluates to a blank
+     * node leads to an evaluation failure and thus an error."
+     *
+     * Returns null when the call is an error: more arguments than parameters; an error, a missing argument or a blank
+     * node for a non-optional parameter. Optional parameters with an error, a blank node or no argument become null.
+     */
+    fun bindArguments(evaluated: List<RdfTerm?>): List<RdfTerm?>? {
+        if (evaluated.size > optional.size) return null
+        return optional.mapIndexed { i, isOptional ->
+            val arg = evaluated.getOrNull(i)?.takeUnless { it is BlankNode }
+            if (arg == null && !isOptional) return null
+            arg
+        }
+    }
+
+    companion object {
+        /**
+         * The deepest nesting of function calls a provider evaluates; a deeper call is an error, so recursion
+         * terminates.
+         */
+        const val MAX_FUNCTION_DEPTH: Int = 16
+    }
 }
 
 /** The context a [SparqlFunction.body] runs in. */
@@ -75,33 +106,7 @@ interface SparqlFunctionCall {
     /**
      * Runs [query] on the dataset of the calling query, within its remaining time, one nesting level deeper than the
      * calling query. The nested query sees exactly its own [SandboxedSelectQuery.functions]; there is no implicit
-     * inheritance from the calling query. A call deeper than [MAX_FUNCTION_DEPTH] is an error.
+     * inheritance from the calling query. A call deeper than [SparqlFunction.MAX_FUNCTION_DEPTH] is an error.
      */
     fun <T> select(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, consume: (Sequence<BindingSet>) -> T): T
-}
-
-/** The deepest nesting of function calls a provider evaluates; a deeper call is an error, so recursion terminates. */
-const val MAX_FUNCTION_DEPTH: Int = 16
-
-/**
- * Provider helper (a provider calls it before [SparqlFunction.body]; applications do not need it).
- *
- * The arguments a provider passes to [SparqlFunction.body]: [evaluated] holds one entry per actual argument
- * (null = evaluation error).
- *
- * Section 7.3: "Where the evaluation has caused an error, the result of the SPARQL function call is also an error,
- * unless the corresponding sh:parameter for the argument has sh:optional true. In that case, the argument will be
- * unbound in the scope." and "blank nodes cannot be passed as arguments ... an argument that evaluates to a blank
- * node leads to an evaluation failure and thus an error."
- *
- * Returns null when the call is an error: more arguments than parameters; an error, a missing argument or a blank
- * node for a non-optional parameter. Optional parameters with an error, a blank node or no argument become null.
- */
-fun SparqlFunction.bindArguments(evaluated: List<RdfTerm?>): List<RdfTerm?>? {
-    if (evaluated.size > optional.size) return null
-    return optional.mapIndexed { i, isOptional ->
-        val arg = evaluated.getOrNull(i)?.takeUnless { it is BlankNode }
-        if (arg == null && !isOptional) return null
-        arg
-    }
 }

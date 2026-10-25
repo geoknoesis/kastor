@@ -2,14 +2,12 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.BindingSet
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.MapBindingSet
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.TripleTerm
-import com.geoknoesis.kastor.rdf.bindArguments
 import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryCancelledException
@@ -31,9 +29,10 @@ import java.util.concurrent.TimeUnit
  * runs). It is made visible to that one execution by [JenaQuerySandbox.restrict], never through the global registry.
  *
  * Every failure is a SPARQL error ([ExprEvalException]): an argument error the parameters do not allow
- * ([bindArguments]), a body that returns null or throws, and a nested query that is refused, that cannot be parsed or
- * that nests deeper than [MAX_FUNCTION_DEPTH]. Only a cancellation ([QueryCancelledException], also for a body interrupted
- * with [InterruptedException], whose interrupt flag is restored) stops the calling query.
+ * ([SparqlFunction.bindArguments]), a body that returns null or throws, and a nested query that is refused, that
+ * cannot be parsed or that nests deeper than [SparqlFunction.MAX_FUNCTION_DEPTH]. Only a cancellation
+ * ([QueryCancelledException], also for a body interrupted with [InterruptedException], whose interrupt flag is
+ * restored) stops the calling query.
  *
  * Nested queries run on the dataset of the calling query, restricted like it, and end by [deadline] (a [clock] value;
  * [Long.MAX_VALUE] when the calling query has no timeout). Jena creates one instance per call site and execution, so
@@ -104,7 +103,9 @@ internal class JenaLibraryFunction(
     private inner class Call(override val arguments: List<RdfTerm?>, private val env: FunctionEnv) : SparqlFunctionCall {
 
         override fun <T> select(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, consume: (Sequence<BindingSet>) -> T): T {
-            if (depth >= MAX_FUNCTION_DEPTH) throw ExprEvalException("Custom SPARQL functions nest deeper than $MAX_FUNCTION_DEPTH")
+            if (depth >= SparqlFunction.MAX_FUNCTION_DEPTH) {
+                throw ExprEvalException("Custom SPARQL functions nest deeper than ${SparqlFunction.MAX_FUNCTION_DEPTH}")
+            }
             val parsed = prepare(query, bindings)
             val dataset = env.dataset ?: throw ExprEvalException("No dataset for a nested query")
             val builder = JenaQuerySandbox.restrict(

@@ -252,9 +252,15 @@ API:
     `UnsupportedOperationException` when it cannot check it.
   - `SparqlFunctionLibrary` (`EMPTY`, `of`), `SparqlFunction` and `SparqlFunctionCall` define custom functions that
     are visible to one query.
-  - `MAX_FUNCTION_DEPTH` (16) and the provider helper `SparqlFunction.bindArguments`.
+  - `SparqlFunction.MAX_FUNCTION_DEPTH` (16) and the provider helper `SparqlFunction.bindArguments`.
   - The graph-only `memory` provider refuses every query. A `Dataset` view keeps the sandbox, as described above, and
     refuses the timed `withSelectRows`.
+- API: `MAX_FUNCTION_DEPTH` and `bindArguments` are now members of `SparqlFunction`: the constant is
+  `SparqlFunction.MAX_FUNCTION_DEPTH` (a companion `const`, a static field for Java) and `bindArguments(evaluated)` is
+  a member function. The top-level `MAX_FUNCTION_DEPTH` and the extension `SparqlFunction.bindArguments` (the
+  `SparqlFunctionsKt` facade class) are removed without deprecation, since neither was ever released. Kotlin calls of
+  `function.bindArguments(...)` compile unchanged without the import; other code writes
+  `SparqlFunction.MAX_FUNCTION_DEPTH`.
 - API: `SparqlFunctionLibrary.EMPTY` is now a `@JvmField` and `SparqlFunctionLibrary.of` a `@JvmStatic`. Java callers
   write `SparqlFunctionLibrary.EMPTY` (`Companion.getEMPTY()` is gone). Kotlin source is unchanged.
 - `Rdf.parseFromUrl` and `Rdf.parseFromUrlAsync` reject an unknown format name with `RdfFormatException` before they
@@ -361,7 +367,7 @@ API:
 - `rdf-shacl`: custom SPARQL functions (SHACL 1.2 SPARQL section 7). A `sh:ListParameterExpressionFunction` whose
   `sh:bodyExpression` is a `sh:select`, a `sh:sparqlExpr` or a `shnex:` node expression can be called by its IRI from any
   SHACL-SPARQL query. A SPARQL body sees `$this` (the function IRI) and `$arg<i>`. Functions can call each other up to
-  16 levels deep (`MAX_FUNCTION_DEPTH`), and a built-in function wins over a declaration with the same IRI. Parameters
+  16 levels deep (`SparqlFunction.MAX_FUNCTION_DEPTH`), and a built-in function wins over a declaration with the same IRI. Parameters
   must be a contiguous run `shnex:arg0`, `shnex:arg1`, ..., and an optional parameter cannot be followed by a mandatory
   one; otherwise the shapes graph is ill-formed (`ShapeCompileException`). A function error is an ordinary SPARQL error
   (`BIND` leaves its variable unbound, `FILTER` is false), except that an undecided conformance check inside a `shnex:`
@@ -382,8 +388,8 @@ API:
   which every store the repository factories create now uses (memory, native, and the RDFS and SHACL sails wrapping
   them). Nested queries made by a function body are sandboxed again (no `SERVICE`, no `java:` code), run on the calling
   query's dataset with their initial bindings checked, and stop at the calling query's deadline; a call deeper than
-  `MAX_FUNCTION_DEPTH` is an error. On RDF4J an unknown function in a sandboxed query is an error at evaluation, as on
-  Jena; ordinary queries keep RDF4J's behaviour.
+  `SparqlFunction.MAX_FUNCTION_DEPTH` is an error. On RDF4J an unknown function in a sandboxed query is an error at
+  evaluation, as on Jena; ordinary queries keep RDF4J's behaviour.
 - W3C SHACL 1.2 suite: every `sht:Validate` and `sht:EvalNodeExpr` case of the pinned corpus passes on Jena, including
   the SPARQL-based constraint component, SPARQL function and SPARQL node expression cases, except `hasLang.ttl`, which
   is accepted as ill-formed (spec override). `W3cKnownDeviations` lists no unsupported feature; it lists one spec
@@ -393,7 +399,8 @@ API:
 
 - `rdf-core`: new provider-neutral function contract: `SparqlFunction(iri, optional, body)`, `SparqlFunctionCall`
   (the evaluated `arguments`, and `select(query, bindings, consume)` for a nested query), `SparqlFunctionLibrary`
-  (`function(iri)`, `EMPTY`, `of(functions)`), `bindArguments(function, arguments)` and `MAX_FUNCTION_DEPTH` (16).
+  (`function(iri)`, `EMPTY`, `of(functions)`), and on `SparqlFunction` the provider helper `bindArguments(arguments)`
+  and the constant `SparqlFunction.MAX_FUNCTION_DEPTH` (16).
 - **Breaking (binary):** `SandboxedSelectQuery` moved from `rdf-sparql-contract` to `rdf-core`, in the same package
   `com.geoknoesis.kastor.rdf`. It is now a regular class instead of a `@JvmInline value class`, with a second
   constructor parameter `functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY`. Source that calls

@@ -1,14 +1,12 @@
 package com.geoknoesis.kastor.rdf.rdf4j
 
 import com.geoknoesis.kastor.rdf.BindingSet
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.MapBindingSet
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
-import com.geoknoesis.kastor.rdf.bindArguments
 import org.eclipse.rdf4j.common.iteration.CloseableIteration
 import org.eclipse.rdf4j.common.order.StatementOrder
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode
@@ -254,7 +252,11 @@ internal class KastorEvaluationStrategy(
     private inner class Call(override val arguments: List<RdfTerm?>, private val scope: Rdf4jFunctionScope.Scope) : SparqlFunctionCall {
 
         override fun <T> select(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, consume: (Sequence<BindingSet>) -> T): T {
-            if (scope.depth >= MAX_FUNCTION_DEPTH) throw ValueExprEvaluationException("Custom SPARQL functions nest deeper than $MAX_FUNCTION_DEPTH")
+            if (scope.depth >= SparqlFunction.MAX_FUNCTION_DEPTH) {
+                throw ValueExprEvaluationException(
+                    "Custom SPARQL functions nest deeper than ${SparqlFunction.MAX_FUNCTION_DEPTH}",
+                )
+            }
             val nested = scope.nested.prepare(query, bindings, scope.dataset)
             val deadline = scope.deadline
             fun checkDeadline() {

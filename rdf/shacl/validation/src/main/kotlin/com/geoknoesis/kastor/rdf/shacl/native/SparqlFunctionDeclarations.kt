@@ -2,7 +2,6 @@ package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
@@ -24,9 +23,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * to the function IRI (§7.3) and `arg<i>` to argument `i` (§6: a scope variable named by a number is bound as
  * `"arg" + str(name)`); an unbound optional argument leaves its variable unbound. A body query is sent with the same
  * library, so functions can call each other and themselves; recursion is bounded by the provider's
- * [com.geoknoesis.kastor.rdf.MAX_FUNCTION_DEPTH]. A call returns the projected node only when exactly one solution
- * binds it; zero or several are an error (§7.3), which the provider turns into an unbound value, never a validation
- * failure.
+ * [SparqlFunction.MAX_FUNCTION_DEPTH]. A call returns the projected node only when exactly one solution binds it; zero
+ * or several are an error (§7.3), which the provider turns into an unbound value, never a validation failure.
  *
  * Any other body that is a well-formed node expression (SHACL 1.2 Node Expressions) is evaluated by the native
  * evaluator of the run ([SparqlFunctionDeclarationSet.library]). A body that is no node expression at all is not
@@ -188,8 +186,8 @@ internal class SparqlFunctionDeclarationSet(val declarations: List<Declaration>)
      *
      * A node expression body runs its queries as new queries, which the provider's own nesting limit does not relate
      * to the calling query. So every call of a function of the library, of either kind, counts towards one limit:
-     * at most [MAX_FUNCTION_DEPTH] calls are under way at a time (a run is single-threaded, so this is the nesting
-     * depth), and a call beyond it is an error. Recursion through any mix of bodies therefore terminates.
+     * at most [SparqlFunction.MAX_FUNCTION_DEPTH] calls are under way at a time (a run is single-threaded, so this is
+     * the nesting depth), and a call beyond it is an error. Recursion through any mix of bodies therefore terminates.
      */
     fun library(run: (body: NodeExpression, function: Iri, arguments: List<RdfTerm?>) -> RdfTerm?): SparqlFunctionLibrary {
         if (declarations.isEmpty()) return SparqlFunctionLibrary.EMPTY
@@ -200,7 +198,7 @@ internal class SparqlFunctionDeclarationSet(val declarations: List<Declaration>)
         for (declaration in declarations) {
             val body = declaration.body
             byIri[declaration.iri.value] = SparqlFunction(declaration.iri.value, declaration.optional) { call ->
-                if (active.incrementAndGet() > MAX_FUNCTION_DEPTH) {
+                if (active.incrementAndGet() > SparqlFunction.MAX_FUNCTION_DEPTH) {
                     active.decrementAndGet()
                     null
                 } else {

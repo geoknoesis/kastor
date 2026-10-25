@@ -1305,10 +1305,16 @@ public final class com/geoknoesis/kastor/rdf/SparqlFeature : java/lang/Enum {
 }
 
 public final class com/geoknoesis/kastor/rdf/SparqlFunction {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/SparqlFunction$Companion;
+	public static final field MAX_FUNCTION_DEPTH I
 	public fun <init> (Ljava/lang/String;Ljava/util/List;Lkotlin/jvm/functions/Function1;)V
+	public final fun bindArguments (Ljava/util/List;)Ljava/util/List;
 	public final fun getBody ()Lkotlin/jvm/functions/Function1;
 	public final fun getIri ()Ljava/lang/String;
 	public final fun getOptional ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlFunction$Companion {
 }
 
 public abstract interface class com/geoknoesis/kastor/rdf/SparqlFunctionCall {
@@ -1325,11 +1331,6 @@ public abstract interface class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary 
 
 public final class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary$Companion {
 	public final fun of (Ljava/util/Collection;)Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
-}
-
-public final class com/geoknoesis/kastor/rdf/SparqlFunctionsKt {
-	public static final field MAX_FUNCTION_DEPTH I
-	public static final fun bindArguments (Lcom/geoknoesis/kastor/rdf/SparqlFunction;Ljava/util/List;)Ljava/util/List;
 }
 
 public abstract interface class com/geoknoesis/kastor/rdf/SparqlMutable : com/geoknoesis/kastor/rdf/SparqlQueryable {
