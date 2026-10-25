@@ -38,6 +38,8 @@ import java.io.InputStream
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * @throws IllegalArgumentException if the format is not a quad format
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun RdfRepository.serializeDataset(format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val formatEnum = RdfFormat.fromStringOrThrow(format)
     if (!RdfFormat.isQuadFormat(formatEnum)) {
@@ -53,6 +55,7 @@ fun RdfRepository.serializeDataset(format: String, options: SerializationOptions
  * @param configure Options builder lambda
  * @return The serialized RDF dataset as a string
  */
+@Throws(RdfException::class)
 fun RdfRepository.serializeDataset(
     format: String,
     configure: SerializationOptions.Builder.() -> Unit
@@ -71,6 +74,8 @@ fun RdfRepository.serializeDataset(
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * @throws IllegalArgumentException if the format is not a quad format
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun RdfRepository.serializeDataset(format: RdfFormat, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     if (!RdfFormat.isQuadFormat(format)) {
         throw IllegalArgumentException("Format '${format.formatName}' is not a quad format. Use serializeGraph() for graph formats, or use TRIG or N-QUADS for datasets.")
@@ -123,6 +128,7 @@ fun RdfRepository.serializeDataset(format: RdfFormat, options: SerializationOpti
  * @param configure Options builder lambda
  * @return The serialized RDF dataset as a string
  */
+@Throws(RdfException::class)
 fun RdfRepository.serializeDataset(
     format: RdfFormat,
     configure: SerializationOptions.Builder.() -> Unit

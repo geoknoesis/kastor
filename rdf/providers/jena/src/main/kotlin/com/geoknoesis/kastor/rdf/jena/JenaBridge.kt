@@ -206,8 +206,8 @@ object JenaBridge {
         val model = ModelFactory.createDefaultModel()
         try {
             JenaParsing.parseWithFormatErrors(format) {
-                JenaParsing.noRemoteDocuments(org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url))
-                    .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.graph(model.graph)))
+                JenaLiteralBounds.bounded(JenaParsing.noRemoteDocuments(org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url)))
+                    .parse(JenaGraphParsing.validatingGraph(format, model.graph))
             }
         } catch (failure: Throwable) {
             model.close()
@@ -244,6 +244,14 @@ object JenaBridge {
             else -> throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
         }
         return withGraphView(rdfGraph) { graph ->
+            // JSON-LD 1.1 has no syntax for an RDF 1.2 triple term; Jena's writer fails with a bare JenaException.
+            if (lang == Lang.JSONLD && hasTripleTerm(graph)) {
+                throw RdfFormatException.Generic(
+                    "JSON-LD cannot hold an RDF 1.2 triple term: JSON-LD 1.1 has no syntax for triple terms. " +
+                        "Serialize as Turtle, TriG, N-Triples, N-Quads or RDF/XML.",
+                    RdfErrorCode.FORMAT_SERIALIZATION_ERROR,
+                )
+            }
             val prefixes: PrefixMapping = PrefixMappingImpl()
                 .setNsPrefixes(graph.prefixMapping)
                 .setNsPrefixes(options.prefixMappings)
@@ -253,6 +261,16 @@ object JenaBridge {
             val writer = RDFWriter.source(writerGraph).lang(lang)
             if (lang == Lang.TURTLE) options.baseUri?.let { writer.base(it) }
             writer.asString()
+        }
+    }
+
+    /** Whether a triple of [graph] has a triple term as its object (the only place RDF 1.2 allows one). */
+    private fun hasTripleTerm(graph: Graph): Boolean {
+        val triples = graph.find()
+        try {
+            return triples.asSequence().any { it.`object`.isTripleTerm }
+        } finally {
+            triples.close()
         }
     }
 

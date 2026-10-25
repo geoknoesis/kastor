@@ -16,8 +16,25 @@ internal class CandidateQueue {
     val queue = ArrayDeque<RdfResource>()
     private val seen = HashSet<RdfResource>()
 
+    /** The symbolic candidate sets ([Dependencies.anyIriShape], [Dependencies.anyShape]) already queued, once each. */
+    private var allIriShapes = false
+    private var allShapes = false
+
     fun want(candidates: Collection<RdfResource>) {
         candidates.forEach { if (seen.add(it)) queue.add(it) }
+    }
+
+    /** Queues the candidates of [dependencies], expanding each symbolic set over [shapes] only the first time. */
+    fun want(dependencies: Dependencies, shapes: ExpressionShapes) {
+        want(dependencies.candidates)
+        if (dependencies.anyShape && !allShapes) {
+            allShapes = true
+            allIriShapes = true
+            want(shapes.allCandidates)
+        } else if (dependencies.anyIriShape && !allIriShapes) {
+            allIriShapes = true
+            want(shapes.iriCandidates)
+        }
     }
 }
 
@@ -50,7 +67,7 @@ internal class ShapeClosure(
 
     private fun add(dependencies: Dependencies) {
         pending.addAll(dependencies.strict)
-        candidates.want(dependencies.candidates)
+        candidates.want(dependencies, resolver.exprShapes)
     }
 
     fun visitProperty(ps: CompiledPropertyShape) {

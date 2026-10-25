@@ -17,8 +17,10 @@ import kotlin.io.path.extension
 import kotlin.io.path.readText
 
 /**
- * Runs every example's `main` with its output captured: an example that throws, never ends, prints nothing or reports
- * a failure it caught itself ("✗ Failed", "ERROR") fails the build instead of the first reader who runs it.
+ * Runs every example's `main` with its standard output and standard error captured: an example that throws, never
+ * ends, prints nothing or reports a failure it caught itself fails the build instead of the first reader who runs it.
+ * Examples report a caught failure with [reportFailure], whose fixed marker ([EXAMPLE_FAILURE_MARKER]) is looked for
+ * in both streams whatever the failure's own message says; a stack trace on either stream fails the example too.
  */
 class ExampleMainsSmokeTest {
 
@@ -40,37 +42,62 @@ class ExampleMainsSmokeTest {
     @Test
     fun `every example is run`() {
         // A new example is picked up by the scan; this guards the scan itself.
-        assertEquals(8, exampleMains().size, "examples found: ${exampleMains()}")
+        assertEquals(9, exampleMains().size, "examples found: ${exampleMains()}")
     }
 
     @TestFactory
     fun `each example main runs to the end and reports no failure`(): List<DynamicTest> =
         exampleMains().map { className ->
             DynamicTest.dynamicTest(className.substringAfterLast('.')) {
-                val output = run(className)
+                val (output, errors) = run(className)
                 assertTrue(output.isNotBlank(), "$className printed nothing")
-                for (failure in listOf("✗ Failed", "ERROR", "Exception")) {
-                    assertFalse(output.contains(failure), "$className reported a failure ('$failure'):\n$output")
+                for ((stream, text) in listOf("stdout" to output, "stderr" to errors)) {
+                    for (failure in FAILURE_MARKERS) {
+                        assertFalse(text.contains(failure), "$className reported a failure on $stream ('$failure'):\n$text")
+                    }
                 }
             }
         }
 
-    private fun run(className: String): String {
+    @Test
+    fun `a failure an example reports carries a marker the smoke test looks for`() {
+        val (output, _) = capture { reportFailure("a step", IllegalStateException("no such provider")) }
+        assertTrue(FAILURE_MARKERS.any { output.contains(it) }, output)
+    }
+
+    /** Runs the example; returns what it printed on standard output and on standard error. */
+    private fun run(className: String): Pair<String, String> {
         val main = Class.forName(className).getMethod("main", Array<String>::class.java)
-        val captured = ByteArrayOutputStream()
-        val original = System.out
-        System.setOut(PrintStream(captured, true, Charsets.UTF_8))
-        try {
+        return capture { out ->
             assertTimeoutPreemptively(Duration.ofMinutes(2)) {
                 try {
                     main.invoke(null, emptyArray<String>())
                 } catch (e: InvocationTargetException) {
-                    throw AssertionError("$className threw ${e.cause}\n--- output ---\n${captured.toString(Charsets.UTF_8)}", e.cause)
+                    throw AssertionError("$className threw ${e.cause}\n--- output ---\n${out.toString(Charsets.UTF_8)}", e.cause)
                 }
             }
-        } finally {
-            System.setOut(original)
         }
-        return captured.toString(Charsets.UTF_8)
+    }
+
+    /** Runs [block] with standard output and standard error captured; returns both. */
+    private fun capture(block: (ByteArrayOutputStream) -> Unit): Pair<String, String> {
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        System.setOut(PrintStream(out, true, Charsets.UTF_8))
+        System.setErr(PrintStream(err, true, Charsets.UTF_8))
+        try {
+            block(out)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        return out.toString(Charsets.UTF_8) to err.toString(Charsets.UTF_8)
+    }
+
+    private companion object {
+        /** A caught failure ([reportFailure]), the markers examples printed before it, and a stack trace line. */
+        val FAILURE_MARKERS = listOf(EXAMPLE_FAILURE_MARKER, "✗ Failed", "ERROR", "Exception", "\tat ")
     }
 }

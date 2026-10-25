@@ -66,6 +66,23 @@ class NativeSpecRegressionTest {
         assertEquals("false", (conforms as Literal).lexical)
     }
 
+    @Test fun `hasViolations is not hidden by a truncated flood of lower severities`() {
+        // Shape A (sh:Info) fills the violation list before shape B (sh:Violation) reports anything.
+        val shapes = """
+            ex:A a sh:NodeShape ; sh:targetNode ex:a ; sh:severity sh:Info ;
+              sh:property [ sh:path ex:p ; sh:severity sh:Info ; sh:datatype xsd:string ] .
+            ex:B a sh:NodeShape ; sh:targetNode ex:a ; sh:class ex:C .
+        """
+        val data = "ex:a ex:p 1 , 2 , 3 , 4 , 5 , 6 ."
+        val truncated = validate(data, shapes, ValidationConfig(maxViolations = 3))
+        assertTrue(truncated.violationsTruncated)
+        assertTrue(truncated.violations.none { it.severity == ViolationSeverity.VIOLATION }, "${truncated.violations}")
+        // Unseen results may block: the helper fails closed.
+        assertTrue(truncated.hasViolations)
+        assertTrue(validate(data, shapes).hasViolations)
+        assertFalse(validate(data, "ex:A a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:severity sh:Info ; sh:datatype xsd:string ] .").hasViolations)
+    }
+
     // --- Finding 3: property shapes default to sh:Violation ---
 
     @Test fun `property shapes do not inherit node shape severity`() {

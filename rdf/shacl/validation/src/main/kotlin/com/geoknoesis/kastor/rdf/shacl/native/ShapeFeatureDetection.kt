@@ -149,7 +149,11 @@ internal object ShapeFeatureDetection {
             for (p in shapeReferencePredicates) index.objects(shape, p).forEach(::visit)
             for (p in listOf(SHACL.`and`, SHACL.`or`, SHACL.xone)) {
                 // Malformed lists are reported by the compiler itself.
-                index.objects(shape, p).forEach { head -> runCatching { index.parseRdfList(head) }.getOrDefault(emptyList()).forEach(::visit) }
+                // A timeout or cancellation is not caught: it still stops the detection.
+                index.objects(shape, p).forEach { head ->
+                    val members = try { index.parseRdfList(head) } catch (_: ShapeCompileException) { emptyList() }
+                    members.forEach(::visit)
+                }
             }
             for (p in expressionPositions) index.objects(shape, p).forEach { expression(it, computedShape = false) }
             // So are the parameters of SPARQL-based constraint components whose declaration rules out blank nodes.

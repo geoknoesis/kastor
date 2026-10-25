@@ -20,6 +20,11 @@ import kotlin.test.fail
  * evaluating anything, and its custom functions are visible) or refuses the query outright with
  * [UnsupportedOperationException]. No path may run the query as a trusted one.
  *
+ * Which cases refuse is fixed ([mustRefuse]): the graph-only `memory` repository itself, an RDF4J repository over a
+ * store Kastor did not create (except through a materialized dataset, which copies its graphs), and the timed
+ * `withSelectRows` of every [Dataset] view. Every other case must run the query, so a regression that made a provider
+ * refuse all sandboxed queries (which would break SHACL-SPARQL) fails here instead of passing as a refusal.
+ *
  * The `SERVICE` target is a local listening socket, so a path that loses the sandbox is caught by the connection it
  * makes, whatever error it then reports; the socket is never answered, and no other network is used.
  */
@@ -34,43 +39,71 @@ class SandboxedQueryContractTest {
         "memory" to { MemoryRepository(RdfConfig()) },
         "jena" to { JenaRepository.MemoryRepository() },
         "rdf4j" to { Rdf4jRepository.MemoryRepository() },
+        // A store Kastor did not create: it cannot be held to the sandbox, so every sandboxed query is refused.
+        WRAPPED to {
+            Rdf4jRepository(org.eclipse.rdf4j.repository.sail.SailRepository(org.eclipse.rdf4j.sail.memory.MemoryStore()).also { it.init() })
+        },
     )
 
-    /** A way of querying a repository: the repository itself, or a [Dataset] view planned one way or another. */
-    private class Path(val name: String, val usesGraph: Boolean, val open: (RdfRepository) -> SparqlQueryable)
+    /**
+     * A way of querying a repository: the repository itself, or a [Dataset] view planned one way or another. [open]
+     * adds every other repository it creates to its second argument, which the test closes.
+     */
+    private class Path(val name: String, val open: (RdfRepository, MutableList<AutoCloseable>) -> SparqlQueryable)
+
+    private val repositoryPath = Path("repository") { repo, _ -> repo }
+
+    private val materializedPath = Path("materialized dataset") { repo, resources ->
+        val other = Rdf.memory().also(resources::add)
+        other.editGraph(n1)
+        Dataset {
+            defaultGraph(repo)
+            namedGraph(n1, other, n1)
+        }
+    }
 
     private val paths = listOf(
-        Path("repository", usesGraph = false) { it },
-        Path("in-place dataset (FROM clauses)", usesGraph = false) { repo ->
+        repositoryPath,
+        Path("in-place dataset (FROM clauses)") { repo, _ ->
             Dataset {
                 defaultGraph(repo.getGraph(g1).asGraphRef(repo, g1))
                 namedGraph(n1, repo, n1)
             }
         },
-        Path("store-default dataset (GRAPH rewrite)", usesGraph = true) { repo -> Dataset { defaultGraph(repo) } },
-        Path("materialized dataset", usesGraph = false) { repo ->
-            Dataset {
-                defaultGraph(repo)
-                namedGraph(n1, Rdf.memory().also { it.editGraph(n1) }, n1)
-            }
-        },
+        Path("store-default dataset (GRAPH rewrite)") { repo, _ -> Dataset { defaultGraph(repo) } },
+        materializedPath,
     )
+
+    /** The cases that refuse a sandboxed query with [UnsupportedOperationException]; every other case runs it. */
+    private fun mustRefuse(provider: String, path: Path, call: String): Boolean =
+        (provider == "memory" && path === repositoryPath) || (provider == WRAPPED && path !== materializedPath) ||
+            (call == TIMED && path !== repositoryPath)
 
     /** The ways a SELECT reaches a queryable. */
     private val calls: Map<String, (SparqlQueryable, SparqlSelect) -> List<BindingSet>> = linkedMapOf(
         "select" to { q, query -> q.select(query).toList() },
         "withSelectRows" to { q, query -> q.withSelectRows(query) { it.toList() } },
-        "timed withSelectRows" to { q, query ->
-            q.withSelectRows(query, emptyMap(), Duration.ofSeconds(30)) { it.toList() }
-        },
+        TIMED to { q, query -> q.withSelectRows(query, emptyMap(), Duration.ofSeconds(30)) { it.toList() } },
     )
 
-    private fun cases(check: (String, Path, (SparqlQueryable, SparqlSelect) -> List<BindingSet>, RdfRepository) -> Unit) =
+    /** One case: [refuses] says whether it must refuse; [run] runs a query on it and closes what it opened. */
+    private class Case(val refuses: Boolean, val run: (SparqlSelect) -> List<BindingSet>)
+
+    private fun cases(check: (Case) -> Unit) =
         providers.flatMap { (provider, factory) ->
             paths.flatMap { path ->
                 calls.map { (callName, call) ->
                     DynamicTest.dynamicTest("$provider / ${path.name} / $callName") {
-                        factory().use { repo -> check(provider, path, call, repo) }
+                        factory().use { repo ->
+                            check(Case(mustRefuse(provider, path, callName)) { query ->
+                                val resources = mutableListOf<AutoCloseable>()
+                                try {
+                                    path.open(repo, resources).use { call(it, query) }
+                                } finally {
+                                    resources.forEach { it.close() }
+                                }
+                            })
+                        }
                     }
                 }
             }
@@ -78,7 +111,7 @@ class SandboxedQueryContractTest {
 
     @TestFactory
     fun `SERVICE in a sandboxed query is refused before anything is contacted`() =
-        cases { _, path, call, repo ->
+        cases { case ->
             ServerSocket(0, 50, InetAddress.getLoopbackAddress()).use { server ->
                 // Every connection is counted and closed at once, so a path that lost the sandbox fails fast.
                 val contacts = AtomicInteger()
@@ -88,33 +121,35 @@ class SandboxedQueryContractTest {
                     }
                 }.apply { isDaemon = true; start() }
                 val target = "http://127.0.0.1:${server.localPort}/sparql"
-                val pattern = "SERVICE <$target> { ?s ?p ?o }"
-                val sparql = if (path.usesGraph) "SELECT * WHERE { GRAPH ?g { ?a ?b ?c } $pattern }"
-                else "SELECT * WHERE { $pattern }"
-                val error = runCatching { path.open(repo).use { call(it, SandboxedSelectQuery(sparql, library)) } }
-                    .exceptionOrNull()
+                // The GRAPH pattern makes the store-default dataset rewrite the query; it changes nothing elsewhere.
+                val sparql = "SELECT * WHERE { OPTIONAL { GRAPH ?g { ?a ?b ?c } } SERVICE <$target> { ?s ?p ?o } }"
+                val error = runCatching { case.run(SandboxedSelectQuery(sparql, library)) }.exceptionOrNull()
                 server.close()
                 acceptor.join(10_000)
                 assertEquals(0, contacts.get(), "the SERVICE endpoint was contacted, so the sandbox was lost")
-                assertTrue(
-                    error is IllegalArgumentException || error is UnsupportedOperationException,
-                    "expected a sandbox refusal, got ${error ?: "a result"}",
-                )
+                if (case.refuses) {
+                    assertTrue(error is UnsupportedOperationException, "expected a refusal of the query, got ${error ?: "a result"}")
+                } else {
+                    assertTrue(error is IllegalArgumentException, "expected the sandbox to refuse SERVICE, got ${error ?: "a result"}")
+                }
             }
         }
 
     @TestFactory
     fun `custom functions of a sandboxed query stay visible, or the query is refused`() =
-        cases { _, path, call, repo ->
-            val graph = if (path.usesGraph) "OPTIONAL { GRAPH ?g { ?a ?b ?c } } " else ""
-            val query = SandboxedSelectQuery("SELECT ?v WHERE { $graph BIND(<urn:kastor:f>() AS ?v) }", library)
-            val rows = try {
-                path.open(repo).use { call(it, query) }
-            } catch (_: UnsupportedOperationException) {
+        cases { case ->
+            val sparql = "SELECT ?v WHERE { OPTIONAL { GRAPH ?g { ?a ?b ?c } } BIND(<urn:kastor:f>() AS ?v) }"
+            val outcome = runCatching { case.run(SandboxedSelectQuery(sparql, library)) }
+            if (case.refuses) {
+                assertTrue(outcome.exceptionOrNull() is UnsupportedOperationException, "expected a refusal, got $outcome")
                 return@cases
-            } catch (e: Throwable) {
-                fail("the sandboxed query failed instead of running or being refused: $e")
             }
+            val rows = outcome.getOrElse { fail("the sandboxed query failed instead of running: $it") }
             assertEquals(listOf<RdfTerm?>(value), rows.map { it.get("v") })
         }
+
+    private companion object {
+        const val TIMED = "timed withSelectRows"
+        const val WRAPPED = "rdf4j (wrapped plain store)"
+    }
 }

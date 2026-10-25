@@ -9,7 +9,8 @@ import java.util.concurrent.atomic.AtomicReference
  * Enforces the per-read timeout and the overall deadline on a response body: every read
  * publishes its deadline and [ReadWatchdog] closes the underlying stream when the read waits
  * past it, which unblocks the reader. Time between reads (the consumer's own work) counts
- * towards the overall deadline, checked on every read and by [checkDeadline].
+ * towards the overall deadline, checked on every read and by [checkDeadline]. Time is read from the
+ * watchdog's clock ([ReadWatchdog.nanoTime]), the clock its deadlines are compared with.
  */
 internal class GuardedInputStream(
     private val raw: InputStream,
@@ -47,7 +48,7 @@ internal class GuardedInputStream(
     /** Throws if the stream already failed or the overall deadline has passed. */
     fun checkDeadline() {
         failure?.let { throw IOException(it) }
-        if (deadlineNanos != null && deadlineNanos - System.nanoTime() <= 0) {
+        if (deadlineNanos != null && deadlineNanos - watchdog.nanoTime() <= 0) {
             failure = deadlineMessage
             closeRaw()
             throw IOException(deadlineMessage)
@@ -56,7 +57,7 @@ internal class GuardedInputStream(
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
         checkDeadline()
-        val now = System.nanoTime()
+        val now = watchdog.nanoTime()
         val untilDeadline = deadlineNanos?.let { it - now } ?: Durations.UNBOUNDED
         val byDeadline = untilDeadline < readTimeoutNanos
         // Nothing is published for a read that neither the read timeout nor a deadline bounds.
@@ -81,9 +82,14 @@ internal class GuardedInputStream(
         }
     }
 
+    /** Tests: makes a read with [deadline] pending, as [read] does, without blocking in one. */
+    internal fun publishForTest(deadline: Long) {
+        pending.set(PendingRead(deadline, readTimeoutMessage))
+    }
+
     override fun expireIfDue(now: Long): Long {
         val read = pending.get() ?: return Long.MAX_VALUE
-        if (now < read.deadline) return read.deadline
+        if (!Durations.reached(now, read.deadline)) return read.deadline
         if (pending.compareAndSet(read, null)) {
             failure = failure ?: read.message
             closeRaw()

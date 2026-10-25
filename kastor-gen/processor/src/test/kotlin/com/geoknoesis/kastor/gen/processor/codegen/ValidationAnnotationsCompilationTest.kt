@@ -17,9 +17,10 @@ import kotlin.test.assertTrue
 
 /**
  * Interfaces and data classes generated with Bean Validation annotations (`JAKARTA`, the `@Rdf` default, and
- * `JAVAX`) must compile. The annotation types are supplied as minimal source stubs under their real package names,
- * so the test needs neither API jar and still fails when a generator names a class that does not exist (for
- * example `NotNull` nested in a class `constraints`).
+ * `JAVAX`) must compile. `JAKARTA` compiles against the real `jakarta.validation-api` jar on the test class path
+ * (the API that kastor-gen-runtime gives consumers at compile time), so a wrong annotation name, target or member
+ * fails. The javax API is not a dependency of the build, so `JAVAX` uses minimal source stubs under the real
+ * package name, which still fail when a generator names a class that does not exist.
  */
 class ValidationAnnotationsCompilationTest {
 
@@ -63,7 +64,8 @@ class ValidationAnnotationsCompilationTest {
         val records = DataClassGenerator(logger, "Record", NestedMode.IRI_ONLY, false, flavour)
             .generateDataClasses(model(), "gen.va")
 
-        val result = KotlinSourceCompiler.compile(interfaces.values + records.values, stubs(pkg))
+        val stubs = if (flavour == ValidationAnnotations.JAKARTA) emptyMap() else stubs(pkg)
+        val result = KotlinSourceCompiler.compile(interfaces.values + records.values, stubs)
         result.assertOk()
 
         val record = records.values.single().toString()

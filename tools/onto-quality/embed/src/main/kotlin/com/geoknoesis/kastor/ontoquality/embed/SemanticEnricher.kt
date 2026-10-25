@@ -71,7 +71,8 @@ class SemanticEnricher(
     fun enrich(ontology: RdfGraph): RdfGraph {
         check(!closed.get()) { "Semantic enricher is closed" }
         val out = JenaBridge.createEmptyModel()
-        out.addTriples(ontology.getTriples())
+        // Streamed: no list copy of the input graph next to the enriched one.
+        out.addTriples(ontology.getTriplesSequence())
         out.addTriples(enrichmentOnly(ontology).getTriples())
         return out
     }
@@ -207,6 +208,10 @@ class SemanticEnricher(
                 throw failure
             }
         }
+
+        /** [default] under a name Java can call (`default` is a Java keyword). */
+        @JvmStatic
+        fun withMiniLm(): SemanticEnricher = default()
 
         private fun dotProduct(a: FloatArray, b: FloatArray): Double {
             var s = 0.0

@@ -38,6 +38,8 @@ import java.io.InputStream
  * @return The serialized RDF data as a string
  * @throws RdfFormatException if no provider supports the format or serialization fails
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun RdfGraph.serialize(format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val formatEnum = RdfFormat.fromStringOrThrow(format)
     return serialize(formatEnum, options)
@@ -50,6 +52,7 @@ fun RdfGraph.serialize(format: String, options: SerializationOptions = Serializa
  * @param configure Options builder lambda
  * @return The serialized RDF data as a string
  */
+@Throws(RdfException::class)
 fun RdfGraph.serialize(
     format: String,
     configure: SerializationOptions.Builder.() -> Unit
@@ -68,6 +71,8 @@ fun RdfGraph.serialize(
  * @return The serialized RDF data as a string
  * @throws RdfFormatException if no provider supports the format or serialization fails
  */
+@JvmOverloads
+@Throws(RdfException::class)
 fun RdfGraph.serialize(format: RdfFormat, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val providers = RdfProviderRegistry.discoverProviders()
     
@@ -120,6 +125,7 @@ fun RdfGraph.serialize(format: RdfFormat, options: SerializationOptions = Serial
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * 
  */
+@Throws(RdfException::class)
 fun RdfGraph.serialize(
     format: RdfFormat,
     configure: SerializationOptions.Builder.() -> Unit

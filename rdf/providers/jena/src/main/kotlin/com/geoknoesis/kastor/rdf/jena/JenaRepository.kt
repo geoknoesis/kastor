@@ -1022,7 +1022,7 @@ class JenaRepository private constructor(
 
     /** [JenaQuerySandbox.parseSelect], with the engine's parse errors wrapped as query errors. */
     private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query =
-        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(query.sparql) } }
+        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)) } }
 
     /** [JenaQuerySandbox.execution] over the query dataset, with the nested-query deadline [deadline] on the [hooks] clock. */
     private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder =
@@ -1030,7 +1030,7 @@ class JenaRepository private constructor(
 
     override fun ask(query: SparqlAsk): Boolean = withRead {
         queryOperation(query.sparql) {
-            QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()).use { it.execAsk() }
+            QueryExecutionFactory.create(QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)), queryDataset()).use { it.execAsk() }
         }
     }
 
@@ -1067,81 +1067,41 @@ class JenaRepository private constructor(
             if (deadline != Long.MAX_VALUE) builder.timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS)
             builder.build()
         }
-        exec.use { consumeRows(it, query.sparql, deadline.takeIf { it != Long.MAX_VALUE }, consume) }
+        val timeLimit = if (deadline == Long.MAX_VALUE) null else JenaTimeLimit(timeout, deadline) { hooks.clock() }
+        exec.use { consumeRows(it, query.sparql, timeLimit, consume) }
     }
 
     private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T =
         consumeRows(exec, sparql, null, consume)
 
-    private fun <T> consumeRows(exec: QueryExecution, sparql: String, deadline: Long?, consume: (Sequence<BindingSet>) -> T): T {
-        val results = queryOperation(sparql) { withDeadline(deadline) { exec.execSelect() } }
+    private fun <T> consumeRows(exec: QueryExecution, sparql: String, timeLimit: JenaTimeLimit?, consume: (Sequence<BindingSet>) -> T): T {
+        val results = jenaQueryOperation(sparql, timeLimit) { withDeadline(timeLimit?.deadline) { exec.execSelect() } }
+        JenaQuerySandbox.requireBounded(exec)
         val rows = results.asSequence().map { row ->
-            MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
+            MapBindingSet(JenaTerms.rowValues(row)) as BindingSet
         }
-        return consume(rows.guardedBy(sparql, deadline))
+        return consume(rows.guardedBy(sparql, timeLimit) { hooks.clock() })
     }
 
     private inline fun <T> withDeadline(deadline: Long?, crossinline block: () -> T): T =
         if (deadline == null) block() else InferenceCancellation.withDeadline(deadline, { hooks.clock() }) { block() }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withRead {
-        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
+        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)), queryDataset()) }
         exec.use {
             val triples = queryOperation(query.sparql) { it.execConstructTriples() }
-            consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql))
+            consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql, null) { hooks.clock() })
         }
     }
 
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> = withConstructTriples(query) { it.toList().asSequence() }
 
     /**
-     * Describes the resources of a `DESCRIBE` query **from the default graph of the query's dataset**: the store's
-     * default graph or, when the query has `FROM` / `FROM NAMED` clauses, the default graph they declare (the merge of
-     * the `FROM` graphs; empty with only `FROM NAMED`). This is the contract of every provider (see the RDF4J
-     * provider and `Dataset.describe`). Named graphs are read by the `WHERE` clause inside `GRAPH`, never by the
-     * description itself.
-     *
-     * Jena's own `execDescribe` is not used: its describe handler reads the store's default graph **and every named
-     * graph of the store**, whatever the query's dataset. The query is evaluated as Jena does (the `WHERE` clause with
-     * its solution modifiers yields the values of the described variables, the IRIs of the `DESCRIBE` clause are added)
-     * and each resource is described as Jena's handler does (its statements and the closure over blank nodes), but
-     * in that one graph. On an inference repository that graph is the inference view, so entailed triples are included.
+     * Describes the resources of a `DESCRIBE` query **from the default graph of the query's dataset** (the inference
+     * view on an inference repository), never from the other named graphs; see [JenaDescribe].
      */
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> = withRead {
-        queryOperation(query.sparql) {
-            val parsed = QueryFactory.create(query.sparql)
-            if (!parsed.isDescribeType) throw IllegalArgumentException("Not a DESCRIBE query")
-            val dataset = queryDataset()
-            val resources = LinkedHashSet<Node>()
-            if (parsed.queryPattern != null) {
-                // The same query as a SELECT of the described variables (DESCRIBE * selects every variable).
-                val select = QueryFactory.create(query.sparql).apply { setQuerySelectType() }
-                QueryExecutionFactory.create(select, dataset).use { exec ->
-                    val rows = exec.execSelect()
-                    val names = rows.resultVars
-                    rows.forEachRemaining { row -> names.forEach { name -> row.get(name)?.asNode()?.let(resources::add) } }
-                }
-            }
-            parsed.resultURIs?.let(resources::addAll)
-            val source = ModelFactory.createModelForGraph(
-                if (parsed.hasDatasetDescription()) {
-                    org.apache.jena.sparql.core.DynamicDatasets
-                        .dynamicDataset(parsed.datasetDescription, dataset.asDatasetGraph(), false).defaultGraph
-                } else {
-                    dataset.asDatasetGraph().defaultGraph
-                },
-            )
-            val described = ModelFactory.createDefaultModel()
-            try {
-                for (node in resources) {
-                    if (!node.isURI && !node.isBlank) continue
-                    org.apache.jena.sparql.util.Closure.closure(source.asRDFNode(node).asResource(), false, described)
-                }
-                JenaGraph(described).getTriples().asSequence()
-            } finally {
-                described.close()
-            }
-        }
+        queryOperation(query.sparql) { JenaDescribe.describe(query.sparql, queryDataset()) }
     }
 
     /**
@@ -1162,9 +1122,9 @@ class JenaRepository private constructor(
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
             if (!JenaBlankGraphs.textMayCreateBlankGraph(query.sparql)) {
-                org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset)
+                org.apache.jena.update.UpdateAction.parseExecute(JenaLiteralBounds.requireBoundedQuery(query.sparql), dataset)
             } else {
-                val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
+                val request = org.apache.jena.update.UpdateFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql))
                 val foreign = if (JenaBlankGraphs.mayCreateBlankGraph(request)) JenaBlankGraphs.blankGraphNames(dataset) else null
                 var failure: Throwable? = null
                 try {
@@ -1269,29 +1229,8 @@ class JenaRepository private constructor(
 
     internal fun getJenaDataset(): Dataset = dataset
 
-    /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
-    private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
-        operation()
-    } catch (e: RdfException) {
-        throw e
-    } catch (e: Exception) {
-        throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query, cause = e)
-    }
-
-    /**
-     * Wraps engine failures raised while *iterating* results (e.g. timeouts, evaluation errors) as
-     * [RdfQueryException], while exceptions thrown by the consumer's own code are left untouched.
-     */
-    private fun <T> Sequence<T>.guardedBy(query: String, deadline: Long? = null): Sequence<T> {
-        val source = this
-        return Sequence {
-            val iterator = queryOperation(query) { withDeadline(deadline) { source.iterator() } }
-            object : Iterator<T> {
-                override fun hasNext(): Boolean = queryOperation(query) { withDeadline(deadline) { iterator.hasNext() } }
-                override fun next(): T = queryOperation(query) { withDeadline(deadline) { iterator.next() } }
-            }
-        }.constrainOnce()
-    }
+    /** Wraps failures of the query engine itself; never used around caller-supplied consumers (see [jenaQueryOperation]). */
+    private inline fun <T> queryOperation(query: String, operation: () -> T): T = jenaQueryOperation(query, null, operation)
 }
 
 /** Copy of a concurrently modified collection that tolerates elements removed while copying (unlike `toList()`). */

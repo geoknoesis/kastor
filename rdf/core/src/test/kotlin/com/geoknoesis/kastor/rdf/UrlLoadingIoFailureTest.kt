@@ -82,8 +82,10 @@ class UrlLoadingIoFailureTest {
                     served.countDown()
                 }
             }.apply { isDaemon = true; start() }
+            // The reset arrives at once; the short read timeout only bounds how long a lost reset could hold the test.
+            val options = UrlLoadOptions.ALLOW_ALL_ADDRESSES.withReadTimeoutMillis(10_000)
             val error = assertThrows(IOException::class.java) {
-                Rdf.parseFromUrl("http://127.0.0.1:${server.localPort}/doc.ttl", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
+                Rdf.parseFromUrl("http://127.0.0.1:${server.localPort}/doc.ttl", RdfFormat.TURTLE, options = options)
             }
             assertTrue(served.await(60, TimeUnit.SECONDS))
             server1.join(60_000)
@@ -107,17 +109,27 @@ class UrlLoadingIoFailureTest {
             val outcome = AtomicReference<Throwable?>()
             val loader = Thread {
                 try {
-                    Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
+                    // A read timeout as long as the deadline makes every read that may block run on a helper thread,
+                    // which the loader waits for interruptibly: the interrupt ends the load at once. (With the default
+                    // options a read runs on the loader's own thread, and only its socket timeout - a
+                    // SocketTimeoutException, itself an InterruptedIOException - would end it, 30 seconds later.)
+                    val options = UrlLoadOptions.ALLOW_ALL_ADDRESSES.withReadTimeoutMillis(120_000).withTotalTimeoutMillis(120_000)
+                    Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE, options = options)
                 } catch (e: Throwable) {
                     outcome.set(e)
                 }
             }.apply { isDaemon = true; start() }
             try {
                 assertTrue(sent.await(60, TimeUnit.SECONDS))
+                val interrupted = System.nanoTime()
                 loader.interrupt()
                 loader.join(60_000)
                 assertTrue(!loader.isAlive, "an interrupted load must end")
-                assertInstanceOf(InterruptedIOException::class.java, outcome.get(), outcome.get().toString())
+                val waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - interrupted)
+                assertTrue(waited < 20_000, "the interrupt, not a socket timeout, must end the load (took $waited ms)")
+                val error = outcome.get()
+                assertInstanceOf(InterruptedIOException::class.java, error, error.toString())
+                assertTrue(error !is SocketTimeoutException && error !is RdfLoadTimeoutException, error.toString())
             } finally {
                 release.countDown()
             }

@@ -103,7 +103,14 @@ class HolonContext private constructor(
     return parents
   }
 
-  /** Resolve DIRECT by default; GLOBAL is available for validation and reasoning callers. */
+  /**
+   * Resolve DIRECT by default; GLOBAL is available for validation and reasoning callers.
+   *
+   * @throws HolonException if [holon] is not registered, or a mapping, membership, parent edge or import the scope
+   *   needs is invalid
+   */
+  @JvmOverloads
+  @Throws(HolonException::class)
   fun resolve(holon: RdfResource, scope: HolonScope = HolonScope.DIRECT): HolonResolution {
     requireKnown(holon)
     val content = contents()
@@ -134,7 +141,12 @@ class HolonContext private constructor(
     imports(null)
   }
 
-  /** Select only H's explicit shape imports from a separately supplied validation dataset. */
+  /**
+   * Select only H's explicit shape imports from a separately supplied validation dataset.
+   *
+   * @throws HolonException if [holon] is not registered or an imported shapes graph is missing from [shapes]
+   */
+  @Throws(HolonException::class)
   fun effectiveShapes(holon: RdfResource, shapes: Map<Iri, RdfGraph>): RdfGraph {
     requireKnown(holon)
     return union(shapeGraphNames(holon).map { name ->
@@ -151,7 +163,13 @@ class HolonContext private constructor(
      * Assemble one already scoped RDF input. Every supplied graph and graph name belongs to the same
      * blank-node scope. Snapshot independently loaded graphs with [BlankNodeScopes] before calling this.
      * The source graph contains reifier data; named graphs require DATASET or explicitly declared MIXED.
+     *
+     * @throws HolonException with [HolonError.UNSUPPORTED_CAPABILITY] for REIFIER input with named graphs or
+     *   without [metadata]
      */
+    @JvmStatic
+    @JvmOverloads
+    @Throws(HolonException::class)
     fun of(
       defaultGraph: RdfGraph,
       namedGraphs: Map<out RdfResource, RdfGraph> = emptyMap(),
@@ -170,7 +188,14 @@ class HolonContext private constructor(
       return HolonContext(profile, defaultGraph.snapshot(), named, selectedMetadata.snapshot(), sourceId, filtered)
     }
 
-    /** Default M is the dataset's default graph; reifier-looking assertions are inactive unless [mixed]. */
+    /**
+     * Default M is the dataset's default graph; reifier-looking assertions are inactive unless [mixed].
+     *
+     * @throws RdfException if reading [source] fails, for example its read transaction
+     */
+    @JvmStatic
+    @JvmOverloads
+    @Throws(RdfException::class)
     fun fromDataset(
       source: Dataset,
       metadata: RdfGraph? = null,
@@ -206,6 +231,9 @@ class HolonContext private constructor(
     }
 
     /** M is mandatory. A separately loaded M never shares blank-node labels with the source by default. */
+    @JvmStatic
+    @JvmOverloads
+    @Throws(HolonException::class)
     fun fromGraph(
       source: RdfGraph,
       metadata: RdfGraph,

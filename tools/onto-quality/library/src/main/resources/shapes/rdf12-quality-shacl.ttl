@@ -57,7 +57,7 @@ oqsh:DirectionalLanguageStringShape
     oqsh:category   oqsh:Rdf12Conformance ;
     oqsh:pitfall    "N29" ;
     rdfs:label      "RTL-language labels should use rdf:dirLangString with explicit direction" ;
-    rdfs:comment    "RDF 1.2 introduced rdf:dirLangString and the Direction enum (LTR/RTL) to handle bidirectional text correctly. Labels tagged @ar, @he, @fa, @ur etc. without direction may render incorrectly in mixed-direction contexts. This shape flags labels in known RTL languages that use only @lang and not @lang--rtl." ;
+    rdfs:comment    "RDF 1.2 introduced rdf:dirLangString and the Direction enum (LTR/RTL) to handle bidirectional text correctly. Labels tagged @ar, @he, @fa, @ur etc. without direction may render incorrectly in mixed-direction contexts. This shape flags labels (rdfs:label, skos:prefLabel, skos:altLabel) in known RTL languages that use only @lang and not @lang--rtl. The primary language subtag decides, in any case: @ar, @AR and @ar-EG are all Arabic." ;
     sh:targetNode   owl:Thing ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Label '{?label}' on {?subj} uses an RTL language tag ({?l}) but no direction. Consider migrating to rdf:dirLangString with explicit --rtl direction." ;
@@ -65,10 +65,11 @@ oqsh:DirectionalLanguageStringShape
                       sh:select """
                         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
                         SELECT ?subj ?label ?l WHERE {
-                          ?subj rdfs:label ?label .
+                          ?subj rdfs:label|skos:prefLabel|skos:altLabel ?label .
                           BIND ( lang(?label) AS ?l )
-                          FILTER ( ?l IN ( 'ar', 'he', 'fa', 'ur', 'ps', 'yi', 'syr', 'dv' ) )
+                          FILTER ( lcase(REPLACE(?l, '-.*$', '')) IN ( 'ar', 'he', 'iw', 'fa', 'ur', 'ps', 'yi', 'syr', 'dv', 'ckb', 'sd', 'ug' ) )
                           FILTER ( datatype(?label) != <http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> )
                         }
                       """ ] ;

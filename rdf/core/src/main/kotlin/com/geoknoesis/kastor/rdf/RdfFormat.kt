@@ -115,6 +115,8 @@ enum class RdfFormat(val formatName: String, vararg val aliases: String) {
          * @return The corresponding RdfFormat
          * @throws RdfFormatException if the format is not recognized
          */
+        @JvmStatic
+        @Throws(RdfFormatException::class)
         fun fromStringOrThrow(formatString: String): RdfFormat {
             return fromString(formatString)
                 ?: throw RdfFormatException.Generic(

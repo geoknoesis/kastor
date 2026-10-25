@@ -10,6 +10,11 @@ dependencies {
   implementation(project(":rdf:jena"))
   implementation(libs.jena.arq)
   testImplementation(project(":rdf:rdf4j"))
+  // A plain RDF4J store wrapped by Rdf4jRepository, for the sandboxed-query contract on stores Kastor did not create.
+  testImplementation(libs.rdf4j.repository.api)
+  testImplementation(libs.rdf4j.repository.sail)
+  testImplementation(libs.rdf4j.sail.api)
+  testImplementation(libs.rdf4j.sail.memory)
 }
 
 publishing {

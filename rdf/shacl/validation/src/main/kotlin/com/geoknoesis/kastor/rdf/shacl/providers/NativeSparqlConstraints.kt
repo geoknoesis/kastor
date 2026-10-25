@@ -20,6 +20,33 @@ import com.geoknoesis.kastor.rdf.shacl.native.constraintStub
 
 private val messagePlaceholder = Regex("\\{[?$]([A-Za-z_][A-Za-z0-9_]*)\\}")
 
+/**
+ * The most characters the substituted values of one result message may add. A message of many placeholders times a
+ * long value would otherwise cost their product per result: past the limit the remaining placeholders are kept as
+ * written and the message ends with a marker, never silently cut.
+ */
+internal const val MAX_MESSAGE_SUBSTITUTION = 65_536
+
+/**
+ * [template] with its `{?v}` / `{$v}` placeholders replaced by the [value] of `v` (as [displayTerm]); a placeholder
+ * without a value is kept. Bounded by [MAX_MESSAGE_SUBSTITUTION].
+ */
+internal fun substituteMessage(template: String, value: (String) -> RdfTerm?): String {
+    var added = 0
+    var truncated = false
+    val text = messagePlaceholder.replace(template) { m ->
+        val term = if (truncated) null else value(m.groupValues[1])
+        val shown = term?.let { displayTerm(it) } ?: return@replace m.value
+        if (added + shown.length > MAX_MESSAGE_SUBSTITUTION) {
+            truncated = true
+            return@replace m.value
+        }
+        added += shown.length
+        shown
+    }
+    return if (truncated) "$text [message truncated: substituted values exceed $MAX_MESSAGE_SUBSTITUTION characters]" else text
+}
+
 /** What a solution is mapped against: the declaring node (`sh:sparql` node or constraint component) and its settings. */
 internal class SparqlResultSource(
     val constraintNode: RdfResource?,
@@ -48,10 +75,7 @@ internal fun solutionViolation(
     val value = row("value") ?: if (!hasPath) focus else null
     val rowPath = (row("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
     fun substitute(lit: Literal): Literal {
-        val text = messagePlaceholder.replace(lit.lexical) { m ->
-            val term = row(m.groupValues[1]) ?: preBound[m.groupValues[1]]
-            term?.let { displayTerm(it) } ?: m.value
-        }
+        val text = substituteMessage(lit.lexical) { name -> row(name) ?: preBound[name] }
         return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
     }
     val messages =
@@ -111,12 +135,16 @@ internal fun evaluateSparql(
     // failure, nested or not), without building results; one that cannot stops at the first solution.
     ctx.select(query, providerBindings) { rows ->
         for (row in rows) {
+            ctx.budget.tick("SPARQL results")
             val failure = row.get("failure")
             if (failure != null && isLexicallyTrue(failure)) {
                 throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
             }
-            // Only a query that can bind ?failure gets here after its first result: it is scanned, not built.
-            if (firstOnly && out.isNotEmpty()) continue
+            // Only a query that can bind ?failure gets here after its first result (or its last one that can be
+            // reported, ctx.resultCap): it is scanned, not built.
+            if ((firstOnly && out.isNotEmpty()) || out.size >= ctx.resultCap) {
+                if (c.template.mayBindFailure) continue else break
+            }
             out.add(solutionViolation(focus, row::get, preBound, tpl, source, hasPath = path != null))
             if (firstOnly && !c.template.mayBindFailure) break
         }

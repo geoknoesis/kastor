@@ -261,69 +261,9 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Blank node subject",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested object term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with missing language tag",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-3: RDF4J 5.3.2 Rio silently rewrites \"...\"^^rdf:langString without a language tag into a plain literal"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Blank node subject",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested object term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -675,12 +615,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] TriG 1.2 - triple term object",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-01",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
@@ -750,36 +684,6 @@
    "test": "[RDF4J/TURTLE] IRI-resolution-08",
    "count": 1,
    "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-08"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Blank node object",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested subject term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - whitespace and terms",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-2: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -891,18 +795,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested object term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Reifier with annotation block",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-7: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
@@ -945,12 +837,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - literals in object position",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-05: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - many versions",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
@@ -984,18 +870,6 @@
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with identifier",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -1044,24 +918,6 @@
    "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with identifier",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term object",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with keyword object",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-8: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with literal object",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-7: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -1130,16 +986,16 @@
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
-   "class": "com.geoknoesis.kastor.ontoquality.cli.CliPreflightTest",
-   "test": "an output that is a dangling symbolic link is refused before any LLM call()",
-   "count": 1,
-   "reason": "Creating a symbolic link needs a privilege that Windows accounts (and the Windows CI runner) do not have by default; the test runs on Linux and macOS, and a file-system seam covers the same path everywhere"
-  },
-  {
    "class": "com.geoknoesis.kastor.benchmarks.shacl.era.ShaclEraCliTest",
    "test": "the report gets the permissions of an ordinary new file()",
    "count": 1,
    "reason": "Checks POSIX file permissions (umask versus the 0600 of a temporary file); skipped where the file system has no POSIX attribute view, such as Windows, and runs on Linux and macOS"
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.cli.CliPreflightTest",
+   "test": "an output that is a dangling symbolic link is refused before any LLM call()",
+   "count": 1,
+   "reason": "Environment-gated: assumeTrue skips it where the account cannot create symbolic links (Windows without Developer Mode or the symlink privilege); CI runners can, and FakeFileSystem covers the same refusal on every platform."
   }
  ]
 }

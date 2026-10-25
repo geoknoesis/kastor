@@ -78,5 +78,70 @@ class BundledShapeSeverityTest {
         )
     }
 
+    private val targets =
+        listOf("targetClass", "targetNode", "targetSubjectsOf", "targetObjectsOf", "targetWhere", "target").map { Iri("$sh$it") }
+
+    /**
+     * SHACL allows at most one value of `sh:severity`, `sh:path` and `sh:deactivated` per shape. An engine reads one of
+     * several values in index order, so a duplicate makes the result depend on the order of the triples (round 12:
+     * the dct:creator finding was a Warning without a reasoner and Info with one).
+     */
+    @Test
+    fun `no shape declares more than one severity, path or deactivated flag`() {
+        val duplicates = mutableListOf<String>()
+        for (catalog in BundledCatalogs.allWithOopsRegistry) {
+            val g = catalog.loadShapesGraph()
+            for (predicate in listOf("severity", "path", "deactivated").map { Iri("$sh$it") }) {
+                g.find(null, predicate, null).groupBy { it.subject }.filterValues { it.size > 1 }.forEach { (subject, triples) ->
+                    duplicates += "${catalog.id}: $subject has ${triples.size} ${predicate.value.substringAfter('#')} values"
+                }
+            }
+        }
+        assertTrue(duplicates.isEmpty(), duplicates.joinToString("\n"))
+    }
+
+    /** The severity of every detector is a decision, written down: no active targeted node shape relies on the default. */
+    @Test
+    fun `every active targeted node shape declares exactly one severity`() {
+        val undeclared = mutableListOf<String>()
+        for (catalog in BundledCatalogs.allWithOopsRegistry) {
+            val g = catalog.loadShapesGraph()
+            val targeted = targets.flatMap { t -> g.find(null, t, null).map { it.subject } }.distinct()
+            for (shape in targeted) {
+                val deactivated = g.find(shape, Iri("${sh}deactivated"), null).any { (it.obj as? com.geoknoesis.kastor.rdf.Literal)?.lexical == "true" }
+                if (deactivated) continue
+                val count = g.find(shape, severity, null).size
+                if (count != 1) undeclared += "${catalog.id}: $shape declares $count sh:severity values"
+            }
+        }
+        assertTrue(undeclared.isEmpty(), undeclared.joinToString("\n"))
+    }
+
+    /** Severities come from the shapes, not from the order a reasoner run happens to copy them in. */
+    @Test
+    fun `finding severities do not depend on the reasoner`() {
+        val checker = QualityChecker.builder(ShaclValidation.validator()).addCatalog(BundledCatalogs.OWL_QUALITY).build()
+        val data =
+            Rdf.parse(
+                """
+                @prefix ex: <http://example.org/onto#> .
+                @prefix owl: <http://www.w3.org/2002/07/owl#> .
+                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                <http://example.org/onto> a owl:Ontology ; rdfs:label "o" ; rdfs:comment "c" .
+                ex:A a owl:Class ; rdfs:comment "a" .
+                ex:p a owl:ObjectProperty ; rdfs:label "p" ; rdfs:domain ex:A .
+                """.trimIndent(),
+                RdfFormat.TURTLE,
+            )
+        fun severities(profile: com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile) =
+            checker.check(data, profile).findings.associate { "${it.violation.focusNode} ${it.violation.message}" to it.violation.severity }
+        val asserted = severities(com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile.NONE)
+        val reasoned = severities(com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile.OWL_RL)
+        assertEquals(ViolationSeverity.WARNING, asserted["<http://example.org/onto> Ontology has no dct:creator (or equivalent attribution)."], "findings: $asserted")
+        for ((key, value) in asserted) {
+            reasoned[key]?.let { assertEquals(value, it, "severity of '$key' changed with the reasoner") }
+        }
+    }
+
     private fun RdfGraph.objectOf(subject: RdfResource, predicate: Iri) = find(subject, predicate, null).firstOrNull()?.obj
 }

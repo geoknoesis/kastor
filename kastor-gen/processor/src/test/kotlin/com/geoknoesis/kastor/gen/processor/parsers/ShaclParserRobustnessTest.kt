@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.gen.processor.parsers
 
-import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.geoknoesis.kastor.gen.processor.testing.RecordingLogger
 import org.junit.jupiter.api.Test
@@ -21,10 +20,11 @@ class ShaclParserRobustnessTest {
     @Test
     fun `turtle syntax errors fail loudly instead of returning zero shapes`() {
         val logger = RecordingLogger()
-        assertFailsWith<InvalidConfigurationException> {
+        val e = assertFailsWith<IllegalArgumentException> {
             ShaclParser(logger).parseShaclContent("$prefixes\nex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ; sh:property [ sh:path ")
         }
-        assertTrue(logger.errors.isNotEmpty())
+        assertTrue("invalid SHACL Turtle" in e.message!!, e.message)
+        assertTrue(logger.errors.isEmpty(), "the processor reports it at the annotated symbol: ${logger.errors}")
     }
 
     @Test

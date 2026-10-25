@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContainer
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdProperty
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdType
+import com.geoknoesis.kastor.gen.processor.internal.utils.Rfc3986
 import com.google.devtools.ksp.processing.KSPLogger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -190,6 +191,11 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
                 false -> fail("term \"${chain.first()}\": cyclic definition (${(chain + term).joinToString(" -> ")})")
                 null -> Unit
             }
+            // Terms defined through other terms recurse: bound the depth so a long chain is an error, not a
+            // StackOverflowError that escapes the processor's error reporting.
+            if (chain.size >= MAX_DEFINITION_DEPTH) {
+                fail("term \"${chain.first()}\": its definition refers through more than $MAX_DEFINITION_DEPTH other terms")
+            }
             defined[term] = false
             chain += term
             active.remove(term)
@@ -356,14 +362,9 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
     private fun resolveReference(what: String, base: String?, reference: String): String {
         val ref = parseUri(what, reference)
         if (ref.isAbsolute) return reference
-        val absoluteBase = base?.let { parseUri(what, it) }?.takeIf { it.isAbsolute }
+        val absoluteBase = base?.takeIf { parseUri(what, it).isAbsolute }
             ?: fail("$what: the relative IRI \"$reference\" needs an absolute @base to resolve against")
-        // java.net.URI resolves against an empty path as if it had none (http://ex.org + c = http://ex.orgc).
-        val rooted = if (absoluteBase.isOpaque || absoluteBase.rawPath.isNotEmpty()) absoluteBase
-        else URI("${absoluteBase.scheme}://${absoluteBase.rawAuthority.orEmpty()}/" + absoluteBase.rawQuery?.let { "?$it" }.orEmpty())
-        // A bare fragment keeps the whole base, query included (RFC 3986 §5.2.2).
-        if (reference.startsWith("#")) return rooted.toString().substringBefore('#') + reference
-        return rooted.resolve(ref).toString()
+        return Rfc3986.resolve(absoluteBase, reference)
     }
 
     private fun parseUri(what: String, value: String): URI = try {
@@ -376,6 +377,9 @@ public class JsonLdContextParser(private val logger: KSPLogger) {
         term.contains("://") || ABSOLUTE_SCHEMES.any { term.startsWith("$it:") }
 
     private companion object {
+        /** Longest chain of terms whose definitions refer to the next one. */
+        const val MAX_DEFINITION_DEPTH: Int = 256
+
         /** Keywords a term can be an alias of. */
         val KEYWORDS: Set<String> = setOf(
             "@id", "@type", "@value", "@language", "@direction", "@graph", "@list", "@set", "@index", "@included",

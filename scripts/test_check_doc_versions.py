@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,20 @@ class CheckDocVersionsTest(unittest.TestCase):
 
     def test_jdk_only_checked_in_includes(self):
         self.assertEqual(docs.check_text("docs/a.md", "needs Java 17+", "0.3.0-SNAPSHOT", "21"), [])
+
+    def test_the_scan_applies_the_banner_jdk_check_and_covers_root_documents(self):
+        # Round 12: main() re-implemented the coordinate loop without the JDK check, so a stale banner passed.
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            (root / "docs/_includes").mkdir(parents=True)
+            (root / "docs/_includes/version-banner.md").write_text("Kastor RDF SDK `0.3.0` · Java `17+`\n", encoding="utf-8")
+            (root / "README.md").write_text("ok\n", encoding="utf-8")
+            (root / "CONTRIBUTING.md").write_text("Kastor 0.2.0 is current\n", encoding="utf-8")
+            (root / "CHANGELOG.md").write_text("Kastor 0.1.0 history\n", encoding="utf-8")
+            problems = docs.scan(root, "0.3.0", "21")
+        self.assertEqual(2, len(problems), problems)
+        self.assertTrue(any("toolchain is 21" in p for p in problems))
+        self.assertTrue(any(p.startswith("CONTRIBUTING.md:1") for p in problems))
 
     def test_versioning_policy_is_no_longer_exempt(self):
         self.assertNotIn("docs/kastor/reference/versioning-policy.md", docs.HISTORICAL)

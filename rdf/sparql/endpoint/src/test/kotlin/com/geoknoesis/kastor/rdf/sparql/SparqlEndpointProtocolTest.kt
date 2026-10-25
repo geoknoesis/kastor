@@ -145,44 +145,52 @@ class SparqlEndpointProtocolTest {
     }
 
     @Test
-    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `the header wait is one budget for all redirect hops`() {
-        // Three hops that each answer after 700 ms, then the result: 2.1 s of header waits in total.
-        LocalEndpoint { exchange, request ->
-            when (request.path) {
-                "/hop0" -> { Thread.sleep(700); exchange.redirect(307, "/hop1") }
-                "/hop1" -> { Thread.sleep(700); exchange.redirect(307, "/hop2") }
-                "/hop2" -> { Thread.sleep(700); exchange.redirect(307, "/result") }
-                else -> exchange.respond(200, rowsJson(1))
-            }
-        }.use { endpoint ->
-            val start = "${endpoint.base}/hop0"
-            val limit = Duration.ofMillis(1_500)
-            // Each hop is faster than the read timeout, all of them together are not.
-            SparqlRepository(SparqlEndpointConfig(start, readTimeout = limit, requestTimeout = null)).use { repo ->
-                listOf<Pair<String, () -> Any>>(
-                    "select" to { repo.select(selectAll) },
-                    "stream" to { repo.withSelectRows(selectAll) { it.count() } },
-                ).forEach { (name, call) ->
-                    val began = System.nanoTime()
-                    val e = assertThrows(RdfQueryException::class.java, { call() }, name)
-                    assertTrue(e.message!!.contains("timed out after 1500 ms waiting for the response"), "$name: ${e.message}")
-                    assertEndedAtLimit(limit, began, name)
+        // Three hops that each take 700 ms of the header budget's clock, then the result: 2.1 s of header waits in
+        // total. The clock is the test's own and moves only when a hop answers, so no timing on the host matters.
+        val clock = java.util.concurrent.atomic.AtomicLong()
+        val requested = CopyOnWriteArrayList<String>()
+        val transport = HttpTransport { request ->
+            val path = request.uri().path
+            requested += path
+            val response = when (path) {
+                "/hop0", "/hop1", "/hop2" -> {
+                    clock.addAndGet(Duration.ofMillis(700).toNanos())
+                    CannedResponse(request, 307, mapOf("Location" to "/hop${path.last().digitToInt() + 1}".replace("/hop3", "/result")))
                 }
+                else -> CannedResponse(request, 200, mapOf("Content-Type" to "application/sparql-results+json"), rowsJson(1))
             }
-            // The same budget rule as with a request deadline.
-            SparqlRepository(SparqlEndpointConfig(start, readTimeout = Duration.ofSeconds(60), requestTimeout = limit)).use { repo ->
-                val began = System.nanoTime()
-                val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
-                assertTrue(e.message!!.contains("1500 ms deadline"), e.message)
-                assertEndedAtLimit(limit, began, "deadline")
+            CompletableFuture.completedFuture(response)
+        }
+        val start = "https://hops.example/hop0"
+        val limit = Duration.ofMillis(1_500)
+        fun repository(config: SparqlEndpointConfig) = SparqlRepository(config, transport, nanoTime = clock::get)
+
+        // Each hop is faster than the read timeout, all of them together are not.
+        repository(SparqlEndpointConfig(start, readTimeout = limit, requestTimeout = null)).use { repo ->
+            listOf<Pair<String, () -> Any>>(
+                "select" to { repo.select(selectAll) },
+                "stream" to { repo.withSelectRows(selectAll) { it.count() } },
+            ).forEach { (name, call) ->
+                requested.clear()
+                val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                assertTrue(e.message!!.contains("timed out after 1500 ms waiting for the response"), "$name: ${e.message}")
+                // 0.7 s and 1.4 s are within the budget, so the third hop is sent; 2.1 s is not, so the fourth is not.
+                assertEquals(listOf("/hop0", "/hop1", "/hop2"), requested.toList(), name)
             }
-            assertTrue(endpoint.requests.none { it.path == "/result" }, "a request ran past its header budget")
-            // With enough budget the chain is followed to the end.
-            SparqlRepository(SparqlEndpointConfig(start, readTimeout = Duration.ofSeconds(60), requestTimeout = null)).use { repo ->
-                assertEquals(1, repo.select(selectAll).count())
-            }
-            assertEquals("/result", endpoint.requests.last().path)
+        }
+        // The same budget rule as with a request deadline.
+        repository(SparqlEndpointConfig(start, readTimeout = Duration.ofSeconds(60), requestTimeout = limit)).use { repo ->
+            requested.clear()
+            val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
+            assertTrue(e.message!!.contains("1500 ms deadline"), e.message)
+            assertEquals(listOf("/hop0", "/hop1", "/hop2"), requested.toList())
+        }
+        // With enough budget the chain is followed to the end.
+        repository(SparqlEndpointConfig(start, readTimeout = Duration.ofSeconds(60), requestTimeout = null)).use { repo ->
+            requested.clear()
+            assertEquals(1, repo.select(selectAll).count())
+            assertEquals(listOf("/hop0", "/hop1", "/hop2", "/result"), requested.toList())
         }
     }
 
@@ -267,7 +275,7 @@ class SparqlEndpointProtocolTest {
             CompletableFuture.completedFuture(response)
         }
         val downgrade = SparqlEndpointConfig("https://secure.example/downgrade", headers = mapOf("X-Api-Key" to "k"))
-        for (config in listOf(downgrade, downgrade.copy(followCrossOriginRedirects = true))) {
+        for (config in listOf(downgrade, downgrade.copy(followCrossOriginRedirects = true, redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL))) {
             sent.clear()
             SparqlRepository(config, transport).use { repo ->
                 for (call in listOf<() -> Any>(
@@ -285,7 +293,7 @@ class SparqlEndpointProtocolTest {
         }
         // An https redirect to another origin is followed when allowed, without the custom header.
         sent.clear()
-        SparqlRepository(downgrade.copy(endpoint = "https://secure.example/elsewhere", followCrossOriginRedirects = true), transport).use { repo ->
+        SparqlRepository(downgrade.copy(endpoint = "https://secure.example/elsewhere", followCrossOriginRedirects = true, redirectAddressPolicy = UrlAddressPolicy.ALLOW_ALL), transport).use { repo ->
             assertEquals(1, repo.select(selectAll).count())
         }
         assertEquals(listOf("https://secure.example/elsewhere", "https://other.example/sparql"), sent.map { it.uri().toString() })

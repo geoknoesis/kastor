@@ -16,7 +16,21 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
  * forked, so duplicate triples are dropped here and every value list is duplicate-free.
  */
-internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
+internal class ShapeGraphIndex(triples: List<RdfTriple>, budget: ValidationBudget = ValidationBudget.NONE) {
+    /**
+     * The budget of the compilation that built this index. A compiled graph keeps its index across runs
+     * ([NativeCompileCache]), so [ShapesCompiler.compile] [detaches][detachBudget] it once compilation ends: a later
+     * run must never be timed by the clock of the run that compiled the graph.
+     */
+    @Volatile
+    var budget: ValidationBudget = budget
+        private set
+
+    /** Ends the compile-time use of [budget] (see there). */
+    fun detachBudget() {
+        budget = ValidationBudget.NONE
+    }
+
     /** All (distinct) shapes-graph triples. */
     val triples: List<RdfTriple>
     private val bySubject = HashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
@@ -47,8 +61,11 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /** Cooperative budget check for compile-time loops over this index. */
     fun tick(phase: String) = budget.tick(phase)
 
-    /** Graph-level `sh:declare` prefixes (used by nodes without `sh:prefixes`), computed once per index. */
-    val graphLevelPrefixes: Map<String, String> by lazy { SparqlPrefixes.graphLevel(this) }
+    /**
+     * The prefix maps of [SparqlPrefixes.collect], by `sh:prefixes` values (or the graph-level key), failures included:
+     * filled while the shapes graph is compiled, as [sparqlFunctionDeclarations].
+     */
+    internal val prefixMaps = java.util.concurrent.ConcurrentHashMap<Any, Result<Map<String, String>>>()
 
     /** SPARQL-based constraint components of this shapes graph, collected once per index. */
     val sparqlComponents: SparqlComponentCatalog by lazy { SparqlComponentCatalog.build(this) }
@@ -65,11 +82,11 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
             .mapNotNull { t ->
                 tick("SPARQL function compilation")
                 val text = (t.obj as? Literal)?.lexical ?: return@mapNotNull null
-                val prefixes = LinkedHashMap<String, String>()
-                try {
-                    prefixes.putAll(SparqlPrefixes.collect(t.subject, this))
+                val prefixes = try {
+                    SparqlPrefixes.collect(t.subject, this)
                 } catch (_: ShapeCompileException) {
                     // An ill-formed declaration is reported where the query is compiled.
+                    emptyMap()
                 }
                 SparqlQueryText(t.subject, text, prefixes)
             }
@@ -256,33 +273,32 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
     /**
      * Triples describing the blank-node structure reachable from [root] (e.g. a complex `sh:path`). The rest of an
      * RDF list is followed through cells named with IRIs as well (their `rdf:first` / `rdf:rest` triples only).
+     * Depth-first, in index order, with an explicit stack: a long list must not overflow the call stack. Each node is
+     * visited once and ticks the budget.
      */
     fun blankNodeClosure(root: RdfTerm): List<RdfTriple> {
         val out = mutableListOf<RdfTriple>()
         val seen = HashSet<RdfResource>()
-        fun visit(term: RdfTerm, listRest: Boolean) {
+        val stack = ArrayDeque<Iterator<RdfTriple>>()
+        fun enter(term: RdfTerm, listRest: Boolean) {
             when {
-                term is BlankNode -> {
-                    if (!seen.add(term)) return
-                    bySubject[term]?.forEach { (p, objs) ->
-                        objs.forEach { o ->
-                            out.add(RdfTriple(term, p, o))
-                            visit(o, p == RDF.rest)
-                        }
-                    }
+                term is BlankNode -> if (seen.add(term)) {
+                    stack.addLast(ownTriples(term).iterator())
                 }
-                term is Iri && listRest && term != RDF.nil -> {
-                    if (!seen.add(term)) return
-                    for (p in listOf(RDF.first, RDF.rest)) {
-                        objects(term, p).forEach { o ->
-                            out.add(RdfTriple(term, p, o))
-                            visit(o, p == RDF.rest)
-                        }
-                    }
+                term is Iri && listRest && term != RDF.nil -> if (seen.add(term)) {
+                    stack.addLast(listOf(RDF.first, RDF.rest).flatMap { p -> objects(term, p).map { RdfTriple(term, p, it) } }.iterator())
                 }
             }
         }
-        visit(root, false)
+        enter(root, false)
+        while (stack.isNotEmpty()) {
+            val top = stack.last()
+            if (!top.hasNext()) { stack.removeLast(); continue }
+            tick("path compilation")
+            val t = top.next()
+            out.add(t)
+            enter(t.obj, t.predicate == RDF.rest)
+        }
         return out
     }
 

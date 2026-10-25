@@ -21,5 +21,7 @@ class HolonExceptionTest {
     assertEquals(RdfErrorCode.EXTENSION_ERROR, caught.errorCode)
     assertEquals("unknown-holon: no such holon", caught.message)
     assertSame(cause, caught.cause)
+    // Unchecked, as before round eleven: Java needs no catch for it.
+    assertIs<RuntimeException>(caught)
   }
 }

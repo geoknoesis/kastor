@@ -401,8 +401,10 @@ For each field it compares the record's values with the decoded values of the pr
 - a term whose value the record still holds is kept as it is, so its language tag, datatype and lexical form
   survive (`"Chat"@fr` read into a `String` is not rewritten as `"Chat"`, `"2020-01-01+05:00"^^xsd:date` keeps its
   timezone, `"02"^^xsd:integer` its spelling);
-- a single-valued field whose value is among the decoded values is unchanged, so values beyond `sh:maxCount`
-  that its reader did not return are kept;
+- a single-valued field whose value equals the value its reader returns (the first representable term, in
+  `find` order) is unchanged, so values beyond `sh:maxCount` that its reader did not return are kept; any other
+  value is written even when the graph already holds it beyond `sh:maxCount`: one term of that value is kept and
+  the other representable terms are removed, so the next read returns it;
 - a term the record cannot represent (an ill-typed literal, another datatype, another term kind) is kept;
 - the other terms are removed and the record's new values are added with `encode`.
 

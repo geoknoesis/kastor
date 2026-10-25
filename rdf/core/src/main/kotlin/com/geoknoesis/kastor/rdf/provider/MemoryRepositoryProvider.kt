@@ -393,7 +393,8 @@ class MemoryGraph internal constructor(
             access(true)
             if (atomicUndo != null) { operations(this); return@write }
             val undo = ArrayList<() -> Unit>()
-            atomicStamp = stamp
+            val started = stamp
+            atomicStamp = started
             atomicThread = Thread.currentThread()
             atomicUndo = undo
             try {
@@ -408,7 +409,9 @@ class MemoryGraph internal constructor(
                 throw failure
             } finally {
                 atomicUndo = null
-                stamp = atomicStamp
+                // Commit (or a rollback that changed and restored the content) publishes a value the graph never had:
+                // the private stamps the mutating thread read are never returned again (VersionedRdfGraph rules 4-6).
+                if (atomicStamp != started) stamp = atomicStamp + 1
                 atomicThread = null
             }
         }

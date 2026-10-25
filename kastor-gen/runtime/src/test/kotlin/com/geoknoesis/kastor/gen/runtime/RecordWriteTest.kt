@@ -33,12 +33,38 @@ class RecordWriteTest {
 
     private fun objects(graph: MutableRdfGraph, predicate: Iri) = graph.find(s, predicate).map { it.obj }.toSet()
 
+    private fun firstTitle(graph: MutableRdfGraph) =
+        graph.find(s, title).firstNotNullOfOrNull { (it.obj as? Literal)?.let(XsdLiterals::string) }
+
     @Test
     fun `an unchanged single-valued field keeps every term, also those its reader did not return`() {
         val graph = MemoryGraph(listOf(RdfTriple(s, title, LangString("Chat", "fr")), RdfTriple(s, title, LangString("Cat", "en"))))
-        graph.mergeRecord(s, listOf(type), listOf(strings(listOf("Cat"), single = true)))
+        assertEquals("Chat", firstTitle(graph), "the reader returns the first representable term")
+        graph.mergeRecord(s, listOf(type), listOf(strings(listOf("Chat"), single = true)))
         assertEquals(setOf<RdfTerm>(LangString("Chat", "fr"), LangString("Cat", "en")), objects(graph, title))
         assertEquals(setOf<RdfTerm>(type), objects(graph, RDF.type))
+    }
+
+    @Test
+    fun `a single-valued update to a value the graph already holds beyond sh maxCount is written`() {
+        val graph = MemoryGraph(listOf(RdfTriple(s, title, LangString("Chat", "fr")), RdfTriple(s, title, LangString("Cat", "en"))))
+        graph.mergeRecord(s, emptyList(), listOf(strings(listOf("Cat"), single = true)))
+        assertEquals("Cat", firstTitle(graph), "the update is visible to the next read")
+        assertEquals(setOf<RdfTerm>(LangString("Cat", "en")), objects(graph, title), "the matching term is kept as it is")
+    }
+
+    @Test
+    fun `a single-valued update removes duplicate terms of the new value and the old value`() {
+        val graph = MemoryGraph(
+            listOf(
+                RdfTriple(s, title, Literal("old")),
+                RdfTriple(s, title, LangString("new", "en")),
+                RdfTriple(s, title, Literal("new")),
+            ),
+        )
+        graph.mergeRecord(s, emptyList(), listOf(strings(listOf("new"), single = true)))
+        assertEquals("new", firstTitle(graph))
+        assertEquals(1, objects(graph, title).size, "one value is left for a single-valued member")
     }
 
     @Test

@@ -30,6 +30,16 @@ import org.apache.jena.rdf.model.Literal as JenaLiteral
 internal object JenaTerms {
 
     /**
+     * The values of a result [row] by variable name, without the variables Jena adds itself (named with a leading `?`,
+     * such as the `??P0` of a property-path sequence under `SELECT *`, which `varNames()` lists unbound).
+     */
+    fun rowValues(row: org.apache.jena.query.QuerySolution): Map<String, RdfTerm> =
+        row.varNames().asSequence()
+            .filterNot { it.startsWith("?") }
+            .mapNotNull { name -> row.get(name)?.let { name to fromNode(it) } }
+            .toMap()
+
+    /**
      * Converts a Kastor RDF term to a Jena RDFNode.
      */
     fun toNode(term: RdfTerm?): RDFNode? {
@@ -70,9 +80,10 @@ internal object JenaTerms {
                 NodeFactory.createLiteralLang(term.lexical, term.lang)
             }
         }
-        // TypedLiteral, TrueLiteral and FalseLiteral: keep the exact lexical form and datatype.
+        // TypedLiteral, TrueLiteral and FalseLiteral: keep the exact lexical form and datatype. Jena computes the value
+        // of the node it creates, in time quadratic in the length of a decimal or integer: such a literal is bounded.
         is Literal -> NodeFactory.createLiteralDT(
-            term.lexical,
+            term.lexical.also { lexical -> LiteralValidation.numericLengthProblem(term.datatype.value, lexical)?.let { throw IllegalArgumentException(it) } },
             TypeMapper.getInstance().getSafeTypeByName(term.datatype.value),
         )
         else -> throw IllegalArgumentException("Unsupported RDF term type: ${term.javaClass}")

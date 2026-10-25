@@ -14,7 +14,11 @@ annotation class HolonDslMarker
  * Build a provider-independent DATASET context with explicit registrations and mappings in M.
  * Every identifier and content graph shares one blank-node scope. Use [BlankNodeScopes] first
  * for independently loaded graphs. Use [HolonContext.convert] for a reifier representation.
+ *
+ * @throws HolonException if a declaration is invalid (a second parent, a cycle, an import of an undeclared holon)
  */
+@JvmOverloads
+@Throws(HolonException::class)
 fun holons(
   sourceId: String = UUID.randomUUID().toString(),
   filtered: Boolean = false,

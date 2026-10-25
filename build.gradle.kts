@@ -177,6 +177,10 @@ subprojects {
 
     val testMaxHeap = providers.gradleProperty("kastor.test.maxHeap").orElse("1g")
     val testMaxForks = providers.gradleProperty("kastor.test.maxParallelForks").map(String::toInt).orElse(1)
+    // Per-test and per-task ceilings; raise them per machine with -Pkastor.test.timeout=10m (JUnit duration syntax)
+    // or -Pkastor.test.taskTimeoutMinutes=90.
+    val testTimeout = providers.gradleProperty("kastor.test.timeout").orElse("5m")
+    val testTaskTimeoutMinutes = providers.gradleProperty("kastor.test.taskTimeoutMinutes").map(String::toLong).orElse(60L)
     tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
       useJUnitPlatform()
       // Bound every test JVM. The JVM default (25% of physical RAM) multiplied by concurrent
@@ -184,6 +188,12 @@ subprojects {
       // ~/.gradle/gradle.properties: kastor.test.maxHeap=2g, kastor.test.maxParallelForks=2.
       maxHeapSize = testMaxHeap.get()
       maxParallelForks = testMaxForks.get()
+      // A hung test must fail, not stall the run until the CI job timeout. JUnit interrupts any test or lifecycle
+      // method that runs longer than the default (the slowest offline test takes about 35 s; Gradle TestKit
+      // suites declare their own @Timeout). A deadlock that ignores interruption is stopped by the task timeout,
+      // and with `--continue` every other module's results are still reported.
+      systemProperty("junit.jupiter.execution.timeout.default", testTimeout.get())
+      timeout.set(java.time.Duration.ofMinutes(testTaskTimeoutMinutes.get()))
       // Persistent-store tests can retain mapped files until the worker JVM exits.
       // Keep scratch files on the build volume and clean after successful worker exit.
       val scratch = layout.buildDirectory.dir("test-tmp/$name").get().asFile

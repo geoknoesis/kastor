@@ -53,6 +53,17 @@ jobs:
         run: ./gradlew check --continue --no-daemon -x :rdf:conformance:test
         shell: bash
 
+      # `check` trusts whatever the complexity baseline says, so a hand-edited ceiling would pass it. On pull
+      # requests, compare the baseline with the base branch's: every rise needs a newly written reviewed reason.
+      - name: Complexity baseline ratchet against the base branch
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && runner.os == 'Linux' }}
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          python scripts/check-code-complexity.py --baseline-ref "origin/${BASE_REF}"
+
       # A Windows run once failed with "No buffer space available (maximum connections reached?)" on a loopback
       # connect. If a run fails, record the socket state so the next occurrence can be explained.
       - name: Network diagnostics (Windows, on failure)
@@ -80,14 +91,26 @@ jobs:
 
       - name: Verify executed test counts and skips
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
-        # Floor is about 95% of the October offline population with the bundled SHACL fixture.
-        # Per-module floors below prevent another module from hiding a missing suite.
-        # New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
+        # Floor is about 90% of the executed offline population: 4549 tests, 9-10 skipped, on every OS at 707fccb6
+        # (2026-10-25). Ratchet it when the population grows. Per-module floors below catch a missing suite that
+        # this global floor would absorb. New skips must be listed in scripts/test-skip-allowlist.json; an entry
+        # whose test no longer exists fails the gate.
+        run: python scripts/check-test-results.py build/modules --minimum 4100 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Require each tested module to remain populated
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
+
+      # The full W3C RDF 1.2 syntax suites and the serializer round-trip rows, for the Jena provider, so that a parser
+      # or serializer regression fails the PR instead of the next weekly run (conformance.yml runs both providers).
+      # After the gates above, which count the tests of `check` only.
+      - name: RDF 1.2 conformance, full corpus (Jena)
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' && runner.os == 'Linux' }}
+        run: |
+          python scripts/fetch-conformance-data.py --only rdf
+          ./gradlew :rdf:conformance:test --tests '*JenaConformanceTest*' --no-daemon
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1300 --require-suite com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest=1300 --skip-allowlist scripts/test-skip-allowlist.json
+        shell: bash
 
       - name: Coverage reports
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
@@ -135,12 +158,13 @@ jobs:
         shell: bash
 
       - name: Require the full W3C suite, not the bundled fixture
-        # data-shapes 94d8bc2: 166 W3C cases, all executed (known deviations run and must fail with an
-        # explicit unsupported-feature error), measured 2026-09-13.
+        # data-shapes 94d8bc2 (pinned): 166 W3C cases, all executed (known deviations run and must fail with an
+        # explicit unsupported-feature error); 311 tests in the task at 707fccb6 (2026-10-25). The corpus is
+        # pinned, so every one of the 166 cases must execute; bump this with the pin.
         run: >-
           python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/w3cConformanceTest
-          --minimum 150
-          --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150
+          --minimum 295
+          --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=166
           --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload SHACL test reports
@@ -151,8 +175,8 @@ jobs:
           path: build/modules/rdf/shacl-validation/reports/
 
   macos:
-    # Full check on macOS for pushes to main and the weekly schedule (saves PR minutes).
-    if: github.event_name != 'pull_request'
+    # Full check on macOS for every PR, push to main and the weekly schedule. It used to skip PRs to save
+    # minutes, so a macOS-only regression always landed on main first (f1f170c1: SparqlFunctionTest).
     runs-on: macos-latest
     timeout-minutes: 90
     env:
@@ -176,7 +200,8 @@ jobs:
 
       - name: Verify executed test counts and skips
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
-        run: python3 scripts/check-test-results.py build/modules --minimum 3400 --skip-allowlist scripts/test-skip-allowlist.json
+        # Same floor as the build job.
+        run: python3 scripts/check-test-results.py build/modules --minimum 4100 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Require each tested module to remain populated
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}

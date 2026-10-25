@@ -208,4 +208,24 @@ class NodeExpressionParserTest {
         assertThrows(ShapeCompileException::class.java) { NodeExpressions.compile(body, index) }
         assertEquals(NodeExpression.CustomList(ex("ok"), emptyList()), NodeExpressions.compile(ok.single(), index))
     }
+
+    @Test
+    fun `an integer argument of millions of digits is clamped without a quadratic parse`() {
+        // Built directly: a Turtle parser may itself parse the integer.
+        val digits = "7".repeat(3_000_000)
+        val shnex = "http://www.w3.org/ns/shacl-node-expr#"
+        val node = com.geoknoesis.kastor.rdf.BlankNode("limit")
+        val index = ShapeGraphIndex(
+            listOf(
+                com.geoknoesis.kastor.rdf.RdfTriple(ex("holder"), ex("expr"), node),
+                com.geoknoesis.kastor.rdf.RdfTriple(node, Iri(shnex + "limit"), TypedLiteral(digits, XSD.integer)),
+                com.geoknoesis.kastor.rdf.RdfTriple(node, Iri(shnex + "nodes"), com.geoknoesis.kastor.rdf.BlankNode("empty")),
+            ),
+        )
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(60)) {
+            assertEquals(NodeExpression.Limit(Int.MAX_VALUE, NodeExpression.Empty), NodeExpressions.compile(node, index))
+        }
+        assertEquals(NodeExpression.Limit(0, NodeExpression.Empty), expression("ex:holder ex:expr [ shnex:limit -0 ; shnex:nodes [] ] ."))
+        assertEquals(NodeExpression.Limit(12, NodeExpression.Empty), expression("ex:holder ex:expr [ shnex:limit +0012 ; shnex:nodes [] ] ."))
+    }
 }

@@ -25,6 +25,13 @@ internal class NativeValidationContext(
 ) : AutoCloseable {
     /** The counts of this run, added to [instrumentation] when the run ends. */
     val counters = RunCounters()
+
+    /**
+     * The most results one evaluation of a constraint builds: `maxViolations + 1`. A constraint whose results are
+     * pairs or query solutions can have quadratically many for one focus node; beyond this many, none could be
+     * reported, and the one more keeps [com.geoknoesis.kastor.rdf.shacl.ValidationReport.violationsTruncated] true.
+     */
+    val resultCap: Int = validator.config.maxViolations.let { if (it == Int.MAX_VALUE) it else it + 1 }
     // The seams are read once per run: the hot path reads no shared field.
     /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
     private val patternClock: () -> Long = instrumentation.patternClock
@@ -157,12 +164,21 @@ internal class NativeValidationContext(
      * query's answer may be wrong, and no later check might come (the last focus node).
      */
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume) }
+        timed { provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume) } }
             .also { checkDeadline() }
     /** As [select], with the function library [library] instead of the shapes graph's. */
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, library: SparqlFunctionLibrary, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume) }
+        timed { provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), library, consume) } }
             .also { checkDeadline() }
+    /**
+     * Runs a query of the validation: a query that fails once the validation's time is up was stopped by the time limit
+     * it was given (what is left of the budget), so the failure is the budget's, which names the validation time limit.
+     */
+    private inline fun <T> timed(query: () -> T): T = try {
+        query()
+    } catch (e: RuntimeException) {
+        throw budget.failure("validation", e) ?: e
+    }
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
     fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */

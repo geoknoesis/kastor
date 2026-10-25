@@ -13,7 +13,8 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 | Dependency graph | **disabled** (`GET repos/geoknoesis/kastor/dependency-graph/sbom` returns 404) | GitHub dependency review in `dependency-review.yml` (skipped with a notice while disabled) | 3.1 (optional) |
 | `release` environment and its reviewers | **missing** | `publish.yml` approval gate | 3.3 |
 | `release-tags` tag ruleset | **missing** | only admins may push `v*` tags | 3.3 |
-| `main-protection` branch ruleset | **missing** (only the disabled "My ruleset" exists) | PRs and required checks on `main` | 3.3 |
+| `main-protection` branch ruleset | **active** since 2026-10-24 (ruleset 24258020), but it also holds the required checks, so its admin bypass lets an admin merge a red PR; the disabled "My ruleset" (16510997) is still there | PRs, no force-push or deletion on `main` | 3.3 |
+| `main-required-checks` branch ruleset | **missing** (checked 2026-10-25) | required checks that nobody, including admins, can bypass | 3.3 |
 | Pages source | **legacy** (`build_type: legacy`, branch `main` `/docs`) so every push deploys twice | `pages.yml` as the only deployment | 3.3 |
 | Code security: Dependabot security updates, secret scanning + push protection | **disabled** as of the 2026-09-30 read-only check (Dependabot vulnerability alerts already enabled) | leaked-secret blocking, dependency fixes | 3.3 |
 | Private vulnerability reporting | **enabled as of 2026-09-30** (configured then; verify with `gh api repos/geoknoesis/kastor/private-vulnerability-reporting`, expect `{"enabled":true}`) | `SECURITY.md` reporting channel | 3.3 (verify) |
@@ -23,8 +24,9 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 
 1. Push the branch: `git push -u origin <branch>`.
 2. Open a pull request to `main`. Wait for these checks to go green:
-   - `build (ubuntu-latest)`, `build (windows-latest)`: `check`, build pins, conformance smoke, executed-test floor and skip allowlist. A `buildHealth` failure is advisory: it appears as a warning and in the job summary.
-   - `shacl-w3c-suite`: the pinned W3C SHACL 1.2 corpus (the required suite must execute at least 150 cases).
+   - `build (ubuntu-latest)`, `build (windows-latest)`: `check` (including the quality gates), conformance smoke, `buildHealth` and reviewed dependency advice, executed-test floor, module floors and skip allowlist; on pull requests the Linux job also compares the complexity baseline with the base branch's. `buildHealth` itself only reports advice; the next step fails on any advice that `scripts/dependency-advice-exceptions.json` does not review.
+   - `macos`: the same `check` and test gates on macOS.
+   - `shacl-w3c-suite`: the pinned W3C SHACL 1.2 corpus (the required suite must execute all 166 cases).
    - `dependency-review`: OSV lockfile audit and secret scan; GitHub dependency review runs only when the Dependency graph is enabled, otherwise the step is skipped with a notice.
 3. Fix failures in the PR. Do not lower floors or add allowlist entries without a reason.
 4. Merge.
@@ -61,12 +63,12 @@ Run these in this order.
    ```
 
    Check that the plan shows:
-   - required checks `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, plus `dependency-review` only if the graph is enabled;
-   - `bypass: repository admins (RepositoryRole 5, always)`. Without this bypass, maintainers could no longer push directly to `main`. Pass `--no-admin-bypass` only once every change goes through PRs;
+   - required checks `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, plus `macos` with `--require-macos` and `dependency-review` only if the graph is enabled, in the ruleset `main-required-checks`, which has no bypass actors;
+   - `bypass: repository admins (RepositoryRole 5, pull_request mode)` on `main-protection`: an admin may merge their own PR without an approval, but never pushes to `main` directly and never merges past a red or pending required check. Pass `--no-admin-bypass` to require approvals from admins too;
    - `Pages build type: legacy -> workflow`;
    - the *Code security* block with the current state of each setting (settings already enabled are skipped).
 
-   Flags: `--require-dependency-review` forces the check to be required, and `--no-dependency-review` never requires it. `--approvals N` requires N approving reviews (default 0).
+   Flags: `--require-dependency-review` forces the check to be required, and `--no-dependency-review` never requires it. `--require-macos` requires the `macos` job (it runs on every PR since round twelve). `--approvals N` requires N approving reviews (default 0).
 3. **Apply:**
 
    ```bash
@@ -76,7 +78,8 @@ Run these in this order.
    It creates or updates:
    - the `release` environment with required reviewers and deployments only from `v*` tags;
    - the `release-tags` tag ruleset: only admins may create, update or delete `v*` tags;
-   - the `main-protection` branch ruleset: pull requests, no force-push or deletion, the required checks above, admin bypass;
+   - the `main-protection` branch ruleset: pull requests, no force-push or deletion, admin bypass of the PR rule in `pull_request` mode;
+   - the `main-required-checks` branch ruleset: the strict required checks above, with no bypass actors;
    - GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build;
    - code security: Dependabot vulnerability alerts (`PUT vulnerability-alerts`), Dependabot security updates (`PUT automated-security-fixes`), secret scanning with push protection (`PATCH` `security_and_analysis`), and private vulnerability reporting (`PUT private-vulnerability-reporting`). Pass `--no-security-features` to leave these untouched. Private repositories must enable the Dependency graph first (step 1).
 4. **Secrets.** Set the four environment secrets. The script prints these commands; values are entered interactively, never as arguments:
@@ -91,7 +94,7 @@ Run these in this order.
 
 5. **Verify:**
    - `gh api repos/geoknoesis/kastor/environments/release`;
-   - `gh api repos/geoknoesis/kastor/rulesets`: `main-protection` and `release-tags` are `active`;
+   - `gh api repos/geoknoesis/kastor/rulesets`: `main-protection`, `main-required-checks` and `release-tags` are `active`, and `gh api repos/geoknoesis/kastor/rulesets/<main-required-checks id> --jq .bypass_actors` prints `[]`;
    - `gh api repos/geoknoesis/kastor/pages --jq .build_type` must print `workflow`;
    - `gh api repos/geoknoesis/kastor --jq .security_and_analysis` shows `secret_scanning` and `secret_scanning_push_protection` `enabled`, and `gh api repos/geoknoesis/kastor/private-vulnerability-reporting` prints `{"enabled":true}`.
 

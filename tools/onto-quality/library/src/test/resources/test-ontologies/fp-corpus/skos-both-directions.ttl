@@ -1,0 +1,54 @@
+# False-positive corpus: a valid, multilingual SKOS thesaurus that states its hierarchy, scheme membership,
+# associative and mapping links in both directions and from either end: skos:broader on some concepts and
+# skos:narrower on others, top concepts declared from the scheme (skos:hasTopConcept) or from the concept
+# (skos:topConceptOf), skos:related and skos:exactMatch stated both ways, redundant broader + narrower pairs.
+# No detector may report a warning or a violation.
+@prefix ex:   <https://w3id.org/kastor/fp/colours/> .
+@prefix ext:  <https://w3id.org/kastor/fp/paint/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+ex:scheme a skos:ConceptScheme ;
+    skos:prefLabel "Colours"@en , "Couleurs"@fr , "Farben"@de ;
+    dct:creator <https://orcid.org/0000-0002-1825-0097> ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    skos:hasTopConcept ex:colour .
+
+ex:colour a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "colour"@en , "couleur"@fr , "Farbe"@de , "色"@ja ;
+    skos:altLabel "color"@en ;
+    skos:definition "A visual property of objects."@en ;
+    skos:narrower ex:red , ex:blue .
+
+ex:warm a skos:Concept ; skos:topConceptOf ex:scheme ;
+    skos:prefLabel "warm colour"@en , "couleur chaude"@fr ;
+    skos:definition "A colour of fire and sunlight."@en ;
+    skos:related ex:red .
+
+ex:red a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "red"@en , "rouge"@fr , "rot"@de , "赤"@ja ;
+    skos:hiddenLabel "rd"@en ;
+    skos:notation "R" ;
+    skos:definition "The colour of blood."@en ;
+    skos:broader ex:colour ;
+    skos:related ex:warm ;
+    skos:narrower ex:crimson ;
+    skos:exactMatch ext:Red ;
+    skos:closeMatch ext:Scarlet .
+
+ex:crimson a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "crimson"@en , "cramoisi"@fr ;
+    skos:notation "R1" ;
+    skos:definition "A deep red."@en .
+
+ex:blue a skos:Concept ; skos:inScheme ex:scheme ;
+    skos:prefLabel "blue"@en , "bleu"@fr , "blau"@de ;
+    skos:notation "B" ;
+    skos:definition "The colour of a clear sky."@en ;
+    skos:broader ex:colour ;
+    skos:broadMatch ext:Paint .
+
+ext:Red skos:exactMatch ex:red .
+ext:Paint skos:narrowMatch ex:blue .

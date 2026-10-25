@@ -468,6 +468,7 @@ public final class com/geoknoesis/kastor/gen/runtime/XsdLiterals {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/XsdLiterals;
 	public final fun bigDecimal (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/math/BigDecimal;
 	public final fun bigInteger (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/math/BigInteger;
+	public final fun bigInteger-AqFvXrU (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;)Ljava/math/BigInteger;
 	public final fun boolean (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Boolean;
 	public final fun booleanLexical (Ljava/lang/String;)Ljava/lang/Boolean;
 	public final fun compareNumeric (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Ljava/lang/Integer;
@@ -477,11 +478,13 @@ public final class com/geoknoesis/kastor/gen/runtime/XsdLiterals {
 	public final fun float (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Float;
 	public final fun hasDatatype-AqFvXrU (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Z
 	public final fun int (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Integer;
+	public final fun int-AqFvXrU (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;)Ljava/lang/Integer;
 	public final fun isWellFormed (Lcom/geoknoesis/kastor/rdf/Literal;)Z
 	public final fun langString (Lcom/geoknoesis/kastor/rdf/Literal;)Lcom/geoknoesis/kastor/rdf/LangString;
 	public final fun lexical-AqFvXrU (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;)Ljava/lang/String;
 	public final fun localDate (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/time/LocalDate;
 	public final fun long (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Long;
+	public final fun long-AqFvXrU (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;)Ljava/lang/Long;
 	public final fun string (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/String;
 }
 

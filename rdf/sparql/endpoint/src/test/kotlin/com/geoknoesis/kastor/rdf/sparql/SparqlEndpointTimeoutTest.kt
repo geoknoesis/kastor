@@ -61,55 +61,100 @@ class SparqlEndpointTimeoutTest {
         }
     }
 
-    @Test
-    fun `request timeout covers stream headers but not slow consumers while a per-call timeout covers the whole stream`(): Unit = LocalEndpoint { exchange, request ->
-        if (request.path == "/slow-headers") {
-            Thread.sleep(STALL_MILLIS)
-            exchange.respond(200, rowsJson(1))
-        } else if (request.path == "/burst") {
-            exchange.respond(200, rowsJson(5))
-        } else {
-            exchange.trickleRows(rows = 5, gapMillis = 300)
+    /**
+     * The test clock of [clockedRepository]: the adapter's deadlines and its read watchdog read it, and the fake
+     * transport and the consumers advance it, so no outcome depends on how fast the host runs.
+     */
+    private class TestClock {
+        private val nanos = java.util.concurrent.atomic.AtomicLong(0)
+        fun now(): Long = nanos.get()
+        fun advance(millis: Long) { nanos.addAndGet(millis * 1_000_000) }
+    }
+
+    /** A body handed out [chunk] bytes per read, each read taking [readMillis] on [clock]: a server trickling it. */
+    private class ClockedBody(text: String, private val clock: TestClock, private val readMillis: Long, private val chunk: Int) : java.io.InputStream() {
+        private val bytes = text.toByteArray(Charsets.UTF_8)
+        private var position = 0
+
+        override fun read(): Int = ByteArray(1).let { if (read(it, 0, 1) < 0) -1 else it[0].toInt() and 0xFF }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (position == bytes.size) return -1
+            clock.advance(readMillis)
+            val n = minOf(len, chunk, bytes.size - position)
+            System.arraycopy(bytes, position, b, off, n)
+            position += n
+            return n
         }
-    }.use { endpoint ->
-        // The trickled body takes 1.5 s and every limit below is 1 s: a call covered by the limit fails with
-        // the deadline message however slow the host is, and a call that is not covered returns all rows.
+    }
+
+    /**
+     * A fake endpoint on [clock]: `/slow-headers` sends no headers within any wait (the wait asked for passes on the
+     * clock, then it times out), `/burst` sends five rows at once, anything else trickles five rows over 1.5 s or more.
+     */
+    private fun clockedTransport(clock: TestClock, headerWaits: MutableList<Long>) = HttpTransport { request ->
+        val path = request.uri().path
+        when {
+            path.endsWith("/slow-headers") -> object : java.util.concurrent.CompletableFuture<java.net.http.HttpResponse<java.io.InputStream>>() {
+                override fun get(timeout: Long, unit: TimeUnit): java.net.http.HttpResponse<java.io.InputStream> {
+                    headerWaits += unit.toNanos(timeout)
+                    clock.advance(unit.toMillis(timeout))
+                    throw java.util.concurrent.TimeoutException()
+                }
+            }
+            path.endsWith("/burst") -> java.util.concurrent.CompletableFuture.completedFuture(FakeResponse(request, 200, rowsJson(5).byteInputStream()))
+            else -> {
+                val text = rowsJson(5)
+                java.util.concurrent.CompletableFuture.completedFuture(
+                    FakeResponse(request, 200, ClockedBody(text, clock, readMillis = 300, chunk = text.length / 5 + 1)),
+                )
+            }
+        }
+    }
+
+    private fun clockedRepository(config: SparqlEndpointConfig, clock: TestClock, headerWaits: MutableList<Long> = mutableListOf()) =
+        SparqlRepository(config, clockedTransport(clock, headerWaits), ReadWatchdog(nanoTime = clock::now), nanoTime = clock::now)
+
+    @Test
+    fun `request timeout covers stream headers but not slow consumers while a per-call timeout covers the whole stream`() {
+        val clock = TestClock()
+        val url = "http://sparql.example/sparql"
         val limit = Duration.ofSeconds(1)
-        val config = SparqlEndpointConfig(endpoint.url, requestTimeout = limit)
-        SparqlRepository(config).use { repo ->
-            val rows = repo.withSelectRows(selectAll) { seq -> seq.onEach { Thread.sleep(300) }.count() }
+        val config = SparqlEndpointConfig(url, requestTimeout = limit)
+        clockedRepository(config, clock).use { repo ->
+            // The headers come at once; the body trickles for 1.5 s and the consumer takes 300 ms a row: the request
+            // timeout bounds the wait for headers only, so every row arrives.
+            val rows = repo.withSelectRows(selectAll) { seq -> seq.onEach { clock.advance(300) }.count() }
             assertEquals(5, rows)
             // An explicit per-call timeout bounds the whole call, like the Jena and RDF4J providers:
             // rows trickling in after the deadline fail the call.
-            val start = System.nanoTime()
-            val e = assertThrows(RdfQueryException::class.java) {
-                repo.withSelectRows(selectAll, emptyMap(), limit) { it.count() }
-            }
+            val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll, emptyMap(), limit) { it.count() } }
             assertTrue(e.message!!.contains("exceeded its 1000 ms deadline"), e.message)
-            assertEndedAtLimit(limit, start, "per-call timeout")
             assertEquals(5, repo.withSelectRows(selectAll, emptyMap(), Duration.ofSeconds(60)) { it.count() })
-            // ...and time the consumer spends on rows that are already buffered.
-            SparqlRepository(config.copy(endpoint = "${endpoint.base}/burst")).use { burst ->
-                val slow = assertThrows(RdfQueryException::class.java) {
-                    burst.withSelectRows(selectAll, emptyMap(), limit) { seq -> seq.onEach { Thread.sleep(300) }.count() }
-                }
-                assertTrue(slow.message!!.contains("exceeded its 1000 ms deadline"), slow.message)
-            }
             // Buffered select keeps the whole-request deadline.
             val buffered = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
             assertTrue(buffered.message!!.contains("exceeded its 1000 ms deadline"), buffered.message)
         }
-        SparqlRepository(config.copy(requestTimeout = Duration.ofSeconds(60), streamingRequestTimeout = limit)).use { repo ->
+        // ...and the per-call timeout covers the time the consumer spends on rows that are already buffered.
+        clockedRepository(config.copy(endpoint = "$url/burst"), clock).use { burst ->
+            assertEquals(5, burst.withSelectRows(selectAll, emptyMap(), limit) { it.count() })
+            val slow = assertThrows(RdfQueryException::class.java) {
+                burst.withSelectRows(selectAll, emptyMap(), limit) { seq -> seq.onEach { clock.advance(300) }.count() }
+            }
+            assertTrue(slow.message!!.contains("exceeded its 1000 ms deadline"), slow.message)
+        }
+        clockedRepository(config.copy(requestTimeout = Duration.ofSeconds(60), streamingRequestTimeout = limit), clock).use { repo ->
             val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
             assertTrue(e.message!!.contains("exceeded its 1000 ms deadline"), e.message)
         }
+        val headerWaits = mutableListOf<Long>()
         val headerLimit = Duration.ofMillis(300)
-        SparqlRepository(SparqlEndpointConfig("${endpoint.base}/slow-headers", requestTimeout = headerLimit)).use { repo ->
-            val start = System.nanoTime()
+        clockedRepository(SparqlEndpointConfig("$url/slow-headers", requestTimeout = headerLimit), clock, headerWaits).use { repo ->
             val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
             assertTrue(e.message!!.contains("exceeded its 300 ms deadline waiting for the response"), e.message)
-            assertEndedAtLimit(headerLimit, start, "header deadline")
         }
+        // The adapter waited for the headers exactly as long as the request timeout allows.
+        assertEquals(listOf(headerLimit.toNanos()), headerWaits)
     }
 
     @Test

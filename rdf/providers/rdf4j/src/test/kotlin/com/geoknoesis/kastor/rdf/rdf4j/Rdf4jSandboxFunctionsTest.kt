@@ -116,8 +116,9 @@ class Rdf4jSandboxFunctionsTest {
     fun `every function the sandbox allows is one of RDF4J's own built-ins`() {
         val allowed = FunctionRegistry.getInstance().keys.filter(Rdf4jSandboxFunctions::isStandard)
         assertTrue(allowed.size >= 50, "$allowed")
-        // W3C IRIs (XPath functions, XSD casts, rdf:subject ...) or the bare names of SPARQL keywords (RAND, UUID ...).
-        assertTrue(allowed.all { it.startsWith("http://www.w3.org/") || ':' !in it }, "$allowed")
+        // W3C IRIs (XPath functions, XSD casts, rdf:subject ...), the bare names of SPARQL keywords (RAND, UUID ...), or
+        // the pure helpers of ShaclSail's generated queries.
+        assertTrue(allowed.all { it.startsWith("http://www.w3.org/") || ':' !in it || it.startsWith("http://rdf4j.org/shacl-extensions#") }, "$allowed")
         assertTrue("RAND" in allowed && "http://www.w3.org/2001/XMLSchema#integer" in allowed, "$allowed")
     }
 
@@ -140,6 +141,19 @@ class Rdf4jSandboxFunctionsTest {
         assertEquals(0, asked.get())
         assertThrows(QueryEvaluationException::class.java) { strategy.getService("http://127.0.0.1:1/s") }
         assertEquals(0, asked.get())
+    }
+
+    /** The strategy refuses a custom aggregate too, for a query that reached evaluation without the static check. */
+    @Test
+    fun `a custom aggregate fails at evaluation even without the static check`() {
+        val scope = Rdf4jFunctionScope.Scope(SparqlFunctionLibrary.EMPTY, 0, Long.MAX_VALUE, System::nanoTime, { _, _, _ -> error("unused") }, null)
+        val strategy = KastorEvaluationStrategy(EmptySource, null, null, 0, EvaluationStatistics(), false, QueryEvaluationMode.STANDARD, scope)
+        val parsed = SPARQLParser().parseQuery("SELECT (<http://rdf4j.org/aggregate#stdev>(?o) AS ?x) WHERE { BIND (1 AS ?o) }", null)
+        val error = assertThrows(QueryEvaluationException::class.java) {
+            val optimized = strategy.optimize(QueryRoot(parsed.tupleExpr), EvaluationStatistics(), EmptyBindingSet.getInstance())
+            strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance()).use { it.hasNext() }
+        }
+        assertTrue(error.message!!.contains("aggregate"), error.message)
     }
 
     private object EmptySource : TripleSource {

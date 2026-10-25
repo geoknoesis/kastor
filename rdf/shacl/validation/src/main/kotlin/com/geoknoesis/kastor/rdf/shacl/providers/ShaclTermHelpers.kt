@@ -40,18 +40,6 @@ internal fun literalMatchesShaclDatatypes(term: RdfTerm, allowed: List<Iri>): Bo
         else -> false
     }
 
-/** BCP47-style prefix match (`en` ⊇ `en-NZ`), case-insensitive. Supports trailing `-*` wildcard ranges. */
-internal fun languageTagMatchesLanguageRange(valueLang: String, range: String): Boolean {
-    if (range == "*") return true
-    val v = valueLang.lowercase()
-    val r = range.lowercase()
-    if (v == r) return true
-    if (r.endsWith("-*")) {
-        val prefix = r.dropLast(2)
-        return prefix.isEmpty() || v == prefix || v.startsWith("$prefix-")
-    }
-    return v.startsWith("$r-")
-}
 
 internal fun matchesNodeKind(term: RdfTerm, kind: Iri): Boolean =
     when (kind) {

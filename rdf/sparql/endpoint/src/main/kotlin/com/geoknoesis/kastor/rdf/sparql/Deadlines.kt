@@ -32,16 +32,38 @@ internal object Durations {
     fun isUnbounded(duration: Duration): Boolean = nanos(duration) == UNBOUNDED
 
     /**
-     * The `System.nanoTime()` reading [budgetNanos] after [startNanos], or `null` when there is no
-     * such deadline: the budget is [UNBOUNDED], or the sum is beyond what a `Long` holds. The result
-     * is never `Long.MAX_VALUE` or `Long.MIN_VALUE`, which callers use as markers.
+     * The `System.nanoTime()` reading [budgetNanos] after [startNanos], or `null` when the budget is
+     * [UNBOUNDED]. `System.nanoTime()` may wrap around (its origin is arbitrary), and so may the sum:
+     * deadlines are only ever compared by difference ([reached], [earlier]), never with `<`, so a
+     * deadline that wraps still holds. (Treating a sum that wrapped as "no deadline" would have dropped
+     * the timeout of a JVM whose clock reads close to `Long.MAX_VALUE`.) The result is never
+     * `Long.MAX_VALUE` or `Long.MIN_VALUE`, which callers use as markers; such a sum is moved one
+     * nanosecond towards zero (`MAX_VALUE - 1`, `MIN_VALUE + 1`: subtracting from `MIN_VALUE` would
+     * wrap to the "no deadline" marker).
      */
     fun deadline(startNanos: Long, budgetNanos: Long): Long? {
         if (budgetNanos == UNBOUNDED) return null
         val sum = startNanos + budgetNanos
-        val overflowed = ((startNanos xor sum) and (budgetNanos xor sum)) < 0
-        return if (overflowed || sum == Long.MAX_VALUE || sum == Long.MIN_VALUE) null else sum
+        return when (sum) {
+            Long.MAX_VALUE -> sum - 1
+            Long.MIN_VALUE -> sum + 1
+            else -> sum
+        }
     }
+
+    /** Whether the clock reading [now] is at or after [deadline], compared by difference as `System.nanoTime` requires. */
+    fun reached(now: Long, deadline: Long): Boolean = now - deadline >= 0
+
+    /** The earlier of two deadlines, where [NONE] stands for "no deadline". */
+    fun earlier(a: Long, b: Long): Long = when {
+        a == NONE -> b
+        b == NONE -> a
+        a - b <= 0 -> a
+        else -> b
+    }
+
+    /** The marker for "no deadline" in [earlier] and in the watchdog's bookkeeping. */
+    const val NONE = Long.MAX_VALUE
 
     fun requirePositive(duration: Duration, name: String) =
         require(!duration.isNegative && !duration.isZero) { "$name must be positive" }
@@ -73,10 +95,14 @@ internal object Durations {
  *
  * @param newThread creates the watching thread for the given body; it is started by the watchdog.
  *   Tests pass their own to count and observe the threads.
+ * @param nanoTime the clock of every deadline the watchdog sees: [GuardedInputStream] and the overall deadline of a
+ *   call read it too, so that deadlines and the readings they are compared with come from one clock. Tests pass a
+ *   clock they advance instead of sleeping.
  */
 internal class ReadWatchdog(
     private val report: (Throwable) -> Unit = ::logFailure,
     private val newThread: (Runnable) -> Thread = ::daemonThread,
+    val nanoTime: () -> Long = System::nanoTime,
 ) {
     interface Watched {
         /** Expire the pending read if its deadline is at or before [now]; returns the pending deadline, or [Long.MAX_VALUE]. */
@@ -129,7 +155,8 @@ internal class ReadWatchdog(
     /** Called after a read published [deadline]; wakes (or starts) the watching thread if it would sleep past it. */
     fun published(deadline: Long) {
         // A deadline at or after the next wake-up is found by the scan that follows that wake-up.
-        if (deadline < nextWakeNanos) lock.withLock {
+        val nextWake = nextWakeNanos
+        if (nextWake == Durations.NONE || deadline - nextWake < 0) lock.withLock {
             signalled = true
             if (thread == null) start() else wake.signal()
         }
@@ -154,7 +181,7 @@ internal class ReadWatchdog(
             while (true) {
                 // A read publishing from here on sees MAX_VALUE and raises the flag, so the wait below is skipped.
                 nextWakeNanos = Long.MAX_VALUE
-                val now = System.nanoTime()
+                val now = nanoTime()
                 var next = Long.MAX_VALUE
                 for (stream in streams) {
                     val pending = try {
@@ -165,7 +192,7 @@ internal class ReadWatchdog(
                         report(failure)
                         Long.MAX_VALUE
                     }
-                    next = minOf(next, pending)
+                    next = Durations.earlier(next, pending)
                 }
                 lock.withLock {
                     if (!signalled) {
@@ -179,7 +206,7 @@ internal class ReadWatchdog(
                             wake.await()
                         } else {
                             nextWakeNanos = next
-                            wake.awaitNanos(next - System.nanoTime())
+                            wake.awaitNanos(next - nanoTime())
                         }
                     }
                     signalled = false

@@ -49,4 +49,13 @@ class MemoryReasonerLimitsTest {
         }
         assertTrue(error.message!!.contains("OWL_MICRO"), error.message)
     }
+
+    @Test
+    fun `custom rules are refused, not silently ignored`() {
+        val rule = CustomRule("r", "(?a <http://example.org/p> ?b)", "(?b <http://example.org/p> ?a)")
+        val config = ReasonerConfig.rdfs().copy(customRules = listOf(rule))
+        val direct = assertThrows(IllegalArgumentException::class.java) { MemoryReasoner(config) }
+        assertTrue(direct.message!!.contains("custom rules"), direct.message)
+        assertThrows(IllegalArgumentException::class.java) { MemoryReasonerProvider().createReasoner(config) }
+    }
 }

@@ -86,7 +86,7 @@ internal class SparqlQueryTemplate private constructor(
         /** Pre-bound variables of a `sh:sparql` constraint: only `$this` (SHACL 1.2 no longer pre-binds `$shapesGraph` / `$currentShape`). */
         val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this")
 
-        fun compile(query: String, preBound: Set<String>): SparqlQueryTemplate {
+        fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate {
             val parts = ArrayList<Part>()
             val text = StringBuilder()
             var context = Context.PLAIN
@@ -96,6 +96,7 @@ internal class SparqlQueryTemplate private constructor(
             val tokens = SparqlLexer.tokenize(query)
             var index = 0
             while (index < tokens.size) {
+                budget.tick(PHASE)
                 val token = tokens[index]
                 if (token.isWord("BOUND")) {
                     val bound = matchBoundOfPreBound(tokens, index, preBound)
@@ -158,10 +159,11 @@ internal class SparqlQueryTemplate private constructor(
          * A sub-select that uses a pre-bound variable without projecting it is allowed (SHACL 1.2). Returns a
          * description of the first violation, or null.
          */
-        fun restrictionViolation(query: String, preBound: Set<String>): String? {
+        fun restrictionViolation(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): String? {
             val tokens = SparqlLexer.tokenize(query).filter { it.significant }
             val valuesBinding = ValuesBindings(tokens, preBound)
             for ((index, token) in tokens.withIndex()) {
+                budget.tick(PHASE)
                 if (token.kind != SparqlToken.Kind.WORD) continue
                 // SPARQL splits a run like `trueSERVICE` or `1SERVICE` into a literal and a keyword, so the forbidden
                 // keywords are searched in every part of the word that is not a prefixed name or blank node label.
@@ -185,6 +187,9 @@ internal class SparqlQueryTemplate private constructor(
         }
 
         private val FORBIDDEN_KEYWORDS = listOf("MINUS", "SERVICE")
+
+        /** The budget phase of the compile-time query checks. */
+        private const val PHASE = "SPARQL query compilation"
 
         /**
          * SHACL 1.2 (Appendix A) forbids only a `VALUES` clause that mentions a potentially pre-bound variable: its
@@ -220,13 +225,22 @@ internal class SparqlQueryTemplate private constructor(
         /**
          * The parts of a WORD token that SPARQL does not read as a prefixed name (PNAME_NS / PNAME_LN) or a blank node
          * label: keywords, booleans, numbers and anything ill-formed, in order.
+         *
+         * Linear in the length of [word]: one backward pass records where each run of PN_CHARS and `.` ends, so the
+         * prefixed-name test at a position is constant time (a run that does not end in `:` holds no PN_PREFIX), and
+         * every prefixed name or label found is skipped as a whole.
          */
         private fun bareParts(word: String): List<String> {
+            val runEnd = IntArray(word.length + 1)
+            runEnd[word.length] = word.length
+            for (i in word.indices.reversed()) {
+                runEnd[i] = if (isPnChars(word[i].code) || word[i] == '.') runEnd[i + 1] else i
+            }
             val parts = ArrayList<String>()
             val bare = StringBuilder()
             var i = 0
             while (i < word.length) {
-                val end = prefixedNameEnd(word, i) ?: blankNodeLabelEnd(word, i)
+                val end = prefixedNameEnd(word, i, runEnd) ?: blankNodeLabelEnd(word, i)
                 if (end != null && end > i) {
                     if (bare.isNotEmpty()) { parts.add(bare.toString()); bare.setLength(0) }
                     i = end
@@ -239,13 +253,16 @@ internal class SparqlQueryTemplate private constructor(
             return parts
         }
 
-        /** End of a prefixed name (`PN_PREFIX? ':' PN_LOCAL?`) starting at [start] in [w], or null. */
-        private fun prefixedNameEnd(w: String, start: Int): Int? {
+        /**
+         * End of a prefixed name (`PN_PREFIX? ':' PN_LOCAL?`) starting at [start] in [w], or null. [runEnd] gives,
+         * for each position, the end of the run of PN_CHARS and `.` that starts there ([bareParts]).
+         */
+        private fun prefixedNameEnd(w: String, start: Int, runEnd: IntArray): Int? {
             var i = start
             if (i < w.length && isPnCharsBase(w[i].code)) {
-                i++
-                while (i < w.length && (isPnChars(w[i].code) || w[i] == '.')) i++
-                while (w[i - 1] == '.') i-- // PN_PREFIX does not end in '.'
+                i = runEnd[i]
+                // PN_PREFIX does not end in '.': the run would stop at a '.', never at the ':'.
+                if (w[i - 1] == '.') return null
             }
             if (i >= w.length || w[i] != ':') return null
             return localNameEnd(w, i + 1)
@@ -339,9 +356,17 @@ internal class SparqlQueryTemplate private constructor(
          * Compiles [prologue] + [body] after checking the pre-binding restrictions ([restrictionViolation]) on the
          * body alone and again on the full query, so text joined from several shapes-graph values (prefix
          * declarations, query) cannot smuggle a forbidden construct past the check. [subject] names the query in the
-         * [SparqlPreBindingRestrictionException] message.
+         * [SparqlPreBindingRestrictionException] message. Every pass is linear in the query length and ticks [budget]
+         * once per token.
          */
-        fun compileRestricted(prologue: String, body: String, preBound: Set<String>, subject: String): SparqlQueryTemplate {
+        fun compileRestricted(
+            prologue: String,
+            body: String,
+            preBound: Set<String>,
+            subject: String,
+            budget: ValidationBudget = ValidationBudget.NONE,
+        ): SparqlQueryTemplate {
+            budget.check(PHASE)
             val query = prologue + body
             for (text in listOf(body, query)) {
                 // RDF4J decodes codepoint escapes in the whole query before parsing, Jena does not: check every view.
@@ -351,7 +376,7 @@ internal class SparqlQueryTemplate private constructor(
                     throw ShapeCompileException("$subject is ill-formed: ${e.message}", e)
                 }
                 for (view in linkedSetOf(text, decoded, decodeCodepointEscapes(text, strict = false))) {
-                    restrictionViolation(view, preBound)?.let { what ->
+                    restrictionViolation(view, preBound, budget)?.let { what ->
                         throw SparqlPreBindingRestrictionException("$subject uses $what, which is not supported with pre-bound variables")
                     }
                 }
@@ -367,7 +392,8 @@ internal class SparqlQueryTemplate private constructor(
                     )
                 }
             }
-            return compile(query, preBound)
+            budget.check(PHASE)
+            return compile(query, preBound, budget)
         }
 
         /** The pre-bound variables [query] mentions as variable tokens, in order. */

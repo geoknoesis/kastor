@@ -3,10 +3,12 @@ package com.geoknoesis.kastor.ontoquality.cli
 import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
 import com.geoknoesis.kastor.rdf.LiteralValidation
+import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededException
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchLimits
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
 import com.github.ajalt.clikt.parameters.options.check
+import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
@@ -57,9 +59,13 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     val labelLanguage by
         option(
             "--label-language",
-            help = "Language tag of the labels to embed, e.g. fr (default: the ontology's most common label language; " +
-                "an entity without a label in it falls back to untagged labels, then to its smallest language tag)",
-        )
+            help = "Language tag of the labels to embed, e.g. fr, or none for the untagged labels (default: the ontology's most " +
+                "common label language; an entity without a label in it falls back to untagged labels, then to its smallest " +
+                "language tag)",
+        ).convert { if (it.equals(UNTAGGED_LABELS, ignoreCase = true)) "" else it }
+            .check({ "must be a language tag such as en or pt-BR, or $UNTAGGED_LABELS, got '$it'" }) {
+                it.isEmpty() || LiteralValidation.isWellFormedLanguageTag(it)
+            }
     val similarityMode by
         option(
             "--similarity-mode",
@@ -70,11 +76,6 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     fun toOptions(): EmbeddingCliOptions {
         try {
             OnnxEmbeddingModel.validateCliOptions(model, onnx, tokenizer, embeddingDim, maxTokens)
-            labelLanguage?.let {
-                require(it.isNotEmpty() && LiteralValidation.isWellFormedLanguageTag(it)) {
-                    "--label-language must be a language tag such as en or pt-BR, got '$it'"
-                }
-            }
         } catch (e: IllegalArgumentException) {
             throw usageError(e.message ?: "Invalid embedding options")
         }
@@ -98,6 +99,17 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     }
 }
 
+/** Default of `--validation-timeout`, in seconds: the library default of `ValidationConfig.timeout`. */
+internal const val DEFAULT_VALIDATION_TIMEOUT_SECONDS = 300
+
+/** Advice after a failed SHACL validation (exit status 5), which is most often a validation out of time. */
+internal const val VALIDATION_FAILURE_HINT =
+    "If the validation ran out of time, raise --validation-timeout (default $DEFAULT_VALIDATION_TIMEOUT_SECONDS s) or check " +
+        "fewer shapes with --catalog."
+
+/** `--label-language none`: embed the untagged labels (the empty language tag of [EmbeddingCliOptions.labelLanguage]). */
+internal const val UNTAGGED_LABELS = "none"
+
 /** Report / LLM options shared by `check` and `pipeline`. */
 internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.OptionGroup() {
     val catalog by option("--catalog", help = CATALOG_HELP).choice(*CATALOG_NAMES.toTypedArray(), ignoreCase = true).default("all")
@@ -107,6 +119,19 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
             .choice(*SEVERITY_CHOICES, ignoreCase = true)
             .default("violation")
     val output by option("--output", help = OUTPUT_HELP).path()
+    val maxFindings by
+        option(
+            "--max-findings",
+            help = "Stop recording findings after this many per validation run (default: no limit). A report cut by the limit says " +
+                "so (stderr, and a marker in every --format) and the run exits $EXIT_FINDINGS, since it cannot show that no " +
+                "finding at or above --severity was dropped.",
+        ).int().restrictTo(min = 1)
+    val validationTimeoutSeconds by
+        option(
+            "--validation-timeout",
+            help = "Wall-clock budget of the SHACL validation in seconds (1-86400, default $DEFAULT_VALIDATION_TIMEOUT_SECONDS); " +
+                "a validation that runs out of time fails the run (exit $EXIT_RUNTIME_ERROR)",
+        ).int().restrictTo(1..86_400).default(DEFAULT_VALIDATION_TIMEOUT_SECONDS)
     val explain by
         option(
             "--explain",
@@ -161,11 +186,27 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
             help = "none | rdfs | owl-micro | owl-rl | hermit — materialize inferences before SHACL (owl-micro = Jena OWL Micro " +
                 "rule reasoner, fast and incomplete; owl-rl = Jena OWL rule reasoner; hermit = OWL DL via HermiT)",
         ).choice(*REASONER_CHOICES, ignoreCase = true).default("none")
+    val reasonerTimeoutSeconds by
+        option(
+            "--reasoner-timeout",
+            help = "Wall-clock budget of the --reasoner run in seconds (1-86400, default 300); a reasoner that runs out of time " +
+                "fails the run (exit $EXIT_RUNTIME_ERROR)",
+        ).int().restrictTo(1..86_400)
     val markdownAscii by
         option(
             "--markdown-ascii",
             help = "With --format markdown: use [VIOLATION]/[WARNING] markers instead of emoji.",
         ).flag(default = false)
+
+    /**
+     * The validator settings of `--max-findings`: by default the engine returns every result (`maxViolations` is
+     * `Int.MAX_VALUE`, not the library default of 1,000), so no finding is dropped without a trace.
+     */
+    fun validationConfig(): ValidationConfig =
+        ValidationConfig(maxViolations = maxFindings ?: Int.MAX_VALUE, timeout = Duration.ofSeconds(validationTimeoutSeconds.toLong()))
+
+    /** `--reasoner-timeout`, or null for the reasoner configuration's default. */
+    fun reasonerTimeout(): Duration? = reasonerTimeoutSeconds?.let { Duration.ofSeconds(it.toLong()) }
 
     /**
      * `--explain` options, validated before anything is parsed, loaded or sent. The SHACL validation report
@@ -207,7 +248,7 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
 /** Exit status: success, no findings at or above `--severity`. */
 internal const val EXIT_OK = 0
 
-/** Exit status when findings reach `--severity`. */
+/** Exit status when findings reach `--severity`, or when the report is truncated (`--max-findings`). */
 internal const val EXIT_FINDINGS = 1
 
 /** Exit status when the input ontology cannot be parsed in the selected RDF syntax (reading it failing is [EXIT_RUNTIME_ERROR]). */
@@ -223,9 +264,9 @@ internal const val EXIT_USAGE = 4
 internal const val EXIT_RUNTIME_ERROR = 5
 
 internal const val EXIT_STATUS_HELP =
-    "Exit status: 0 success; 1 findings at or above --severity; 2 the ontology could not be parsed; " +
-        "3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
-        "5 runtime error (model download or loading, similarity or LLM budget, I/O, internal). " +
+    "Exit status: 0 success; 1 findings at or above --severity, or a report cut by --max-findings; 2 the ontology could not be " +
+        "parsed; 3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
+        "5 runtime error (model download or loading, similarity, LLM, validation or reasoner budget, I/O, internal). " +
         "Use --debug (before or after the command) for stack traces.\n\n" +
         "kastor-rdf uses a different convention: 0 success; 1 usage or input error; 2 diff found the inputs not isomorphic; " +
         "3 runtime error.\n\n" +

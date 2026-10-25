@@ -97,7 +97,7 @@ fun loadingDataExample() {
     }
     
     // Serialize back to RDF/XML
-    val rdfXmlString = rdfGraph.serialize("RDF/XML")
+    val rdfXmlString = rdfGraph.serialize(RdfFormat.RDF_XML)
     println("Serialized to RDF/XML (first 200 chars):")
     println(rdfXmlString.take(200) + "...")
     
@@ -207,7 +207,7 @@ fun extensionFunctionsExample() {
     println("Underlying Jena Model: ${underlyingModel?.size()} statements")
     
     // Serialize using extension function
-    val turtleString = kastorGraph.serialize("TURTLE")
+    val turtleString = kastorGraph.serialize(RdfFormat.TURTLE)
     println("Serialized to Turtle:")
     println(turtleString)
     

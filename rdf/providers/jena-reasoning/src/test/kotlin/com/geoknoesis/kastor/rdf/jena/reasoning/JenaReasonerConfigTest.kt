@@ -133,4 +133,13 @@ class JenaReasonerConfigTest {
         assertTrue(RdfTriple(iri("rex"), type, iri("Animal")) in inferred, "$inferred")
         assertTrue(RdfTriple(iri("alice"), iri("owns"), iri("rex")) in inferred, "$inferred")
     }
+
+    /** A timeout too long for a nanosecond deadline (`Duration.ofMillis(Long.MAX_VALUE)`) means no limit, as for the memory reasoner. */
+    @Test
+    fun `a timeout too long for nanoseconds means no limit`() {
+        for (timeout in listOf(Duration.ofMillis(Long.MAX_VALUE), Duration.ofSeconds(Long.MAX_VALUE), Duration.ofNanos(Long.MAX_VALUE))) {
+            val inferred = JenaReasoner(ReasonerConfig(reasonerType = ReasonerType.RDFS, timeout = timeout)).getInferredTriples(schema)
+            assertTrue(RdfTriple(iri("x"), type, iri("C")) in inferred, "$timeout")
+        }
+    }
 }

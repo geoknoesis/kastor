@@ -8,6 +8,14 @@ package com.geoknoesis.kastor.rdf
  * read local files (`file:`) or class-path resources (`jar:`); other schemes must be opted into
  * explicitly. Bodies larger than [maxBytes] are rejected with [RdfInputTooLargeException].
  *
+ * From Java, the constructor is `@JvmOverloads` (`new UrlLoadOptions(Set.of("https"))`), and each property has a
+ * `with...` method that returns a copy with that property replaced (`UrlLoadOptions.DEFAULT.withMaxBytes(1024)`).
+ *
+ * The URL-loading failures - [RdfAddressRefusedException], [RdfHttpStatusException], [RdfLoadTimeoutException] and
+ * [RdfInputTooLargeException] - are [java.io.IOException]s, like the network failures they sit beside, and not
+ * [RdfException]s: catch [java.io.IOException] (or the specific type) around a URL load, and [RdfException] for the
+ * parse.
+ *
  * @property allowedSchemes URL schemes that may be loaded (case-insensitive)
  * @property maxBytes Maximum number of bytes read from the response body
  * @property connectTimeoutMillis Connect timeout passed to the URL connection
@@ -34,7 +42,9 @@ package com.geoknoesis.kastor.rdf
  *   deadline, or whose data has already arrived, runs on the calling thread; the others of one response share one
  *   helper, which goes back to the pool when the body is closed or has not been read for a while. A read that
  *   reaches the end of the body is never reported as a timeout, and a load whose thread is interrupted fails with
- *   [java.io.InterruptedIOException], not with a timeout. Default: 5 minutes.
+ *   [java.io.InterruptedIOException], not with a timeout. An interrupt ends a wait for a helper at once; a read that
+ *   runs on the calling thread (one whose socket timeout ends before the deadline) does not react to it and ends with
+ *   that read, at most [readTimeoutMillis] later. Default: 5 minutes.
  *
  * HTTP(S) requests send an `Accept` header for the requested format and `Connection: close`, and the connection is
  * closed when the load ends. Redirects (301, 302, 303, 307, 308) are followed by Kastor, up to 10 hops, only to a URL
@@ -68,7 +78,7 @@ package com.geoknoesis.kastor.rdf
  *   [redirectPolicy] allowed, whether a request may be sent to it. A refused URL fails the load with
  *   [RdfAddressRefusedException] before anything is sent to it. Default: [UrlAddressPolicy.PUBLIC_ADDRESSES].
  */
-data class UrlLoadOptions(
+data class UrlLoadOptions @JvmOverloads constructor(
     val allowedSchemes: Set<String> = setOf("http", "https"),
     val maxBytes: Long = DEFAULT_MAX_BYTES,
     val connectTimeoutMillis: Int = 30_000,
@@ -84,6 +94,29 @@ data class UrlLoadOptions(
             "timeouts must not be negative"
         }
     }
+
+    // Java has no named arguments and cannot call copy(...) with some of them: one wither per property.
+
+    /** A copy with [allowedSchemes] replaced. */
+    fun withAllowedSchemes(allowedSchemes: Set<String>): UrlLoadOptions = copy(allowedSchemes = allowedSchemes)
+
+    /** A copy with [maxBytes] replaced. */
+    fun withMaxBytes(maxBytes: Long): UrlLoadOptions = copy(maxBytes = maxBytes)
+
+    /** A copy with [connectTimeoutMillis] replaced. */
+    fun withConnectTimeoutMillis(connectTimeoutMillis: Int): UrlLoadOptions = copy(connectTimeoutMillis = connectTimeoutMillis)
+
+    /** A copy with [readTimeoutMillis] replaced. */
+    fun withReadTimeoutMillis(readTimeoutMillis: Int): UrlLoadOptions = copy(readTimeoutMillis = readTimeoutMillis)
+
+    /** A copy with [totalTimeoutMillis] replaced. */
+    fun withTotalTimeoutMillis(totalTimeoutMillis: Long): UrlLoadOptions = copy(totalTimeoutMillis = totalTimeoutMillis)
+
+    /** A copy with [redirectPolicy] replaced. */
+    fun withRedirectPolicy(redirectPolicy: UrlRedirectPolicy): UrlLoadOptions = copy(redirectPolicy = redirectPolicy)
+
+    /** A copy with [addressPolicy] replaced. */
+    fun withAddressPolicy(addressPolicy: UrlAddressPolicy): UrlLoadOptions = copy(addressPolicy = addressPolicy)
 
     companion object {
         /** Default body size limit: 64 MiB. */

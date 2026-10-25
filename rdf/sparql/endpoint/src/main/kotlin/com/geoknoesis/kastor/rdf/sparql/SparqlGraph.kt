@@ -17,6 +17,13 @@ import com.geoknoesis.kastor.rdf.*
  *   therefore be copied into another graph.
  * - [hasTriple], [find], [removeTriple] and [removeTriples] cannot address an existing blank node
  *   by label and throw [IllegalArgumentException]; use an explicit `DELETE WHERE` pattern instead.
+ * - Blank nodes read from results keep the label the endpoint sent ([BlankNode] of that label). The
+ *   SPARQL results formats scope such labels to one result set, and most stores (Jena Fuseki, RDF4J,
+ *   GraphDB) number them per response (`b0`, `b1`, ...): the same label in the results of two calls
+ *   is in general **not** the same node, yet the two [BlankNode]s compare equal. Compare or join
+ *   blank nodes only within the rows of one call (one [find], [getTriples] or `select`). Only stores
+ *   that send stable identifiers (Virtuoso's `nodeID://...`, or stores configured for skolem IRIs)
+ *   make labels comparable across calls.
  *
  * ## Reads
  * [find] and [getTriples] are one buffered SELECT each, capped by [SparqlEndpointConfig.maxResponseBytes], and
@@ -233,7 +240,7 @@ class SparqlGraph(
         )
         val count = term.lexical.trim().toLongOrNull()
         if (count == null || count < 0 || count > Int.MAX_VALUE) {
-            throw RdfQueryException("SPARQL endpoint returned a triple count of '${term.lexical}', which is not a valid Int size", query = query)
+            throw RdfQueryException("SPARQL endpoint returned a triple count of '${errorDetail(term.lexical)}', which is not a valid Int size", query = query)
         }
         return count.toInt()
     }

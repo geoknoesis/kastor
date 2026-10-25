@@ -90,7 +90,7 @@ class ShaclValidatorProviderExample {
                 println("  $profile: ${if (report.isValid) "PASSED" else "FAILED"} " +
                         "(${report.validationTime.toMillis()}ms, ${report.violations.size} violations)")
             } catch (e: Exception) {
-                println("  $profile: ERROR - ${e.message}")
+                reportFailure("validation with profile $profile", e)
             }
         }
     }
@@ -123,7 +123,7 @@ class ShaclValidatorProviderExample {
                 val validator = ShaclValidation.validator(config)
                 println("  ${config.profile}: ${validator::class.simpleName}")
             } catch (e: Exception) {
-                println("  ${config.profile}: No provider available - ${e.message}")
+                reportFailure("validator for profile ${config.profile}", e)
             }
         }
     }
@@ -239,7 +239,7 @@ class ShaclValidatorProviderExample {
                 println("    Violations by type: ${stats.violationsByType}")
                 
             } catch (e: Exception) {
-                println("  ERROR: ${e.message}")
+                reportFailure("detailed validation report", e)
             }
         }
     }

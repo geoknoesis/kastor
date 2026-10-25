@@ -14,16 +14,20 @@
 #                                 `GET repos/OWNER/NAME/dependency-graph/sbom` succeeds.
 #   --no-dependency-review        Never require the `dependency-review` check.
 #   --no-admin-bypass             Do not let repository admins bypass `main-protection`. By default admins
-#                                 (RepositoryRole 5) may bypass it, so maintainer pushes and emergency merges
-#                                 still work while everyone else goes through a pull request.
+#                                 (RepositoryRole 5) may bypass its pull-request rule in `pull_request` mode, so a
+#                                 solo maintainer can merge their own PR; they can never push to main directly.
+#                                 The required checks live in `main-required-checks`, which nobody bypasses.
+#   --require-macos               Also require the `macos` CI job (it runs on every PR). Off by default until the
+#                                 job has a record of stable runs.
 #   --no-security-features        Leave the repository's code-security settings (step 5) untouched.
 #   --apply                       Perform the calls. Without it, every call is printed and nothing changes.
 #
 # What it configures (see docs/reference/release-checklist.md):
 #   1. Environment `release`: required reviewers, deployments only from tags matching `v*`.
 #   2. Tag ruleset `release-tags`: only repository admins may create, update or delete `v*` tags.
-#   3. Branch ruleset `main-protection`: PRs required, no force-push/deletion, required CI checks,
-#      admin bypass unless --no-admin-bypass.
+#   3. Branch rulesets: `main-protection` (PRs required, no force-push/deletion; admin bypass of the PR rule in
+#      pull_request mode unless --no-admin-bypass) and `main-required-checks` (strict required CI checks, no
+#      bypass actors, so not even an admin can merge a PR whose checks are red or still running).
 #   4. GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build.
 #   5. Code security (unless --no-security-features): Dependabot vulnerability alerts (on the Dependency
 #      graph), Dependabot security updates, secret scanning with push protection, and private
@@ -41,6 +45,7 @@ approvals=0
 reviewers=()
 dependency_review=auto   # auto | always | never
 admin_bypass=true
+require_macos=false
 security_features=true
 
 while [ $# -gt 0 ]; do
@@ -53,8 +58,9 @@ while [ $# -gt 0 ]; do
     --require-dependency-review) dependency_review=always ;;
     --no-dependency-review) dependency_review=never ;;
     --no-admin-bypass) admin_bypass=false ;;
+    --require-macos) require_macos=true ;;
     --no-security-features) security_features=false ;;
-    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -85,13 +91,14 @@ esac
 # Required status checks: the check-run names GitHub reports for jobs that run on every pull request.
 #   ci.yml                job `build` (matrix os)         -> "build (ubuntu-latest)", "build (windows-latest)"
 #   ci.yml                job `shacl-w3c-suite`           -> "shacl-w3c-suite"
+#   ci.yml                job `macos`                     -> "macos" (only with --require-macos)
 #   dependency-review.yml job `dependency-review`         -> "dependency-review"
-# The `macos` job skips pull requests and must never be required.
 required_checks=(
   "build (ubuntu-latest)"
   "build (windows-latest)"
   "shacl-w3c-suite"
 )
+$require_macos && required_checks+=("macos")
 $require_dependency_review && required_checks+=("dependency-review")
 
 current_pages="$(gh api "repos/$repo/pages" --jq .build_type 2>/dev/null || echo "unavailable")"
@@ -114,10 +121,11 @@ echo "- Ruleset 'release-tags': only admins create/update/delete refs/tags/v*"
 echo "- Ruleset 'main-protection' on the default branch:"
 echo "    pull request required (approvals: $approvals), no force-push, no deletion"
 if $admin_bypass; then
-  echo "    bypass: repository admins (RepositoryRole 5, always) - direct maintainer pushes keep working"
+  echo "    bypass: repository admins (RepositoryRole 5, pull_request mode) - they may merge their own PR, never push"
 else
-  echo "    bypass: NONE (--no-admin-bypass) - every change, including admins', must come through a PR"
+  echo "    bypass: NONE (--no-admin-bypass) - every PR needs its approvals, including admins'"
 fi
+echo "- Ruleset 'main-required-checks' on the default branch (no bypass actors, strict):"
 echo "    required checks: $(printf '"%s" ' "${required_checks[@]}")"
 if $require_dependency_review; then
   echo "    dependency-review is required (dependency graph enabled: $graph_enabled, mode: $dependency_review)"
@@ -210,7 +218,7 @@ for check in "${required_checks[@]}"; do
   checks_json="$checks_json${checks_json:+,}{\"context\":\"$check\"}"
 done
 bypass_json=""
-$admin_bypass && bypass_json='{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }'
+$admin_bypass && bypass_json='{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }'
 upsert_ruleset "main-protection" "$(cat <<JSON
 {
   "name": "main-protection",
@@ -226,9 +234,24 @@ upsert_ruleset "main-protection" "$(cat <<JSON
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
         "require_last_push_approval": false,
-        "required_review_thread_resolution": false } },
+        "required_review_thread_resolution": false } }
+  ]
+}
+JSON
+)"
+
+# The required checks are a ruleset of their own with no bypass actors: a bypass actor on a ruleset bypasses every
+# rule in it, so keeping them in main-protection let an admin merge a PR whose checks were red or still running.
+upsert_ruleset "main-required-checks" "$(cat <<JSON
+{
+  "name": "main-required-checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
     { "type": "required_status_checks", "parameters": {
-        "strict_required_status_checks_policy": false,
+        "strict_required_status_checks_policy": true,
         "required_status_checks": [$checks_json] } }
   ]
 }

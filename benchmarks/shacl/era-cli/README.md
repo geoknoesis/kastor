@@ -16,6 +16,10 @@ Load time: 0.012
 Validation time: 0.034
 ```
 
+The report holds every validation result: the CLI sets no cap on the results (the library default of
+1,000 would cut the report of a typical ERA workload, and the other engines of the comparison report every
+result). A report the engine nevertheless truncated is not written (exit status 5).
+
 ## Exit status
 
 Same convention as `onto-qa`. Errors are a single line on stderr prefixed with `shacl-era-cli:`; paths and parser messages have control and bidi characters rendered as `\uXXXX`, and no stack trace is printed. Standard output only ever contains the timing lines.
@@ -25,7 +29,7 @@ Same convention as `onto-qa`. Errors are a single line on stderr prefixed with `
 | **0** | Report written. |
 | **2** | The data or shapes file could not be parsed as Turtle. |
 | **4** | Usage error: not exactly three arguments, or an input file that does not exist or is not a regular file. |
-| **5** | Runtime error: validation failed unexpectedly, the report could not be written, or an internal error. |
+| **5** | Runtime error: validation failed unexpectedly, the engine truncated the results, the report could not be written, or an internal error. |
 
 ## Docker (ERA-SHACL-Benchmark)
 

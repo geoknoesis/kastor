@@ -19,6 +19,7 @@ commons-codec:commons-codec:1.22.0=compileClasspath,kspKotlinProcessorClasspath,
 commons-io:commons-io:2.22.0=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.netty:netty-bom:4.2.18.Final=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.opentelemetry:opentelemetry-bom:1.66.0=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+jakarta.validation:jakarta.validation-api:3.1.1=compileClasspath,testCompileClasspath
 org.apache.commons:commons-collections4:4.5.0=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.apache.commons:commons-compress:1.28.0=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.apache.commons:commons-csv:1.14.1=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

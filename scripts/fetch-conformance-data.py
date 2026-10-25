@@ -41,8 +41,12 @@ def fetch(name, spec, force):
     target = spec["checkout"]
     if (target / ".git").is_dir():
         head = git("rev-parse", "HEAD", cwd=target)
-        if head == spec["commit"]:
-            print(f"{name}: {target.relative_to(ROOT)} already at {head}")
+        # A checkout at the pinned commit with local edits is not the pinned corpus: refuse it unless --force.
+        dirty = head == spec["commit"] and git("status", "--porcelain", "--untracked-files=no", cwd=target)
+        if head == spec["commit"] and not dirty:
+            print(f"{name}: {target} already at {head}")
+        elif dirty and not force:
+            raise SystemExit(f"{name}: {target} is at the pinned commit but has local changes (use --force)")
         elif not force:
             raise SystemExit(f"{name}: {target} is at {head}, expected {spec['commit']} (use --force)")
         else:

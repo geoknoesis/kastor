@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.ProviderCapabilities
+import com.geoknoesis.kastor.rdf.UrlAddressPolicy
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URL
@@ -64,9 +65,11 @@ enum class MalformedTermPolicy {
  *   (`https://user:pass@host/sparql`) are removed from the request URL and sent as HTTP Basic
  *   authentication unless [username] is set.
  * @property updateEndpoint update endpoint; defaults to [endpoint].
- * @property maxResponseBytes cap for responses that are read into memory: [SparqlRepository.select]
- *   and ASK. Of a successful UPDATE response at most this much is read and discarded; the rest of a
- *   larger body is abandoned without failing the update, which the server has already applied.
+ * @property maxResponseBytes cap for the bytes of responses that are read into memory:
+ *   [SparqlRepository.select] (and the reads built on it: [SparqlGraph] reads, `listGraphs`) and ASK.
+ *   It bounds the response, not the heap of the decoded rows, which [maxBufferedResultBytes] bounds.
+ *   Of a successful UPDATE response at most this much is read and discarded; the rest of a larger body
+ *   is abandoned without failing the update, which the server has already applied.
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout. Like every timeout here it must be positive; a
@@ -110,7 +113,8 @@ enum class MalformedTermPolicy {
  *   redirects to a different scheme, host or port. Custom [headers] and credentials are never sent
  *   to the other origin (a warning is logged when they are dropped). Default `false`: such
  *   redirects fail with a clear error. A redirect from `https` to plain `http` is always refused,
- *   because the query would be re-sent unencrypted.
+ *   because the query would be re-sent unencrypted. Every cross-origin target must also pass
+ *   [redirectAddressPolicy] (public addresses only, by default).
  * @property maxRedirects maximum redirects followed per request.
  * @property maxGetUrlLength longest request URL sent with [SparqlQueryMethod.GET]; longer queries
  *   are sent as a form-encoded POST instead (many servers and proxies reject long URLs).
@@ -147,6 +151,29 @@ enum class MalformedTermPolicy {
  *   which for a streamed result is after the rows before it were delivered.
  *   [MalformedTermPolicy.SKIP_ROW] leaves such rows out and logs one warning per query; it is the
  *   counterpart of the RDF4J provider's `lenientRead` for graph reads. See [MalformedTermPolicy].
+ * @property maxBufferedResultBytes cap for the heap that the rows of a buffered SELECT
+ *   ([SparqlRepository.select], [SparqlGraph] reads, `listGraphs`) retain once decoded, as estimated
+ *   while they are read: the row objects, the terms and their strings (two bytes per character), and
+ *   the list slot of each row; variable names, datatype IRIs and language tags that repeat are held
+ *   once, and rows that bind nothing are one shared object. Decoded rows take more heap than their
+ *   JSON: rows of short terms take up to about three and a half times their size in the response,
+ *   and the estimate, which errs high, at most about four times. A result
+ *   whose estimate exceeds the cap fails with [com.geoknoesis.kastor.rdf.RdfQueryException] naming
+ *   this setting, before the rest of the response is read. Default 256 MiB, above what a response
+ *   within the default [maxResponseBytes] retains; raise it together with [maxResponseBytes].
+ *   Streamed rows ([SparqlRepository.withSelectRows]) are not buffered and not held to it. A graph
+ *   read ([SparqlGraph.getTriples]) builds triples from the rows, which takes about as much again.
+ * @property redirectAddressPolicy decides whether a cross-origin redirect (followed only with
+ *   [followCrossOriginRedirects]) may be sent to its target, before anything is sent there. Default
+ *   [UrlAddressPolicy.PUBLIC_ADDRESSES], as for URL loading in the core module: a redirect to
+ *   loopback, a private or link-local address (a cloud metadata service such as `169.254.169.254`)
+ *   or a host name that resolves to one is refused with [com.geoknoesis.kastor.rdf.RdfQueryException].
+ *   Use [UrlAddressPolicy.ALLOW_ALL] when an endpoint on the internal network legitimately redirects to
+ *   another internal host. Redirects within the configured origin are not checked: that host was
+ *   chosen by whoever configured the endpoint. See [UrlAddressPolicy.PUBLIC_ADDRESSES] for what the
+ *   check does not cover (DNS rebinding, proxies). The policy (and its host name lookup) runs on a
+ *   daemon thread and counts against the request's header wait: a lookup that hangs ends the call
+ *   with that timeout, and its thread ends when the system resolver gives up.
  */
 data class SparqlEndpointConfig @JvmOverloads constructor(
     val endpoint: String,
@@ -170,6 +197,8 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
     val maxResultRowChars: Int = DEFAULT_MAX_RESULT_ROW_CHARS,
     val strictContentType: Boolean = true,
     val malformedTerms: MalformedTermPolicy = MalformedTermPolicy.FAIL,
+    val maxBufferedResultBytes: Long = DEFAULT_MAX_BUFFERED_RESULT_BYTES,
+    val redirectAddressPolicy: UrlAddressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES,
 ) {
     init {
         HttpTarget.parse(endpoint)
@@ -185,6 +214,7 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
         require(maxGetUrlLength > 0) { "maxGetUrlLength must be positive" }
         require(maxBlankNodeComponentTriples > 0) { "maxBlankNodeComponentTriples must be positive" }
         require(maxResultRowChars > 0) { "maxResultRowChars must be positive" }
+        require(maxBufferedResultBytes > 0) { "maxBufferedResultBytes must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
         require(username == null || ':' !in username) { "username must not contain ':' (RFC 7617: it separates user and password)" }
         if (headers.keys.any { it.equals("Authorization", ignoreCase = true) }) {
@@ -219,7 +249,10 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
         lower == "cookie" || CREDENTIAL_WORDS.any { it in lower }
     }
 
-    /** Never prints passwords or credentials embedded in endpoint URLs. */
+    /**
+     * Never prints passwords, header values, or credentials embedded in endpoint URLs: user information and the query
+     * string of an endpoint (`?apikey=...`) are shown as `***@` and `?...`.
+     */
     override fun toString(): String =
         "SparqlEndpointConfig(endpoint=${HttpTarget.redact(endpoint)}, updateEndpoint=${updateEndpoint?.let(HttpTarget::redact)}, " +
             "maxResponseBytes=$maxResponseBytes, maxStreamedResponseBytes=$maxStreamedResponseBytes, " +
@@ -228,7 +261,8 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
             "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize, " +
             "streamingRequestTimeout=$streamingRequestTimeout, followCrossOriginRedirects=$followCrossOriginRedirects, " +
             "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples, " +
-            "maxResultRowChars=$maxResultRowChars, strictContentType=$strictContentType, malformedTerms=$malformedTerms)"
+            "maxResultRowChars=$maxResultRowChars, strictContentType=$strictContentType, malformedTerms=$malformedTerms, " +
+            "maxBufferedResultBytes=$maxBufferedResultBytes, redirectAddressPolicy=$redirectAddressPolicy)"
 
     companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024 * 1024
@@ -241,6 +275,13 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
         const val DEFAULT_MAX_GET_URL_LENGTH: Int = 2_000
         const val DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES: Int = 100_000
         const val DEFAULT_MAX_RESULT_ROW_CHARS: Int = 4 * 1024 * 1024
+
+        /**
+         * 256 MiB: eight times [DEFAULT_MAX_RESPONSE_BYTES]. The estimate of a decoded result is at most about four
+         * times the size of its response (a response of nothing but empty rows), so no response within the default
+         * byte cap reaches it.
+         */
+        const val DEFAULT_MAX_BUFFERED_RESULT_BYTES: Long = 256L * 1024 * 1024
 
         /** An RFC 9110 `token`. */
         private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
@@ -269,10 +310,12 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
          * (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`), `insertBatchSize`,
          * `followCrossOriginRedirects` (`true`/`false`), `maxRedirects`, `maxGetUrlLength`,
          * `maxBlankNodeComponentTriples`, `maxResultRowChars`, `strictContentType` (`true`/`false`),
-         * `malformedTerms` (`FAIL`/`SKIP_ROW`), and `header.<Name>` for custom headers.
+         * `malformedTerms` (`FAIL`/`SKIP_ROW`), `maxBufferedResultBytes`, `redirectAddressPolicy`
+         * (`PUBLIC_ADDRESSES`/`ALLOW_ALL`), and `header.<Name>` for custom headers.
          * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
          * accept `none` for unbounded.
          */
+        @JvmStatic
         fun fromOptions(options: Map<String, String>): SparqlEndpointConfig {
             val endpoint = options["location"] ?: throw IllegalArgumentException("SPARQL endpoint URL required (option 'location')")
             fun long(key: String): Long? = options[key]?.let {
@@ -316,10 +359,19 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
                 maxResultRowChars = long("maxResultRowChars")?.let(Math::toIntExact) ?: defaults.maxResultRowChars,
                 strictContentType = boolean("strictContentType", defaults.strictContentType),
                 malformedTerms = enum("malformedTerms", MalformedTermPolicy.values(), defaults.malformedTerms),
+                maxBufferedResultBytes = long("maxBufferedResultBytes") ?: defaults.maxBufferedResultBytes,
+                redirectAddressPolicy = addressPolicy(options["redirectAddressPolicy"]) ?: defaults.redirectAddressPolicy,
             )
         }
 
         private fun requirePositive(duration: Duration, name: String) = Durations.requirePositive(duration, name)
+
+        private fun addressPolicy(raw: String?): UrlAddressPolicy? = when (raw?.trim()?.uppercase()) {
+            null -> null
+            "PUBLIC_ADDRESSES" -> UrlAddressPolicy.PUBLIC_ADDRESSES
+            "ALLOW_ALL" -> UrlAddressPolicy.ALLOW_ALL
+            else -> throw IllegalArgumentException("Option 'redirectAddressPolicy' must be PUBLIC_ADDRESSES or ALLOW_ALL, got '$raw'")
+        }
     }
 }
 
@@ -384,11 +436,13 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
         }
 
         /**
-         * [endpoint] with its user information replaced by `***`. It is cut out textually, up to the last
-         * `@` before the first `/`, even when the URL parses: `java.net.URI` ends user information at
-         * the first `@`, so for `http://u:p@s?s@host/` it would leave part of the password in place.
+         * [endpoint] with its user information replaced by `***` and its query and fragment by `?...`
+         * ([withoutSecrets]): an API key in the query (`?apikey=...`) is a credential too. User information is
+         * cut out textually, up to the last `@` before the first `/`, even when the URL parses: `java.net.URI`
+         * ends user information at the first `@`, so for `http://u:p@s?s@host/` it would leave part of the
+         * password in place.
          */
-        fun redact(endpoint: String): String = endpoint.replaceFirst(USER_INFO, "***@")
+        fun redact(endpoint: String): String = withoutSecrets(endpoint)
 
         /** Percent-decodes [text] as UTF-8; unlike a form decoder, `+` stays `+`. */
         private fun decode(text: String): String = java.net.URLDecoder.decode(text.replace("+", "%2B"), Charsets.UTF_8)

@@ -25,6 +25,10 @@ class ReadWatchdogTest {
         val expired = CountDownLatch(1)
         @Volatile private var deadline = Long.MAX_VALUE
 
+        fun armAt(at: Long) {
+            deadline = at
+        }
+
         fun arm(watchdog: ReadWatchdog, millis: Long) {
             val at = System.nanoTime() + millis * 1_000_000
             deadline = at
@@ -220,5 +224,33 @@ class ReadWatchdogTest {
 
         two.close()
         assertEnds(threads.created[0], "the thread must end when the last repository is closed")
+    }
+
+    @Test
+    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `the watchdog reads its own clock, the clock of the deadlines it is given`() {
+        val clock = java.util.concurrent.atomic.AtomicLong(1_000)
+        val threads = Threads()
+        val watchdog = ReadWatchdog({ throw AssertionError("nothing fails here", it) }, threads, clock::get)
+        val stream = Due()
+        watchdog.register(stream)
+        // Due on the test clock, which does not move: the scan sees it pending, however long the host takes.
+        val deadline = clock.get() + 1_000_000_000L * 3600
+        val seen = CopyOnWriteArrayList<Long>()
+        val probe = object : ReadWatchdog.Watched {
+            override fun expireIfDue(now: Long): Long { seen += now; return stream.expireIfDue(now) }
+        }
+        watchdog.unregister(stream)
+        watchdog.register(probe)
+        stream.armAt(deadline)
+        watchdog.published(deadline)
+        while (seen.isEmpty()) Thread.onSpinWait()
+        assertEquals(1_000L, seen.first(), "the scan read another clock")
+        assertEquals(1L, stream.expired.count, "expired before its deadline on the watchdog's clock")
+        // Once the clock passes the deadline, the next scan expires the read.
+        clock.set(deadline)
+        watchdog.published(deadline - 1)
+        assertExpires(stream, "on the test clock")
+        assertEnds(threads.created.single(), "the thread must end with nothing pending and no user")
     }
 }

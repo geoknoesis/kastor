@@ -262,4 +262,30 @@ class ShaclPatternTranslationTest {
         assertTrue(matches("^\\p{Lu}\\p{Ll}+$", null, "Abc"))
         assertTrue(matches("^\\p{L}+$", null, "\u00E9t\u00E9"))
     }
+    // --- hostile patterns from the shapes graph ---------------------------------------------------------------------
+
+    @Test
+    fun `an unterminated hexadecimal escape is rejected in linear time`() {
+        // Each `\x{` used to search the rest of the pattern for its '}' and, finding none, go on: quadratic.
+        val pattern = "\\x{".repeat(200_000)
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(60)) {
+            val error = assertThrows(ShapeCompileException::class.java) { compileShaclPattern(pattern, null) }
+            assertTrue("not terminated" in error.message.orEmpty(), error.message?.take(300))
+        }
+        assertTrue(matches("^\\x{41}$", null, "A"))
+    }
+
+    @Test
+    fun `deeply nested groups and class subtractions are rejected instead of overflowing the stack`() {
+        val depth = 100_000
+        // java.util.regex reports its own stack overflow on nested groups as a syntax error.
+        assertThrows(ShapeCompileException::class.java) { compileShaclPattern("(".repeat(depth) + "a" + ")".repeat(depth), null) }
+        // The translator recursed once per nested class subtraction.
+        val error = assertThrows(ShapeCompileException::class.java) { compileShaclPattern("[a-".repeat(depth) + "[b]" + "]".repeat(depth), null) }
+        assertTrue("nested" in error.message.orEmpty(), error.message?.takeLast(300))
+        // Moderate nesting is fine.
+        assertTrue(matches("^" + "(".repeat(50) + "a" + ")".repeat(50) + "$", null, "a"))
+        assertTrue(matches("^[a-z-[b-[c]]]$", null, "c"))
+        assertFalse(matches("^[a-z-[b-[c]]]$", null, "b"))
+    }
 }

@@ -174,4 +174,27 @@ class DatasetEscapeAnalysisTest {
         runCatching { named.select(SparqlSelectQuery("SELECT (\"a${U}0022 # \" AS ?x) ?o\n{ ?s ?p ?o }")).toList() }
         assertEquals(1, materialized)
     }
+
+    @Test
+    fun `an unanalysable query that declares FROM is rejected, not materialized with its own dataset`() {
+        // An escape outside strings that is not a letter, a digit or '_' makes the query unanalysable; the engine
+        // decodes it to '#', a comment, and would run FROM <urn:g1> on the temporary repository.
+        val queries = listOf(
+            "SELECT ?o FROM <urn:g1> WHERE { ?s ?p ?o } ${U}0023",
+            "SELECT ?o ${U}0046ROM <urn:g1> WHERE { ?s ?p ?o } ${U}0023",
+            "SELECT ?o from named <urn:g1> WHERE { ?s ?p ?o } \"unterminated",
+        )
+        for (query in queries) {
+            for (dataset in listOf(namedAsDefault, storeDefaultOnly)) {
+                val error = assertThrows(IllegalArgumentException::class.java, { values(dataset, query) }, query)
+                assertTrue(error.message!!.contains("FROM"), error.message)
+            }
+        }
+        // An unanalysable query without FROM still goes to the materialized path (and fails there, in the engine).
+        var materialized = 0
+        val named = (Dataset { defaultGraph(repo.getGraph(g1).asGraphRef(repo, g1)) } as DatasetImpl)
+        named.materializationRepositoryFactory = { materialized++; Rdf.memory() }
+        runCatching { named.select(SparqlSelectQuery("SELECT ?o WHERE { ?s ?p ?o } ${U}0023")).toList() }
+        assertEquals(1, materialized)
+    }
 }
