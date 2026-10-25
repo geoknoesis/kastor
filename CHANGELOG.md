@@ -28,10 +28,9 @@ and is kept as is; it was never published to Maven Central.
   `java:` IRIs and otherwise used Jena's whole function registry, whose lookup loads ARQ's `afn:` library by name:
   `afn:wait` slept through the query timeout and cleared the thread's interrupt flag (one call per row could hold a
   worker for days), `afn:print` wrote to stdout and `afn:context` exposed execution-context values. Now:
-  - the query is parsed as standard SPARQL 1.2 (`Syntax.syntaxSPARQL_12`), so ARQ extensions such as `CALL`, `LET`
-    or ARQ aggregates fail to parse, as on RDF4J (behaviour change for sandboxed queries only);
-  - constant `afn:` / `apf:` function and property-function IRIs (both the `jena.apache.org` and the old
-    `jena.hpl.hp.com` namespaces) and custom aggregates are refused with `IllegalArgumentException` before evaluation;
+  - ARQ's `CALL(iri, ...)`, which computes a function IRI from data, constant `afn:` / `apf:` function and
+    property-function IRIs (both the `jena.apache.org` and the old `jena.hpl.hp.com` namespaces) and custom aggregates
+    are refused with `IllegalArgumentException` before evaluation (behaviour change for sandboxed queries only);
   - at run time only already-registered functions in the XSD, XPath `fn:` / `math:` and `http://www.w3.org/ns/sparql#`
     namespaces and the query's custom functions are found; nothing is class-loaded or registered globally;
   - property functions are off in sandboxed queries, so `rdfs:member` or `list:member` are matched as ordinary

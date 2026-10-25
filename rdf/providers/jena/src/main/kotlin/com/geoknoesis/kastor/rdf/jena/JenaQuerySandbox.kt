@@ -9,7 +9,6 @@ import org.apache.jena.query.Query
 import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.QueryExecutionDatasetBuilder
 import org.apache.jena.query.QueryFactory
-import org.apache.jena.query.Syntax
 import org.apache.jena.sparql.ARQConstants
 import org.apache.jena.sparql.algebra.Algebra
 import org.apache.jena.sparql.algebra.Op
@@ -20,6 +19,7 @@ import org.apache.jena.sparql.algebra.op.OpOrder
 import org.apache.jena.sparql.algebra.op.OpService
 import org.apache.jena.sparql.algebra.op.OpTriple
 import org.apache.jena.sparql.algebra.walker.Walker
+import org.apache.jena.sparql.expr.E_Call
 import org.apache.jena.sparql.expr.E_Function
 import org.apache.jena.sparql.expr.ExprAggregator
 import org.apache.jena.sparql.expr.ExprFunctionN
@@ -40,12 +40,12 @@ import org.apache.jena.sparql.util.MappedLoader
  * The sandbox of a [com.geoknoesis.kastor.rdf.SandboxedSelectQuery] on Jena: what the query may evaluate is an
  * **allowlist**, not Jena's whole engine.
  *
- * - **Syntax:** the text is parsed as standard SPARQL 1.2 ([Syntax.syntaxSPARQL_12]), not ARQ's extended syntax, so
- *   `CALL(iri, ...)`, `LET`, ARQ aggregates and the like fail to parse, as they do on RDF4J.
+ * - **Syntax:** the text is parsed with Jena's default syntax, which SHACL's generated queries need (the
+ *   `SAMEVALUE` keyword of `sparql:sameValue` is not in Jena's strict SPARQL 1.2 grammar yet).
  * - **Static check** ([check]) on the algebra Jena evaluates, so no second parser can read the text differently:
- *   `SERVICE` (it would contact another endpoint), a function or property function that Jena would load as a class by
- *   name (`java:` IRIs, and ARQ's `afn:` / `apf:` namespaces, which Jena maps to its own classes), and custom
- *   aggregates are refused. Sub-patterns of `EXISTS` / `NOT EXISTS`, sort conditions, `GROUP BY` expressions and
+ *   `SERVICE` (it would contact another endpoint), ARQ's `CALL(iri, ...)` (it builds a function IRI from data at run
+ *   time), a function or property function that Jena would load as a class by name (`java:` IRIs, and ARQ's `afn:` /
+ *   `apf:` namespaces, which Jena maps to its own classes), and custom aggregates are refused. Sub-patterns of `EXISTS` / `NOT EXISTS`, sort conditions, `GROUP BY` expressions and
  *   aggregate arguments are checked explicitly, whatever the walker does with them.
  * - **Run time** ([restrict]): the functions the query can call are the SPARQL built-ins (which Jena evaluates
  *   without its registry), the functions of [STANDARD_FUNCTION_NAMESPACES] that Jena has registered (XSD casts, XPath
@@ -70,19 +70,19 @@ internal object JenaQuerySandbox {
         "http://www.w3.org/ns/sparql#",
     )
 
-    /** Parses the text of a sandboxed query as standard SPARQL 1.2 and [check]s it. */
-    fun parseChecked(sparql: String): Query = QueryFactory.create(sparql, Syntax.syntaxSPARQL_12).also { check(it) }
+    /** Parses the text of a sandboxed query (see [parseSelect]) and [check]s it. */
+    fun parseChecked(sparql: String): Query = QueryFactory.create(sparql).also { check(it) }
 
     fun check(query: Query) = check(Algebra.compile(query))
 
     /**
-     * Parses [query] once with [parse], so a [SandboxedSelectQuery] is checked on the very query that is executed: as
-     * standard SPARQL 1.2, any other query with Jena's default (ARQ) syntax. A refused sandboxed query fails with
-     * [IllegalArgumentException] before evaluation.
+     * Parses [query] once with [parse], so a [SandboxedSelectQuery] is checked on the very query that is executed. A
+     * refused sandboxed query fails with [IllegalArgumentException] before evaluation.
      */
-    fun parseSelect(query: SparqlSelect, parse: (Syntax) -> Query): Query {
-        if (query !is SandboxedSelectQuery) return parse(Syntax.defaultQuerySyntax)
-        return parse(Syntax.syntaxSPARQL_12).also { check(it) }
+    fun parseSelect(query: SparqlSelect, parse: () -> Query): Query {
+        val parsed = parse()
+        if (query is SandboxedSelectQuery) check(parsed)
+        return parsed
     }
 
     /**
@@ -107,8 +107,7 @@ internal object JenaQuerySandbox {
 
     /**
      * Runs a sandboxed query with registries that cannot reach outside the store, whatever IRI the query computes at
-     * run time (in case an ARQ-syntax query, whose `CALL(iri, …)` builds a function IRI from data that [check] cannot
-     * see, ever reaches them): only standard functions ([STANDARD_FUNCTION_NAMESPACES]) already registered with Jena
+     * run time (should a function IRI computed from data, as by ARQ's `CALL`, ever get past [check]): only standard functions ([STANDARD_FUNCTION_NAMESPACES]) already registered with Jena
      * and the custom [functions] are found, so no class is loaded and no extension function runs; there are no
      * property functions, and SERVICE has no executor.
      *
@@ -158,6 +157,7 @@ internal object JenaQuerySandbox {
     private fun check(op: Op) {
         val exprs = object : ExprVisitorBase() {
             override fun visit(func: ExprFunctionN) {
+                if (func is E_Call) refuse("CALL, which computes a function IRI at run time")
                 (func as? E_Function)?.functionIRI?.let { if (loadsClass(it)) refuse("the Jena or Java function <$it>") }
             }
             override fun visit(funcOp: ExprFunctionOp) = check(funcOp.graphPattern)

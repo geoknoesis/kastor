@@ -196,8 +196,8 @@ class JenaSparqlFunctionTest {
             },
         ))
         val before = SandboxProbeFunction.instances.get()
-        // CALL is ARQ syntax, not sandboxed SPARQL: the nested query does not parse, so the body fails (a SPARQL
-        // error, ?v unbound) before anything is evaluated.
+        // CALL is refused in a sandboxed query: the nested query fails, so the body fails (a SPARQL error, ?v
+        // unbound) before anything is evaluated.
         assertEquals(null, lexical("SELECT ?v WHERE { BIND (<urn:probe>() AS ?v) }", probing))
         assertEquals(before, SandboxProbeFunction.instances.get())
     }

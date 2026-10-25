@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Timeout
 import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.RdfQueryException
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TypedLiteral
@@ -32,8 +31,8 @@ import org.apache.jena.sparql.function.FunctionRegistry
 import java.time.Duration
 
 /**
- * A [SandboxedSelectQuery] is parsed as standard SPARQL 1.2 and checked on Jena's own algebra before evaluation:
- * SERVICE, `java:` and Jena (`afn:` / `apf:`) functions or property functions and custom aggregates are refused with
+ * A [SandboxedSelectQuery] is checked on Jena's own algebra before evaluation: SERVICE, ARQ's `CALL`, `java:` and
+ * Jena (`afn:` / `apf:`) functions or property functions and custom aggregates are refused with
  * [IllegalArgumentException] wherever they occur, so no request is sent and no class is loaded. The unreachable
  * endpoint 127.0.0.1:1 would fail differently if a query were evaluated. At run time only standard and custom
  * functions are found ([RunTimeRegistries]).
@@ -96,13 +95,14 @@ class JenaQuerySandboxTest {
     @ParameterizedTest
     @ValueSource(strings = [
         "SELECT ?x WHERE { <urn:a> <urn:p> ?o BIND (CALL(<http://www.w3.org/2005/xpath-functions#upper-case>, \"a\") AS ?x) }",
-        "SELECT ?x WHERE { <urn:a> <urn:p> ?o LET (?x := ?o) }",
+        "SELECT ?x WHERE { <urn:a> <urn:p> ?o BIND (CALL(IRI(CONCAT(\"http://jena.apache.org/ARQ/\", \"function#wait\")), 60000) AS ?x) }",
+        "SELECT ?x WHERE { <urn:a> <urn:p> ?o FILTER (CALL(IRI(STR(?o)))) }",
     ])
-    fun `ARQ syntax is not sandboxed SPARQL`(sparql: String) {
-        assertThrows(RdfQueryException::class.java) { bound(sparql) }
-        assertThrows(RdfQueryException::class.java) { plain(sparql) }
+    fun `CALL, which computes a function IRI at run time, is refused`(sparql: String) {
+        assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
+        assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
         // The same text is a valid query outside the sandbox.
-        repository.withSelectRows(SparqlSelectQuery(sparql)) { it.toList() }
+        repository.withSelectRows(SparqlSelectQuery(sparql.replace("60000", "1"))) { it.toList() }
     }
 
     @Test
@@ -155,7 +155,7 @@ class JenaQuerySandboxTest {
     }
 
     /**
-     * The run-time registries alone, on an ARQ-syntax query that the sandbox's parser would refuse: whatever function
+     * The run-time registries alone, on queries that the static check would refuse (`CALL`): whatever function
      * IRI the query computes, only standard and custom functions are found, nothing is loaded and nothing is
      * registered globally.
      */
