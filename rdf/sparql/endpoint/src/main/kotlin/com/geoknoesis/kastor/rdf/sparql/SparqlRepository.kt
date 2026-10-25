@@ -185,6 +185,9 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   fails the query, or is skipped with one logged warning per query when
  *   [SparqlEndpointConfig.malformedTerms] is [MalformedTermPolicy.SKIP_ROW].
  * - No transactions; CONSTRUCT/DESCRIBE are unsupported (this module has no RDF parser).
+ * - A [SandboxedSelectQuery] (an untrusted query, for example from a SHACL shapes graph) is refused with
+ *   [UnsupportedOperationException] by [select] and [withSelectRows] before any request: the endpoint evaluates the
+ *   query itself, so the adapter cannot keep it from federating (`SERVICE`) to other hosts.
  */
 class SparqlRepository internal constructor(
     val config: SparqlEndpointConfig,
@@ -271,8 +274,11 @@ class SparqlRepository internal constructor(
         return getGraph(name) as MutableRdfGraph
     }
 
-    override fun select(query: SparqlSelect): SparqlQueryResult =
-        selectRows(query.sparql, config.maxResponseBytes, Timeouts.buffered(config.requestTimeout)) { ListSparqlQueryResult(it.toList()) }
+    /** Buffers every row; capped by [SparqlEndpointConfig.maxResponseBytes]. A [SandboxedSelectQuery] is refused (see [withSelectRows]). */
+    override fun select(query: SparqlSelect): SparqlQueryResult {
+        refuseSandboxed(query)
+        return selectRows(query.sparql, config.maxResponseBytes, Timeouts.buffered(config.requestTimeout)) { ListSparqlQueryResult(it.toList()) }
+    }
 
     /**
      * Streams rows to [consume]. [SparqlEndpointConfig.requestTimeout] limits the wait for the
@@ -320,7 +326,8 @@ class SparqlRepository internal constructor(
 
     /**
      * The endpoint evaluates queries itself, so it cannot be held to [SandboxedSelectQuery]'s guarantees (no `SERVICE`):
-     * such a query is refused with [UnsupportedOperationException] and is never sent.
+     * such a query is refused with [UnsupportedOperationException] and is never sent. Every entry point that takes a
+     * [SparqlSelect] ([select] and both [withSelectRows] overloads) calls this before anything else.
      */
     private fun refuseSandboxed(query: SparqlSelect) {
         if (query is SandboxedSelectQuery) {

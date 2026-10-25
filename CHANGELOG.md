@@ -14,6 +14,14 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### SPARQL endpoint, CLI, examples and conformance (round eleven)
+
+- Security: `SparqlRepository.select()` now refuses a `SandboxedSelectQuery` with `UnsupportedOperationException`
+  before sending anything, like both `withSelectRows` overloads already did. Before, `select()` POSTed the untrusted
+  query unchanged, so its `SERVICE` clauses were left to the remote server's federation.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
