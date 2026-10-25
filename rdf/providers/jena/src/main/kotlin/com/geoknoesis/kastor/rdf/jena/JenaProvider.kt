@@ -459,7 +459,7 @@ internal object JenaParsing {
          * JSON-LD never loads a remote or local document ([noRemoteDocuments]).
          */
         fun parser(inputStream: java.io.InputStream, lang: Lang, baseIri: String?): RDFParserBuilder {
-            val builder = noRemoteDocuments(RDFParser.source(inputStream).lang(lang).strict(true))
+            val builder = JenaLiteralBounds.bounded(noRemoteDocuments(RDFParser.source(inputStream).lang(lang).strict(true)))
             return if (baseIri != null) builder.base(baseIri)
             else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
         }

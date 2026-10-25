@@ -398,6 +398,11 @@ entries are regrouped under those kind headings.
   `ValidationConfig.timeout` (`SHACL validation timed out: it reached the validation time limit of <n> ms`), with the
   query failure as its cause; an interrupted validation says it was cancelled. (These messages said "timed out or was
   cancelled".)
+- **Fixed (security, Jena):** parsing refuses an `xsd:integer` (or derived) or `xsd:decimal` literal whose lexical
+  form is longer than 10,000 characters, with `RdfFormatException`, before Jena computes its value. Jena does that in
+  time quadratic in the number of digits (0.7 s for 200,000 digits, 12 s for 800,000; a graph parse twice), so a small
+  document could hold a parsing thread for hours. Every Jena parse path is bounded (`parseGraph`, `parseDataset`,
+  streaming, `JenaBridge`). The RDF4J provider parses such literals in linear time and is not limited.
 
 ### Round twelve
 

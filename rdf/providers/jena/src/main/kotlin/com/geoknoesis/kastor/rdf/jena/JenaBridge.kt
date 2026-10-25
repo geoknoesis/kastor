@@ -206,7 +206,7 @@ object JenaBridge {
         val model = ModelFactory.createDefaultModel()
         try {
             JenaParsing.parseWithFormatErrors(format) {
-                JenaParsing.noRemoteDocuments(org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url))
+                JenaLiteralBounds.bounded(JenaParsing.noRemoteDocuments(org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url)))
                     .parse(JenaParsing.validatingGraph(format, model.graph))
             }
         } catch (failure: Throwable) {
