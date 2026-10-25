@@ -40,6 +40,7 @@ if args.minimum < 1:
     parser.error("--minimum must be positive")
 
 # Reasons are published evidence: they must explain the skip and must not leak a developer's machine layout.
+PARAMETERIZED = re.compile(r"\([^()]+\)$")
 MACHINE_PATH = re.compile(r"file:/|(?<![A-Za-z])[A-Za-z]:[\\/]|/home/[^/\s]+/|/Users/[^/\s]+/")
 allowed = {}
 if args.skip_allowlist:
@@ -56,6 +57,7 @@ required = {name: {"minimum": minimum, "tests": 0, "skipped": 0, "unlisted": []}
             for name, minimum in args.require_suite}
 skipped_cases = collections.Counter()
 executed_cases = set()
+classes_run = set()
 for path in args.directory.rglob("TEST-*.xml"):
     suite = ET.parse(path).getroot()
     if suite.tag != "testsuite":
@@ -71,6 +73,7 @@ for path in args.directory.rglob("TEST-*.xml"):
     failures += actual["failures"] + actual["errors"]
     for case in cases:
         key = (case.get("classname", ""), case.get("name", ""))
+        classes_run.add(key[0])
         if case.find("skipped") is not None:
             skipped_cases[key] += 1
         else:
@@ -100,6 +103,20 @@ if args.skip_allowlist:
               f"{args.skip_allowlist}:")
         for line in now_running:
             print(f"  {line}")
+    # An entry whose class ran but whose test neither ran nor skipped names a renamed or deleted test. Left in
+    # place it would silently allow a future test of that name to skip. Classes outside this run (for example
+    # the full conformance corpus in the build job) are judged by the workflow that runs them. A parameterized
+    # method (`name(String)`) is reported under that name only when it is skipped as a whole; when it runs, its
+    # cases carry invocation display names instead, so such entries cannot be judged here.
+    vanished = sorted(f"{cls} > {name}" for (cls, name) in allowed if cls in classes_run
+                      and (cls, name) not in executed_cases and (cls, name) not in skipped_cases
+                      and not PARAMETERIZED.search(name))
+    errors = []
+    if vanished:
+        errors.append(f"{len(vanished)} allowlist entr(y/ies) in {args.skip_allowlist} name tests that no longer "
+                      "exist; remove them:\n  " + "\n  ".join(vanished))
     if unexpected:
-        raise SystemExit(f"{len(unexpected)} skipped test(s) not in {args.skip_allowlist}:\n  " +
-                         "\n  ".join(unexpected))
+        errors.append(f"{len(unexpected)} skipped test(s) not in {args.skip_allowlist}:\n  " +
+                      "\n  ".join(unexpected))
+    if errors:
+        raise SystemExit("\n".join(errors))
