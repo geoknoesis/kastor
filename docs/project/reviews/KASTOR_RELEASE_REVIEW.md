@@ -1,5 +1,15 @@
 # Release-candidate review
 
+## Status 24 October 2026
+
+The latest independent audit with a score is round ten, on `main` at `5c8c828` (19 October 2026): **78.8/100**.
+The round-eleven review of `f1f170c1` (24 October 2026) found that the last complete green CI run on `main` was
+`7e20d09a` (20 October). The latest pushes failed at the complexity ratchet, which ran before `Gradle check`, so
+their Linux and Windows test runs were skipped, and about 100 commits since `7e20d09a` were never fully tested.
+Release readiness had last run on 5 October. The quality gates now run inside `gradle check`, and CI
+continues past a failing gate (see `CONTRIBUTING.md`, "Quality regression gates"). No round-eleven score is
+recorded here; the sections below are history.
+
 ## Working tree remediation 19 October 2026
 
 The subsequent working-tree self-review identified false conformance from dropped literal direction in the
@@ -8,7 +18,7 @@ fixes and the remaining verification requirements are tracked in [October remedi
 The 9.5/10 target requires verification of the final candidate and independent review. It is not an independent
 audit score or release approval.
 
-## Latest independent audit 5 October 2026: 80.0/100
+## Independent audit 5 October 2026 (round nine): 80.0/100
 
 The round-nine audit of `main` at `474e2f2` (seven independent reviewers, strict audit scale) scored
 **80.0/100**. The previous audit (round 8) scored 79.7. An earlier 82/100 self-assessment written on
