@@ -81,6 +81,7 @@ class SparqlRepository internal constructor(
     val config: SparqlEndpointConfig,
     transport: HttpTransport?,
     private val watchdog: ReadWatchdog = ReadWatchdog.shared,
+    nanoTime: () -> Long = System::nanoTime,
 ) : RdfRepository {
 
     constructor(config: SparqlEndpointConfig) : this(config, null)
@@ -106,6 +107,7 @@ class SparqlRepository internal constructor(
         config,
         transport ?: HttpTransport { client.sendAsync(it, HttpResponse.BodyHandlers.ofInputStream()) },
         watchdog,
+        nanoTime,
     )
 
     init {

@@ -32,6 +32,8 @@ internal class EndpointHttp(
     private val config: SparqlEndpointConfig,
     private val transport: HttpTransport,
     private val watchdog: ReadWatchdog,
+    /** The clock of the header budget ([HeaderBudget]); tests advance their own instead of sleeping. */
+    private val nanoTime: () -> Long = System::nanoTime,
 ) {
     private val queryTarget = HttpTarget.parse(config.endpoint)
     private val updateTarget = config.updateEndpoint?.let(HttpTarget::parse) ?: queryTarget
@@ -59,11 +61,12 @@ internal class EndpointHttp(
     }
 
     /**
-     * The one budget for the wait for response headers, measured from [startNanos] across all redirect hops: the
+     * The one budget for the wait for response headers, measured from its creation across all redirect hops: the
      * earlier of the header deadline and the overall deadline, or the read timeout when there is no header deadline
      * (and it ends first).
      */
-    private inner class HeaderBudget(timeouts: Timeouts, private val startNanos: Long, val sparql: String) {
+    private inner class HeaderBudget(timeouts: Timeouts, val sparql: String) {
+        private val startNanos = nanoTime()
         private val deadline = listOfNotNull(timeouts.headers, timeouts.overall).minOrNull()
         private val boundedByReadTimeout = timeouts.headers == null && (deadline == null || config.readTimeout < deadline)
         private val limit = if (boundedByReadTimeout) config.readTimeout else deadline!!
@@ -71,7 +74,7 @@ internal class EndpointHttp(
 
         /** What is left of the budget; throws when nothing is. */
         fun remainingNanos(): Long {
-            val remaining = if (limitNanos == Durations.UNBOUNDED) Durations.UNBOUNDED else limitNanos - (System.nanoTime() - startNanos)
+            val remaining = if (limitNanos == Durations.UNBOUNDED) Durations.UNBOUNDED else limitNanos - (nanoTime() - startNanos)
             if (remaining <= 0) throw exceeded(null)
             return remaining
         }
@@ -120,7 +123,7 @@ internal class EndpointHttp(
         val startNanos = System.nanoTime()
         val target = if (update) updateTarget else queryTarget
         val hop = Hop(request(sparql, update), configuredAuthorization ?: target.userInfoAuthorization)
-        val budget = HeaderBudget(timeouts, startNanos, sparql)
+        val budget = HeaderBudget(timeouts, sparql)
         val overallDeadlineNanos = timeouts.overall?.let { Durations.deadline(startNanos, Durations.nanos(it)) }
         while (true) {
             val remainingNanos = budget.remainingNanos()
