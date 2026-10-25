@@ -88,12 +88,6 @@
       },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/ShaclConstraintComponentIris.kt": {
-      "functions": {
-        "ConstraintType.toSourceConstraintComponentIri:6d1fcff018cf": 44
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/LiteralComparison.kt": {
       "functions": {
         "literalLexicallyValid:54acc95ce110": 45
@@ -104,10 +98,6 @@
       "functions": {
         "charClass:0287547f58c1": 47
       },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/ShapesCompiler.kt": {
-      "lines": 1108,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/sparql/contract/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings.kt": {
