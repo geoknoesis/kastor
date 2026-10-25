@@ -83,10 +83,12 @@ public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher : ja
 	public fun close ()V
 	public final fun enrich (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public final fun enrichmentOnly (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public static final fun withMiniLm ()Lcom/geoknoesis/kastor/ontoquality/embed/SemanticEnricher;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher$Companion {
 	public final fun default ()Lcom/geoknoesis/kastor/ontoquality/embed/SemanticEnricher;
+	public final fun withMiniLm ()Lcom/geoknoesis/kastor/ontoquality/embed/SemanticEnricher;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilarityIndex {

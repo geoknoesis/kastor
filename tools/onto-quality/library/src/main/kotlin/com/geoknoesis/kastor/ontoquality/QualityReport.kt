@@ -173,6 +173,7 @@ data class QualityReport(
          *   (and finding refs) do not depend on the reasoner. Blank nodes of the shapes graph (in a result path) are
          *   keyed on the shapes of [catalogs].
          */
+        @JvmStatic
         @JvmOverloads
         fun from(
             raw: ValidationReport,

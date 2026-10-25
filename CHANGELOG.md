@@ -72,6 +72,9 @@ and is kept as is; it was never published to Maven Central.
   validation or reasoner out of time is status 5 with a hint naming the option. `--label-language none` (or an empty
   value) embeds the untagged labels; a bad tag is reported under the subcommand's usage line. Library:
   `QualityChecker.check(ontology, profile, reasonerTimeout)`.
+- **Added (Java interop):** `QualityChecker.builder` and `QualityReport.from` are `@JvmStatic`; `QualityChecker.allBundled`
+  and `SemanticEnricher.withMiniLm` are callable aliases of the two `default()` factories, whose name is a Java
+  keyword. Additive: the companion methods remain.
 - **Changed:** the enricher, the reasoner merge and the shapes merge copy triples as a stream instead of building a
   list of the whole graph, and `pipeline` releases the parsed graph once it is enriched.
 - **Fixed (`shacl-era-cli`):** the benchmark report holds every validation result (it kept the first 1,000, with no

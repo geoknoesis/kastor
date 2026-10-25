@@ -195,9 +195,15 @@ class QualityChecker private constructor(
     }
 
     companion object {
+        /** Every bundled catalogue plus the OOPS pitfall registry ([Builder.withAllBundledCatalogs]); from Java, [allBundled]. */
         fun default(validator: ShaclValidator): QualityChecker =
             builder(validator).withAllBundledCatalogs().build()
 
+        /** [default] under a name Java can call (`default` is a Java keyword). */
+        @JvmStatic
+        fun allBundled(validator: ShaclValidator): QualityChecker = default(validator)
+
+        @JvmStatic
         fun builder(validator: ShaclValidator): Builder = Builder(validator)
 
         internal fun mergeCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {

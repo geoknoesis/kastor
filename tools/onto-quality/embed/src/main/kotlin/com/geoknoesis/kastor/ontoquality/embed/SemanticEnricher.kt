@@ -209,6 +209,10 @@ class SemanticEnricher(
             }
         }
 
+        /** [default] under a name Java can call (`default` is a Java keyword). */
+        @JvmStatic
+        fun withMiniLm(): SemanticEnricher = default()
+
         private fun dotProduct(a: FloatArray, b: FloatArray): Double {
             var s = 0.0
             for (i in a.indices) s += a[i] * b[i]
