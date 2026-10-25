@@ -273,6 +273,10 @@ with it.
   other value, such as `0` or `abc`, is reported once with a WARN entry on the `System.Logger`
   `com.geoknoesis.kastor.gen.runtime.GraphStateCache` and the default is used). When the cache is full the
   least recently used copy that no call is using is released, copies whose handle was garbage collected first.
+  Each call does bookkeeping under one cache lock that is linear in `maxCachedGraphs` (reference and digest
+  comparisons; no graph is read and no `equals` of a graph runs under the lock, and validation itself runs outside
+  it). That is negligible at the default and at a few hundred entries; for thousands of small graphs prefer one
+  validator per group of graphs over one very large cache.
 - **Saturation.** When every copy is in use, a call validates in a private temporary copy that is released
   when the call returns, instead of waiting for the validation of another graph. At most `maxCachedGraphs`
   temporary copies are made that way at a time. Beyond that (more than `2 x maxCachedGraphs` distinct graphs
