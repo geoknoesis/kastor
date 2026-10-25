@@ -160,6 +160,7 @@ internal class SparqlQueryTemplate private constructor(
          */
         fun restrictionViolation(query: String, preBound: Set<String>): String? {
             val tokens = SparqlLexer.tokenize(query).filter { it.significant }
+            val valuesBinding = ValuesBindings(tokens, preBound)
             for ((index, token) in tokens.withIndex()) {
                 if (token.kind != SparqlToken.Kind.WORD) continue
                 // SPARQL splits a run like `trueSERVICE` or `1SERVICE` into a literal and a keyword, so the forbidden
@@ -169,7 +170,7 @@ internal class SparqlQueryTemplate private constructor(
                 for (part in bare) {
                     val upper = part.uppercase()
                     FORBIDDEN_KEYWORDS.firstOrNull { it in upper }?.let { return it }
-                    if ("VALUES" in upper) valuesBindingPreBound(tokens, index, preBound)?.let { return it }
+                    if ("VALUES" in upper) valuesBinding.after(index)?.let { return "VALUES for the pre-bound variable \$$it" }
                 }
                 val last = bare.lastOrNull()
                 if (last != null && token.text.endsWith(last) && last.endsWith("AS", ignoreCase = true)) {
@@ -187,17 +188,33 @@ internal class SparqlQueryTemplate private constructor(
 
         /**
          * SHACL 1.2 (Appendix A) forbids only a `VALUES` clause that mentions a potentially pre-bound variable: its
-         * variables are those between the keyword at [index] and the `{` that opens its data block (a data block holds
-         * terms and `UNDEF`, never variables). Returns a description of the violation, or null.
+         * variables are those between the keyword and the `{` that opens its data block (a data block holds terms and
+         * `UNDEF`, never variables). One backward pass over [tokens] finds, for every position, the next `{` and the
+         * next pre-bound variable, so that each `VALUES` is checked in constant time: a query of many `VALUES` words
+         * costs linear time, not one scan to the next `{` per word.
          */
-        private fun valuesBindingPreBound(tokens: List<SparqlToken>, index: Int, preBound: Set<String>): String? {
-            for (token in tokens.subList(index + 1, tokens.size)) {
-                if (token.kind == SparqlToken.Kind.PUNCT && token.text == "{") return null
-                if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
-                    return "VALUES for the pre-bound variable \$${token.variableName}"
+        private class ValuesBindings(tokens: List<SparqlToken>, preBound: Set<String>) {
+            private val nextBrace = IntArray(tokens.size + 1)
+            private val nextPreBound = IntArray(tokens.size + 1)
+            private val names = arrayOfNulls<String>(tokens.size)
+
+            init {
+                nextBrace[tokens.size] = tokens.size
+                nextPreBound[tokens.size] = tokens.size
+                for (i in tokens.indices.reversed()) {
+                    val t = tokens[i]
+                    nextBrace[i] = if (t.kind == SparqlToken.Kind.PUNCT && t.text == "{") i else nextBrace[i + 1]
+                    val preBoundHere = t.kind == SparqlToken.Kind.VARIABLE && t.variableName in preBound
+                    if (preBoundHere) names[i] = t.variableName
+                    nextPreBound[i] = if (preBoundHere) i else nextPreBound[i + 1]
                 }
             }
-            return null
+
+            /** The pre-bound variable the `VALUES` keyword at [index] mentions before its data block, or null. */
+            fun after(index: Int): String? {
+                val variable = nextPreBound[index + 1]
+                return if (variable < nextBrace[index + 1]) names[variable] else null
+            }
         }
 
         /**
@@ -339,8 +356,23 @@ internal class SparqlQueryTemplate private constructor(
                     }
                 }
             }
+            // A codepoint escape can spell a pre-bound variable (`?th`, the escape of `i`, `s`), or end a string or comment early so that
+            // one appears: the template, built from the text as written, has no slot for it, and RDF4J, which decodes
+            // the escapes first, would see the variable unbound. Every view must mention the same pre-bound variables.
+            val asWritten = preBoundMentions(query, preBound)
+            for (view in listOf(decodeCodepointEscapes(query, strict = true), decodeCodepointEscapes(query, strict = false))) {
+                if (preBoundMentions(view, preBound) != asWritten) {
+                    throw SparqlPreBindingRestrictionException(
+                        "$subject spells a pre-bound variable with a codepoint escape, which is not supported with pre-bound variables",
+                    )
+                }
+            }
             return compile(query, preBound)
         }
+
+        /** The pre-bound variables [query] mentions as variable tokens, in order. */
+        private fun preBoundMentions(query: String, preBound: Set<String>): List<String> =
+            SparqlLexer.tokenize(query).mapNotNull { t -> t.variableName.takeIf { t.kind == SparqlToken.Kind.VARIABLE && it in preBound } }
 
         /**
          * Replaces every `$PATH` / `?PATH` variable token (outside strings, IRIs and comments) with the rendered
