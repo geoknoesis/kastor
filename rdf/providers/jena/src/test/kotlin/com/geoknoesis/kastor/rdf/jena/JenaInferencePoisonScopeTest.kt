@@ -75,6 +75,13 @@ class JenaInferencePoisonScopeTest {
         while (!InferenceCancellation.cancelled() && System.nanoTime() - deadline < 0) Thread.onSpinWait()
     }
 
+    /** Waits (bounded, so that a stuck worker fails the test) until [repo]'s worker has no step left to start. */
+    private fun awaitNoQueuedSteps(repo: JenaRepository) {
+        val deadline = System.nanoTime() + waitNanos
+        while (repo.queuedInferenceSteps() != 0 && System.nanoTime() - deadline < 0) Thread.sleep(1)
+        assertEquals(0, repo.queuedInferenceSteps(), "the worker is free again")
+    }
+
     @Test
     @Timeout(180)
     fun `a step cancelled before it touched the reasoner leaves the view healthy for everybody`() {
@@ -150,7 +157,9 @@ class JenaInferencePoisonScopeTest {
             repo.hooks.onStoreRead = {}
 
             assertSame(view, repo.currentInferenceView(), "stopping between two results leaves the reasoner consistent")
-            assertEquals(0, repo.queuedInferenceSteps(), "the worker is free again")
+            // The reader queues a task that closes the find's reasoner iterator once it has its failure, with no latch
+            // ordering it against this point: the worker is free once that task has run.
+            awaitNoQueuedSteps(repo)
             assertEquals(instances, repo.defaultGraph.find(null, type, cls(2)).size)
             assertSame(view, repo.currentInferenceView())
         }
