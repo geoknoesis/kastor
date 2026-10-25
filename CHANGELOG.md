@@ -47,6 +47,10 @@ and is kept as is; it was never published to Maven Central.
   N-Quads 114). `forManifest` fails instead of skipping a missing or empty manifest. The conformance guide no longer
   says that a missing corpus is skipped (it fails unless `-PconformanceAllowMissingData=true`), and `ReferenceRdf`
   no longer claims parser independence for the Jena provider.
+- Examples: `ExampleMainsSmokeTest` runs every example `main` (output captured, 2 min timeout) and fails on a throw,
+  no output, or a failure the example caught and printed. It found `ShaclValidatorProviderExample` crashing on
+  `parallelValidation = true` / `streamingMode = true`, which the native SHACL engine refuses; the example no longer
+  sets them.
 
 ### Added
 

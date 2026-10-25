@@ -141,7 +141,8 @@ class ShaclValidatorProviderExample {
             includeWarnings = true,
             maxViolations = 100,
             timeout = java.time.Duration.ofMinutes(2),
-            parallelValidation = true,
+            // The native engine validates on the calling thread and refuses parallelValidation = true.
+            parallelValidation = false,
             streamingMode = false,
             batchSize = 500,
             enableExplanations = true,
@@ -170,7 +171,8 @@ class ShaclValidatorProviderExample {
             maxViolations = 50,
             timeout = java.time.Duration.ofSeconds(30),
             parallelValidation = false,
-            streamingMode = true,
+            // The native engine validates an in-memory snapshot and refuses streamingMode = true.
+            streamingMode = false,
             batchSize = 1000,
             enableExplanations = false,
             enableSuggestions = false
@@ -191,7 +193,8 @@ class ShaclValidatorProviderExample {
             maxViolations = 25,
             timeout = java.time.Duration.ofMinutes(1),
             parallelValidation = false,
-            streamingMode = true,
+            // The native engine validates an in-memory snapshot and refuses streamingMode = true.
+            streamingMode = false,
             batchSize = 100,
             enableExplanations = true,
             enableSuggestions = false
