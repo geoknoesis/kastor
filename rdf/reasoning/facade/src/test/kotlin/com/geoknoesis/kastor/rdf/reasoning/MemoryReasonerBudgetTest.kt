@@ -45,6 +45,15 @@ class MemoryReasonerBudgetTest {
     }
 
     @Test
+    fun `a timeout too long for nanoseconds means no time limit`() {
+        val reasoner = MemoryReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofDays(200_000)))
+        // A clock near the top of its range: a deadline computed as now + timeout would overflow as well.
+        var now = Long.MAX_VALUE - 1_000L
+        val closure = reasoner.closure(chain.take(2) + chain.last(), { now += 1; now })
+        assertTrue(closure.size > 3, "the closure must be computed")
+    }
+
+    @Test
     fun `classification keeps insertion order per subject`() {
         val s = Iri("http://example.org/s")
         val classes = (0 until 50).map { Iri("http://example.org/K$it") }
