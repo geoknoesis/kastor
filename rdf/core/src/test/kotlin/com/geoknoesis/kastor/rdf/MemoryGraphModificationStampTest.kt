@@ -248,4 +248,35 @@ class MemoryGraphModificationStampTest {
             repo.close()
         }
     }
+
+    @Test
+    fun `an atomic mutation of a stand-alone graph commits a stamp it never returned before`() {
+        val g = MemoryGraph()
+        val before = g.modificationStamp
+        val privateStamps = mutableListOf<Long>()
+        g.mutateAtomically {
+            addTriple(t1)
+            privateStamps += g.modificationStamp
+            addTriple(t2)
+            privateStamps += g.modificationStamp
+        }
+        val committed = g.modificationStamp
+        assertNotEquals(before, committed)
+        assertFalse(committed in privateStamps, "commit published private stamp $committed of $privateStamps")
+        // A rolled-back mutation never returns its private stamps again either.
+        val rolledBack = mutableListOf<Long>()
+        assertThrows(IllegalStateException::class.java) {
+            g.mutateAtomically {
+                removeTriple(t1)
+                rolledBack += g.modificationStamp
+                error("rollback")
+            }
+        }
+        assertEquals(2, g.size())
+        assertFalse(g.modificationStamp in rolledBack + privateStamps)
+        // A mutation that changes nothing keeps the committed stamp.
+        val unchanged = g.modificationStamp
+        g.mutateAtomically { addTriple(t1) }
+        assertEquals(unchanged, g.modificationStamp)
+    }
 }
