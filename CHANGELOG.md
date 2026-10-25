@@ -14,6 +14,45 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round twelve
+
+#### Code generation (kastor-gen)
+
+- **Fixed (`replaceInGraph` lost update):** a single-valued member counted as unchanged when its value equalled
+  *any* value of the predicate, so on a graph that already violated `sh:maxCount` (`"Chat"@fr, "Cat"@en`) setting
+  `title = "Cat"` wrote nothing and the next read still returned "Chat". It is now unchanged only when it equals the
+  value the reader returns; any other value is written, keeping one term of it and removing the other representable
+  terms (`mergeRecord`).
+- **Fixed (processor diagnostics):** an invalid SHACL Turtle file crashed KSP (the parser's
+  `InvalidConfigurationException` was rethrown) and the other `@Rdf` requests were not generated. Every problem of a
+  request's input is now one KSP error *at the annotated declaration or file*, and processing continues: a missing
+  file (the message lists the locations tried), an unreadable one, invalid Turtle in shapes or ontology files, an
+  invalid JSON-LD context, and shapes that cannot be generated (name collisions, cyclic inheritance). An invalid
+  ontology file (`ontologyPath`) was logged and treated as having no classes; it is now such an error. Parsers no
+  longer log what they throw (`ShaclParser` and `OntologyExtractor` throw `IllegalArgumentException`).
+- **Fixed (default `validationAnnotations = JAKARTA`):** generated interfaces and data classes import
+  `jakarta.validation.constraints`, but no module declared the API, so the documented quick start did not compile.
+  `kastor-gen-runtime` now declares `jakarta.validation:jakarta.validation-api:3.1.1` as `compileOnlyApi` (consumers
+  compile against it through Gradle module metadata; nothing is added at runtime), and the processor reports an
+  error naming the dependency when the selected flavour's API (`JAKARTA` or `JAVAX`) is missing from the class path
+  and the generated code uses it. `examples/hello-codegen` and `examples/dcat-us` use the default.
+- **Fixed (derived integer types):** a member typed `xsd:unsignedByte`, `xsd:nonNegativeInteger`, ... read values
+  outside its range (`"300"^^xsd:integer`) and then failed on the next write. Such values are now ill-typed on read
+  (`MaterializationPolicy`). New `XsdLiterals.int/long/bigInteger(literal, declared)` overloads (additive ABI).
+- **Fixed (hostile literals):** integer well-formedness and the leap-year check of date literals are linear in the
+  lexical length (a multi-megabyte integer or year was parsed into a `BigInteger`, which is quadratic). `bigInteger`,
+  `bigDecimal` and `compareNumeric` treat lexical forms longer than 10,000 characters as not representable, and
+  error messages abbreviate long lexical forms.
+- **Fixed:** an `sh:in` set of language-tagged literals no longer becomes an enum whose values cannot be written
+  back; `rdf:dirLangString` members are typed `LangString` (they read as `String` and could not be written).
+- **Fixed (JSON-LD contexts):** relative references are resolved with RFC 3986 §5.2 (`java.net.URI` follows RFC
+  2396: `?y` against `http://a/b/c/d;p?q` gave `http://a/b/c/?y`). A chain of more than 256 term definitions that
+  refer to each other is an error instead of unbounded recursion.
+- **Tests:** generated records round-trip through memory, Jena and RDF4J repositories with identical triples; the
+  JAKARTA compilation test uses the real API jar.
+- **Docs:** the annotation reference lists the ontology generation fields (including `validationAnnotations` and
+  its dependency) and `replaceInGraph`; the `GraphStateCache` `DETACHED` KDoc describes the wait it can do.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)
