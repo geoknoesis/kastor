@@ -144,7 +144,8 @@ class SparqlPrefixesTest {
 
         val unlimited = ShapeGraphIndex(triples)
         assertEquals(300, SparqlPrefixes.collect(ex("C"), unlimited).size)
-        assertSame(unlimited.graphLevelPrefixes, unlimited.graphLevelPrefixes)
+        // Computed once and shared by every node without sh:prefixes.
+        assertSame(SparqlPrefixes.collect(ex("C"), unlimited), SparqlPrefixes.collect(ex("D"), unlimited))
 
         val now = AtomicLong()
         val index = ShapeGraphIndex(triples, ValidationBudget(Duration.ofNanos(10)) { now.get() })

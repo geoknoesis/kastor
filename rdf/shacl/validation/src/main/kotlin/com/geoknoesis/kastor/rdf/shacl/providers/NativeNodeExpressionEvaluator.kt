@@ -3,7 +3,6 @@ package com.geoknoesis.kastor.rdf.shacl.providers
 import com.geoknoesis.kastor.rdf.FalseLiteral
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfProviderException
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
@@ -11,13 +10,9 @@ import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
-import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.native.NodeExpression
 import com.geoknoesis.kastor.rdf.shacl.native.NodeExpressionOrdering
-import com.geoknoesis.kastor.rdf.shacl.native.NodeExpressions
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
-import com.geoknoesis.kastor.rdf.shacl.native.ShapeGraphIndex
-import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlFunctionExpressions
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlQueryTemplate
@@ -65,58 +60,6 @@ internal fun NativeShaclValidator.evaluate(
     } catch (f: NodeExprFailure) {
         NodeExprOutcome.Failure(f.reason, f.cause, f.undecided)
     }
-
-/**
- * Evaluates [expr] at a validation position (SHACL 1.2 Core: `sh:values`, `sh:defaultValue`, `sh:targetNode`; Node
- * Expressions §7: `sh:expression`, `sh:nodeByExpression`) for [focus] with the scope [variables]. An evaluation
- * failure is a validation failure ([ShaclValidationException], caused by the failure's cause); a provisional
- * conformance answer is a [ProvisionalUndefined]. A failure of an undecided conformance check is an
- * [UndecidedConformanceException], whatever function surrounds the check. [shapeDepth] is the nesting depth of the shape evaluation the
- * expression belongs to ([NativeValidationContext.expressionShapeDepth]). For a
- * [NodeExpression.Select], `this` is pre-bound to [focus] when it is not null, solutions in which the expression
- * variable is unbound are skipped, and the output nodes are distinct, in solution order.
- */
-internal fun NativeShaclValidator.evalNodeExpression(
-    expr: NodeExpression,
-    ctx: NativeValidationContext,
-    focus: RdfTerm?,
-    variables: Map<String, RdfTerm> = emptyMap(),
-    shapeDepth: Int = ctx.expressionShapeDepth,
-    positiveReads: Boolean = false,
-): List<RdfTerm> {
-    val saved = ctx.expressionShapeDepth
-    ctx.expressionShapeDepth = shapeDepth
-    val outcome = try {
-        evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0), positiveReads)
-    } finally {
-        ctx.expressionShapeDepth = saved
-    }
-    return when (outcome) {
-        is NodeExprOutcome.Nodes -> outcome.nodes
-        is NodeExprOutcome.Failure ->
-            throw if (outcome.undecided) UndecidedConformanceException(outcome.reason, outcome.cause) else ShaclValidationException(outcome.reason, outcome.cause)
-    }
-}
-
-/**
- * Evaluates the node expression [exprNode] of [graph], which is both the focus graph and the shapes graph (§3.4), with
- * [focus] and the scope [variables] (the W3C `sht:EvalNodeExpr` harness). Ill-formed expressions and shapes throw
- * [ShapeCompileException].
- */
-internal fun NativeShaclValidator.evaluateNodeExpression(graph: RdfGraph, exprNode: RdfTerm, focus: RdfTerm?, variables: Map<String, RdfTerm>): NodeExprOutcome {
-    // Compiled over the shapes index, so that the shapes it references are compiled with the shapes graph.
-    var expr: NodeExpression? = null
-    val shapes = { index: ShapeGraphIndex ->
-        val compiled = NodeExpressions.compile(exprNode, index) ?: throw ShapeCompileException("$exprNode is not a node expression")
-        expr = compiled
-        ShapesCompiler.expressionShapes(compiled, index)
-    }
-    return withNodeExpressionContext(graph, shapes) { ctx -> evaluate(checkNotNull(expr), ctx, NodeExprScope(focus, variables, emptyList(), 0)) }
-}
-
-/** As [evaluateNodeExpression], for an expression tree that is already compiled. */
-internal fun NativeShaclValidator.evaluateNodeExpression(graph: RdfGraph, expr: NodeExpression, focus: RdfTerm?, variables: Map<String, RdfTerm>): NodeExprOutcome =
-    withNodeExpressionContext(graph, { index -> ShapesCompiler.expressionShapes(expr, index) }) { ctx -> evaluate(expr, ctx, NodeExprScope(focus, variables, emptyList(), 0)) }
 
 /** Fails when [size] output nodes exceed [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes], as path evaluation does. */
 internal fun checkNodeExpressionSize(size: Int, ctx: NativeValidationContext, what: String) {
@@ -194,7 +137,7 @@ private class NodeExpressionEvaluator(
             is NodeExpression.InstancesOf -> instancesOf(sub(expr.e))
             is NodeExpression.Select -> startedAt(scope.depth) { select(expr, scope.focus, scope.args) }
             // Shape-based functions (§4.2.5, §4.3.2, §4.3.3, §4.5.2, §4.5.3).
-            is NodeExpression.FilterShape -> output(sub(expr.nodes).filter { conforms(it, expr.shape, "shnex:filterShape", scope.depth) })
+            is NodeExpression.FilterShape -> output(conforming(sub(expr.nodes), expr.shape, "shnex:filterShape", scope.depth))
             is NodeExpression.FindFirst -> findFirst(expr, scope, inner)
             is NodeExpression.MatchAll -> matchAll(expr, scope, inner)
             is NodeExpression.NodesMatching -> nodesMatching(expr.shape, scope.depth)
@@ -265,9 +208,42 @@ private class NodeExpressionEvaluator(
 
     private fun matchAll(expr: NodeExpression.MatchAll, scope: NodeExprScope, inner: NodeExprScope): List<RdfTerm> {
         // R6: every node is checked, so an undecided or failed check anywhere is a failure; ( true ) for no input.
+        // Kleene: one definite non-conforming node makes the result false even when another answer is provisional.
         val inputs = expr.nodes?.let { eval(it, inner) } ?: listOfNotNull(scope.focus)
-        val answers = inputs.map { conforms(it, expr.shape, "shnex:matchAll", scope.depth) }
-        return output(listOf(if (answers.all { it }) TrueLiteral else FalseLiteral))
+        var provisional: ProvisionalUndefined? = null
+        var all = true
+        for (node in inputs) {
+            try {
+                if (!conforms(node, expr.shape, "shnex:matchAll", scope.depth)) all = false
+            } catch (p: ProvisionalUndefined) {
+                if (provisional == null) provisional = p
+            }
+        }
+        if (all) provisional?.let { throw it }
+        return output(listOf(if (all) TrueLiteral else FalseLiteral))
+    }
+
+    /**
+     * The [nodes] that conform to [shape], in order. Every node is checked before a provisional answer is thrown, so
+     * that a failure of the check on a later node (which fails the expression whatever the provisional answer turns
+     * out to be) wins over it.
+     */
+    private fun conforming(nodes: Iterable<RdfTerm>, shape: RdfResource, function: String, depth: Int, each: () -> Unit = {}): List<RdfTerm> {
+        var provisional: ProvisionalUndefined? = null
+        val out = ArrayList<RdfTerm>()
+        for (node in nodes) {
+            each()
+            try {
+                if (conforms(node, shape, function, depth)) {
+                    out.add(node)
+                    capped(out.size)
+                }
+            } catch (p: ProvisionalUndefined) {
+                if (provisional == null) provisional = p
+            }
+        }
+        provisional?.let { throw it }
+        return out
     }
 
     private fun conformsToShape(expr: NodeExpression.ConformsToShape, scope: NodeExprScope, inner: NodeExprScope): List<RdfTerm> {
@@ -387,14 +363,7 @@ private class NodeExpressionEvaluator(
 
     private fun matchingNodes(shape: RdfResource, depth: Int): List<RdfTerm> {
         ctx.counters.nodesMatchingScans++
-        val matches = ArrayList<RdfTerm>()
-        for (node in ctx.data.allNodes()) {
-            ctx.budget.tick("node expression")
-            if (conforms(node, shape, "shnex:nodesMatching", depth)) {
-                matches.add(node)
-                capped(matches.size)
-            }
-        }
+        val matches = conforming(ctx.data.allNodes(), shape, "shnex:nodesMatching", depth) { ctx.budget.tick("node expression") }
         val sorted = NodeExpressionOrdering.stableSort(matches) { a, b ->
             ctx.budget.tick("node expression ordering")
             NodeExpressionOrdering.compare(a, b)

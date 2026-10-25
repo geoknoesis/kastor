@@ -79,9 +79,15 @@ internal sealed class PropertyConstraint {
     class Pattern(val pattern: String, val flags: String?, val regex: Regex) : PropertyConstraint()
     data class MinLength(val n: Int) : PropertyConstraint()
     data class MaxLength(val n: Int) : PropertyConstraint()
-    data class In(val allowed: List<RdfTerm>) : PropertyConstraint()
+    data class In(val allowed: List<RdfTerm>) : PropertyConstraint() {
+        /** [allowed] by [shaclRdfTermFingerprint], so that a value is looked up instead of compared with each member. */
+        val keys: Set<String> by lazy { allowed.mapTo(HashSet()) { shaclRdfTermFingerprint(it) } }
+    }
     data class HasValue(val value: RdfTerm) : PropertyConstraint()
-    data class LanguageIn(val langs: List<String>) : PropertyConstraint()
+    data class LanguageIn(val langs: List<String>) : PropertyConstraint() {
+        /** [langs] as a [LanguageRanges] lookup. */
+        val ranges: LanguageRanges by lazy { LanguageRanges(langs) }
+    }
     data class UniqueLang(val enabled: Boolean) : PropertyConstraint()
     data class Node(val nestedShape: RdfResource) : PropertyConstraint()
     /** SHACL 1.2 `sh:nodeByExpression` on a property shape whose value is a shape IRI (a constant node expression). */

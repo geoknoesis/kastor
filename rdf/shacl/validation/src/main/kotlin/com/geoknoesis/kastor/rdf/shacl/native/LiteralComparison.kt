@@ -54,18 +54,70 @@ private val floatLexical = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([Ee][+-]?\\d+)?|
  * A numeric value in its XPath type class: xs:decimal (which includes the integer types), xs:float or xs:double.
  */
 private sealed interface NumericValue {
-    data class Exact(val value: BigDecimal) : NumericValue
+    data class Exact(val value: ExactDecimal) : NumericValue
     data class Single(val value: Float) : NumericValue
     data class Approx(val value: Double) : NumericValue
 }
 
-private fun parseInteger(lex: String, dt: Iri): BigInteger? {
+/**
+ * An xs:decimal value (the integer types included) kept as its normalized digits, so that parsing and comparing are
+ * linear in the length of the lexical form: `BigInteger(String)` and `BigDecimal(String)` are quadratic, about 20 s
+ * for a literal of a million digits, and a data graph can hold such a literal. [sign] is -1, 0 or 1; [integer] has no
+ * leading zeros and [fraction] no trailing zeros (both empty for zero).
+ */
+private class ExactDecimal(val sign: Int, val integer: String, val fraction: String) : Comparable<ExactDecimal> {
+    override fun compareTo(other: ExactDecimal): Int {
+        if (sign != other.sign) return sign.compareTo(other.sign)
+        return sign * compareMagnitude(other)
+    }
+
+    private fun compareMagnitude(other: ExactDecimal): Int {
+        if (integer.length != other.integer.length) return integer.length.compareTo(other.integer.length)
+        integer.compareTo(other.integer).let { if (it != 0) return it.coerceIn(-1, 1) }
+        // Without trailing zeros, the longer of two fractions that agree on the shorter one's digits is the larger.
+        for (i in 0 until minOf(fraction.length, other.fraction.length)) {
+            if (fraction[i] != other.fraction[i]) return fraction[i].compareTo(other.fraction[i]).coerceIn(-1, 1)
+        }
+        return fraction.length.compareTo(other.fraction.length)
+    }
+
+    /** The decimal text, which the JDK parses to the nearest float or double in linear time. */
+    override fun toString(): String =
+        (if (sign < 0) "-" else "") + integer.ifEmpty { "0" } + (if (fraction.isEmpty()) "" else ".$fraction")
+
+    override fun equals(other: Any?): Boolean = other is ExactDecimal && compareTo(other) == 0
+
+    override fun hashCode(): Int = 31 * (31 * sign + integer.hashCode()) + fraction.hashCode()
+
+    companion object {
+        /** The value of a lexical form that matches [decimalLexical] (or [integerLexical]). */
+        fun of(lex: String): ExactDecimal {
+            val negative = lex.startsWith("-")
+            val unsigned = if (lex.startsWith("-") || lex.startsWith("+")) lex.substring(1) else lex
+            val dot = unsigned.indexOf('.')
+            val integer = (if (dot < 0) unsigned else unsigned.substring(0, dot)).trimStart('0')
+            val fraction = if (dot < 0) "" else unsigned.substring(dot + 1).trimEnd('0')
+            val sign = if (integer.isEmpty() && fraction.isEmpty()) 0 else if (negative) -1 else 1
+            return ExactDecimal(sign, integer, fraction)
+        }
+    }
+}
+
+/** The most digits an integer bound of [integerRanges] has: a longer value is beyond every finite bound. */
+private const val MAX_BOUND_DIGITS = 20
+
+private fun parseInteger(lex: String, dt: Iri): ExactDecimal? {
     val range = integerRanges[dt] ?: return null
     if (!integerLexical.matches(lex)) return null
-    val v = BigInteger(lex)
+    val value = ExactDecimal.of(lex)
+    if (value.integer.length > MAX_BOUND_DIGITS) {
+        // Far beyond every finite bound: only an unbounded side admits it.
+        return value.takeIf { if (value.sign > 0) range.second == null else range.first == null }
+    }
+    val v = BigInteger(value.toString())
     if (range.first != null && v < range.first) return null
     if (range.second != null && v > range.second) return null
-    return v
+    return value
 }
 
 private fun parseApprox(lex: String): Double? {
@@ -93,8 +145,8 @@ private fun parseNumeric(lit: Literal): NumericValue? {
     val dt = lit.datatype
     val lex = lit.lexical
     return when {
-        dt in integerRanges -> parseInteger(lex, dt)?.let { NumericValue.Exact(BigDecimal(it)) }
-        dt == XSD.decimal -> if (decimalLexical.matches(lex)) NumericValue.Exact(BigDecimal(lex)) else null
+        dt in integerRanges -> parseInteger(lex, dt)?.let { NumericValue.Exact(it) }
+        dt == XSD.decimal -> if (decimalLexical.matches(lex)) NumericValue.Exact(ExactDecimal.of(lex)) else null
         dt == XSD.double -> parseApprox(lex)?.let { NumericValue.Approx(it) }
         dt == XSD.float -> parseSingle(lex)?.let { NumericValue.Single(it) }
         else -> null
@@ -103,9 +155,9 @@ private fun parseNumeric(lit: Literal): NumericValue? {
 
 // The casts xs:decimal -> xs:float / xs:double go through the decimal's text, which the JDK parses to the nearest
 // value (BigDecimal.toFloat / toDouble were not correctly rounded before JDK 21).
-private fun BigDecimal.nearestFloat(): Float = toString().toFloat()
+private fun ExactDecimal.nearestFloat(): Float = toString().toFloat()
 
-private fun BigDecimal.nearestDouble(): Double = toString().toDouble()
+private fun ExactDecimal.nearestDouble(): Double = toString().toDouble()
 
 private fun NumericValue.asDouble(): Double =
     when (this) {
@@ -288,12 +340,14 @@ private fun totalOrderClass(term: RdfTerm): Any? {
  * strings, booleans, or date/time values of one family that all have or all lack a timezone), [others] is sorted once
  * and each value is compared from the smallest other value upwards until it is below one, since the violating others
  * form a prefix: O((n + m) log m + results) comparisons instead of n × m. Otherwise every pair is compared.
- * [onCompare] observes the comparisons (instrumentation).
+ * At most [limit] pairs are returned (the first ones, in value order). [onCompare] observes the comparisons (the
+ * budget, instrumentation).
  */
 internal fun orderViolations(
     values: List<RdfTerm>,
     others: List<RdfTerm>,
     strict: Boolean,
+    limit: Int = Int.MAX_VALUE,
     onCompare: () -> Unit = {},
 ): List<Pair<RdfTerm, RdfTerm>> {
     if (values.isEmpty() || others.isEmpty()) return emptyList()
@@ -304,7 +358,10 @@ internal fun orderViolations(
     val out = ArrayList<Pair<RdfTerm, RdfTerm>>()
     val space = totalOrderClass(others[0])
     if (space == null || others.any { totalOrderClass(it) != space } || values.any { totalOrderClass(it) != space }) {
-        for (v in values) for (w in others) if (!ordered(v, w)) out.add(v to w)
+        for (v in values) for (w in others) {
+            if (!ordered(v, w)) out.add(v to w)
+            if (out.size >= limit) return out
+        }
         return out
     }
     val sorted = others.sortedWith { a, b ->
@@ -315,6 +372,7 @@ internal fun orderViolations(
         for (w in sorted) {
             if (ordered(v, w)) break
             out.add(v to w)
+            if (out.size >= limit) return out
         }
     }
     return out

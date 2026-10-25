@@ -28,9 +28,14 @@ data class ValidationReport(
      * Unlike [isValid] (SHACL `sh:conforms`, which is false as soon as a result of severity `sh:Violation`,
      * `sh:Warning`, `sh:Info` or a custom severity exists), this helper lets callers treat lower severities as
      * non-blocking.
+     *
+     * When [violationsTruncated] is true the results beyond [ValidationConfig.maxViolations] are not in [violations],
+     * so their severities are unknown: the helper then fails closed and returns true, so that a flood of lower-severity
+     * results cannot hide a Violation reported after them.
      */
     val hasViolations: Boolean
-        get() = violations.any { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }
+        get() = violationsTruncated ||
+            violations.any { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }
 
     /**
      * Get all violations by severity.

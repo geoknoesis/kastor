@@ -88,7 +88,7 @@ internal object ShapesCompiler {
         referenced.run()
         val ignoredInCandidates = ArrayList<String>()
         val candidateErrors = compileCandidates(index, config, budget, resolver, candidates, refNodes, refProps, detected.candidateOnly, ignoredInCandidates)
-        return CompiledShapeGraph(
+        val graph = CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, resolver, budget),
             (unsupported.keys + ignoredInCandidates).map { "Unsupported SHACL feature ignored: $it" },
@@ -96,6 +96,9 @@ internal object ShapesCompiler {
             candidateErrors,
             ineffectiveReifierDeactivations(index, refNodes.keys + refProps.keys, budget),
         )
+        // The compiled graph may be cached and shared by later runs, which bring budgets of their own.
+        index.detachBudget()
+        return graph
     }
 
     /**
@@ -361,7 +364,12 @@ internal object ShapesCompiler {
         val pathValues = index.objects(ps, SHACL.path)
         if (isDeactivated(ps, index)) {
             val pathNode = pathValues.firstOrNull() ?: RDF.nil
-            val path = runCatching { ShaclPathParser.parse(pathNode, index) }.getOrDefault(ShaclPath.Predicate(RDF.nil))
+            // An ill-formed path does not matter on a deactivated shape; a timeout or cancellation still stops compilation.
+            val path = try {
+                ShaclPathParser.parse(pathNode, index)
+            } catch (_: ShapeCompileException) {
+                ShaclPath.Predicate(RDF.nil)
+            }
             return CompiledPropertyShape(
                 shapeNode = ps, path = path, pathNode = pathNode, pathTriples = emptyList(),
                 severity = ViolationSeverity.VIOLATION, messages = emptyList(), constraints = emptyList(), deactivated = true,

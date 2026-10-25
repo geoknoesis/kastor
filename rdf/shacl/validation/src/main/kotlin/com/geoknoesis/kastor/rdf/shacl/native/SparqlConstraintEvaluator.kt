@@ -176,14 +176,8 @@ internal object SparqlConstraintEvaluator {
                 throw ShaclValidationException("SPARQL constraint failed: ${e.message}", e)
             }
 
-        fun selectReturnsRows(query: String, focus: RdfTerm?, timeout: Duration): Boolean =
-            select(query, if (focus == null) emptyMap() else mapOf("this" to focus), timeout) { it.any() }
-
         override fun close() {
             copy?.close()
         }
     }
-
-    fun selectReturnsRows(query: String, dataGraph: RdfGraph, focusNode: RdfTerm? = null): Boolean =
-        Session(dataGraph).use { it.selectReturnsRows(query, focusNode, Duration.ofMinutes(5)) }
 }

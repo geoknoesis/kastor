@@ -17,6 +17,7 @@ import com.geoknoesis.kastor.rdf.shacl.providers.ProvisionalUndefined
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -444,6 +445,26 @@ class NodeExpressionConstraintTest {
         )
         assertThrows(ShaclValidationException::class.java) {
             validate(provider, "ex:a ex:name 1 ; ex:next ex:b . ex:b ex:name 2 ; ex:next ex:a .", negated)
+        }
+    }
+
+    @ParameterizedTest @ValueSource(strings = ["jena", "rdf4j"])
+    fun `a definite failure decides a shape-reading function despite a provisional answer`(provider: String) {
+        // ex:W and ex:V form a negative recursive group. V(b) fails definitely (no ex:C), so matchAll over (a, b) is
+        // false whatever V(a) is (Kleene): W(a) fails and V(a) conforms. The provisional V(a), read first, must not
+        // leave W(a) undefined. filterShape and nodesMatching likewise let a definite failure of the expression win.
+        for (nodes in listOf("( ex:a ex:b )", "( ex:b ex:a )")) {
+            val shapes = """
+                ex:W a sh:NodeShape ; sh:targetNode ex:a ;
+                  sh:expression [ sparql:logical-not ( [ sparql:logical-not ( [ shnex:matchAll ex:V ; shnex:nodes $nodes ] ) ] ) ] .
+                ex:V a sh:NodeShape ; sh:property [ sh:path ex:self ; sh:not ex:W ] ; sh:class ex:C .
+            """
+            val data = "ex:a a ex:C ; ex:self ex:a . ex:b ex:p 1 ."
+            for (config in listOf(ValidationConfig.default(), ValidationConfig(strictMode = true))) {
+                val report = validate(provider, data, shapes, config)
+                assertEquals(listOf(ex("a") to ConstraintType.EXPRESSION), report.violations.map { it.focusNode to it.constraint.constraintType }, nodes)
+                assertFalse(report.violations.single().isUndefinedRecursion, nodes)
+            }
         }
     }
 

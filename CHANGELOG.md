@@ -376,6 +376,66 @@ entries are regrouped under those kind headings.
 - **Changed (core):** `Rdf.parseDataset` (string, file and repository forms) and `parseDatasetFromUrl`
   accept JSON-LD as well as TriG and N-Quads, so a JSON-LD document with named graphs has a core path that keeps them.
 
+### Round twelve
+
+#### SHACL (`rdf-shacl-validation`, `rdf-shacl-dsl`)
+
+Hostile shapes graphs and data graphs can no longer make compilation, validation or report writing take
+super-linear time or memory outside `ValidationConfig.timeout`:
+
+- Fixed: the SHACL-SPARQL pre-binding restriction check took quadratic time on one long word (a million letters took
+  about 18 minutes per view) and never consulted the budget. It is now linear, and it and the template compilation
+  tick the validation budget per token.
+- Fixed: a property path whose blank nodes are shared level after level (`_:p0 sh:alternativePath ( _:p1 _:p1 )`, ...)
+  was unfolded exponentially by the parser and again by the report writer. Paths are parsed once per blank node and
+  shared, a path that unfolds to more than 4,096 nodes (or nests more than 128 constructors deep) is refused with
+  `ShapeCompileException`, and `toShaclValidationReportRdf()` unfolds a blank-node `sh:resultPath` per use only
+  while the copy has at most 1,024 nodes; a larger one gets one fresh blank node per source blank node, shared as in
+  the source.
+- Fixed: a computed shape reference read from the data made its shape depend on every shape through a copied
+  candidate set, so n such shapes cost n * n memory (4,000 shapes took about 1 GB). These dependencies are now
+  symbolic and the recursion analysis is linear.
+- Fixed: every SHACL-SPARQL query got a `PREFIX` line for every declaration it could see, and each query copied and
+  checked the whole prefix map. A map is now computed once per set of `sh:prefixes` values, and the prologue declares
+  the prefixes the query uses (in any of its codepoint-escape views). Behaviour change: an `sh:namespace` that cannot
+  be written as a SPARQL IRI is reported when the map is collected, whether or not a query uses that prefix.
+- Fixed: `sh:in` and `sh:languageIn` compared each value with every list member; they now look values up (same
+  RDF term equality and basic language-range filtering).
+- Fixed: decimal and integer literals were parsed with `BigInteger` / `BigDecimal`, which is quadratic in the number
+  of digits (about 20 s for a million digits, on every comparison). They are now compared digit by digit, and
+  node expression integer arguments are clamped without a parse.
+- Fixed: `sh:lessThan` / `sh:lessThanOrEquals` (one result per pair) and `sh:sparql` (one per solution) could build
+  millions of results for one focus node. An evaluation now builds at most `maxViolations + 1`, which leaves the report
+  and `violationsTruncated` unchanged; a query that can bind `?failure` is still read to its end, and pairs and
+  solution rows tick the budget.
+- Fixed: a result message with many `{?v}` placeholders and a long value cost their product. Substituted values may add
+  at most 65,536 characters per message; past that the rest of the placeholders stay as written and the message ends
+  with `[message truncated: substituted values exceed 65536 characters]`.
+- Fixed: an unterminated `\x{` escape in `sh:pattern` made the translation quadratic, and nested class subtractions
+  (`[a-[b-[...]]]`) recursed without a limit; the first is rejected at once, more than 64 levels of the second are
+  rejected.
+- Fixed: `ShapeGraphIndex.blankNodeClosure` recursed per list cell, and two catch-alls around path and list parsing
+  also swallowed timeouts and cancellation.
+- Fixed: a compiled shapes graph shared through the compile cache kept the budget (and clock) of the run that compiled
+  it; the index now drops it when compilation ends.
+
+Semantics and API:
+
+- Changed: `ValidationReport.hasViolations` fails closed on a truncated report: when `violationsTruncated` is true the
+  unseen results may block, so it returns `true` (a flood of `sh:Info` results could hide a later `sh:Violation`).
+- Fixed: inside the recursion solver `shnex:matchAll` now follows Kleene logic: one node that definitely does not
+  conform makes it false even when another node's answer is not settled yet, instead of leaving the expression (and a
+  negative recursive group) undefined. `shnex:filterShape` and `shnex:nodesMatching` check every node before waiting
+  on an unsettled answer, so a definite failure of a later check wins.
+- Removed: the internal `SparqlConstraintEvaluator.selectReturnsRows` helper, which pre-bound `$this` as a provider
+  binding with its own five-minute timeout, a path production never took.
+- API: `ShaclValidation` and `ValidatorRegistry` methods are `@JvmStatic`, and `toShaclValidationReportRdf` has a
+  `@JvmOverloads` overload without a report node (ABI dump updated; the object methods are now static).
+- `rdf-shacl-dsl`: a `ShaclPropertyPath` that reuses a sub-path object is written once per object (its node shared)
+  instead of as its exponential unfolding.
+- Docs: the feature guide now states the dependency model of SPARQL function bodies, the non-monotone reads of
+  parameter expressions, the path limits, the shared result path copy and the Kleene reads.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)

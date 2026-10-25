@@ -59,7 +59,7 @@ internal class SparqlComponentCatalog private constructor(
     /** A selected, well-formed validator; [text] has no `$PATH` substitution yet. */
     private inner class Validator(val node: RdfResource, val ask: Boolean, val text: String) {
         val messages = index.objects(node, SHACL.message).filterIsInstance<Literal>()
-        val prologue = SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index))
+        val prologue = SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index), text, index)
         val annotations = compileResultAnnotations(node, index)
     }
 
@@ -171,7 +171,7 @@ internal class SparqlComponentCatalog private constructor(
             SparqlQueryTemplate.substitutePath(validator.text, path?.let { { SparqlConstraintCompilation.renderSparqlPath(it) } })
         }
         val template = SparqlQueryTemplate.compileRestricted(
-            validator.prologue, body, preBound, "Validator ${validator.node} of constraint component ${component.iri}",
+            validator.prologue, body, preBound, "Validator ${validator.node} of constraint component ${component.iri}", index.budget,
         )
         val messages = validator.messages.ifEmpty { index.objects(component.iri, SHACL.message).filterIsInstance<Literal>() }
         // One constraint per combination of the values of the parameters the shape has; absent optional ones stay unbound.

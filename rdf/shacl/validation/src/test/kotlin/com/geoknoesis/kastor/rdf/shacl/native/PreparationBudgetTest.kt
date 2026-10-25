@@ -219,4 +219,14 @@ class PreparationBudgetTest {
         )
         assertFailsWith<ShapeCompileException> { ShapesCompiler.compile(shapes, ValidationConfig()) }
     }
+    @Test fun `a compiled graph does not keep the budget of the run that compiled it`() {
+        var expired = false
+        val budget = ValidationBudget(Duration.ofSeconds(1)) { if (expired) 1_000_000_000_000L else 0L }
+        val compiled = ShapesCompiler.compile(triples, ValidationConfig(), budget)
+        expired = true
+        // A later run that shares the cached graph must not be timed by the first run's clock.
+        repeat(1_000) { compiled.index.tick("later run") }
+        compiled.index.parseRdfList(RDF.nil)
+        assertSame(ValidationBudget.NONE, compiled.index.budget)
+    }
 }

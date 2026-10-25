@@ -107,9 +107,24 @@ internal class ShapeReads(
 /**
  * The shapes some reads ([ShapeReads]) depend on: [strict] ones, compiled like any referenced shape, and the
  * [candidates] of computed shape references, compiled tolerantly (R8, see [CandidateCompilation.compileCandidates]).
+ *
+ * A computed shape whose outputs are not known before evaluation may be any IRI shape ([anyIriShape],
+ * [ExpressionShapes.iriCandidates]) or any shape at all ([anyShape], [ExpressionShapes.allCandidates]). Those sets
+ * are kept symbolic, never copied into [candidates]: with many such shapes, copies would cost memory quadratic in
+ * the size of the shapes graph.
  */
-internal class Dependencies(val strict: Set<RdfResource>, val candidates: Set<RdfResource>) {
-    val all: Set<RdfResource> get() = strict + candidates
+internal class Dependencies(
+    val strict: Set<RdfResource>,
+    val candidates: Set<RdfResource>,
+    val anyIriShape: Boolean = false,
+    val anyShape: Boolean = false,
+) {
+    /** Every candidate, the symbolic sets expanded over [shapes] (for tests and small graphs only). */
+    fun expandedCandidates(shapes: ExpressionShapes): Set<RdfResource> = when {
+        anyShape -> candidates + shapes.allCandidates
+        anyIriShape -> candidates + shapes.iriCandidates
+        else -> candidates
+    }
 }
 
 /**
@@ -217,23 +232,48 @@ internal class ShapeDependencyResolver(
     /** The dependencies of [reads]. */
     fun resolve(reads: ShapeReads): Dependencies {
         val strict = LinkedHashSet<RdfResource>(reads.refs)
-        val candidates = LinkedHashSet<RdfResource>()
+        val candidates = Candidates()
         val calls = ArrayList<ShapeGraphIndex.SparqlFunctionCalls>()
         for (query in reads.queries) calls.add(index.callsOf(query))
         for (expr in reads.expressions) {
             budget.tick("shape compilation")
             strict.addAll(exprShapes.strict(expr))
-            candidates.addAll(exprShapes.candidates(expr))
+            candidates.add(exprShapes.candidates(expr))
             NodeExpressions.selects(expr, index).forEach { calls.add(index.callsOf(it.node)) }
         }
-        for (expr in reads.computedShapes) candidates.addAll(exprShapes.nodeByExpressionCandidates(expr))
+        for (expr in reads.computedShapes) candidates.add(exprShapes.nodeByExpressionCandidates(expr))
         for (function in calledFunctions(calls)) {
             val body = bodyDependencies(function) ?: continue
             strict.addAll(body.strict)
-            candidates.addAll(body.candidates)
+            candidates.add(body)
         }
-        candidates.removeAll(strict)
-        return Dependencies(strict, candidates)
+        return candidates.toDependencies(strict)
+    }
+
+    /** Candidates being collected: explicit ones, and the two symbolic sets of [ExpressionShapes] recognised by identity. */
+    private inner class Candidates {
+        val explicit = LinkedHashSet<RdfResource>()
+        var anyIri = false
+        var any = false
+
+        fun add(set: Set<RdfResource>) {
+            when {
+                set === exprShapes.allCandidates -> any = true
+                set === exprShapes.iriCandidates -> anyIri = true
+                else -> set.forEach { budget.tick("shape compilation"); explicit.add(it) }
+            }
+        }
+
+        fun add(dependencies: Dependencies) {
+            any = any || dependencies.anyShape
+            anyIri = anyIri || dependencies.anyIriShape
+            dependencies.candidates.forEach { budget.tick("shape compilation"); explicit.add(it) }
+        }
+
+        fun toDependencies(strict: Set<RdfResource>): Dependencies {
+            explicit.removeAll(strict)
+            return Dependencies(strict, explicit, anyIriShape = anyIri && !any, anyShape = any)
+        }
     }
 
     /** The dependencies of one node expression ([ShapeReads.expressions] of its own). */
@@ -268,7 +308,8 @@ internal class ShapeDependencyResolver(
         val body = declaration.body
         if (body is NodeExpression.Select) return null
         return bodyDependencies.getOrPut(declaration.iri.value) {
-            Dependencies(exprShapes.strict(body), exprShapes.candidates(body))
+            val strict = exprShapes.strict(body)
+            Candidates().apply { add(exprShapes.candidates(body)) }.toDependencies(strict)
         }
     }
 }
@@ -288,28 +329,54 @@ internal object ShapeDependencies {
         resolver: ShapeDependencyResolver,
         budget: ValidationBudget,
     ): Map<RdfResource, Int> {
-        val successors = dependencyGraph(refNodes, refProps, resolver)
-        val components = stronglyConnectedComponents(successors.keys.toList(), budget) { v -> successors[v].orEmpty().filter { it in successors } }
+        val dependencies = dependencyGraph(refNodes, refProps, resolver)
+        // A dependency on every IRI shape (or every shape) is one edge to a hub vertex, whose successors are those
+        // shapes: reachability, and so the components, are those of the expanded graph, with a linear edge count.
+        val exprShapes = resolver.exprShapes
+        val iriHub = exprShapes.iriCandidates.filter { it in dependencies }
+        val anyHub = exprShapes.allCandidates.filter { it in dependencies }
+        val successors: (Any) -> List<Any> = { v ->
+            when (v) {
+                ANY_IRI_SHAPE -> iriHub
+                ANY_SHAPE -> anyHub
+                else -> {
+                    val d = dependencies.getValue(v as RdfResource)
+                    val explicit: List<Any> = (d.strict.asSequence() + d.candidates.asSequence()).filter { it in dependencies }.toList()
+                    when {
+                        d.anyShape -> explicit + ANY_SHAPE
+                        d.anyIriShape -> explicit + ANY_IRI_SHAPE
+                        else -> explicit
+                    }
+                }
+            }
+        }
+        val components = stronglyConnectedComponents(dependencies.keys.toList<Any>(), budget, successors)
         val out = HashMap<RdfResource, Int>()
         var id = 0
         for (component in components) {
-            if (component.size > 1 || successors[component[0]].orEmpty().contains(component[0])) {
-                component.forEach { out[it] = id }
+            val shapes = component.filterIsInstance<RdfResource>()
+            if (shapes.isEmpty()) continue
+            if (component.size > 1 || shapes[0] in successors(shapes[0])) {
+                shapes.forEach { out[it] = id }
                 id++
             }
         }
         return out
     }
 
-    /** The static shape dependency graph of [recursiveComponents]: each shape's successors. */
+    /** The hub vertices of [recursiveComponents] (never shapes). */
+    private val ANY_IRI_SHAPE = Any()
+    private val ANY_SHAPE = Any()
+
+    /** The static shape dependency graph of [recursiveComponents]: each shape's [Dependencies]. */
     internal fun dependencyGraph(
         refNodes: Map<RdfResource, CompiledNodeShape>,
         refProps: Map<RdfResource, CompiledPropertyShape>,
         resolver: ShapeDependencyResolver,
-    ): Map<RdfResource, Set<RdfResource>> {
-        val successors = HashMap<RdfResource, Set<RdfResource>>()
-        for ((node, ps) in refProps) successors[node] = resolver.resolve(ShapeReads.of(ps)).all
-        for ((node, cn) in refNodes) if (node !in refProps) successors[node] = resolver.resolve(ShapeReads.of(cn)).all
-        return successors
+    ): Map<RdfResource, Dependencies> {
+        val dependencies = HashMap<RdfResource, Dependencies>()
+        for ((node, ps) in refProps) dependencies[node] = resolver.resolve(ShapeReads.of(ps))
+        for ((node, cn) in refNodes) if (node !in refProps) dependencies[node] = resolver.resolve(ShapeReads.of(cn))
+        return dependencies
     }
 }

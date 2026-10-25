@@ -22,6 +22,7 @@ object ValidatorRegistry {
     /**
      * Register a validator provider.
      */
+    @JvmStatic
     fun register(provider: ShaclValidatorProvider) {
         providers[provider.getType()] = provider
     }
@@ -29,6 +30,7 @@ object ValidatorRegistry {
     /**
      * Create a validator with the given configuration.
      */
+    @JvmStatic
     fun createValidator(config: ValidationConfig): ShaclValidator = resolveProvider(config).createValidator(config)
 
     /** The provider [createValidator] uses for [config] (explicit [ValidationConfig.providerId], else preference order). */
@@ -59,6 +61,7 @@ object ValidatorRegistry {
     /**
      * Create a validator for a specific profile.
      */
+    @JvmStatic
     fun createValidator(profile: ValidationProfile): ShaclValidator {
         val config = when (profile) {
             ValidationProfile.SHACL_CORE -> ValidationConfig.shaclCore()
@@ -73,6 +76,7 @@ object ValidatorRegistry {
     /**
      * Discover all available validator providers.
      */
+    @JvmStatic
     fun discoverProviders(): List<ShaclValidatorProvider> {
         val discoveredProviders = mutableListOf<ShaclValidatorProvider>()
         try {
@@ -100,11 +104,13 @@ object ValidatorRegistry {
     /**
      * Get all registered providers.
      */
+    @JvmStatic
     fun getProviders(): List<ShaclValidatorProvider> = ArrayList(providers.values)
 
     /**
      * Get supported validation profiles.
      */
+    @JvmStatic
     fun getSupportedProfiles(): List<ValidationProfile> =
         providers.values
             .flatMap { it.getSupportedProfiles() }
@@ -114,18 +120,21 @@ object ValidatorRegistry {
     /**
      * Check if a validation profile is supported.
      */
+    @JvmStatic
     fun isSupported(profile: ValidationProfile): Boolean =
         providers.values.any { providerMatchesProfile(it, profile) }
 
     /**
      * Get providers that support a specific profile.
      */
+    @JvmStatic
     fun getProvidersForProfile(profile: ValidationProfile): List<ShaclValidatorProvider> =
         providers.values.filter { providerMatchesProfile(it, profile) }
 
     /**
      * Get the best provider for a profile based on capabilities and stable ordering.
      */
+    @JvmStatic
     fun getBestProviderForProfile(profile: ValidationProfile): ShaclValidatorProvider? {
         val supportingProviders = getProvidersForProfile(profile)
         if (supportingProviders.isEmpty()) return null
@@ -135,6 +144,7 @@ object ValidatorRegistry {
     /**
      * Clear all registered providers (mainly for testing).
      */
+    @JvmStatic
     fun clear() {
         providers.clear()
     }
@@ -142,6 +152,7 @@ object ValidatorRegistry {
     /**
      * Get registry statistics.
      */
+    @JvmStatic
     fun getRegistryStatistics(): RegistryStatistics {
         val allProfiles = ValidationProfile.values().toList()
         val supportedProfiles = getSupportedProfiles()

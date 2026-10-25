@@ -146,7 +146,8 @@ class ShapeDependencyAgreementTest {
             // follows, the closure compiled.
             val resolver = ShapeDependencyResolver(ExpressionShapes(graph.index), graph.functions, ValidationBudget.NONE)
             val graphEdges = ShapeDependencies.dependencyGraph(graph.referencedNodeShapes, graph.referencedPropertyShapes, resolver)
-            for ((shape, successors) in graphEdges) {
+            for ((shape, dependencies) in graphEdges) {
+                val successors = dependencies.strict + dependencies.expandedCandidates(resolver.exprShapes)
                 val missing = successors.filter { it !in compiled && it !in graph.candidateErrors }
                 check("the successors $missing of $shape are compiled", missing.isEmpty())
             }

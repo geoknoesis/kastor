@@ -211,18 +211,18 @@ public final class com/geoknoesis/kastor/rdf/shacl/ShaclShape {
 
 public final class com/geoknoesis/kastor/rdf/shacl/ShaclValidation {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidation;
-	public final fun fastValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun getBestProvider (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
-	public final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
-	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
-	public final fun largeGraphValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun memoryConstrainedValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun strictValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun supportedProfiles ()Ljava/util/List;
-	public final fun validator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun validatorProviders ()Ljava/util/List;
+	public static final fun fastValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun getBestProvider (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
+	public static final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public static final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public static final fun largeGraphValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun memoryConstrainedValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun strictValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun supportedProfiles ()Ljava/util/List;
+	public static final fun validator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun validatorProviders ()Ljava/util/List;
 }
 
 public class com/geoknoesis/kastor/rdf/shacl/ShaclValidationException : java/lang/RuntimeException {
@@ -529,6 +529,7 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationReportNormalization
 }
 
 public final class com/geoknoesis/kastor/rdf/shacl/ValidationReportRdfKt {
+	public static final fun toShaclValidationReportRdf (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public static final fun toShaclValidationReportRdf (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public static synthetic fun toShaclValidationReportRdf$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Lcom/geoknoesis/kastor/rdf/RdfResource;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 }
@@ -725,17 +726,17 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities {
 
 public final class com/geoknoesis/kastor/rdf/shacl/ValidatorRegistry {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/ValidatorRegistry;
-	public final fun clear ()V
-	public final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
-	public final fun discoverProviders ()Ljava/util/List;
-	public final fun getBestProviderForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
-	public final fun getProviders ()Ljava/util/List;
-	public final fun getProvidersForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Ljava/util/List;
-	public final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
-	public final fun getSupportedProfiles ()Ljava/util/List;
-	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
-	public final fun register (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;)V
+	public static final fun clear ()V
+	public static final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public static final fun discoverProviders ()Ljava/util/List;
+	public static final fun getBestProviderForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
+	public static final fun getProviders ()Ljava/util/List;
+	public static final fun getProvidersForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Ljava/util/List;
+	public static final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public static final fun getSupportedProfiles ()Ljava/util/List;
+	public static final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public static final fun register (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;)V
 }
 
 public final class com/geoknoesis/kastor/rdf/shacl/ViolationSeverity : java/lang/Enum {

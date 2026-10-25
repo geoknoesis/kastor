@@ -49,7 +49,8 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
 
 - **Conformance.** `ValidationReport.isValid` mirrors `sh:conforms`: it is `false` as soon as the engine reports a
   result with severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity (SHACL 1.2 `sh:Debug` /
-  `sh:Trace` results do not affect conformance). Use `ValidationReport.hasViolations` to ignore lower severities.
+  `sh:Trace` results do not affect conformance). Use `ValidationReport.hasViolations` to ignore lower severities; on a
+  truncated report (`violationsTruncated`) it returns `true`, since the results that were not kept may block.
 - **Value nodes and recursion.** Value nodes are sets. Nested shape checks (`sh:node`, `sh:and`/`sh:or`/`sh:xone`/
   `sh:not`, qualified value shapes, `sh:shape`, `sh:someValue`, `sh:memberShape`, `sh:reifierShape`) accept literal
   value nodes, are memoized per (value node, shape) within a run, and treat deactivated or constraint-free shapes as

@@ -20,7 +20,7 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * `sh:conforms` mirrors [ValidationReport.isValid]: per SHACL, a report conforms only when it has no
  * validation results of any severity. `sh:resultPath` is exported in full: engines that populate
  * [ValidationViolation.resultPathNode] get their complete path structure copied (with fresh blank nodes
- * per result); otherwise a single IRI or a sequence of IRIs from [ValidationViolation.path] is used.
+ * per result; see copyPathStructure for shared blank nodes); otherwise a single IRI or a sequence of IRIs from [ValidationViolation.path] is used.
  * `sh:resultMessage` uses [ValidationViolation.resultMessages] (the shape's `sh:message` values, language
  * tags preserved) when present, else the engine message.
  *
@@ -41,6 +41,7 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
  * in this serialization.
  */
+@JvmOverloads
 fun ValidationReport.toShaclValidationReportRdf(
     reportNode: RdfResource = bnode("ValidationReport"),
 ): RdfGraph =
@@ -107,26 +108,64 @@ private fun GraphDsl.addValidationResult(
 }
 
 /**
- * Copies a blank-node path structure as a tree with fresh blank nodes: results never share path nodes, and a
- * blank node referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is unfolded per occurrence.
- * List cells named with IRIs keep their IRI; their `rdf:first` / `rdf:rest` triples are copied too.
+ * The most nodes the unfolded copy of one `sh:resultPath` may have. Up to it, the copy is a tree, as the W3C test
+ * suite expects (`path-complex-002`: `( _:inv _:inv )` is reported as two `sh:inversePath` nodes); beyond it (a path
+ * whose blank nodes are shared level after level unfolds exponentially) the copy shares nodes as the source does.
+ */
+private const val MAX_UNFOLDED_RESULT_PATH_NODES = 1024
+
+/**
+ * Copies a blank-node path structure with fresh blank nodes, so that results never share path nodes. A blank node
+ * referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is unfolded per occurrence, as a tree, when
+ * the tree has at most [MAX_UNFOLDED_RESULT_PATH_NODES] nodes; otherwise (or on a cycle) each source blank node gets
+ * one copy, shared as in the source, so the copy is never larger than [triples]. List cells named with IRIs keep
+ * their IRI; their `rdf:first` / `rdf:rest` triples are copied too.
  */
 private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoesis.kastor.rdf.RdfTriple>, prefix: String): RdfTerm {
     if (root !is BlankNode) return root
     val bySubject = triples.groupBy { it.subject }
-    var counter = 0
-    fun copy(term: RdfTerm, ancestors: Set<RdfResource>): RdfTerm {
-        if (term !is RdfResource || term in ancestors) return term
-        val described = bySubject[term]
-        // An IRI is kept; it is only expanded when the path structure describes it (an IRI-named list cell).
-        if (term !is BlankNode && described == null) return term
-        val copied: RdfResource = if (term is BlankNode) bnode("${prefix}p${counter++}") else term
-        for (t in described.orEmpty()) {
-            triple(copied, t.predicate, copy(t.obj, ancestors + term))
-        }
-        return copied
+    fun described(term: RdfTerm): Boolean = term is BlankNode || (term is RdfResource && term in bySubject)
+    // The size of the unfolded tree, memoised per node and capped: a cycle or a tree beyond the limit is "too large".
+    val sizes = HashMap<RdfTerm, Int>()
+    val tooLarge = MAX_UNFOLDED_RESULT_PATH_NODES + 1
+    fun treeSize(term: RdfTerm, depth: Int): Int {
+        if (!described(term)) return 0
+        sizes[term]?.let { return it }
+        if (depth > MAX_UNFOLDED_RESULT_PATH_NODES) return tooLarge
+        sizes[term] = tooLarge // a node reached again before its size is known lies on a cycle
+        var size = 1
+        for (t in bySubject[term].orEmpty()) size = minOf(tooLarge, size + treeSize(t.obj, depth + 1))
+        sizes[term] = size
+        return size
     }
-    return copy(root, emptySet())
+    var counter = 0
+    if (treeSize(root, 0) <= MAX_UNFOLDED_RESULT_PATH_NODES) {
+        fun copy(term: RdfTerm): RdfTerm {
+            if (!described(term)) return term
+            val copied: RdfResource = if (term is BlankNode) bnode("${prefix}p${counter++}") else term as RdfResource
+            for (t in bySubject[term].orEmpty()) triple(copied, t.predicate, copy(t.obj))
+            return copied
+        }
+        return copy(root)
+    }
+    val copies = HashMap<RdfResource, RdfResource>()
+    val pending = ArrayDeque<RdfResource>()
+    fun copyOf(term: RdfTerm): RdfTerm {
+        if (!described(term)) return term
+        val resource = term as RdfResource
+        copies[resource]?.let { return it }
+        val copy: RdfResource = if (term is BlankNode) bnode("${prefix}p${counter++}") else resource
+        copies[resource] = copy
+        pending.addLast(resource)
+        return copy
+    }
+    val result = copyOf(root)
+    while (pending.isNotEmpty()) {
+        val node = pending.removeFirst()
+        val copy = copies.getValue(node)
+        for (t in bySubject[node].orEmpty()) triple(copy, t.predicate, copyOf(t.obj))
+    }
+    return result
 }
 
 /** The copies of the source constraint blank nodes written in one report: their labels, by shapes graph and node. */
