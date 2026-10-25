@@ -140,6 +140,24 @@ and is kept as is; it was never published to Maven Central.
 
 #### Core (core, sparql-contract, sparql-lang, testkit, reasoning, holon)
 
+- **Breaking (URL loading): only public addresses by default.** `UrlLoadOptions.addressPolicy` now defaults to
+  `UrlAddressPolicy.PUBLIC_ADDRESSES`, for `UrlLoadOptions()`, `UrlLoadOptions.DEFAULT` and every
+  `Rdf.parseFromUrl` / `parseFromUrlAsync` / `parseDatasetFromUrl` call without options. The policy checks the URL a
+  load starts with and every redirect target. Loopback (`localhost`, `127.0.0.1`, `::1`), private (`10/8`,
+  `172.16/12`, `192.168/16`, `fc00::/7`), link-local (`169.254.169.254`) and other non-public addresses, and URLs
+  without a host (`file:`, `jar:`), now fail with `RdfAddressRefusedException` before any request is sent. Host names
+  are resolved to check them.
+  - **Migration:** to load from localhost, the internal network or a trusted `file:` URL, pass the new
+    `UrlLoadOptions.ALLOW_ALL_ADDRESSES`, or `addressPolicy = UrlAddressPolicy.ALLOW_ALL`. Combine either with other
+    settings through `copy(...)`, for example `UrlLoadOptions.ALLOW_ALL_ADDRESSES.copy(allowedSchemes = setOf("file"))`.
+  - The limits of `PUBLIC_ADDRESSES` are unchanged and documented: DNS rebinding, and proxies resolving names
+    themselves. All in-repo tests that use local servers opt in explicitly.
+- Added (core): `RdfExtensionException`, the open, `@JvmOverloads` base of the sealed `RdfException` hierarchy for
+  exceptions defined in extension modules and applications. It comes with the error code
+  `RdfErrorCode.EXTENSION_ERROR`.
+- **Breaking (rdf-holon):** `HolonException` extends `RdfExtensionException` instead of `RuntimeException`, so
+  `catch (e: RdfException)` catches holon failures. Its `errorCode` is `EXTENSION_ERROR`, and `condition` still names
+  the RDF-H error. For Java callers it is now a checked exception, like every `RdfException`.
 - Security: a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
   function library. This covers dataset clauses added for graphs of one repository, and `GRAPH` patterns rewritten for
   a dataset of the store's default graph. Before, it sent a plain `SparqlSelectQuery`: the provider ran the untrusted
@@ -175,8 +193,8 @@ and is kept as is; it was never published to Maven Central.
   `HolonGraph` lookups on M use subject and predicate indexes, so conversion and resolution no longer scan M once per
   holon.
 - Docs: KDoc relates `SparqlExtensionFunction` (engine metadata, never executed) to `SparqlFunction` (executable, one
-  query). It also states that `HolonException` is not an `RdfException`. `how-to-use-datasets.md` describes sandboxed
-  queries on datasets and the cost of holon query datasets.
+  query). `how-to-use-datasets.md` describes sandboxed queries on datasets and the cost of holon query datasets.
+  `how-to-parse-rdf.md`, `core-api.md` and `api-reference.md` describe the new URL default and `RdfExtensionException`.
 - Code organization: the SPARQL dataset-clause scanner moved from `DatasetImpl.kt` to `SparqlDatasetClauses.kt`, and
   `UrlLoadCancellation` moved out of `Rdf.kt`. The complexity ceilings follow: `DatasetImpl.kt` no longer needs one, and
   the `Rdf.kt` ceiling drops from 971 to 928 lines.
