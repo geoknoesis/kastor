@@ -20,7 +20,8 @@ import kotlin.test.fail
  * evaluating anything, and its custom functions are visible) or refuses the query outright with
  * [UnsupportedOperationException]. No path may run the query as a trusted one.
  *
- * Which cases refuse is fixed ([mustRefuse]): the graph-only `memory` repository itself, and the timed
+ * Which cases refuse is fixed ([mustRefuse]): the graph-only `memory` repository itself, an RDF4J repository over a
+ * store Kastor did not create (except through a materialized dataset, which copies its graphs), and the timed
  * `withSelectRows` of every [Dataset] view. Every other case must run the query, so a regression that made a provider
  * refuse all sandboxed queries (which would break SHACL-SPARQL) fails here instead of passing as a refusal.
  *
@@ -39,7 +40,7 @@ class SandboxedQueryContractTest {
         "jena" to { JenaRepository.MemoryRepository() },
         "rdf4j" to { Rdf4jRepository.MemoryRepository() },
         // A store Kastor did not create: it cannot be held to the sandbox, so every sandboxed query is refused.
-        "rdf4j (wrapped plain store)" to {
+        WRAPPED to {
             Rdf4jRepository(org.eclipse.rdf4j.repository.sail.SailRepository(org.eclipse.rdf4j.sail.memory.MemoryStore()).also { it.init() })
         },
     )
@@ -52,6 +53,15 @@ class SandboxedQueryContractTest {
 
     private val repositoryPath = Path("repository") { repo, _ -> repo }
 
+    private val materializedPath = Path("materialized dataset") { repo, resources ->
+        val other = Rdf.memory().also(resources::add)
+        other.editGraph(n1)
+        Dataset {
+            defaultGraph(repo)
+            namedGraph(n1, other, n1)
+        }
+    }
+
     private val paths = listOf(
         repositoryPath,
         Path("in-place dataset (FROM clauses)") { repo, _ ->
@@ -61,19 +71,13 @@ class SandboxedQueryContractTest {
             }
         },
         Path("store-default dataset (GRAPH rewrite)") { repo, _ -> Dataset { defaultGraph(repo) } },
-        Path("materialized dataset") { repo, resources ->
-            val other = Rdf.memory().also(resources::add)
-            other.editGraph(n1)
-            Dataset {
-                defaultGraph(repo)
-                namedGraph(n1, other, n1)
-            }
-        },
+        materializedPath,
     )
 
     /** The cases that refuse a sandboxed query with [UnsupportedOperationException]; every other case runs it. */
     private fun mustRefuse(provider: String, path: Path, call: String): Boolean =
-        (provider == "memory" && path === repositoryPath) || (call == TIMED && path !== repositoryPath)
+        (provider == "memory" && path === repositoryPath) || (provider == WRAPPED && path !== materializedPath) ||
+            (call == TIMED && path !== repositoryPath)
 
     /** The ways a SELECT reaches a queryable. */
     private val calls: Map<String, (SparqlQueryable, SparqlSelect) -> List<BindingSet>> = linkedMapOf(
@@ -146,5 +150,6 @@ class SandboxedQueryContractTest {
 
     private companion object {
         const val TIMED = "timed withSelectRows"
+        const val WRAPPED = "rdf4j (wrapped plain store)"
     }
 }
