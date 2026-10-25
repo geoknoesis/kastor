@@ -390,6 +390,14 @@ entries are regrouped under those kind headings.
   and the read watchdog read one injected clock. `SparqlEndpointTimeoutTest`'s request-timeout / per-call-timeout test
   runs on a test clock and a fake transport instead of a local server, sleeps and a 1 s budget for local headers, so
   its outcome no longer depends on the host's speed.
+- **Fixed (Jena, RDF4J, SHACL):** a query stopped by its time limit (`withSelectRows(query, bindings, timeout)`, also
+  sandboxed) fails with `SPARQL query stopped: it reached its time limit of <n> ms` on both providers. Jena said
+  `SPARQL execution failed: null` (its cancellation has no message), RDF4J `Query evaluation took too long` or `The
+  sandboxed query ran out of time`. A cancellation counts as the time limit only once the deadline has passed. A SHACL
+  validation whose SHACL-SPARQL query runs out of time fails with the validation's own message, which names
+  `ValidationConfig.timeout` (`SHACL validation timed out: it reached the validation time limit of <n> ms`), with the
+  query failure as its cause; an interrupted validation says it was cancelled. (These messages said "timed out or was
+  cancelled".)
 
 ### Round twelve
 

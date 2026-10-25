@@ -12,10 +12,24 @@ internal class ValidationBudget(
 ) {
     private val started = clock()
     private val allowed = timeout?.toNanos()
+    private val limitMillis = timeout?.toMillis()
+
+    /** Throws [ShaclValidationException] when the time is up or the thread was interrupted. */
     fun check(phase: String = "validation") {
-        if (Thread.currentThread().isInterrupted || (allowed != null && clock() - started >= allowed)) {
-            throw ShaclValidationException("SHACL $phase timed out or was cancelled")
-        }
+        failure(phase, null)?.let { throw it }
+    }
+
+    /**
+     * The failure [check] would throw, with [cause] attached (a query that the time limit stopped, say), or null when
+     * there is time left. The message says which of the two ended the run, and names the time limit.
+     */
+    fun failure(phase: String, cause: Throwable?): ShaclValidationException? = when {
+        Thread.currentThread().isInterrupted -> ShaclValidationException("SHACL $phase was cancelled: the thread was interrupted", cause)
+        allowed != null && clock() - started >= allowed -> ShaclValidationException(
+            "SHACL $phase timed out: it reached the validation time limit of $limitMillis ms (ValidationConfig.timeout)",
+            cause,
+        )
+        else -> null
     }
     private var ticks = 0
 

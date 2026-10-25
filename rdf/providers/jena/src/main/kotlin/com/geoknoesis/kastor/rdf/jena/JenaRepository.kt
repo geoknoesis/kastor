@@ -1067,19 +1067,20 @@ class JenaRepository private constructor(
             if (deadline != Long.MAX_VALUE) builder.timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS)
             builder.build()
         }
-        exec.use { consumeRows(it, query.sparql, deadline.takeIf { it != Long.MAX_VALUE }, consume) }
+        val timeLimit = if (deadline == Long.MAX_VALUE) null else JenaTimeLimit(timeout, deadline) { hooks.clock() }
+        exec.use { consumeRows(it, query.sparql, timeLimit, consume) }
     }
 
     private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T =
         consumeRows(exec, sparql, null, consume)
 
-    private fun <T> consumeRows(exec: QueryExecution, sparql: String, deadline: Long?, consume: (Sequence<BindingSet>) -> T): T {
-        val results = queryOperation(sparql) { withDeadline(deadline) { exec.execSelect() } }
+    private fun <T> consumeRows(exec: QueryExecution, sparql: String, timeLimit: JenaTimeLimit?, consume: (Sequence<BindingSet>) -> T): T {
+        val results = jenaQueryOperation(sparql, timeLimit) { withDeadline(timeLimit?.deadline) { exec.execSelect() } }
         JenaQuerySandbox.requireBounded(exec)
         val rows = results.asSequence().map { row ->
             MapBindingSet(JenaTerms.rowValues(row)) as BindingSet
         }
-        return consume(rows.guardedBy(sparql, deadline))
+        return consume(rows.guardedBy(sparql, timeLimit) { hooks.clock() })
     }
 
     private inline fun <T> withDeadline(deadline: Long?, crossinline block: () -> T): T =
@@ -1089,7 +1090,7 @@ class JenaRepository private constructor(
         val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
         exec.use {
             val triples = queryOperation(query.sparql) { it.execConstructTriples() }
-            consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql))
+            consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql, null) { hooks.clock() })
         }
     }
 
@@ -1228,29 +1229,8 @@ class JenaRepository private constructor(
 
     internal fun getJenaDataset(): Dataset = dataset
 
-    /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
-    private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
-        operation()
-    } catch (e: RdfException) {
-        throw e
-    } catch (e: Exception) {
-        throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query, cause = e)
-    }
-
-    /**
-     * Wraps engine failures raised while *iterating* results (e.g. timeouts, evaluation errors) as
-     * [RdfQueryException], while exceptions thrown by the consumer's own code are left untouched.
-     */
-    private fun <T> Sequence<T>.guardedBy(query: String, deadline: Long? = null): Sequence<T> {
-        val source = this
-        return Sequence {
-            val iterator = queryOperation(query) { withDeadline(deadline) { source.iterator() } }
-            object : Iterator<T> {
-                override fun hasNext(): Boolean = queryOperation(query) { withDeadline(deadline) { iterator.hasNext() } }
-                override fun next(): T = queryOperation(query) { withDeadline(deadline) { iterator.next() } }
-            }
-        }.constrainOnce()
-    }
+    /** Wraps failures of the query engine itself; never used around caller-supplied consumers (see [jenaQueryOperation]). */
+    private inline fun <T> queryOperation(query: String, operation: () -> T): T = jenaQueryOperation(query, null, operation)
 }
 
 /** Copy of a concurrently modified collection that tolerates elements removed while copying (unlike `toList()`). */

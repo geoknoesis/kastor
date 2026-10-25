@@ -453,9 +453,6 @@ class Rdf4jRepository(
 
         /** Default of [constructReifiesWindow]: bounds the memory of a streamed `CONSTRUCT` to this many triples. */
         internal const val DEFAULT_CONSTRUCT_REIFIES_WINDOW: Int = 65_536
-
-        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
-        private val DIRECTIONAL_LITERAL = Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
     /**
@@ -490,20 +487,6 @@ class Rdf4jRepository(
         if (nativeBase) foreignBlankContexts = repository.connection.use { conn -> !conn.isEmpty && blankContexts(conn).isNotEmpty() }
     }
 
-    /**
-     * Error message for a failed query. RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language
-     * literals (`"x"@ar--rtl`); that case gets an explicit explanation instead of a bare lexer error.
-     */
-    private fun failureMessage(prefix: String, query: String, e: Throwable): String {
-        val malformed = generateSequence<Throwable>(e) { it.cause }.any { it is org.eclipse.rdf4j.query.MalformedQueryException }
-        return if (malformed && DIRECTIONAL_LITERAL.containsMatchIn(query)) {
-            "$prefix: RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language literals (\"...\"@lang--dir). " +
-                "Pass such literals as query bindings (withSelectRows(query, bindings, timeout)) or use the graph API. (${e.message})"
-        } else {
-            "$prefix: ${e.message}"
-        }
-    }
-    
     private val valueFactory: ValueFactory = SimpleValueFactory.getInstance()
 
     // Guards against double close() (e.g. two threads, or close() inside a use{}
@@ -644,8 +627,9 @@ class Rdf4jRepository(
             val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, sparql).dataset else null
             // A timeout too long for a nanosecond deadline (about 292 years) is no deadline and no time limit.
             val deadline = Rdf4jQuerySandbox.deadlineAfter(clock(), timeout)
+            val timeLimit = if (deadline == Long.MAX_VALUE) null else Rdf4jTimeLimit(timeout, deadline, clock)
             val result = withFunctions(query, deadline, declared, conn) {
-                queryOperation(sparql) {
+                queryOperation(sparql, timeLimit = timeLimit) {
                     prepared.onKastorDataset(conn)
                     bound.placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
                     if (deadline != Long.MAX_VALUE) {
@@ -654,7 +638,7 @@ class Rdf4jRepository(
                     prepared.evaluate()
                 }
             }
-            result.use { consume(it.rows(sparql, hidden = bound.hidden)) }
+            result.use { consume(it.rows(sparql, bound.hidden, timeLimit)) }
         }
     }
 
@@ -674,11 +658,11 @@ class Rdf4jRepository(
     private fun checkSandboxed(prepared: org.eclipse.rdf4j.query.Query, sparql: String): org.eclipse.rdf4j.query.parser.ParsedQuery =
         (prepared as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery?.let(Rdf4jQuerySandbox::check) ?: checkSandboxed(sparql)
 
-    private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String, hidden: Set<String> = emptySet()): Sequence<BindingSet> =
+    private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String, hidden: Set<String> = emptySet(), timeLimit: Rdf4jTimeLimit? = null): Sequence<BindingSet> =
         iterator().asSequence().map { row ->
             val names = if (hidden.isEmpty()) row.bindingNames else row.bindingNames.filterNot { it in hidden }
             MapBindingSet(names.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
-        }.guardedBy(sparql)
+        }.guardedBy(sparql, timeLimit)
 
     /**
      * Gives a prepared query Kastor's dataset: outside `GRAPH`, patterns read the repository's default graph only (the
@@ -883,30 +867,26 @@ class Rdf4jRepository(
         query: String,
         what: String = "SPARQL execution failed",
         kind: String? = null,
+        timeLimit: Rdf4jTimeLimit? = null,
         operation: () -> T,
     ): T = try {
         operation()
     } catch (e: RdfException) {
         throw e
     } catch (e: Exception) {
-        throw queryFailure(what, kind, query, e)
+        throw Rdf4jQueryFailures.failure(what, kind, query, e, timeLimit)
     } catch (e: AssertionError) {
-        throw queryFailure("$what (RDF4J internal assertion)", kind, query, e)
-    }
-
-    private fun queryFailure(what: String, kind: String?, query: String, e: Throwable): RdfQueryException {
-        if (kind != null) RdfDebug.logQueryError(kind, query, "$what: ${e.message}")
-        return RdfQueryException(failureMessage(what, query, e), query = query, cause = e)
+        throw Rdf4jQueryFailures.failure("$what (RDF4J internal assertion)", kind, query, e, timeLimit)
     }
 
     /** Engine failures raised while iterating results become [RdfQueryException]; consumer code is not wrapped. */
-    private fun <T> Sequence<T>.guardedBy(query: String): Sequence<T> {
+    private fun <T> Sequence<T>.guardedBy(query: String, timeLimit: Rdf4jTimeLimit? = null): Sequence<T> {
         val source = this
         return Sequence {
-            val iterator = queryOperation(query) { source.iterator() }
+            val iterator = queryOperation(query, timeLimit = timeLimit) { source.iterator() }
             object : Iterator<T> {
-                override fun hasNext(): Boolean = queryOperation(query) { iterator.hasNext() }
-                override fun next(): T = queryOperation(query) { iterator.next() }
+                override fun hasNext(): Boolean = queryOperation(query, timeLimit = timeLimit) { iterator.hasNext() }
+                override fun next(): T = queryOperation(query, timeLimit = timeLimit) { iterator.next() }
             }
         }.constrainOnce()
     }
