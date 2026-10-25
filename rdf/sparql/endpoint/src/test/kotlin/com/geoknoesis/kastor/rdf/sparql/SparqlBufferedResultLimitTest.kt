@@ -106,4 +106,56 @@ class SparqlBufferedResultLimitTest {
         assertEquals(SparqlEndpointConfig.DEFAULT_MAX_BUFFERED_RESULT_BYTES, SparqlEndpointConfig(url).maxBufferedResultBytes)
         assertTrue(config.toString().contains("maxBufferedResultBytes=1234"), config.toString())
     }
+    // ------------------------------------------------------------------ what the shared caches hold is charged too
+
+    /** [count] rows, each binding `x` to a literal whose datatype is a distinct IRI of [chars] characters. */
+    private fun distinctDatatypes(count: Int, chars: Int) =
+        """{"head":{"vars":["x"]},"results":{"bindings":[${
+            List(count) { """{"x":{"type":"literal","value":"v","datatype":"urn:${it.toString().padStart(chars - 4, 'd')}"}}""" }.joinToString(",")
+        }]}}"""
+
+    /** [count] rows without `head`, each binding [width] variables with names of [chars] characters no other row uses. */
+    private fun distinctNames(count: Int, width: Int, chars: Int) =
+        """{"results":{"bindings":[${
+            List(count) { row ->
+                List(width) { v -> "\"${"v${row}_$v".padEnd(chars, 'n')}\":{\"type\":\"uri\",\"value\":\"urn:a\"}" }.joinToString(",", "{", "}")
+            }.joinToString(",")
+        }]}}"""
+
+    private fun decode(document: String): JsonBindingRows =
+        JsonBindingRows(document.byteInputStream()).also { decoder -> decoder.rows().forEach { _ -> } }
+
+    @Test
+    fun `distinct long datatype IRIs are charged to the rows that bring them`() {
+        // 2 000 distinct datatypes of 1 000 characters: about 4 MB of strings, whether cached or not.
+        val decoder = decode(distinctDatatypes(2_000, 1_000))
+        assertTrue(decoder.cacheBytes <= RowAssembler.MAX_CACHE_BYTES, "caches hold ${decoder.cacheBytes} bytes")
+        assertTrue(decoder.retainedBytes >= 2_000L * 2 * 1_000, "estimate ${decoder.retainedBytes} misses the datatype strings")
+        repository(distinctDatatypes(2_000, 1_000), maxBufferedResultBytes = 1024 * 1024).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+            assertTrue(e.message!!.contains("maxBufferedResultBytes"), e.message)
+        }
+    }
+
+    @Test
+    fun `wide rows of names no other row uses are charged to the rows`() {
+        // 400 rows of 40 variables with 50-character names: 16 000 names, 1.6 MB of name strings.
+        val decoder = decode(distinctNames(400, 40, 50))
+        assertTrue(decoder.cacheBytes <= RowAssembler.MAX_CACHE_BYTES, "caches hold ${decoder.cacheBytes} bytes")
+        assertTrue(decoder.retainedBytes >= 400L * 40 * 2 * 50, "estimate ${decoder.retainedBytes} misses the variable names")
+        // Names too long to be shared: 200 rows, each with one name of 3 000 characters.
+        val long = decode(distinctNames(200, 1, 3_000))
+        assertTrue(long.retainedBytes >= 200L * 2 * 3_000, "estimate ${long.retainedBytes} misses the variable names")
+        repository(distinctNames(400, 40, 50), maxBufferedResultBytes = 512 * 1024).use { repo ->
+            assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+        }
+    }
+
+    @Test
+    fun `the caches stop growing at their byte budget`() {
+        // 6 000 distinct datatypes of 1 000 characters would take about 12 MB of cache.
+        val decoder = decode(distinctDatatypes(6_000, 1_000))
+        assertTrue(decoder.cacheBytes <= RowAssembler.MAX_CACHE_BYTES, "caches hold ${decoder.cacheBytes} bytes")
+        assertTrue(decoder.retainedBytes >= 6_000L * 2 * 1_000, "estimate ${decoder.retainedBytes}")
+    }
 }

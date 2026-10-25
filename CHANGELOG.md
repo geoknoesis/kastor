@@ -30,6 +30,8 @@ and is kept as is; it was never published to Maven Central.
   3.5 times their response size, and the new `SparqlEndpointConfig.maxBufferedResultBytes` (default 256 MiB,
   provider option `maxBufferedResultBytes`) caps an estimate of the retained heap of `select`, graph reads and
   `listGraphs`: a result above it fails with `RdfQueryException` naming the setting. Streamed rows are not held to it.
+  The sharing caches are bounded by entries, by string and shape length and by one 4 MiB budget, and what they hold
+  is charged to the estimate, so distinct huge datatype IRIs or variable names cannot grow them outside the cap.
 - **Security (`rdf-sparql`):** a cross-origin redirect followed with `followCrossOriginRedirects = true` must now pass
   the new `SparqlEndpointConfig.redirectAddressPolicy`, default `UrlAddressPolicy.PUBLIC_ADDRESSES` (the core URL
   loading default): a redirect to loopback, a private or link-local address (`169.254.169.254`) or an unresolvable

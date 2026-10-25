@@ -73,6 +73,9 @@ internal class JsonBindingRows(
     /** Shares what repeats across rows and estimates what each row retains. */
     private val assembler = RowAssembler()
 
+    /** Estimated heap held by the caches that rows share (already part of [retainedBytes] once charged). */
+    internal val cacheBytes: Long get() = assembler.cacheBytes
+
     /** Estimated heap retained by the rows delivered so far (see [maxRetainedBytes]). */
     var retainedBytes = 0L
         private set

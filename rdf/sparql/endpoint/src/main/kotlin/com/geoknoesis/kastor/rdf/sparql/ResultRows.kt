@@ -67,8 +67,10 @@ internal object EmptyBindingSet : BindingSet {
  * language tags) and estimates the heap each row retains ([lastRowBytes]), so that a buffered result can be held to
  * [SparqlEndpointConfig.maxBufferedResultBytes].
  *
- * The caches are bounded ([MAX_CANONICAL], [MAX_SHAPES]): a hostile result with ever new names only stops being
- * shared, it cannot grow them.
+ * The caches are bounded by entries ([MAX_CANONICAL], [MAX_SHAPES]), by the length of what they hold
+ * ([MAX_CANONICAL_CHARS] per string and per shape) and by one byte budget for all of them ([MAX_CACHE_BYTES]): a
+ * hostile result with ever new or huge names only stops being shared, it cannot grow them. What a cache keeps is
+ * charged, once, to the row that first needed it, so the caches count against the heap estimate like the rows.
  */
 internal class RowAssembler {
     private val canonical = HashMap<String, String>()
@@ -80,6 +82,13 @@ internal class RowAssembler {
     private var terms = ArrayList<RdfTerm>()
     private var seen = HashSet<String>()
     private var bytes = 0L
+
+    /** Estimated heap of everything the caches hold; nothing more is cached once it reaches [MAX_CACHE_BYTES]. */
+    var cacheBytes = 0L
+        private set
+
+    /** Cache growth not yet charged to a row: charged to the next row [finish] returns. */
+    private var uncharged = 0L
 
     /** Estimated heap retained by the row [finish] returned last, the caller's reference to it included. */
     var lastRowBytes = 0L
@@ -94,16 +103,26 @@ internal class RowAssembler {
     fun share(text: String): String {
         if (text.length > MAX_CANONICAL_CHARS) return text
         canonical[text]?.let { return it }
-        if (canonical.size < MAX_CANONICAL) canonical[text] = text
+        if (canonical.size < MAX_CANONICAL && admit(CACHE_ENTRY + stringBytes(text))) canonical[text] = text
         return text
     }
 
-    /** The datatype [Iri] of [text], validated once per distinct datatype. */
+    /** The datatype [Iri] of [text], validated once per distinct datatype that is short enough to be cached. */
     fun datatype(text: String): Iri {
         datatypes[text]?.let { return it }
-        val iri = Iri(share(text))
-        if (datatypes.size < MAX_CANONICAL) datatypes[text] = iri
+        val shared = share(text)
+        val iri = Iri(shared)
+        // The string itself is charged by share() when it is cached; a datatype that is not is charged to its term.
+        if (canonical[shared] === shared && datatypes.size < MAX_CANONICAL && admit(CACHE_ENTRY + BOXED_TERM)) datatypes[shared] = iri
         return iri
+    }
+
+    /** Whether the caches may grow by [cost] bytes; if so, the growth is recorded to be charged to a row. */
+    private fun admit(cost: Long): Boolean {
+        if (cacheBytes + cost > MAX_CACHE_BYTES) return false
+        cacheBytes += cost
+        uncharged += cost
+        return true
     }
 
     /** Starts a row. */
@@ -136,19 +155,22 @@ internal class RowAssembler {
     /** The row built since [begin]. */
     fun finish(): BindingSet {
         if (names.isEmpty()) {
-            lastRowBytes = ROW_REFERENCE
+            lastRowBytes = ROW_REFERENCE + takeUncharged()
             return EmptyBindingSet
         }
         val shape = shapeOf(names)
-        lastRowBytes = ROW_REFERENCE + ROW_OBJECT + bytes
+        lastRowBytes = ROW_REFERENCE + ROW_OBJECT + bytes + takeUncharged()
         return CompactBindingSet(shape, terms.toTypedArray())
     }
 
     private fun shapeOf(names: List<String>): RowShape {
         lastShape?.let { if (it.matches(names)) return it }
         val shape = shapes[names] ?: RowShape(names.toTypedArray()).also { created ->
-            // A shape that cannot be cached is held by its row alone: charge it to the row.
-            if (shapes.size < MAX_SHAPES) shapes[names.toList()] = created else bytes += shapeBytes(names)
+            // A shape is cached when it is small and the caches have room (charged once, with the key that holds it);
+            // otherwise it is held by its row alone and charged to the row.
+            val cost = 2 * shapeBytes(names)
+            val small = names.sumOf { it.length } <= MAX_CANONICAL_CHARS
+            if (small && shapes.size < MAX_SHAPES && admit(cost)) shapes[names.toList()] = created else bytes += shapeBytes(names)
         }
         lastShape = shape
         return shape
@@ -164,7 +186,9 @@ internal class RowAssembler {
             else -> BOXED_TERM + stringBytes(term.toString())
         }
 
-    /** A string the caches may hold: free when it is the cached instance. */
+    private fun takeUncharged(): Long = uncharged.also { uncharged = 0 }
+
+    /** A string the caches may hold: free when it is the cached instance (charged when it was cached). */
     private fun sharedBytes(text: String): Long = if (canonical[text] === text) 0 else stringBytes(text)
 
     /** A datatype IRI: free when it is `xsd:string` (a constant) or the cached instance. */
@@ -179,6 +203,10 @@ internal class RowAssembler {
         const val MAX_CANONICAL_CHARS = 1024
         const val MAX_SHAPES = 256
         const val RETAINED_SCRATCH = 1024
+
+        /** One budget for everything the caches hold. */
+        const val MAX_CACHE_BYTES = 4L * 1024 * 1024
+        const val CACHE_ENTRY = 48L
 
         // Estimates for a 64-bit JVM, rounded up so that the estimate is not below the real retained size: object
         // headers of 16 bytes, 8-byte references, strings of two bytes per character (compact Latin-1 strings use one).
