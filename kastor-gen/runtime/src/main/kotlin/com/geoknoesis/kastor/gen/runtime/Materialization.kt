@@ -380,7 +380,7 @@ inline fun <reified T: Any> T.asRdf(): RdfHandle =
  * to the target graph, following blank nodes recursively but not following IRIs.
  *
  * **Blank nodes are copied, not shared.** Every blank node of the closure (including a blank-node `rdf.node`
- * written without [subject]) is written as a fresh blank node, the same fresh node for every occurrence within
+ * written without [subject], and blank nodes inside RDF 1.2 triple terms) is written as a fresh blank node, the same fresh node for every occurrence within
  * this call. Writing into a graph that already uses the same blank-node labels therefore never merges unrelated
  * nodes, and copying a resource to a new IRI in its own graph gives the copy its own nested nodes instead of
  * sharing them with the original. Each call allocates new nodes, so writing twice yields two copies of the nested
@@ -423,16 +423,17 @@ fun <T : RdfBacked> T.writeToGraph(
         ?: (originalSubject as? com.geoknoesis.kastor.rdf.BlankNode)?.let(::copy)
         ?: originalSubject
 
+    // Blank nodes are renamed wherever they occur, also inside (nested) RDF 1.2 triple terms.
+    fun rename(term: com.geoknoesis.kastor.rdf.RdfTerm): com.geoknoesis.kastor.rdf.RdfTerm = when (term) {
+        is com.geoknoesis.kastor.rdf.BlankNode -> if (term == originalSubject) newSubject else copy(term)
+        is com.geoknoesis.kastor.rdf.TripleTerm -> com.geoknoesis.kastor.rdf.TripleTerm(
+            term.triple.copy(subject = rename(term.triple.subject) as com.geoknoesis.kastor.rdf.RdfResource, obj = rename(term.triple.obj)),
+        )
+        else -> term
+    }
     val triplesToWrite = cbdTriples.map { triple ->
-        val s = when (val ts = triple.subject) {
-            originalSubject -> newSubject
-            is com.geoknoesis.kastor.rdf.BlankNode -> copy(ts)
-            else -> ts
-        }
-        val o = when (val to = triple.obj) {
-            is com.geoknoesis.kastor.rdf.BlankNode -> if (to == originalSubject) newSubject else copy(to)
-            else -> to
-        }
+        val s = if (triple.subject == originalSubject) newSubject else rename(triple.subject) as com.geoknoesis.kastor.rdf.RdfResource
+        val o = rename(triple.obj)
         if (s == triple.subject && o == triple.obj) triple else triple.copy(subject = s, obj = o)
     }
 
