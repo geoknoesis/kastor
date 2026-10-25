@@ -61,7 +61,9 @@ data class ProviderRequirements(
 )
 
 /**
- * Represents a SPARQL extension function.
+ * Describes a SPARQL extension function that an engine provides (metadata only: name, argument and return types), as
+ * listed in capabilities and service descriptions. Kastor never executes it. For a custom function that Kastor runs
+ * for one query, see [SparqlFunction] and [SandboxedSelectQuery.functions].
  */
 data class SparqlExtensionFunction(
     val iri: String,

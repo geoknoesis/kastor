@@ -58,6 +58,25 @@ sealed class RdfException(
 }
 
 /**
+ * The open base of the [RdfException] hierarchy for exceptions defined outside core, in Kastor extension modules
+ * (such as `HolonException` in `rdf-holon`) or in applications. [RdfException] is sealed, so its other subclasses are
+ * core's own; an extension subclasses this one, so `catch (e: RdfException)` sees its failures as well.
+ *
+ * A subclass passes its own [errorCode] when one of [RdfErrorCode] fits, and otherwise keeps
+ * [RdfErrorCode.EXTENSION_ERROR]; it identifies its failures more precisely with its own type and properties.
+ * Like every [RdfException] it is a checked exception for Java callers.
+ *
+ * @param message Human-readable error message
+ * @param errorCode Error code for programmatic handling (defaults to [RdfErrorCode.EXTENSION_ERROR])
+ * @param cause The underlying exception that caused this error
+ */
+open class RdfExtensionException @JvmOverloads constructor(
+    message: String,
+    errorCode: RdfErrorCode = RdfErrorCode.EXTENSION_ERROR,
+    cause: Throwable? = null,
+) : RdfException(message, errorCode, cause)
+
+/**
  * Exception thrown when SPARQL query operations fail.
  * 
  * @param message Human-readable error message

@@ -42,4 +42,15 @@ class SparqlFunctionsTest {
         assertNotEquals(SandboxedSelectQuery("q", lib), SandboxedSelectQuery("q"))
         assertNotEquals(SandboxedSelectQuery("q"), SandboxedSelectQuery("r"))
     }
+
+    @Test
+    fun `Java callers reach the library factory and the empty library as statics`() {
+        val type = SparqlFunctionLibrary::class.java
+        val empty = type.getField("EMPTY")
+        assertTrue(java.lang.reflect.Modifier.isStatic(empty.modifiers))
+        assertSame(SparqlFunctionLibrary.EMPTY, empty.get(null))
+        val of = type.getMethod("of", Collection::class.java)
+        assertTrue(java.lang.reflect.Modifier.isStatic(of.modifiers))
+        assertSame(f, (of.invoke(null, listOf(f)) as SparqlFunctionLibrary).function("urn:f"))
+    }
 }

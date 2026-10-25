@@ -24,16 +24,24 @@ class SandboxedSelectQuery @JvmOverloads constructor(
     override fun toString(): String = "SandboxedSelectQuery(sparql=$sparql)"
 }
 
-/** Custom functions visible to one sandboxed query and to every query its function bodies run. */
+/**
+ * Custom functions visible to one sandboxed query and to every query its function bodies run.
+ *
+ * Not to be confused with [SparqlExtensionFunction] and the SPARQL DSL's `SparqlExtensionFunctionRegistry`: those
+ * describe functions an engine already has (metadata for service descriptions and the DSL), are global, and are never
+ * executed by Kastor. A [SparqlFunction] is executable, and exists only for the query that carries its library.
+ */
 fun interface SparqlFunctionLibrary {
     /** The custom function with [iri], or null when this library has none. */
     fun function(iri: String): SparqlFunction?
 
     companion object {
         /** A library without functions. */
+        @JvmField
         val EMPTY: SparqlFunctionLibrary = SparqlFunctionLibrary { null }
 
         /** A library of [functions]; when several have the same IRI, the later one replaces the earlier ones. */
+        @JvmStatic
         fun of(functions: Collection<SparqlFunction>): SparqlFunctionLibrary {
             val byIri = LinkedHashMap<String, SparqlFunction>()
             functions.forEach { byIri[it.iri] = it }
@@ -76,6 +84,8 @@ interface SparqlFunctionCall {
 const val MAX_FUNCTION_DEPTH: Int = 16
 
 /**
+ * Provider helper (a provider calls it before [SparqlFunction.body]; applications do not need it).
+ *
  * The arguments a provider passes to [SparqlFunction.body]: [evaluated] holds one entry per actual argument
  * (null = evaluation error).
  *

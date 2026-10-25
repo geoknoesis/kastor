@@ -77,7 +77,7 @@ class UrlLoadingResourceTest {
             open = { uri -> connect(uri.toURL(), neverAnswers).also(opened::add) },
             onRelease = { released.countDown() },
         )
-        val options = UrlLoadOptions(connectTimeoutMillis = 10_000, readTimeoutMillis = 10_000, totalTimeoutMillis = 700)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, connectTimeoutMillis = 10_000, readTimeoutMillis = 10_000, totalTimeoutMillis = 700)
         val callers = Executors.newFixedThreadPool(burstLoads)
         cleanups.add { callers.shutdownNow() }
         val start = CountDownLatch(1)
@@ -192,7 +192,7 @@ class UrlLoadingResourceTest {
         val released = AtomicInteger()
         val pool = UrlLoadHelperPool(2).also { created -> cleanups.add { created.close() } }
         val runtime = UrlLoadRuntime(helpers = pool, onRelease = { released.incrementAndGet() })
-        val options = UrlLoadOptions(connectTimeoutMillis = 10_000, readTimeoutMillis = 10_000, totalTimeoutMillis = 500)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, connectTimeoutMillis = 10_000, readTimeoutMillis = 10_000, totalTimeoutMillis = 500)
         repeat(loads) {
             assertThrows(RdfLoadTimeoutException::class.java) {
                 openRdfUrlStream(url, RdfFormat.N_TRIPLES, options, runtime).read { it.readBytes() }
@@ -230,7 +230,7 @@ class UrlLoadingResourceTest {
                 "HTTP/1.1 200 OK\r\nContent-Type: application/n-triples\r\nContent-Length: ${body.size}\r\n\r\n".toByteArray() + body,
             )
         }
-        val options = UrlLoadOptions(readTimeoutMillis = 30_000)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, readTimeoutMillis = 30_000)
         repeat(2) { assertEquals(1, Rdf.parseFromUrl("${server.root}/ok.nt", RdfFormat.N_TRIPLES, options).size()) }
         assertTrue(server.closed.tryAcquire(2, 60, TimeUnit.SECONDS), "sockets closed: ${server.closed.availablePermits()} of ${server.accepted.get()}")
     }
@@ -247,7 +247,7 @@ class UrlLoadingResourceTest {
         }
         val pool = UrlLoadHelperPool(2).also { created -> cleanups.add { created.close() } }
         val runtime = UrlLoadRuntime(helpers = pool, nanoTime = clock::get)
-        val options = UrlLoadOptions(connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 100_000)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, connectTimeoutMillis = 60_000, readTimeoutMillis = 60_000, totalTimeoutMillis = 100_000)
 
         val error = assertThrows(RdfLoadTimeoutException::class.java) { openRdfUrlStream("$root/r0", RdfFormat.N_TRIPLES, options, runtime) }
         assertEquals(100_000, error.timeoutMillis)
@@ -280,16 +280,16 @@ class UrlLoadingResourceTest {
         }
 
         val final = "$root/c/doc.ttl"
-        assertEquals(listOf(RdfTriple(Iri("$final#s"), Iri("urn:p"), Iri(final))), Rdf.parseFromUrl("$root/a").getTriples())
+        assertEquals(listOf(RdfTriple(Iri("$final#s"), Iri("urn:p"), Iri(final))), Rdf.parseFromUrl("$root/a", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES).getTriples())
 
-        val loop = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/loop") }
+        val loop = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/loop", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
         assertEquals(302, loop.statusCode)
         assertTrue(loop.message!!.contains("redirect"), loop.message)
 
-        val file = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/file") }
+        val file = assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/file", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }
         assertEquals(302, file.statusCode)
         assertTrue(file.message!!.contains("file:///etc/passwd"), file.message)
 
-        assertEquals(302, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/nowhere") }.statusCode)
+        assertEquals(302, assertThrows(RdfHttpStatusException::class.java) { Rdf.parseFromUrl("$root/nowhere", options = UrlLoadOptions.ALLOW_ALL_ADDRESSES) }.statusCode)
     }
 }

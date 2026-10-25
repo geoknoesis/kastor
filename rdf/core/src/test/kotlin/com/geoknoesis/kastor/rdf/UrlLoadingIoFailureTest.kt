@@ -83,7 +83,7 @@ class UrlLoadingIoFailureTest {
                 }
             }.apply { isDaemon = true; start() }
             val error = assertThrows(IOException::class.java) {
-                Rdf.parseFromUrl("http://127.0.0.1:${server.localPort}/doc.ttl", RdfFormat.TURTLE)
+                Rdf.parseFromUrl("http://127.0.0.1:${server.localPort}/doc.ttl", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
             }
             assertTrue(served.await(60, TimeUnit.SECONDS))
             server1.join(60_000)
@@ -107,7 +107,7 @@ class UrlLoadingIoFailureTest {
             val outcome = AtomicReference<Throwable?>()
             val loader = Thread {
                 try {
-                    Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE)
+                    Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE, options = UrlLoadOptions.ALLOW_ALL_ADDRESSES)
                 } catch (e: Throwable) {
                     outcome.set(e)
                 }

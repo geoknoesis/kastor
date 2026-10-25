@@ -120,7 +120,7 @@ object Rdf {
 - **Provider selection.**
   - An explicit `providerId` is honoured exactly: an unknown provider, a missing variant or unmet requirements throw `IllegalArgumentException`.
   - Requirement-based selection orders providers by `RdfProvider.priority` (Jena 50, RDF4J 40, memory −100).
-- **URL loading** (`Rdf.parseFromUrl*`, `Rdf.parseDatasetFromUrl`) accepts only `http`/`https` by default and caps bodies at 64 MiB (`UrlLoadOptions`, `RdfInputTooLargeException`).
+- **URL loading** (`Rdf.parseFromUrl*`, `Rdf.parseDatasetFromUrl`) accepts only `http`/`https` and only public addresses by default (`UrlAddressPolicy.PUBLIC_ADDRESSES`; loopback, private and link-local hosts fail with `RdfAddressRefusedException` unless you pass `UrlLoadOptions.ALLOW_ALL_ADDRESSES`), and caps bodies at 64 MiB (`UrlLoadOptions`, `RdfInputTooLargeException`).
 
 ### Triple DSL
 The API provides a natural language DSL for creating triples using infix functions:

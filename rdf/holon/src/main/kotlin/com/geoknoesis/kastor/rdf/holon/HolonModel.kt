@@ -29,15 +29,39 @@ enum class HolonError(val id: String) {
   UNREPRESENTABLE_CONVERSION("unrepresentable-conversion"),
 }
 
+/**
+ * An RDF-H processing failure, identified by [condition]. It is an [RdfExtensionException], so
+ * `catch (e: RdfException)` sees holon failures too; its [errorCode] is [RdfErrorCode.EXTENSION_ERROR].
+ */
 class HolonException(
   val condition: HolonError,
   detail: String = condition.id,
   cause: Throwable? = null,
-) : RuntimeException("${condition.id}: $detail", cause)
+) : RdfExtensionException("${condition.id}: $detail", RdfErrorCode.EXTENSION_ERROR, cause)
 
-/** Immutable RDF graph snapshot. Blank-node identity, including nested triple terms, is retained. */
+/**
+ * Immutable RDF graph snapshot. Blank-node identity, including nested triple terms, is retained.
+ *
+ * [find] with a subject or a predicate reads an index (built once, on the first such lookup) instead of scanning
+ * the graph: RDF-H processing looks M up once per holon, which a scan would make quadratic.
+ */
 internal class HolonGraph(triples: Iterable<RdfTriple>) : RdfGraph {
   private val triples = Collections.unmodifiableSet(LinkedHashSet(triples.toList()))
+  private val bySubject: Map<RdfResource, List<RdfTriple>> by lazy { this.triples.groupBy { it.subject } }
+  private val byPredicate: Map<Iri, List<RdfTriple>> by lazy { this.triples.groupBy { it.predicate } }
+
+  override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
+    val candidates = when {
+      subject != null -> bySubject[subject].orEmpty()
+      predicate != null -> byPredicate[predicate].orEmpty()
+      else -> return super.find(null, null, obj)
+    }
+    return candidates.filter {
+      (subject == null || it.subject == subject) && (predicate == null || it.predicate == predicate) &&
+        (obj == null || it.obj == obj)
+    }
+  }
+
   override fun hasTriple(triple: RdfTriple): Boolean = triple in triples
   override fun getTriples(): List<RdfTriple> = triples.toList()
   override fun getTriplesSequence(): Sequence<RdfTriple> = triples.asSequence()

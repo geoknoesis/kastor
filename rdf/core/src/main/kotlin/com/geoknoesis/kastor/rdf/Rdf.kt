@@ -399,7 +399,7 @@ object Rdf {
      * 
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
@@ -416,7 +416,8 @@ object Rdf {
         format: String = "TURTLE",
         options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
     ): MutableRdfGraph {
-        val body = openRdfUrlStream(url, RdfFormat.fromString(format), options)
+        // An unknown format fails before the request is sent, not after the body was downloaded.
+        val body = openRdfUrlStream(url, RdfFormat.fromStringOrThrow(format), options)
         return body.read { stream -> parseFromInputStream(stream, format, body.baseIri) }
     }
     
@@ -444,7 +445,7 @@ object Rdf {
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
      * @param executor Executor used for the blocking operation
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A future with the parsed graph; it completes exceptionally with [IllegalArgumentException]
      *   for a disallowed scheme and [RdfInputTooLargeException] for an oversized body
      */
@@ -474,7 +475,7 @@ object Rdf {
                 try {
                     // Checked on the thread that connects, right before connect(), under the lock cancel() takes:
                     // a cancel that came first stops the request; one that comes later finds the connection.
-                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options, runtime, cancellation::connecting)
+                    val body = openRdfUrlStream(url, RdfFormat.fromStringOrThrow(format), options, runtime, cancellation::connecting)
                     body.read { stream ->
                         cancellation.reading(stream)
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
@@ -748,7 +749,7 @@ object Rdf {
      * 
      * @param url The URL to load RDF dataset data from
      * @param format The RDF quad format (default: "TRIG")
-     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
@@ -924,48 +925,4 @@ object Rdf {
         }
     }
     
-}
-
-/**
- * Cancellation of one [Rdf.parseFromUrlAsync] load. [cancel] never blocks the cancelling thread: disconnecting a JDK
- * HTTP connection or closing its stream waits for a connect or read in progress on another thread (up to the
- * connect or read timeout), so the release is handed to a thread of [helpers] (or, when all of them are busy, to a
- * thread of its own).
- */
-internal class UrlLoadCancellation(private val helpers: UrlLoadHelperPool) {
-    private val lock = Any()
-    private var cancelled = false
-    private var connection: java.net.URLConnection? = null
-    private var input: java.io.InputStream? = null
-
-    /**
-     * Called on the connecting thread right before [connection] connects: fails with
-     * [java.util.concurrent.CancellationException] if the load was cancelled, so the request is never sent.
-     */
-    fun connecting(connection: java.net.URLConnection) = synchronized(lock) {
-        if (cancelled) throw java.util.concurrent.CancellationException("Cancelled")
-        this.connection = connection
-    }
-
-    /** Called with the body before it is parsed; fails like [connecting] if the load was cancelled. */
-    fun reading(input: java.io.InputStream) = synchronized(lock) {
-        if (cancelled) throw java.util.concurrent.CancellationException("Cancelled")
-        this.input = input
-    }
-
-    fun cancel() {
-        val (connection, input) = synchronized(lock) {
-            if (cancelled) return
-            cancelled = true
-            connection to input
-        }
-        if (connection == null && input == null) return
-        val release = Runnable {
-            (connection as? java.net.HttpURLConnection)?.let { runCatching { it.disconnect() } }
-            runCatching { input?.close() }
-        }
-        if (helpers.tryExecute(release) == null) {
-            Thread(release, "kastor-url-cancel").apply { isDaemon = true }.start()
-        }
-    }
 }

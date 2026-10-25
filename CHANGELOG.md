@@ -204,6 +204,69 @@ and is kept as is; it was never published to Maven Central.
 - Offline coverage floors increased from 20% to 60% for embedding and from 5% to 80% for LLM explanations,
   based on fresh measurements of 66.8% and 85.3% respectively.
 
+### Round eleven
+
+#### Core (core, sparql-contract, sparql-lang, testkit, reasoning, holon)
+
+- **Breaking (URL loading): only public addresses by default.** `UrlLoadOptions.addressPolicy` now defaults to
+  `UrlAddressPolicy.PUBLIC_ADDRESSES`, for `UrlLoadOptions()`, `UrlLoadOptions.DEFAULT` and every
+  `Rdf.parseFromUrl` / `parseFromUrlAsync` / `parseDatasetFromUrl` call without options. The policy checks the URL a
+  load starts with and every redirect target. Loopback (`localhost`, `127.0.0.1`, `::1`), private (`10/8`,
+  `172.16/12`, `192.168/16`, `fc00::/7`), link-local (`169.254.169.254`) and other non-public addresses, and URLs
+  without a host (`file:`, `jar:`), now fail with `RdfAddressRefusedException` before any request is sent. Host names
+  are resolved to check them.
+  - **Migration:** to load from localhost, the internal network or a trusted `file:` URL, pass the new
+    `UrlLoadOptions.ALLOW_ALL_ADDRESSES`, or `addressPolicy = UrlAddressPolicy.ALLOW_ALL`. Combine either with other
+    settings through `copy(...)`, for example `UrlLoadOptions.ALLOW_ALL_ADDRESSES.copy(allowedSchemes = setOf("file"))`.
+  - The limits of `PUBLIC_ADDRESSES` are unchanged and documented: DNS rebinding, and proxies resolving names
+    themselves. All in-repo tests that use local servers opt in explicitly.
+- Added (core): `RdfExtensionException`, the open, `@JvmOverloads` base of the sealed `RdfException` hierarchy for
+  exceptions defined in extension modules and applications. It comes with the error code
+  `RdfErrorCode.EXTENSION_ERROR`.
+- **Breaking (rdf-holon):** `HolonException` extends `RdfExtensionException` instead of `RuntimeException`, so
+  `catch (e: RdfException)` catches holon failures. Its `errorCode` is `EXTENSION_ERROR`, and `condition` still names
+  the RDF-H error. For Java callers it is now a checked exception, like every `RdfException`.
+- Security: a `Dataset` view that rewrites a `SandboxedSelectQuery` now sends a `SandboxedSelectQuery` with the same
+  function library. This covers dataset clauses added for graphs of one repository, and `GRAPH` patterns rewritten for
+  a dataset of the store's default graph. Before, it sent a plain `SparqlSelectQuery`: the provider ran the untrusted
+  text without its sandbox, so `SERVICE` calls went out, and the custom functions were lost. The materialized path was
+  already correct. A new testkit contract, `SandboxedQueryContractTest`, covers every repository and `Dataset` path of
+  the memory, Jena and RDF4J providers through `select`, `withSelectRows` and the timed `withSelectRows`. Each path must
+  either honour the sandbox or refuse the query.
+- Added (core): the sandboxed-query API that SHACL-SPARQL uses. It was in the API dump but not in this CHANGELOG.
+  - `SandboxedSelectQuery` holds untrusted SELECT text. The provider checks it with the parser that runs it. It
+    refuses `SERVICE` and `java:` code with `IllegalArgumentException`, or the whole query with
+    `UnsupportedOperationException` when it cannot check it.
+  - `SparqlFunctionLibrary` (`EMPTY`, `of`), `SparqlFunction` and `SparqlFunctionCall` define custom functions that
+    are visible to one query.
+  - `MAX_FUNCTION_DEPTH` (16) and the provider helper `SparqlFunction.bindArguments`.
+  - The graph-only `memory` provider refuses every query. A `Dataset` view keeps the sandbox, as described above, and
+    refuses the timed `withSelectRows`.
+- API: `SparqlFunctionLibrary.EMPTY` is now a `@JvmField` and `SparqlFunctionLibrary.of` a `@JvmStatic`. Java callers
+  write `SparqlFunctionLibrary.EMPTY` (`Companion.getEMPTY()` is gone). Kotlin source is unchanged.
+- `Rdf.parseFromUrl` and `Rdf.parseFromUrlAsync` reject an unknown format name with `RdfFormatException` before they
+  send the request. Before, they downloaded the body (up to 64 MiB) first. `parseDatasetFromUrl` already did this.
+- `UrlRedirectPolicy.SAME_HOST` refuses a redirect from or to a URL that `java.net.URI` reads without a host, such as
+  `http://my_host.example/` (registry-based authority). Before, it threw `NullPointerException`.
+- `parseFromUrlAsync` cancellation: when every helper thread is busy, releases queue on a shared releaser with two
+  daemon threads (`kastor-url-cancel-N`). Before, each `cancel()` started its own thread, and each such thread could
+  block for up to the connect or read timeout.
+- Memory RDFS reasoner: a `ReasonerConfig.timeout` too long to count in nanoseconds (over about 292 years) means no
+  limit. Before, it threw `ArithmeticException`.
+- SPARQL DSL: blank nodes are written with core's injective label (`BlankNode.toString()`). `BlankNode("a")` and
+  `BlankNode("_:a")` are no longer joined in one pattern. Ids that are not valid labels, such as Virtuoso's
+  `nodeID://b1`, are encoded instead of rejected.
+- `rdf-holon`: `asDataset(attributed = true)` queries its private repository in place. Before, it copied the whole
+  holon for every query. The scope union is stored in a private named graph whose IRI is never a dataset name.
+  `HolonGraph` lookups on M use subject and predicate indexes, so conversion and resolution no longer scan M once per
+  holon.
+- Docs: KDoc relates `SparqlExtensionFunction` (engine metadata, never executed) to `SparqlFunction` (executable, one
+  query). `how-to-use-datasets.md` describes sandboxed queries on datasets and the cost of holon query datasets.
+  `how-to-parse-rdf.md`, `core-api.md` and `api-reference.md` describe the new URL default and `RdfExtensionException`.
+- Code organization: the SPARQL dataset-clause scanner moved from `DatasetImpl.kt` to `SparqlDatasetClauses.kt`, and
+  `UrlLoadCancellation` moved out of `Rdf.kt`. The complexity ceilings follow: `DatasetImpl.kt` no longer needs one, and
+  the `Rdf.kt` ceiling drops from 971 to 928 lines.
+
 ### Fixed (round-ten audit)
 
 - Security: JSON-LD remote and `file:` contexts and `@import` are never fetched by the Jena or RDF4J provider. Before,

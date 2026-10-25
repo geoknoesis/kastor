@@ -37,7 +37,7 @@ class UrlLoadingRegressionTest {
             val expected = RdfTriple(Iri("urn:s"), Iri("urn:p"), Iri("urn:o"))
             // Three loads, one after the other: each completes, none depends on another being in flight.
             repeat(3) {
-                assertEquals(listOf(expected), Rdf.parseFromUrlAsync(url).get(30, TimeUnit.SECONDS).getTriples())
+                assertEquals(listOf(expected), Rdf.parseFromUrlAsync(url, options = com.geoknoesis.kastor.rdf.UrlLoadOptions.ALLOW_ALL_ADDRESSES).get(30, TimeUnit.SECONDS).getTriples())
             }
             assertEquals(listOf(expected), JenaBridge.fromUrl(url).getTriples())
         } finally {

@@ -32,7 +32,12 @@ internal object SparqlSyntax {
 
     fun langTag(lang: String): String = SparqlLexical.langTag(lang)
 
-    fun blankNode(id: String): String = SparqlLexical.blankNode(id)
+    /**
+     * The `_:label` of [node], by core's rule ([BlankNode.toString]): every id is accepted (an id that is not a valid
+     * label, such as Virtuoso's `nodeID://b1`, is encoded), and distinct ids always get distinct labels, so `_:a` and
+     * `a` are never joined in one pattern. The same rule writes blank nodes in N-Triples, Turtle and query results.
+     */
+    fun blankNode(node: BlankNode): String = node.toString()
 
     fun varName(name: String): String = SparqlLexical.varName(name)
 

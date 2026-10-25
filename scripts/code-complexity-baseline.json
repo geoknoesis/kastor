@@ -13,13 +13,6 @@
       "lines": 942,
       "reason": "Cache lifecycle and admission orchestration; handle matching extracted and all function branch counts now within the default limit. Remaining file length is frozen for further design review."
     },
-    "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/DatasetImpl.kt": {
-      "lines": 1082,
-      "functions": {
-        "tokenize:44569e344684": 85
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/GraphIsomorphism.kt": {
       "functions": {
         "search:f1dceb5e5f9b": 55

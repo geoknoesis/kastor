@@ -9,6 +9,10 @@ import com.geoknoesis.kastor.rdf.SparqlExtensionFunction
  * registered when the registry is first used, so lookups never depend on
  * whether some other code happened to touch [Sparql12BuiltInFunctions] first.
  * Listings are snapshots in registration order.
+ *
+ * The registry holds metadata ([SparqlExtensionFunction]) about functions engines provide; registering one does not
+ * make any engine execute it. Custom functions that run for one query are a
+ * [com.geoknoesis.kastor.rdf.SparqlFunctionLibrary] carried by a [com.geoknoesis.kastor.rdf.SandboxedSelectQuery].
  */
 object SparqlExtensionFunctionRegistry {
 

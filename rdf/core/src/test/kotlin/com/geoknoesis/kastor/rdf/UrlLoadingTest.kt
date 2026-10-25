@@ -37,14 +37,14 @@ class UrlLoadingTest {
 
     @Test
     fun `other schemes can be opted into explicitly`() {
-        val options = UrlLoadOptions(allowedSchemes = setOf("file"))
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, allowedSchemes = setOf("file"))
         assertEquals(1, Rdf.parseFromUrl(ntriplesFile(), RdfFormat.N_TRIPLES, options).size())
         assertEquals(1, Rdf.parseFromUrlAsync(ntriplesFile(), RdfFormat.N_TRIPLES, options = options).get().size())
     }
 
     @Test
     fun `bodies over the size limit are rejected`() {
-        val options = UrlLoadOptions(allowedSchemes = setOf("file"), maxBytes = 10)
+        val options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.ALLOW_ALL, allowedSchemes = setOf("file"), maxBytes = 10)
         assertThrows(RdfInputTooLargeException::class.java) { Rdf.parseFromUrl(ntriplesFile(), RdfFormat.N_TRIPLES, options) }
 
         val bounded = BoundedInputStream(ByteArrayInputStream(ByteArray(100)), 50)
