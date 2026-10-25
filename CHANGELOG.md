@@ -32,6 +32,12 @@ and is kept as is; it was never published to Maven Central.
 - The `kastor-rdf` start scripts run a launcher compiled for Java 8 (`KastorRdfLauncher`), which refuses a Java
   older than 21 with a one-line message and status 3, instead of an `UnsupportedClassVersionError` with status 1.
   The help text and the CLI guide state the Java 21 requirement.
+- API (additions only): `SparqlEndpointConfig` and the `SparqlRepository(endpoint, maxResponseBytes, ...)`
+  constructor carry `@JvmOverloads`, so Java can write `new SparqlEndpointConfig(url)` with the Kotlin defaults.
+- `SparqlProvider.version` is the module's Kastor version (its jar's `Implementation-Version`, `development` outside
+  the jar) instead of a hard-coded `1.0.0`.
+- Docs: the SPARQL provider guide says that sandboxed (SHACL) queries are refused and what that means for validating
+  data held by an endpoint, and that `getTriples()` is one buffered `SELECT` capped by `maxResponseBytes`.
 
 ### Added
 

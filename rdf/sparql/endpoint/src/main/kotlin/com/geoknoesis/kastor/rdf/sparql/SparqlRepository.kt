@@ -84,6 +84,7 @@ class SparqlRepository internal constructor(
 
     constructor(config: SparqlEndpointConfig) : this(config, null)
 
+    @JvmOverloads
     constructor(
         endpoint: String,
         maxResponseBytes: Long = SparqlEndpointConfig.DEFAULT_MAX_RESPONSE_BYTES,

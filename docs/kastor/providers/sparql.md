@@ -44,6 +44,16 @@ results.forEach { binding ->
 }
 ```
 
+From Java, `SparqlEndpointConfig` and the `SparqlRepository(endpoint, ...)` convenience constructor have the same defaults as from Kotlin:
+
+```java
+try (SparqlRepository repo = new SparqlRepository(new SparqlEndpointConfig("https://dbpedia.org/sparql"))) {
+    // ...
+}
+```
+
+`SparqlProvider.version` is the Kastor version of the module (the `Implementation-Version` of its jar), or `development` when the classes are not loaded from the built jar.
+
 ## Configuration Options
 
 `location` is the only required option. The other provider options map onto `SparqlEndpointConfig`:
@@ -251,12 +261,19 @@ The provider reports what this HTTP adapter itself supports, not what the remote
 
 The adapter reports `supportsFederation = false`. Queries are sent to the endpoint as written, so `SERVICE` clauses work only if the remote server supports them.
 
+## Sandboxed Queries and SHACL
+
+A `SandboxedSelectQuery` is an untrusted query (SHACL-SPARQL constraints from a shapes graph are run as such): a provider may only run it after checking that it cannot reach another service (`SERVICE`). This adapter cannot check that, because the remote server evaluates the query and may federate it, so `select` and both `withSelectRows` overloads refuse a sandboxed query with `UnsupportedOperationException` before sending anything.
+
+For SHACL validation of data held by an endpoint this means the constraints never run on the endpoint: the validator copies the default graph into a private in-memory repository and runs them there. That copy is read with `getTriples()`, one buffered `SELECT` capped by `maxResponseBytes` (32 MiB by default), and the validator first lists the named graphs, a `SELECT DISTINCT ?g` over the whole store. For a large store, export the data (or `CONSTRUCT` the part to validate) into a Jena or RDF4J repository and validate that instead.
+
 ## Writes and Blank Nodes
 
 - `addTriples` groups triples that are connected through blank nodes and always sends each group in a single `INSERT DATA` request, because blank-node labels only apply within one request. Groups and triples without blank nodes are packed into requests of up to `insertBatchSize` triples; a group larger than `insertBatchSize` is sent on its own. Labels are re-issued per request, so every call creates fresh blank nodes on the endpoint.
 - A group larger than `maxBlankNodeComponentTriples` is rejected with `IllegalArgumentException` before anything is sent.
 - `removeTriples` runs one `ASK … VALUES` (to report whether anything existed) plus one `DELETE DATA` per batch. The operation is **not atomic**.
 - `hasTriple`, `find`, `removeTriple` and `removeTriples` cannot address an existing blank node by label and fail with `IllegalArgumentException`; use an explicit `DELETE WHERE` pattern instead.
+- `find` and `getTriples` are one buffered `SELECT` each, capped by `maxResponseBytes`; `getTriplesSequence()` reads the same list. To read a graph larger than that cap, stream it with `withSelectRows(SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")) { rows -> ... }`, which is capped by `maxStreamedResponseBytes` instead.
 - `find` and `getTriples` check every row the endpoint returns: a row that leaves `?s`, `?p` or `?o` unbound, has a literal as subject, or anything but an IRI as predicate fails with `RdfQueryException` ("not a triple") instead of a `ClassCastException`.
 
 String literals are escaped with the same rules as the query DSL renderer. Among other things, a `u` or `U` directly after a backslash in the text is sent as `u` / `U`, so servers that decode `\uXXXX` escapes before parsing cannot change the value (see [SPARQL fundamentals](../concepts/sparql-fundamentals.md#literal-escaping)).

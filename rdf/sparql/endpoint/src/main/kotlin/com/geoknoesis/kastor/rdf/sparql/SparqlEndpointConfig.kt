@@ -148,7 +148,7 @@ enum class MalformedTermPolicy {
  *   [MalformedTermPolicy.SKIP_ROW] leaves such rows out and logs one warning per query; it is the
  *   counterpart of the RDF4J provider's `lenientRead` for graph reads. See [MalformedTermPolicy].
  */
-data class SparqlEndpointConfig(
+data class SparqlEndpointConfig @JvmOverloads constructor(
     val endpoint: String,
     val updateEndpoint: String? = null,
     val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
