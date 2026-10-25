@@ -364,6 +364,18 @@ entries are regrouped under those kind headings.
   blank nodes, OWL 2 constructs, imports, punning, SKOS in both directions, multilingual names and 3,000 classes: no
   warning or violation), `DetectorRegressionTest`, `DeepHierarchyTest`, `CliTruncationTest`, `QualityReportTextTest`.
 
+### Round twelve
+
+#### Integration follow-ups (providers, core, SPARQL endpoint)
+
+- **Fixed (data integrity):** a graph parse of a document that names a graph (JSON-LD `@graph` under an `@id`) fails
+  with `RdfFormatException` naming the graph and pointing to `parseDataset`. Jena dropped the named graph's triples
+  with only a logged warning (`parseGraph`, `JenaBridge.fromString` / `fromFile` / `fromUrl`), and its streaming parse
+  (`openTripleStream`, `parseStreaming`) dropped them silently; RDF4J merged them into the one graph. Both providers
+  now behave the same. A JSON-LD document with only a default graph parses as before.
+- **Changed (core):** `Rdf.parseDataset` (string, file and repository forms) and `parseDatasetFromUrl`
+  accept JSON-LD as well as TriG and N-Quads, so a JSON-LD document with named graphs has a core path that keeps them.
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)

@@ -16,7 +16,10 @@ import org.apache.jena.riot.RiotException
  *   document's declared encoding (e.g. RDF/XML `encoding="ISO-8859-1"`) is honoured.
  * - Without a base IRI, relative IRI references are a parse error (no implicit `file:` base).
  * - [parseGraph] rejects quad formats (TriG, N-Quads) with [RdfFormatException]: parsing them as a
- *   single graph would silently drop or merge named graphs. Use [parseDataset] instead.
+ *   single graph would silently drop or merge named graphs. Use [parseDataset] instead. A graph format whose
+ *   document names a graph (JSON-LD `@graph` under an `@id`) fails the graph parses ([parseGraph],
+ *   [openTripleStream], [parseStreaming], [JenaBridge.fromString] / `fromFile` / `fromUrl`) with
+ *   [RdfFormatException] too, instead of Jena's default of dropping the named graph with a logged warning.
  * - Syntax errors surface as [RdfFormatException].
  * - JSON-LD contexts must be inline: a context (or `@import`) named by URL is never loaded, whatever its scheme,
  *   and fails the parse with [RdfFormatException] (see [JenaParsing.noRemoteDocuments]).
@@ -152,7 +155,7 @@ class JenaProvider : RdfProvider {
         val lang = JenaParsing.graphLang(format)
         val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
         try {
-            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.graph(model.graph))) }
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validatingGraph(format, model.graph)) }
         } catch (failure: Throwable) {
             model.close()
             throw failure
@@ -201,10 +204,18 @@ class JenaProvider : RdfProvider {
         registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
     ): TripleStream {
         val lang = JenaParsing.graphLang(format)
-        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, baseIri))
+        // Elements, not asyncParseTriples(): that one silently drops quads, so a named graph would vanish.
+        val elements = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, baseIri))
             .setChunkSize(STREAM_CHUNK_SIZE)
             .setQueueSize(STREAM_QUEUE_SIZE)
-            .asyncParseTriples()
+            .streamElements()
+        val triples = elements.map { JenaParsing.graphTripleOf(format, it) }.filter { it != null }.iterator()
+        val parser = object : org.apache.jena.atlas.iterator.IteratorCloseable<org.apache.jena.graph.Triple> {
+            override fun hasNext() = triples.hasNext()
+            override fun next(): org.apache.jena.graph.Triple = triples.next()!!
+            override fun remove() = throw UnsupportedOperationException("remove")
+            override fun close() = elements.close()
+        }
         return JenaTripleStream(StreamResources(inputStream, parser), format, registerCleanup)
     }
 
@@ -394,6 +405,38 @@ internal object JenaParsing {
             "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2",
             "TRIG", "TRI-G", "TRIG-1.2", "TRIGSTAR",
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2",
+        )
+
+        /**
+         * [StreamRDF][org.apache.jena.riot.system.StreamRDF] of a graph parse into [graph]: validated like
+         * [validating], and a statement in a named graph (JSON-LD `@graph` under an `@id`) fails the parse
+         * ([refuseNamedGraph]) instead of being dropped, as Jena's graph sink does with only a logged warning.
+         */
+        fun validatingGraph(format: String, graph: org.apache.jena.graph.Graph): org.apache.jena.riot.system.StreamRDF =
+            validating(object : org.apache.jena.riot.system.StreamRDFWrapper(org.apache.jena.riot.system.StreamRDFLib.graph(graph)) {
+                override fun quad(quad: org.apache.jena.sparql.core.Quad) {
+                    if (!quad.isDefaultGraph) throw refuseNamedGraph(format, quad.graph)
+                    triple(quad.asTriple())
+                }
+            })
+
+        /**
+         * The triple of an element of an asynchronous graph parse, or null for a prefix or base declaration; a
+         * statement in a named graph fails the parse ([refuseNamedGraph]), a parse error is rethrown.
+         */
+        fun graphTripleOf(format: String, element: org.apache.jena.riot.system.EltStreamRDF): org.apache.jena.graph.Triple? = when {
+            element.isTriple -> element.triple()
+            element.isQuad && element.quad().isDefaultGraph -> element.quad().asTriple()
+            element.isQuad -> throw refuseNamedGraph(format, element.quad().graph)
+            element.isException -> throw (element.exception() as? RuntimeException ?: RiotException(element.exception()))
+            else -> null
+        }
+
+        /** The parse error for a statement in the named graph [graph] met while parsing a single graph. */
+        fun refuseNamedGraph(format: String, graph: org.apache.jena.graph.Node): RiotException = RiotException(
+            "the $format document holds statements in the named graph " +
+                "${if (graph.isURI) "<${graph.uri}>" else graph.toString()}; parsing it as a single graph would drop " +
+                "them. Use parseDataset(...) to keep the named graphs.",
         )
 
         /** Resolves a graph (triple) format; quad formats are rejected instead of being silently flattened. */

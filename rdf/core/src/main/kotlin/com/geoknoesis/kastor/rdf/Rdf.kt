@@ -546,7 +546,7 @@ object Rdf {
      * ```
      *
      * @param data The RDF dataset data as a string
-     * @param format The RDF quad format (default: "TRIG")
+     * @param format The RDF dataset format: TRIG (default), N-QUADS or JSON-LD
      * @return A new Dataset containing the parsed data; close it after use
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws RdfProviderException if no SPARQL-capable in-memory provider is registered ([memory])
@@ -576,7 +576,7 @@ object Rdf {
      * Parse RDF dataset (with named graphs) from a file.
      *
      * @param filePath The path to the RDF dataset file
-     * @param format The RDF quad format (default: "TRIG")
+     * @param format The RDF dataset format: TRIG (default), N-QUADS or JSON-LD
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws java.io.FileNotFoundException if the file does not exist
@@ -613,7 +613,7 @@ object Rdf {
      * Parse RDF dataset (with named graphs) from a URL.
      *
      * @param url The URL to load RDF dataset data from
-     * @param format The RDF quad format (default: "TRIG")
+     * @param format The RDF dataset format: TRIG (default), N-QUADS or JSON-LD
      * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, public addresses only, 64 MiB)
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
@@ -657,7 +657,7 @@ object Rdf {
      *
      * @param repository The repository to populate with parsed data
      * @param inputStream The input stream containing RDF dataset data; the caller owns it, it is not closed
-     * @param format The RDF quad format
+     * @param format The RDF dataset format: TRIG, N-QUADS or JSON-LD
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IOException if reading [inputStream] fails
      */

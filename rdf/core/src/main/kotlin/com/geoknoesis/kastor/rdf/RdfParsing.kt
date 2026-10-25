@@ -32,14 +32,15 @@ internal object RdfParsing {
     }
 
     /**
-     * The quad format named [format]; a graph format is rejected with [IllegalArgumentException] that points to
+     * The dataset format named [format]: a quad format, or JSON-LD (whose documents can name graphs, so a graph parse
+     * refuses one that does); any other graph format is rejected with [IllegalArgumentException] that points to
      * [graphAlternative], the function to use for it.
      */
     fun quadFormat(format: String, graphAlternative: String): RdfFormat {
         val parsed = RdfFormat.fromStringOrThrow(format)
-        require(RdfFormat.isQuadFormat(parsed)) {
-            "Format '${parsed.formatName}' is not a quad format. Use $graphAlternative for graph formats, or use TRIG " +
-                "or N-QUADS for datasets."
+        require(RdfFormat.isQuadFormat(parsed) || parsed == RdfFormat.JSON_LD) {
+            "Format '${parsed.formatName}' is not a quad format. Use $graphAlternative for graph formats, or use TRIG, " +
+                "N-QUADS or JSON-LD for datasets."
         }
         return parsed
     }
