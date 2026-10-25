@@ -26,6 +26,12 @@ With embeddings (after `SemanticEnricher`): `BundledCatalogs.SKOS_VOCABULARY_QC_
 
 The Turtle files under `src/main/resources/shapes/` are the **spec** of what is checked.
 
+Conventions the bundled shapes follow (and that `BundledShapeSeverityTest` and `OwlQualityFalsePositiveTest` enforce):
+
+- **Severity.** A result has the severity of the shape that produced it (SHACL §2.1.4), and a nested `sh:property` shape is a shape of its own, `sh:Violation` unless it says otherwise. Every constraint-bearing property shape under a `sh:Warning` or `sh:Info` node shape therefore repeats `sh:severity`, so a documentation gap is never a violation and the default `onto-qa check` (`--severity violation`) does not fail on it.
+- **Named entities only.** The OWL 2 RDF mapping types anonymous class expressions (`owl:unionOf`, `owl:intersectionOf`, `owl:complementOf`, `owl:oneOf`) as `owl:Class`. Detectors that report something *missing* (label, definition, domain, range) or a naming convention select their focus nodes with SHACL 1.2 `sh:targetWhere` and the membership shapes `oqsh:NamedClass`, `oqsh:NamedObjectProperty` and `oqsh:NamedDatatypeProperty` (instances of the class that are IRIs), so a blank class expression is never reported as unlabelled. A blank node that carries a label is reported by `NamedEntityNotBnodeShape` (N34).
+- **SKOS hierarchy direction.** The broader-cycle and S27 detectors walk `skos:broader` and `skos:broaderTransitive` forwards and `skos:narrower` and `skos:narrowerTransitive` backwards, so a vocabulary that states its hierarchy only with `skos:narrower` is checked the same way, with or without a reasoner.
+
 Sample graphs for manual runs live under `src/test/resources/test-ontologies/`
 (`zoo-with-pitfalls.ttl` for the OWL integration test, plus `*-examples.ttl`).
 Structural fixtures for the modern-engineering and RDF 1.2 catalogues live under
@@ -185,7 +191,7 @@ Failures are isolated per batch: explanations from successful batches are kept, 
 
 A reply that the provider reports as cut at the limit, and that does not parse, fails its batch with **`reply truncated at N tokens; raise --llm-max-output-tokens`**. No JSON repair request is sent for it (it would be paid for and cut at the same limit), and consecutive truncated batches open the circuit breaker. Whatever the provider, the caps below remain the safety net: a reply of more than **500,000 characters** fails its batch, and every text field of a reply is cut to **2,000 characters** (suggested actions to 10). The exception behind a failed request (HTTP 401, timeout, 5xx, …) is kept in **`ExplanationFailure.cause`**; it is not part of the value (`equals`, `toString`) and is never written to reports. `onto-qa --debug` prints it, sanitised and with keys and URL credentials redacted (at most three distinct causes, 120 lines per stack trace, 2,000 characters per line). `--explain` cannot be combined with `--format turtle` (usage error, status 4, before any LLM call): the Turtle output is a SHACL validation report, which has no place for explanations.
 
-**Automated tests:** `./gradlew :tools:onto-quality-llm-koog:test` uses OpenAI when **`OPENAI_API_KEY`** is set; otherwise those cases are skipped. Set **`KASTOR_SKIP_OPENAI_LLM_TESTS=1`** to skip them even when a key is present.
+**Automated tests:** the live, billed OpenAI test in `:tools:onto-quality-llm-koog` is opt-in: it runs only with **`KASTOR_RUN_OPENAI_LLM_TESTS=1`** (and then fails without **`OPENAI_API_KEY`**), so a key in your shell never spends money on a plain `./gradlew test`. Every other LLM test uses fakes and needs no network.
 
 ## RDF reasoning before validation
 
@@ -256,6 +262,8 @@ Options are validated before any work starts (no model download, no LLM call): *
 
 The **embedding** quality tier detects pitfalls that pattern-matching alone cannot catch: synonymous classes or properties, miscellaneous catch-all classes, same-label–different-class pairs, and (when enrichment emits scores) label/definition drift.
 
+**What is embedded.** Each entity is embedded in one language: the ontology's dominant label language when the entity has a label in it, else its untagged labels, else its labels in the smallest language tag. Preferred labels (`rdfs:label`, `skos:prefLabel`) are used, and `skos:altLabel` only when there is no preferred label in that language; the literals are de-duplicated and sorted, so the text does not depend on serialisation order. Definitions for label–definition drift are taken in the label's language. (`LabelExtractor`.)
+
 The semantic tier is a two-step pipeline:
 
 ```text
@@ -276,7 +284,7 @@ onto-qa pipeline my-ontology.ttl
 
 On first run, the embedding model (~80–90 MB ONNX) is downloaded to `~/.kastor/onto-quality/models/` (override with `KASTOR_MODEL_CACHE` or `-Dkastor.onto-quality.model-cache=...`). Subsequent runs use the cache; a cached file whose SHA-256 no longer matches (truncated or tampered) is deleted and downloaded again once.
 
-**Large vocabularies:** pairwise similarity is an exact search whose work budget (distance evaluations) and deadline scale with the number of labelled entities (at least 50,000,000 evaluations and 30 s). Override them with **`--similarity-max-work`** and **`--similarity-timeout`** (seconds); at most **`--similarity-max-pairs`** (default 1,000,000) similar pairs are materialised. **`--similarity-mode approximate`** switches to random-projection LSH: much faster for tens of thousands of entities, but it may miss some similar pairs (about 95 % recall at cosine 0.85; every reported pair is verified), and the mode is recorded on the enrichment node as `oqsh:similaritySearchMode`. When a budget is exhausted the command stops with exit status **5** and advice for the limit that was hit: a longer timeout or larger work budget (or approximate mode), or — when too many pairs are similar — a higher `--threshold` or a larger `--similarity-max-pairs`.
+**Large vocabularies:** pairwise similarity is an exact search whose work budget (distance evaluations) and deadline scale with the number of labelled entities (at least 50,000,000 evaluations and 30 s, at most 3,000,000,000 evaluations and 10 minutes unless set explicitly). Override them with **`--similarity-max-work`** and **`--similarity-timeout`** (seconds); at most **`--similarity-max-pairs`** (default 1,000,000) similar pairs are materialised. **`--similarity-mode approximate`** switches to random-projection LSH: much faster for tens of thousands of entities, but it may miss some similar pairs (about 95 % recall at cosine 0.85; every reported pair is verified), and the mode is recorded on the enrichment node as `oqsh:similaritySearchMode`. When a budget is exhausted the command stops with exit status **5** and advice for the limit that was hit: a longer timeout or larger work budget (or approximate mode), or — when too many pairs are similar — a higher `--threshold` or a larger `--similarity-max-pairs`.
 
 ### Custom ONNX + tokenizer (domain / medical)
 
@@ -298,7 +306,7 @@ The default threshold (0.85) was calibrated against the OOPS-style fixtures docu
 
 ### Embedding-heavy tests
 
-Tests that load the bundled ONNX MiniLM model honor **`KASTOR_SKIP_EMBEDDING_TESTS=1`** (`@DisabledIfEnvironmentVariable`). Use that in constrained environments; run embedding-related checks locally or on a larger runner when you change shapes or the enricher.
+Tests that download or load the ONNX MiniLM model (about 90 MB from huggingface.co) are opt-in: they run only with **`KASTOR_RUN_EMBEDDING_TESTS=1`** (`@EnabledIfEnvironmentVariable`), so an offline or air-gapped `./gradlew test` never tries the download. Turn it on when you change shapes or the enricher; `native-lifecycle.yml` runs them.
 
 ## Calibration against OOPS!
 

@@ -131,7 +131,7 @@ val report = checker.check(enriched)
 
 On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. A cached file whose SHA-256 no longer matches (truncated or tampered) is deleted and downloaded again once. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
 
-**Similarity limits and large vocabularies.** By default the pairwise search is exact, and its limits scale with the number of labelled entities (`SimilarityLimitsPolicy.scaled()`). The work budget covers the worst case, n(n−1)/2 distance evaluations plus the index build, and never drops below 50,000,000 evaluations or a 30 s deadline. Override one or both with `SimilarityLimitsPolicy.scaled(maxDistanceEvaluations, timeout)`, or pin them with `SimilarityLimitsPolicy.fixed(SimilaritySearchLimits(...))`. For tens of thousands of entities, opt in to approximate search:
+**Similarity limits and large vocabularies.** By default the pairwise search is exact, and its limits scale with the number of labelled entities (`SimilarityLimitsPolicy.scaled()`). The work budget covers the worst case, n(n−1)/2 distance evaluations plus the index build, and never drops below 50,000,000 evaluations or a 30 s deadline. The scaled default stops at 3,000,000,000 evaluations and a 10-minute deadline (reached at about 77,000 entities), so a very large vocabulary fails fast instead of searching for an hour. Override one or both with `SimilarityLimitsPolicy.scaled(maxDistanceEvaluations, timeout)`, or pin them with `SimilarityLimitsPolicy.fixed(SimilaritySearchLimits(...))`. For tens of thousands of entities, opt in to approximate search:
 
 ```kotlin
 import com.geoknoesis.kastor.ontoquality.embed.SimilarityLimitsPolicy
@@ -183,7 +183,7 @@ Similarity options on `enrich` and `pipeline`:
 | Option | Meaning |
 |--------|---------|
 | `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, at least 50,000,000. |
-| `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30. |
+| `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30 and at most 600. |
 | `--similarity-max-pairs N` | Maximum similar pairs the search may return before failing (≥ 1). Default: 1,000,000. |
 | `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
 
@@ -247,7 +247,7 @@ Errors print a one-line message. To also print stack traces, add **`--debug`** b
 
 **Report output:** text taken from the ontology (SHACL messages, focus node and shape names) and from the LLM is Markdown-escaped in `--format markdown`, so it cannot inject links, images or raw HTML. `@` is escaped too, so e-mail addresses do not become autolinks. In `--format text`, control characters other than newline and tab are shown as visible `\uXXXX` escapes, so terminal escape sequences embedded in the ontology cannot execute. Unicode bidirectional controls are shown as `\uXXXX` in both formats, so they cannot visually reorder the output: embeddings and overrides U+202A–U+202E, isolates U+2066–U+2069, and the marks LRM U+200E, RLM U+200F and ALM U+061C. Messages the CLI prints on stderr are sanitised the same way. JSON output is serialized with kotlinx.serialization and escapes every string. To apply the same rules to untrusted text printed outside a report, use the public helper **`OutputSanitizer`**: `OutputSanitizer.terminal(text)` for terminal output, `OutputSanitizer.markdownInline(text)` for inline Markdown.
 
-See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats) for the complete option validation rules, threshold tuning, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
+See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats) for the complete option validation rules, threshold tuning, and the opt-in switches for the model-downloading (**`KASTOR_RUN_EMBEDDING_TESTS=1`**) and billed OpenAI (**`KASTOR_RUN_OPENAI_LLM_TESTS=1`**) tests.
 
 ## Validation
 

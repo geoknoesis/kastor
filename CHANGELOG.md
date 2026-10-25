@@ -14,6 +14,49 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### onto-quality
+
+- **Fixed: Warning and Info detectors reported `sh:Violation`.** A result has the severity of the shape that produced
+  it, and in 20 bundled shapes (14 OWL, 4 SKOS, `LabelNotSentenceShape`, `LabelDefinitionDriftShape`) the constraint
+  sat in a nested `sh:property` shape without `sh:severity`, so it defaulted to `sh:Violation` although the node shape
+  said `sh:Warning`/`sh:Info`. Each nested property shape now repeats the severity. **Behaviour change:** findings
+  such as "Class has no rdfs:label." or "Object property has no rdfs:range." are now WARNING (or INFO), so the
+  default `onto-qa check` (`--severity violation`) no longer exits 1 on documentation and declaration gaps, and
+  severity counts, ordering and `--explain-min-severity` change accordingly.
+- **Fixed: anonymous OWL class expressions were reported as unlabelled, undocumented and badly named classes.** The
+  label, definition and domain/range detectors (`Class|ObjectProperty|DatatypePropertyHasLabelShape`,
+  `ClassHasDefinitionShape`, `*HasDomainShape`, `*HasRangeShape`) and `ClassNameUpperCamelShape` now select their
+  focus nodes with SHACL 1.2 `sh:targetWhere` and the new membership shapes `oqsh:NamedClass`,
+  `oqsh:NamedObjectProperty` and `oqsh:NamedDatatypeProperty` (instances that are IRIs), so the blank nodes of
+  `owl:unionOf`/`intersectionOf`/`complementOf`/`oneOf` expressions are no longer findings. The `sh:nodeKind sh:IRI`
+  constraint of `ClassNameUpperCamelShape`, which reported every blank class as an INFO finding, is gone.
+- **Fixed: the SKOS broader-cycle and S27 detectors ignored `skos:narrower`.** Both now walk
+  `(skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+`, so a hierarchy stated only with
+  `skos:narrower` (or `skos:narrowerTransitive`) is checked, with or without a reasoner.
+- **Changed: what the semantic tier embeds** (`LabelExtractor`). An entity is embedded in one language (the
+  ontology's dominant label language, else untagged, else the smallest tag), with preferred labels before
+  `skos:altLabel`, de-duplicated and sorted; definitions follow the label's language. Before, every label in every
+  language was joined in graph order. Similarity scores, `oqsh:semanticallyCloseTo` pairs and drift scores of
+  multilingual vocabularies change.
+- **Changed: the scaled similarity limits are capped** at a 10-minute deadline and 3,000,000,000 distance
+  evaluations (`SimilaritySearchLimits.forEntityCount`); before, 200,000 labels got a 66-minute default. Explicit
+  limits are not capped. Embedding stops at the next batch boundary when the thread is interrupted.
+- **Fixed:** the Markdown "Metrics summary" and the "centrality" hint used the default locale (`3,50` under
+  `de-DE`); they use `Locale.ROOT`.
+- **Fixed:** with metrics, findings on blank nodes and several findings on one IRI kept the SHACL engine's order;
+  the importance sort now ends with the finding's `FindingRef`, so the order is the same on every parse.
+- **Fixed:** `shacl-era-cli` printed a multi-line parser message over several stderr lines; whitespace runs are now
+  collapsed, so an error is one line as documented. The `:benchmarks:shacl` build script's pyshacl hint lost its
+  mojibake, and `NativeComplexShapesBenchmark` documents that "cold" covers the shapes side only.
+- **Tests: model-download and billed OpenAI tests are opt-in.** `OopsCalibrationTest.SemanticTierAfterEnrichment` and
+  the semantic `OopsBenchmarkTest` case need `KASTOR_RUN_EMBEDDING_TESTS=1`, and `OpenAiExplanationIntegrationTest`
+  needs `KASTOR_RUN_OPENAI_LLM_TESTS=1` (it then fails without `OPENAI_API_KEY`). Before, an API key in the shell
+  made a plain `gradle test` spend money, and an offline box tried a 90 MB download. `live-llm.yml` sets the new
+  switch; `KASTOR_SKIP_OPENAI_LLM_TESTS` and `KASTOR_SKIP_EMBEDDING_TESTS` no longer gate these tests.
+- No public ABI change.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
