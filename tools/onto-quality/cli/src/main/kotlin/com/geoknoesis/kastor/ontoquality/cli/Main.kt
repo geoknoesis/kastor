@@ -20,6 +20,7 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.serialize
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
@@ -245,6 +246,8 @@ private abstract class OntoQaCommand(name: String, private val outputFileSystem:
             execute()
         } catch (e: CliktError) {
             throw e
+        } catch (e: ShaclValidationException) {
+            throw CliktError("SHACL validation failed: ${sanitize(e.message)}. $VALIDATION_FAILURE_HINT", e, EXIT_RUNTIME_ERROR)
         } catch (e: SimilaritySearchBudgetExceededException) {
             throw CliktError("Semantic enrichment failed: ${sanitize(e.message)}. ${similarityBudgetHint(e)}", e, EXIT_RUNTIME_ERROR)
         } catch (e: Exception) {

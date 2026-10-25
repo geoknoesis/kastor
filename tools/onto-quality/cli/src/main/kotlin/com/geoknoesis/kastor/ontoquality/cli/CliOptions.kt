@@ -99,6 +99,14 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     }
 }
 
+/** Default of `--validation-timeout`, in seconds: the library default of `ValidationConfig.timeout`. */
+internal const val DEFAULT_VALIDATION_TIMEOUT_SECONDS = 300
+
+/** Advice after a failed SHACL validation (exit status 5), which is most often a validation out of time. */
+internal const val VALIDATION_FAILURE_HINT =
+    "If the validation ran out of time, raise --validation-timeout (default $DEFAULT_VALIDATION_TIMEOUT_SECONDS s) or check " +
+        "fewer shapes with --catalog."
+
 /** `--label-language none`: embed the untagged labels (the empty language tag of [EmbeddingCliOptions.labelLanguage]). */
 internal const val UNTAGGED_LABELS = "none"
 
@@ -118,6 +126,12 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
                 "so (stderr, and a marker in every --format) and the run exits $EXIT_FINDINGS, since it cannot show that no " +
                 "finding at or above --severity was dropped.",
         ).int().restrictTo(min = 1)
+    val validationTimeoutSeconds by
+        option(
+            "--validation-timeout",
+            help = "Wall-clock budget of the SHACL validation in seconds (1-86400, default $DEFAULT_VALIDATION_TIMEOUT_SECONDS); " +
+                "a validation that runs out of time fails the run (exit $EXIT_RUNTIME_ERROR)",
+        ).int().restrictTo(1..86_400).default(DEFAULT_VALIDATION_TIMEOUT_SECONDS)
     val explain by
         option(
             "--explain",
@@ -188,7 +202,8 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
      * The validator settings of `--max-findings`: by default the engine returns every result (`maxViolations` is
      * `Int.MAX_VALUE`, not the library default of 1,000), so no finding is dropped without a trace.
      */
-    fun validationConfig(): ValidationConfig = ValidationConfig(maxViolations = maxFindings ?: Int.MAX_VALUE)
+    fun validationConfig(): ValidationConfig =
+        ValidationConfig(maxViolations = maxFindings ?: Int.MAX_VALUE, timeout = Duration.ofSeconds(validationTimeoutSeconds.toLong()))
 
     /** `--reasoner-timeout`, or null for the reasoner configuration's default. */
     fun reasonerTimeout(): Duration? = reasonerTimeoutSeconds?.let { Duration.ofSeconds(it.toLong()) }
@@ -233,7 +248,7 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
 /** Exit status: success, no findings at or above `--severity`. */
 internal const val EXIT_OK = 0
 
-/** Exit status when findings reach `--severity`. */
+/** Exit status when findings reach `--severity`, or when the report is truncated (`--max-findings`). */
 internal const val EXIT_FINDINGS = 1
 
 /** Exit status when the input ontology cannot be parsed in the selected RDF syntax (reading it failing is [EXIT_RUNTIME_ERROR]). */
@@ -249,9 +264,9 @@ internal const val EXIT_USAGE = 4
 internal const val EXIT_RUNTIME_ERROR = 5
 
 internal const val EXIT_STATUS_HELP =
-    "Exit status: 0 success; 1 findings at or above --severity; 2 the ontology could not be parsed; " +
-        "3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
-        "5 runtime error (model download or loading, similarity or LLM budget, I/O, internal). " +
+    "Exit status: 0 success; 1 findings at or above --severity, or a report cut by --max-findings; 2 the ontology could not be " +
+        "parsed; 3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
+        "5 runtime error (model download or loading, similarity, LLM, validation or reasoner budget, I/O, internal). " +
         "Use --debug (before or after the command) for stack traces.\n\n" +
         "kastor-rdf uses a different convention: 0 success; 1 usage or input error; 2 diff found the inputs not isomorphic; " +
         "3 runtime error.\n\n" +

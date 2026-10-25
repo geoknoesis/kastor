@@ -605,6 +605,22 @@ class CliTest {
     }
 
     @Test
+    fun `a validation out of time is exit 5 with a hint about --validation-timeout`() {
+        // About 25,000 triples under every catalogue: many seconds of validation, far beyond a 1-second budget.
+        val body = buildString {
+            appendLine("@prefix ex: <http://example.org/slow#> .")
+            appendLine("@prefix owl: <http://www.w3.org/2002/07/owl#> .")
+            appendLine("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .")
+            for (i in 0 until 3_000) appendLine("ex:C$i a owl:Class ; rdfs:label \"c $i\" ; rdfs:comment \"c\" ; rdfs:subClassOf ex:C${i / 2} .")
+        }
+        val onto = ontology("slow.ttl", body).toString()
+        val result = run(listOf("check", onto, "--validation-timeout", "1", "--output", dir.resolve("slow.txt").toString()))
+        assertEquals(EXIT_RUNTIME_ERROR, result.status, result.err)
+        assertTrue(result.err.contains("SHACL validation failed") && result.err.contains("--validation-timeout"), result.err)
+        assertEquals(EXIT_USAGE, run(listOf("check", onto, "--validation-timeout", "0")).status)
+    }
+
+    @Test
     fun `--reasoner-timeout bounds the reasoner run and must be positive`() {
         val onto = ontology().toString()
         assertEquals(EXIT_USAGE, run(listOf("check", onto, "--reasoner", "rdfs", "--reasoner-timeout", "0")).status)

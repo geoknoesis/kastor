@@ -504,11 +504,11 @@ oqsh:NoSubClassCycleShape
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "P06" ;
     rdfs:label      "No cycles in the rdfs:subClassOf hierarchy" ;
-    rdfs:comment    "OOPS! P06. A cycle makes every class in it equivalent, which is almost never the intent. Flag and let the author decide. A cycle goes through at least one other class: a bare A rdfs:subClassOf A is a tautology (rdfs:subClassOf is reflexive, and every reasoner entails it for every class), so it is not reported." ;
+    rdfs:comment    "OOPS! P06. A cycle makes every class in it equivalent, which is almost never the intent. Flag and let the author decide. A cycle goes through at least one other class: a bare A rdfs:subClassOf A is a tautology (rdfs:subClassOf is reflexive, and every reasoner entails it for every class), so it is not reported. The query walks from each direct superclass back to the class (a reachability test with both ends bound), so a deep hierarchy costs linear time per class, not cubic." ;
     sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class appears in an rdfs:subClassOf cycle." ;
-                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT DISTINCT ?v WHERE { $this rdfs:subClassOf+ ?mid . FILTER ( ?mid != $this ) ?mid rdfs:subClassOf+ $this . FILTER ( $this != owl:Thing ) BIND(1 AS ?v) }" ] ;
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT DISTINCT ?v WHERE { FILTER ( $this != owl:Thing ) $this rdfs:subClassOf ?next . FILTER ( ?next != $this ) FILTER EXISTS { ?next rdfs:subClassOf+ $this } BIND(1 AS ?v) }" ] ;
     sh:severity     sh:Violation .
 
 oqsh:NoSubPropertyCycleShape
@@ -522,7 +522,7 @@ oqsh:NoSubPropertyCycleShape
     sh:targetSubjectsOf rdfs:subPropertyOf ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Property appears in an rdfs:subPropertyOf cycle." ;
-                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?v WHERE { $this rdfs:subPropertyOf+ ?mid . FILTER ( ?mid != $this ) ?mid rdfs:subPropertyOf+ $this . BIND(1 AS ?v) }" ] ;
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?v WHERE { $this rdfs:subPropertyOf ?next . FILTER ( ?next != $this ) FILTER EXISTS { ?next rdfs:subPropertyOf+ $this } BIND(1 AS ?v) }" ] ;
     sh:severity     sh:Violation .
 
 oqsh:EquivalenceVsSubclassShape
