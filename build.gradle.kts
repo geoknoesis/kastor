@@ -12,6 +12,8 @@ plugins {
 }
 
 apply(plugin = "com.autonomousapps.dependency-analysis")
+// Root `check` and the repository-level Python gates (complexity ratchet, doc versions, build pins, README imports).
+apply(from = "gradle/quality-gates.gradle.kts")
 
 // The version is defined once, in gradle.properties (`version=`). Releases are tagged `vX.Y.Z`.
 allprojects {
@@ -32,7 +34,7 @@ val platformProjects = setOf(":bom", ":build-platform")
  */
 val coverageFloors = mapOf(
   ":rdf:core" to "0.78", // measured 80.7% with serialization dispatch and round-trip contract tests
-  ":rdf:holon" to "0.80",
+  ":rdf:holon" to "0.88", // measured 93.0% (2026-10-24)
   ":rdf:jena" to "0.85",
   ":rdf:rdf4j" to "0.90",
   ":rdf:reasoning" to "0.65",
@@ -64,6 +66,7 @@ val coverageFloors = mapOf(
 // Branch coverage protects decisions that high line coverage can miss. Native-only paths have a separate gate.
 val branchCoverageFloors = mapOf(
   ":rdf:core" to "0.72", ":rdf:jena" to "0.75", ":rdf:rdf4j" to "0.78",
+  ":rdf:holon" to "0.72", // measured 77.1% (2026-10-24)
   ":rdf:shacl-validation" to "0.72", ":kastor-gen:processor" to "0.65",
   ":kastor-gen:runtime" to "0.68", ":tools:onto-quality" to "0.70",
   ":tools:onto-quality-embed" to "0.45", ":tools:onto-quality-llm-koog" to "0.63",
@@ -399,6 +402,7 @@ val collectArtifacts = tasks.register<org.gradle.api.tasks.Sync>("collectArtifac
 // Root aggregate build task
 tasks.register("build") {
   dependsOn(collectArtifacts)
+  dependsOn("check")
   dependsOn(subprojects.filter { it.buildFile.isFile }.map { "${it.path}:check" })
   dependsOn("conformanceSmokeTest")
 }

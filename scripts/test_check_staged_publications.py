@@ -140,6 +140,27 @@ class StagedPublicationGate(unittest.TestCase):
                 self.pom.write_text(POM.format(packaging="").replace(element, ""), encoding="utf-8")
                 self.assertNotEqual(0, self.gate().returncode)
 
+    def bom(self, *members):
+        managed = "".join(f"<dependency><groupId>example</groupId><artifactId>{member}</artifactId>"
+                          "<version>1</version></dependency>" for member in members)
+        bom = self.directory / "bom" / "kastor-bom-1.pom"
+        bom.parent.mkdir(exist_ok=True)
+        bom.write_text(POM.format(packaging="<packaging>pom</packaging><dependencyManagement><dependencies>"
+                                            f"{managed}</dependencies></dependencyManagement>")
+                       .replace("<artifactId>library</artifactId>", "<artifactId>kastor-bom</artifactId>"),
+                       encoding="utf-8")
+
+    def test_bom_whose_members_are_all_staged_passes(self):
+        self.bom("library")
+        result = self.gate()
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_bom_member_that_was_not_staged_fails(self):
+        self.bom("library", "rdf-holon")
+        result = self.gate()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("example:rdf-holon", result.stdout + result.stderr)
+
     def test_invalid_zip_fails(self):
         (self.directory / "library-1.jar").write_bytes(b"not a zip")
         self.assertNotEqual(0, self.gate().returncode)

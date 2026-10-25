@@ -75,4 +75,17 @@ for pom in poms:
     xml_purl = sbom_root.findtext("c:metadata/c:component/c:purl", "", {"c": xml_ns}).strip()
     if not xml_ns.startswith("http://cyclonedx.org/schema/bom/") or not xml_purl.startswith(purl):
         raise SystemExit(f"{xml_sbom}: not a CycloneDX SBOM for {purl}")
+# Every module the BOM manages must be staged, so a new publication (for example rdf-holon) cannot reach a release
+# without passing the checks above and the consumer builds that resolve through the BOM.
+staged = {(root.findtext("m:groupId", "", ns).strip(), root.findtext("m:artifactId", "", ns).strip())
+          for root in (ET.parse(pom).getroot() for pom in poms)}
+for pom in poms:
+    root = ET.parse(pom).getroot()
+    if root.findtext("m:artifactId", "", ns).strip() != "kastor-bom":
+        continue
+    group = root.findtext("m:groupId", "", ns).strip()
+    for dependency in root.findall("m:dependencyManagement/m:dependencies/m:dependency", ns):
+        coordinates = (dependency.findtext("m:groupId", "", ns).strip(), dependency.findtext("m:artifactId", "", ns).strip())
+        if coordinates[0] == group and coordinates not in staged:
+            raise SystemExit(f"{pom}: BOM member {':'.join(coordinates)} was not staged")
 print(f"Validated metadata, required artifacts and SBOMs for {len(poms)} staged publications")
