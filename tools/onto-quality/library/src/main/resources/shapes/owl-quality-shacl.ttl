@@ -14,7 +14,8 @@
 #  in the SELECT clause) so it runs on Kastor’s SHACL engine (Jena ARQ).
 #
 #  Every finding is reported on the offending resource: shapes target the
-#  resources they check (sh:targetClass, sh:targetSubjectsOf, sh:targetObjectsOf)
+#  resources they check (sh:targetClass, sh:targetSubjectsOf, sh:targetObjectsOf,
+#  or sh:targetWhere with a named-entity membership shape)
 #  and bind them as $this. The one detector that has to scan the whole graph
 #  (P35: SHACL has no target for predicates) projects the offender as ?value
 #  and interpolates it in the message.
@@ -168,6 +169,38 @@ oqsh:VocabularyIntegrity a rdfs:Class, skos:Concept ;
     skos:inScheme   oqsh:QualityShapeCategoryScheme ;
     skos:topConceptOf oqsh:QualityShapeCategoryScheme .
 
+# ----------------------------------------------------------------------------
+#  Named-entity targets
+#
+#  The OWL 2 RDF mapping types every anonymous class expression (owl:unionOf,
+#  owl:intersectionOf, owl:complementOf, owl:oneOf) as owl:Class, so
+#  sh:targetClass owl:Class also selects those blank nodes. Detectors that
+#  report a *missing* annotation, declaration or name only make sense for named
+#  entities; they select their focus nodes with SHACL 1.2 sh:targetWhere and
+#  one of the membership shapes below, which keep the instances of the class
+#  that are IRIs. A blank node that does carry identity metadata
+#  is reported by oqsh:NamedEntityNotBnodeShape (modern-engineering catalogue).
+#  The membership shapes have no target of their own and report nothing.
+# ----------------------------------------------------------------------------
+
+oqsh:NamedClass
+    a               sh:NodeShape ;
+    rdfs:label      "named owl:Class (target membership)" ;
+    sh:class        owl:Class ;
+    sh:nodeKind     sh:IRI .
+
+oqsh:NamedObjectProperty
+    a               sh:NodeShape ;
+    rdfs:label      "named owl:ObjectProperty (target membership)" ;
+    sh:class        owl:ObjectProperty ;
+    sh:nodeKind     sh:IRI .
+
+oqsh:NamedDatatypeProperty
+    a               sh:NodeShape ;
+    rdfs:label      "named owl:DatatypeProperty (target membership)" ;
+    sh:class        owl:DatatypeProperty ;
+    sh:nodeKind     sh:IRI .
+
 # =============================================================================
 #                          A. ONTOLOGY METADATA  (P09)
 # =============================================================================
@@ -237,7 +270,7 @@ oqsh:ClassHasLabelShape
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:Class should have rdfs:label" ;
     rdfs:comment    "OOPS! P08. Defined classes without labels are unusable in browsers and editors." ;
-    sh:targetClass  owl:Class ;
+    sh:targetWhere  oqsh:NamedClass ;
     sh:property     [ sh:path rdfs:label ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -251,7 +284,7 @@ oqsh:ObjectPropertyHasLabelShape
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:ObjectProperty should have rdfs:label" ;
-    sh:targetClass  owl:ObjectProperty ;
+    sh:targetWhere  oqsh:NamedObjectProperty ;
     sh:property     [ sh:path rdfs:label ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -265,7 +298,7 @@ oqsh:DatatypePropertyHasLabelShape
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:DatatypeProperty should have rdfs:label" ;
-    sh:targetClass  owl:DatatypeProperty ;
+    sh:targetWhere  oqsh:NamedDatatypeProperty ;
     sh:property     [ sh:path rdfs:label ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -280,7 +313,7 @@ oqsh:ClassHasDefinitionShape
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:Class should carry rdfs:comment or skos:definition" ;
     rdfs:comment    "Strengthens P08 for the case of classes specifically. A class without a textual definition is hard to reuse correctly." ;
-    sh:targetClass  owl:Class ;
+    sh:targetWhere  oqsh:NamedClass ;
     sh:or           ( [ sh:path rdfs:comment    ; sh:minCount 1 ]
                       [ sh:path skos:definition ; sh:minCount 1 ] ) ;
     sh:message      "Class has neither rdfs:comment nor skos:definition." ;
@@ -311,7 +344,7 @@ oqsh:ObjectPropertyHasDomainShape
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:ObjectProperty should declare rdfs:domain" ;
     rdfs:comment    "OOPS! P11. Without a domain, the property is effectively typed as rdfs:Resource — useful in some open-vocabulary cases but a smell in domain ontologies." ;
-    sh:targetClass  owl:ObjectProperty ;
+    sh:targetWhere  oqsh:NamedObjectProperty ;
     sh:property     [ sh:path rdfs:domain ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -325,7 +358,7 @@ oqsh:ObjectPropertyHasRangeShape
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:ObjectProperty should declare rdfs:range" ;
-    sh:targetClass  owl:ObjectProperty ;
+    sh:targetWhere  oqsh:NamedObjectProperty ;
     sh:property     [ sh:path rdfs:range ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -339,7 +372,7 @@ oqsh:DatatypePropertyHasDomainShape
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:domain" ;
-    sh:targetClass  owl:DatatypeProperty ;
+    sh:targetWhere  oqsh:NamedDatatypeProperty ;
     sh:property     [ sh:path rdfs:domain ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -353,7 +386,7 @@ oqsh:DatatypePropertyHasRangeShape
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:range" ;
-    sh:targetClass  owl:DatatypeProperty ;
+    sh:targetWhere  oqsh:NamedDatatypeProperty ;
     sh:property     [ sh:path rdfs:range ;
                       sh:severity sh:Warning ;
                       sh:minCount 1 ;
@@ -601,8 +634,7 @@ oqsh:ClassNameUpperCamelShape
     oqsh:pitfall    "P22" ;
     rdfs:label      "Classes should use UpperCamelCase local names" ;
     rdfs:comment    "OOPS! P22. The widely-used convention is UpperCamelCase for class local names." ;
-    sh:targetClass  owl:Class ;
-    sh:nodeKind     sh:IRI ;
+    sh:targetWhere  oqsh:NamedClass ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class local name does not follow UpperCamelCase convention." ;
                       sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdf:type owl:Class . FILTER ( isIRI($this) ) BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( strlen(?local) > 0 ) FILTER ( !regex(?local, \"^[A-Z][A-Za-z0-9]*$\") ) FILTER ( !regex(?local, \"^_\") ) BIND(1 AS ?v) }" ] ;
