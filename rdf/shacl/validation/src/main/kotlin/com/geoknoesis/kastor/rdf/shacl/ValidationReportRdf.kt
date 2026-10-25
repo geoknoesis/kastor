@@ -41,6 +41,7 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
  * in this serialization.
  */
+@JvmOverloads
 fun ValidationReport.toShaclValidationReportRdf(
     reportNode: RdfResource = bnode("ValidationReport"),
 ): RdfGraph =

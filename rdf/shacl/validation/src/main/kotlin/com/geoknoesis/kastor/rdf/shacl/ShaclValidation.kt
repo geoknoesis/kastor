@@ -16,6 +16,7 @@ object ShaclValidation {
     /**
      * Create a validator with the given configuration.
      */
+    @JvmStatic
     fun validator(config: ValidationConfig): ShaclValidator {
         return ValidatorRegistry.createValidator(config)
     }
@@ -23,6 +24,7 @@ object ShaclValidation {
     /**
      * Create a validator for a specific validation profile.
      */
+    @JvmStatic
     fun validator(profile: ValidationProfile): ShaclValidator {
         return ValidatorRegistry.createValidator(profile)
     }
@@ -30,6 +32,7 @@ object ShaclValidation {
     /**
      * Create a default validator.
      */
+    @JvmStatic
     fun validator(): ShaclValidator {
         return ValidatorRegistry.createValidator(ValidationConfig.default())
     }
@@ -37,6 +40,7 @@ object ShaclValidation {
     /**
      * Create a strict validator.
      */
+    @JvmStatic
     fun strictValidator(): ShaclValidator {
         return ValidatorRegistry.createValidator(ValidationConfig.strict())
     }
@@ -44,6 +48,7 @@ object ShaclValidation {
     /**
      * Create a validator optimized for large graphs.
      */
+    @JvmStatic
     fun largeGraphValidator(): ShaclValidator {
         return ValidatorRegistry.createValidator(ValidationConfig.forLargeGraphs())
     }
@@ -51,6 +56,7 @@ object ShaclValidation {
     /**
      * Create a validator optimized for fast validation.
      */
+    @JvmStatic
     fun fastValidator(): ShaclValidator {
         return ValidatorRegistry.createValidator(ValidationConfig.forFastValidation())
     }
@@ -58,6 +64,7 @@ object ShaclValidation {
     /**
      * Create a validator for memory-constrained environments.
      */
+    @JvmStatic
     fun memoryConstrainedValidator(): ShaclValidator {
         return ValidatorRegistry.createValidator(ValidationConfig.forMemoryConstrained())
     }
@@ -65,6 +72,7 @@ object ShaclValidation {
     /**
      * Get all available validator providers.
      */
+    @JvmStatic
     fun validatorProviders(): List<ShaclValidatorProvider> {
         return ValidatorRegistry.getProviders()
     }
@@ -72,6 +80,7 @@ object ShaclValidation {
     /**
      * Get supported validation profiles.
      */
+    @JvmStatic
     fun supportedProfiles(): List<ValidationProfile> {
         return ValidatorRegistry.getSupportedProfiles()
     }
@@ -79,6 +88,7 @@ object ShaclValidation {
     /**
      * Check if a validation profile is supported.
      */
+    @JvmStatic
     fun isSupported(profile: ValidationProfile): Boolean {
         return ValidatorRegistry.isSupported(profile)
     }
@@ -86,6 +96,7 @@ object ShaclValidation {
     /**
      * Get the best validator provider for a profile.
      */
+    @JvmStatic
     fun getBestProvider(profile: ValidationProfile): ShaclValidatorProvider? {
         return ValidatorRegistry.getBestProviderForProfile(profile)
     }
@@ -93,6 +104,7 @@ object ShaclValidation {
     /**
      * Get registry statistics.
      */
+    @JvmStatic
     fun getRegistryStatistics(): RegistryStatistics {
         return ValidatorRegistry.getRegistryStatistics()
     }
