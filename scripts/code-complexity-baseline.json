@@ -58,7 +58,7 @@
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/providers/jena/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/JenaRepository.kt": {
-      "lines": 1332,
+      "lines": 1298,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/providers/rdf4j/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/Rdf4jFormatSupport.kt": {
@@ -66,7 +66,7 @@
       "reason": "Round-ten upstream b5cfef13: remote JSON-LD context rejection and safe parse-failure mapping. Frozen at integration; further growth requires review."
     },
     "rdf/providers/rdf4j/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository.kt": {
-      "lines": 1298,
+      "lines": 1291,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/providers/rdf4j/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/shacl/ShaclSailFeatures.kt": {
