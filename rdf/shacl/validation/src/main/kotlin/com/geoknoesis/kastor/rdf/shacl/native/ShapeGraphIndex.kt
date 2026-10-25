@@ -61,8 +61,11 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, budget: ValidationBudge
     /** Cooperative budget check for compile-time loops over this index. */
     fun tick(phase: String) = budget.tick(phase)
 
-    /** Graph-level `sh:declare` prefixes (used by nodes without `sh:prefixes`), computed once per index. */
-    val graphLevelPrefixes: Map<String, String> by lazy { SparqlPrefixes.graphLevel(this) }
+    /**
+     * The prefix maps of [SparqlPrefixes.collect], by `sh:prefixes` values (or the graph-level key), failures included:
+     * filled while the shapes graph is compiled, as [sparqlFunctionDeclarations].
+     */
+    internal val prefixMaps = java.util.concurrent.ConcurrentHashMap<Any, Result<Map<String, String>>>()
 
     /** SPARQL-based constraint components of this shapes graph, collected once per index. */
     val sparqlComponents: SparqlComponentCatalog by lazy { SparqlComponentCatalog.build(this) }
@@ -79,11 +82,11 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, budget: ValidationBudge
             .mapNotNull { t ->
                 tick("SPARQL function compilation")
                 val text = (t.obj as? Literal)?.lexical ?: return@mapNotNull null
-                val prefixes = LinkedHashMap<String, String>()
-                try {
-                    prefixes.putAll(SparqlPrefixes.collect(t.subject, this))
+                val prefixes = try {
+                    SparqlPrefixes.collect(t.subject, this)
                 } catch (_: ShapeCompileException) {
                     // An ill-formed declaration is reported where the query is compiled.
+                    emptyMap()
                 }
                 SparqlQueryText(t.subject, text, prefixes)
             }

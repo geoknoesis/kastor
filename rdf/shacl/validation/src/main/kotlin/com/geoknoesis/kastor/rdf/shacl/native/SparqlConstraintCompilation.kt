@@ -25,7 +25,7 @@ internal object SparqlConstraintCompilation {
         // On a node shape $PATH stays unbound.
         val body = SparqlQueryTemplate.substitutePath(text, path?.let { { renderSparqlPath(it) } })
         val template = SparqlQueryTemplate.compileRestricted(
-            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)), body,
+            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index), body, index), body,
             SparqlQueryTemplate.SPARQL_CONSTRAINT_PRE_BOUND, "SPARQL constraint $node", index.budget,
         )
         val severityIris = index.objects(node, SHACL.severity).filterIsInstance<Iri>()

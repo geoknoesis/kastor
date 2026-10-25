@@ -295,7 +295,7 @@ internal object NodeExpressions {
         if (index.objects(node, SHACL.prefixes).size > 1) throw ShapeCompileException("Node expression $node has more than one sh:prefixes")
         val body = if (hasSelect) text else "SELECT ($text AS ?$RESULT_VARIABLE) WHERE {}"
         val template = SparqlQueryTemplate.compileRestricted(
-            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index)), body, preBound, "Node expression $node", index.budget,
+            SparqlPrefixes.prologue(SparqlPrefixes.collect(node, index), body, index), body, preBound, "Node expression $node", index.budget,
         )
         val variable = if (hasSelect) {
             val projected = SparqlQueryTemplate.projectedVariables(body)
