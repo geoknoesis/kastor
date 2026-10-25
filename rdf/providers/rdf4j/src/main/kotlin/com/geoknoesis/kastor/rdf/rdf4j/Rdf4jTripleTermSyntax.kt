@@ -17,8 +17,7 @@ import java.io.PushbackInputStream
  *   a subject or a predicate comes next (at the start of a statement, after `;`, `[`, `<<`, ...) is left as it is, so
  *   Rio rejects it: a triple term is an object only, and as `<<` Rio would read it as a reified triple.
  *
- * N-Triples and N-Quads are not translated: Rio 5.x reads RDF-star in neither, so the RDF4J provider keeps writing
- * their triple terms as `urn:rdf4j:triple:` IRIs (and rejects RDF 1.2 triple terms in them).
+ * N-Triples and N-Quads, in which Rio 5.x reads no RDF-star, have their own translation ([Rdf4jLineSyntax]).
  *
  * Both work on the tokens of the document, not on its text: IRIs (`<...>`), string literals (all four quote forms,
  * with escapes; a long string ends at the first three quotes, as in the grammar), comments and escaped characters of

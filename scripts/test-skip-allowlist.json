@@ -261,69 +261,9 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Blank node subject",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested object term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with missing language tag",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-3: RDF4J 5.3.2 Rio silently rewrites \"...\"^^rdf:langString without a language tag into a plain literal"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Blank node subject",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested object term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term, no whitespace",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",

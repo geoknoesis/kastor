@@ -42,7 +42,7 @@ class Rdf4jTripleTermSyntaxTest {
 
     @Test
     fun `graph formats write triple terms in RDF 1-2 syntax and read them back`() {
-        for (format in listOf("TURTLE")) {
+        for (format in listOf("TURTLE", "N-TRIPLES")) {
             val text = Rdf4jProvider().serializeGraph(MemoryGraph(triples), format)
             assertFalse(text.contains("urn:rdf4j:triple"), "$format:\n$text")
             assertRdf12Syntax(format, text)
@@ -56,7 +56,7 @@ class Rdf4jTripleTermSyntaxTest {
     @Test
     fun `dataset formats write triple terms in RDF 1-2 syntax and read them back`() {
         val g = Iri("${ex}g")
-        for (format in listOf("TRIG")) {
+        for (format in listOf("TRIG", "N-QUADS")) {
             val text = Rdf4jRepository.MemoryRepository().use { repo ->
                 repo.editGraph(g).addTriples(triples)
                 Rdf4jProvider().serializeDataset(repo, format)
@@ -86,9 +86,46 @@ class Rdf4jTripleTermSyntaxTest {
     }
 
     @Test
-    fun `N-Triples and N-Quads keep RDF4J's encoding, which RDF4J reads back`() {
-        val text = Rdf4jProvider().serializeGraph(MemoryGraph(triples), "N-TRIPLES")
-        assertEquals(shape(triples), shape(Rdf4jProvider().parseGraph(text.byteInputStream(), "N-TRIPLES").getTriples()), text)
+    fun `RDF-XML and JSON-LD refuse a triple term instead of encoding it`() {
+        for (format in listOf("RDF/XML", "JSON-LD")) {
+            val error = assertThrows(RdfFormatException::class.java) { Rdf4jProvider().serializeGraph(MemoryGraph(triples), format) }
+            assertTrue(error.message!!.contains("triple term"), error.message)
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                repo.editGraph(Iri("${ex}g")).addTriples(triples)
+                assertThrows(RdfFormatException::class.java) { Rdf4jProvider().serializeDataset(repo, format) }
+            }
+            // Data without triple terms is written as before.
+            val plain = Rdf4jProvider().serializeGraph(MemoryGraph(listOf(RdfTriple(s, p, Literal("x")))), format)
+            assertEquals(Literal("x"), Rdf4jProvider().parseGraph(plain.byteInputStream(), format).getTriples().single().obj)
+        }
+    }
+
+    @Test
+    fun `N-Triples and N-Quads triple terms are read in object position only`() {
+        val nested = "<${ex}s> <${ex}p> <<( _:a <${ex}b> <<( <${ex}c> <${ex}d> \"e )>> <<(\"@en )>> )>> . # <<( )>>\n"
+        val obj = assertInstanceOf(TripleTerm::class.java, Rdf4jProvider().parseGraph(nested.byteInputStream(), "N-TRIPLES").getTriples().single().obj)
+        assertEquals(LangString("e )>> <<(", "en"), (obj.triple.obj as TripleTerm).triple.obj)
+        val quads = "<${ex}s> <${ex}p> <<( <${ex}a> <${ex}b> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> )>> <${ex}g> .\n"
+        Rdf4jRepository.MemoryRepository().use { repo ->
+            Rdf4jProvider().parseDataset(repo, quads.byteInputStream(), "N-QUADS")
+            assertInstanceOf(TripleTerm::class.java, repo.getGraph(Iri("${ex}g")).getTriples().single().obj)
+        }
+        // A blank node subject whose label holds `_` and `.`, a datatyped literal, no space before the final `.`.
+        val labels = "_:a_b.c <${ex}p> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>.\n_:a_b.c <${ex}p> <<( _:x_y <${ex}b> <${ex}c> )>>."
+        assertEquals(2, Rdf4jProvider().parseGraph(labels.byteInputStream(), "N-TRIPLES").getTriples().size)
+        for (bad in listOf(
+            "<<( <${ex}a> <${ex}b> <${ex}c> )>> <${ex}p> <${ex}o> .",
+            "<${ex}s> <<( <${ex}a> <${ex}b> <${ex}c> )>> <${ex}o> .",
+            "<${ex}s> <${ex}p> <<( <<( <${ex}a> <${ex}b> <${ex}c> )>> <${ex}b> <${ex}c> )>> .",
+            "<${ex}s> <${ex}p> <<( <${ex}a> <${ex}b> .",
+        )) {
+            assertThrows(RdfFormatException::class.java, { Rdf4jProvider().parseGraph(bad.byteInputStream(), "N-TRIPLES") }, bad)
+        }
+        assertThrows(RdfFormatException::class.java) {
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                Rdf4jProvider().parseDataset(repo, "<${ex}s> <${ex}p> <${ex}o> <<( <${ex}a> <${ex}b> <${ex}c> )>> .".byteInputStream(), "N-QUADS")
+            }
+        }
     }
 
     @Test

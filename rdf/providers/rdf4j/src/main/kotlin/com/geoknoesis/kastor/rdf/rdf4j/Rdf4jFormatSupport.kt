@@ -179,32 +179,56 @@ internal object Rdf4jFormatSupport {
     }
 
     /**
-     * The formats whose triple terms are written and read in RDF 1.2 syntax ([Rdf4jTripleTermSyntax]). Not N-Triples
-     * and N-Quads (Rio 5.x reads RDF-star in neither), nor RDF/XML and JSON-LD (Rio 5.x has no triple-term syntax for
-     * them): their triple terms stay `urn:rdf4j:triple:` IRIs, which only RDF4J reads back as triple terms.
+     * How triple terms are written and read, in RDF 1.2 syntax in every format that has one (Rio 5.x implements
+     * RDF-star, not RDF 1.2): Turtle and TriG through Rio's RDF-star writers and readers ([Rdf4jTripleTermSyntax]),
+     * N-Triples and N-Quads with Kastor's own line writer and a translation for Rio's readers ([Rdf4jLineSyntax]).
+     * RDF/XML and JSON-LD have no triple-term syntax in Rio 5.x: a triple term is refused ([TripleTermRefusal]), never
+     * written as the `urn:rdf4j:triple:` IRI Rio would encode it as.
      */
     private val TURTLE_FAMILY = setOf(RDFFormat.TURTLE, RDFFormat.TRIG)
+    private val LINE_FORMATS = setOf(RDFFormat.NTRIPLES, RDFFormat.NQUADS)
 
     /** The text a [writerFor] writer wrote, with RDF 1.2 triple-term syntax in the Turtle family. */
     private fun rdf12Text(format: RDFFormat, text: String): String =
         if (format in TURTLE_FAMILY) Rdf4jTripleTermSyntax.toRdf12(text) else text
 
-    /** [input] for Rio: in the Turtle family, RDF 1.2 triple terms become the RDF-star tokens Rio reads. */
-    private fun rdf12Input(format: RDFFormat, input: InputStream): InputStream =
-        if (format in TURTLE_FAMILY) Rdf4jTripleTermSyntax.fromRdf12(input) else input
+    /** [input] for Rio, with RDF 1.2 triple terms in the form Rio reads (see [TURTLE_FAMILY]). */
+    private fun rdf12Input(format: RDFFormat, input: InputStream): InputStream = when (format) {
+        in TURTLE_FAMILY -> Rdf4jTripleTermSyntax.fromRdf12(input)
+        in LINE_FORMATS -> Rdf4jLineSyntax.fromRdf12(input)
+        else -> input
+    }
+
+    /** Refuses a statement with a triple term in a format without triple-term syntax (RDF/XML, JSON-LD). */
+    private class TripleTermRefusal(private val format: RDFFormat, delegate: RDFHandler) : RDFHandlerWrapper(delegate) {
+        override fun handleStatement(statement: Statement) {
+            if (statement.`object` is org.eclipse.rdf4j.model.Triple || statement.subject is org.eclipse.rdf4j.model.Triple) {
+                throw RdfFormatException.Generic(
+                    "${format.name} cannot hold an RDF 1.2 triple term: RDF4J 5.x has no ${format.name} syntax for " +
+                        "triple terms. Serialize as Turtle, TriG, N-Triples or N-Quads.",
+                    RdfErrorCode.FORMAT_SERIALIZATION_ERROR,
+                )
+            }
+            super.handleStatement(statement)
+        }
+    }
 
     private fun writerFor(format: RDFFormat, writer: StringWriter, options: SerializationOptions): RDFHandler {
         // Base declarations are only emitted for formats that have one (Turtle / TriG), matching Jena.
         val base = options.baseUri?.takeIf { format == RDFFormat.TURTLE || format == RDFFormat.TRIG }
-        // Turtle / TriG triple terms: RDF-star writers (`<< s p o >>`, turned into RDF 1.2 `<<( s p o )>>` by rdf12Text),
-        // not the `urn:rdf4j:triple:` IRIs of Rio's RDF 1.1 writers, which the other formats keep.
-        val writerFormat = when (format) { RDFFormat.TURTLE -> RDFFormat.TURTLESTAR; RDFFormat.TRIG -> RDFFormat.TRIGSTAR; else -> format }
-        val rioWriter = if (base != null) Rio.createWriter(writerFormat, writer, base) else Rio.createWriter(writerFormat, writer)
-        if (format in TURTLE_FAMILY) rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.helpers.BasicWriterSettings.ENCODE_RDF_STAR, false)
-        // Rio's Turtle / TriG writers write numbers and booleans bare by default, in their canonical form ("+1", "01"
-        // and "1"^^xsd:boolean as 1, 1 and true): another literal. Written quoted, every lexical form is kept.
-        rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.turtle.TurtleWriterSettings.ABBREVIATE_NUMBERS, false)
-        return object : RDFHandlerWrapper(rioWriter) {
+        val target: RDFHandler = if (format in LINE_FORMATS) {
+            Rdf4jLineSyntax.Writer(writer, quads = format == RDFFormat.NQUADS)
+        } else {
+            // Turtle / TriG: RDF-star writers (`<< s p o >>`, turned into RDF 1.2 `<<( s p o )>>` by rdf12Text).
+            val writerFormat = when (format) { RDFFormat.TURTLE -> RDFFormat.TURTLESTAR; RDFFormat.TRIG -> RDFFormat.TRIGSTAR; else -> format }
+            val rioWriter = if (base != null) Rio.createWriter(writerFormat, writer, base) else Rio.createWriter(writerFormat, writer)
+            if (format in TURTLE_FAMILY) rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.helpers.BasicWriterSettings.ENCODE_RDF_STAR, false)
+            // Rio's Turtle / TriG writers write numbers and booleans bare by default, in their canonical form ("+1", "01"
+            // and "1"^^xsd:boolean as 1, 1 and true): another literal. Written quoted, every lexical form is kept.
+            rioWriter.writerConfig.set(org.eclipse.rdf4j.rio.turtle.TurtleWriterSettings.ABBREVIATE_NUMBERS, false)
+            if (format in TURTLE_FAMILY) rioWriter else TripleTermRefusal(format, rioWriter)
+        }
+        return object : RDFHandlerWrapper(target) {
             override fun startRDF() {
                 super.startRDF()
                 options.prefixMappings.forEach { (prefix, uri) -> super.handleNamespace(prefix, uri) }
@@ -278,42 +302,9 @@ internal object Rdf4jFormatSupport {
      * triple emitted once per [seen] set.
      */
     private fun checkedTriples(statement: Statement, seen: MutableSet<org.eclipse.rdf4j.model.Triple>?): List<RdfTriple> = try {
-        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj); requirePairedSurrogates(it) }
+        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj); Rdf4jLiteralChecks.requireValid(it) }
     } catch (e: IllegalArgumentException) {
         throw RDFParseException("Invalid RDF term: ${e.message}").also { it.initCause(e) }
-    }
-
-    /**
-     * Rejects a literal (also inside a triple term) whose lexical form holds an unpaired UTF-16 surrogate: Rio decodes
-     * a numeric escape of a surrogate code point into one, which is not a Unicode string (RDF 1.2 Turtle forbids such
-     * escapes; the Jena provider and the SPARQL JSON reader reject them). IRIs are checked by [Iri] itself.
-     * @throws IllegalArgumentException for such a literal
-     */
-    private fun requirePairedSurrogates(triple: RdfTriple) {
-        when (val obj = triple.obj) {
-            is Literal -> {
-                require(hasPairedSurrogates(obj.lexical)) { "literal lexical form contains an unpaired surrogate" }
-                // The limit the Jena provider needs (its parser computes literal values in quadratic time), for parity.
-                LiteralValidation.numericLengthProblem(obj.datatype.value, obj.lexical)?.let { throw IllegalArgumentException(it) }
-            }
-            is TripleTerm -> requirePairedSurrogates(obj.triple)
-            else -> Unit
-        }
-    }
-
-    private fun hasPairedSurrogates(value: String): Boolean {
-        var i = 0
-        while (i < value.length) {
-            val c = value[i]
-            if (c.isHighSurrogate()) {
-                if (i + 1 >= value.length || !value[i + 1].isLowSurrogate()) return false
-                i += 2
-            } else {
-                if (c.isLowSurrogate()) return false
-                i++
-            }
-        }
-        return true
     }
 
     /**
@@ -506,8 +497,8 @@ internal object Rdf4jFormatSupport {
      *
      * A blank node that occurs inside a triple term **and** outside of it (for example the reifier of an annotation on
      * an annotated triple) stays one node when the document is parsed by [parseDataset] / [parseGraph]: a triple term
-     * is written with the labels of the blank nodes inside it (in RDF 1.2 syntax in TriG, see [Rdf4jTripleTermSyntax];
-     * as an `urn:rdf4j:triple:` IRI in N-Quads), every blank node is
+     * is written in RDF 1.2 syntax with the labels of the blank nodes inside it ([Rdf4jTripleTermSyntax],
+     * [Rdf4jLineSyntax]), every blank node is
      * written under a label no Rio writer changes ([WriterLabels]), and the parsers of this object give a label the
      * same node inside and outside a triple term ([DocumentBlankNodes]). This holds for [serializeGraph] too. (Rio's
      * own parsers, used directly, keep the labels inside a triple term as written.)

@@ -382,8 +382,13 @@ entries are regrouped under those kind headings.
   instead of `urn:rdf4j:triple:` IRIs, which every other RDF 1.2 reader takes for plain IRIs. Kastor translates
   between RDF 1.2 triple-term tokens and the RDF-star tokens Rio 5.3.2 implements, token by token, in both directions;
   so the RDF4J provider now also reads Turtle / TriG with `<<( s p o )>>` (14 W3C RDF 1.2 parser tests pass that were
-  allowlisted). A triple term where a subject or a predicate belongs stays a syntax error. N-Triples, N-Quads, RDF/XML
-  and JSON-LD keep RDF4J's encoding: Rio 5.3.2 reads RDF-star in none of them.
+  allowlisted). A triple term where a subject or a predicate belongs stays a syntax error.
+- **Fixed (data integrity, RDF4J):** N-Triples and N-Quads write triple terms as `<<( s p o )>>` too (Kastor writes
+  their lines), and read them: a triple term in object position is handed to Rio as the encoded IRI it decodes. The
+  Jena and RDF4J providers read each other's Turtle, TriG, N-Triples and N-Quads triple terms (10 more W3C N-Triples /
+  N-Quads 1.2 tests pass). **Behaviour change:** RDF/XML and JSON-LD refuse a triple term with `RdfFormatException`
+  instead of writing the `urn:rdf4j:triple:` IRI other tools read as a plain IRI. On Jena, JSON-LD refuses a triple term
+  with `RdfFormatException` instead of a bare `JenaException`; Jena's RDF/XML writes it as `rdf:parseType="Triple"`.
 - **Conformance:** the 27 RDF4J serializer round-trip known losses are fixed and removed from
   `serializer-roundtrip-allowlist.tsv`, which now lists none.
 - **Tests (SPARQL endpoint):** the response-stream deadlines (`GuardedInputStream`, the overall deadline of a call)

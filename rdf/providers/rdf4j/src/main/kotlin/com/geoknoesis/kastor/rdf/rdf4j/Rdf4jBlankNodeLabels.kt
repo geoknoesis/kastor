@@ -8,8 +8,8 @@ import org.eclipse.rdf4j.model.Statement
  * Full source labels are mapped to unique ordinals, so distinct labels cannot collide.
  *
  * Rio alone does not do that: it renames the labels it reads as terms of a statement, but not those of a triple
- * term written as an `urn:rdf4j:triple:` IRI (the form Rio's writers use in N-Triples, N-Quads, RDF/XML and JSON-LD,
- * so the form [Rdf4jFormatSupport.serializeGraph] and [Rdf4jFormatSupport.serializeDataset] produce there). A blank node, or a
+ * term written as an `urn:rdf4j:triple:` IRI (the form Rio's RDF 1.1 writers use, and the form an N-Triples /
+ * N-Quads triple term is handed to Rio in, see [Rdf4jLineSyntax]). A blank node, or a
  * reifier, that occurs both inside and outside a triple term (an annotation on an annotation) would come back as
  * two nodes, and the label inside the triple term would be shared by every document parsed. The parsers of
  * [Rdf4jFormatSupport] therefore keep the labels of the document and rename them all here.

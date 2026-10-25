@@ -27,6 +27,13 @@ class Rdf4jNumericLiteralBoundTest {
             Rdf4jRepository.MemoryRepository().use { repo -> assertRefused { Rdf4jProvider().parseDataset(repo, doc.byteInputStream(), "TURTLE") } }
         }
         assertRefused { Rdf4jProvider().parseGraph(turtle("<<( <http://e/a> <http://e/b> $tooLong )>>").byteInputStream(), "TURTLE") }
+        // The parsed lexical form is checked, so escapes and every syntax are covered.
+        assertRefused { Rdf4jProvider().parseGraph(turtle("\"${"\\u0037".repeat(limit + 1)}\"^^<${xsd}integer>").byteInputStream(), "TURTLE") }
+        val xml = "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"http://e/s\">" +
+            "<p xmlns=\"http://e/\" rdf:datatype=\"${xsd}decimal\">$tooLong</p></rdf:Description></rdf:RDF>"
+        assertRefused { Rdf4jProvider().parseGraph(xml.byteInputStream(), "RDF/XML") }
+        val jsonld = "{\"@id\": \"http://e/s\", \"http://e/p\": {\"@value\": \"$tooLong\", \"@type\": \"${xsd}integer\"}}"
+        assertRefused { Rdf4jProvider().parseGraph(jsonld.byteInputStream(), "JSON-LD") }
     }
 
     @Test

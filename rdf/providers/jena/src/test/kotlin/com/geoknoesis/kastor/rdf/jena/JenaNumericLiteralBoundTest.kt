@@ -39,6 +39,13 @@ class JenaNumericLiteralBoundTest {
             JenaRepository.MemoryRepository().use { repo -> assertRefused { JenaProvider().parseDataset(repo, doc.byteInputStream(), "TURTLE") } }
         }
         assertRefused { JenaProvider().parseGraph("<http://e/s> <http://e/p> \"$tooLong\"^^<${xsd}integer> .".byteInputStream(), "N-TRIPLES") }
+        // Escaped digits count once decoded, and every syntax creates its literals through the bounded factory.
+        assertRefused { JenaProvider().parseGraph(turtle("\"${"\\u0037".repeat(limit + 1)}\"^^<${xsd}integer>").byteInputStream(), "TURTLE") }
+        val xml = "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"http://e/s\">" +
+            "<p xmlns=\"http://e/\" rdf:datatype=\"${xsd}decimal\">$tooLong</p></rdf:Description></rdf:RDF>"
+        assertRefused { JenaProvider().parseGraph(xml.byteInputStream(), "RDF/XML") }
+        val jsonld = "{\"@id\": \"http://e/s\", \"http://e/p\": {\"@value\": \"$tooLong\", \"@type\": \"${xsd}integer\"}}"
+        assertRefused { JenaProvider().parseGraph(jsonld.byteInputStream(), "JSON-LD") }
     }
 
     @Test

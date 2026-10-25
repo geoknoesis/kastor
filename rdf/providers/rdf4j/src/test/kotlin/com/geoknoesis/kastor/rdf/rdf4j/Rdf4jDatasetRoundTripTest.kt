@@ -223,13 +223,13 @@ class Rdf4jDatasetRoundTripTest {
 
     @Test
     fun `blank node labels of separate documents never name one node`() {
-        // Rio spells a triple term as an encoded IRI; the labels inside it are the ones written.
+        // An RDF 1.2 triple term, which the parser hands Rio as an encoded IRI with the labels inside it as written.
         val encoded = Rdf4jRepository.MemoryRepository().use { repo ->
             val n = BlankNode("n")
             repo.editDefaultGraph().addTriple(RdfTriple(n, Iri(ex + "says"), TripleTerm(RdfTriple(n, q, n))))
             provider.serializeGraph(repo.defaultGraph, "N-TRIPLES", SerializationOptions.DEFAULT)
         }
-        assertTrue(encoded.contains("urn:rdf4j:triple:"), encoded)
+        assertTrue(encoded.contains("<<( _:n "), encoded)
         fun nodes(): Set<BlankNode> {
             val out = LinkedHashSet<BlankNode>()
             provider.parseGraph(encoded.byteInputStream(), "N-TRIPLES").getTriples().forEach { blankNodes(it.subject, out); blankNodes(it.obj, out) }
