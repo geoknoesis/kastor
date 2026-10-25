@@ -675,7 +675,9 @@ object XsdLiterals {
   and its derived types such as `xsd:int`, `xsd:long`, `xsd:nonNegativeInteger`); `bigDecimal` also
   `xsd:decimal`; `float` and `double` every XSD numeric type; `boolean` only `xsd:boolean`; `localDate` only
   `xsd:date`. So `"42"^^xsd:string` (or a plain `"42"`) is ill-typed for an `Int` member and follows
-  `MaterializationPolicy.illTypedValues`; `string` reads the lexical form of any literal, and `lexical` (the
+  `MaterializationPolicy.illTypedValues`; `string` reads the lexical form of any literal (on purpose: a String
+  member without a datatype, or with `xsd:string`, also reads `"Chat"@fr` as `"Chat"`, and `replaceInGraph` keeps
+  that original term while the value is unchanged), and `lexical` (the
   decoder of String members that declare a datatype other than `xsd:string`, such as `xsd:dateTime`) only that
   of a well-formed literal of the declared datatype. Lexical forms follow
   XML Schema rules rather than Kotlin's:

@@ -24,7 +24,12 @@ import java.time.LocalDate
  */
 object XsdLiterals {
 
-  /** The lexical form of any literal: the decoder of String members without a declared datatype (or `xsd:string`). */
+  /**
+   * The lexical form of any literal: the decoder of String members without a declared datatype (or with
+   * `xsd:string`). Such a member deliberately reads every literal, including language-tagged and other-typed ones,
+   * whose tag or datatype is not part of the value; the generated `replaceInGraph` (through [mergeRecord]) keeps
+   * the original term while the value is unchanged, so the read is lossy but a write-back is not.
+   */
   fun string(literal: Literal): String = literal.lexical
 
   /**
