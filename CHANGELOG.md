@@ -14,6 +14,16 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### SHACL (`rdf-shacl-validation`)
+
+- Fixed: a per-focus-node `sh:deactivated` (of a shape, an `sh:sparql` constraint or a reifier of a parameter
+  triple) that read a conformance answer the recursion solver had not settled yet made the shape or constraint
+  undefined, even when its constraints held. Such a shape never settled, and a run that fails closed on undecided
+  checks aborted. "Deactivated, or the constraints hold" is now evaluated as a Kleene disjunction: constraints that
+  hold make the shape conform, whatever the deactivation turns out to be.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
