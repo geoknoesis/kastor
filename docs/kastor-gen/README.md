@@ -234,6 +234,12 @@ dependencies {
 }
 ```
 
+Generated interfaces and data classes carry `jakarta.validation` annotations (`@NotNull`, `@NotEmpty`, `@Size`)
+by default; `kastor-gen-runtime` brings `jakarta.validation-api` onto your compile class path, so both
+mode examples above compile as they are. Set `validationAnnotations = ValidationAnnotations.NONE` to omit the
+annotations, or `JAVAX` and add `javax.validation:validation-api` (see the
+[annotation reference](reference/annotations.md#ontology-generation-fields)).
+
 From another project, first run
 `./gradlew :rdf:core:publishToMavenLocal :kastor-gen:runtime:publishToMavenLocal :kastor-gen:processor:publishToMavenLocal`
 in a Kastor checkout, add `mavenLocal()` to your repositories, and depend on

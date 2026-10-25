@@ -7,6 +7,10 @@ plugins {
 dependencies {
   api(project(":rdf:core"))
   implementation(libs.slf4j.api)
+  // Generated code carries jakarta.validation constraint annotations by default (@Rdf(validationAnnotations =
+  // JAKARTA)). Consumers compile against the API through this module; it stays off every runtime classpath, where
+  // the JVM ignores annotation classes that are absent.
+  compileOnlyApi(libs.jakarta.validation.api)
 
   testImplementation(libs.kotlin.test)
 

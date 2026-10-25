@@ -3,10 +3,13 @@ package com.geoknoesis.kastor.gen.processor.internal.core
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileNotFoundException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.exceptions.ProcessingException
+import com.geoknoesis.kastor.gen.processor.internal.codegen.ValidationAnnotationSpecs
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
+import com.google.devtools.ksp.getClassDeclarationByName
 import com.google.devtools.ksp.validate
 import java.io.File
+import java.io.IOException
 
 /**
  * KSP processor for generating domain interfaces, wrappers, and instance DSL from SHACL / JSON-LD,
@@ -70,16 +73,18 @@ public class OntologyProcessor internal constructor(
 
   /**
    * Reports a failed generation request. A problem in the user's input is reported once, at [symbol], and processing
-   * continues with the other requests: a missing file (already reported by [OntologyFileReader] with the locations
-   * it tried) or an invalid shapes or context file ([IllegalArgumentException], e.g. an unknown JSON-LD prefix).
-   * An [InvalidConfigurationException] (reported where it is raised) and any unexpected failure are rethrown; the
-   * latter with its stack trace, as a [ProcessingException].
+   * continues with the other requests: a missing file ([FileNotFoundException], with the locations tried), an
+   * unreadable one ([IOException]), an invalid shapes, context or ontology file ([IllegalArgumentException], e.g. a
+   * Turtle syntax error or an unknown JSON-LD prefix) and shapes that cannot be generated
+   * ([InvalidConfigurationException], e.g. colliding names or cyclic inheritance). Any other failure is a processor
+   * bug: it is reported with its stack trace and rethrown as a [ProcessingException].
    */
   private fun reportFailure(request: String, symbol: KSAnnotated, e: Exception) {
     when (e) {
-      is InvalidConfigurationException -> throw e
-      is FileNotFoundException -> Unit
-      is IllegalArgumentException -> logger.error("$request on ${describe(symbol)}: ${e.message}", symbol)
+      is FileNotFoundException ->
+        logger.error("$request on ${describe(symbol)}: ontology file '${e.path}' not found; ${e.cause?.message}", symbol)
+      is InvalidConfigurationException, is IllegalArgumentException, is IOException ->
+        logger.error("$request on ${describe(symbol)}: ${e.message}", symbol)
       else -> {
         logger.error("Error processing $request on ${describe(symbol)}: ${e.message}", symbol)
         logger.exception(e)
@@ -105,8 +110,9 @@ public class OntologyProcessor internal constructor(
           handled = true
           val key = "${request.targetPackage}|${request.dslName}|${request.shaclPath}"
           if (!firstOfKind(generatedDsls, key, request, symbol)) return@let
+          // Outside the try: an invalid KSP option is a build configuration error, not a problem of this request.
+          val reader = fileReader()
           try {
-            val reader = fileReader()
             val model = reader.loadOntologyModel(
               request.shaclPath,
               request.contextPath?.takeIf { it.isNotBlank() },
@@ -133,8 +139,8 @@ public class OntologyProcessor internal constructor(
           handled = true
           val key = "${request.targetPackage}|${request.shaclPath}"
           if (!firstOfKind(generatedOntologies, key, request, symbol)) return@let
+          val reader = fileReader()
           try {
-            val reader = fileReader()
             val model = reader.loadOntologyModel(
               request.shaclPath,
               request.contextPath.takeIf { it.isNotBlank() },
@@ -157,6 +163,10 @@ public class OntologyProcessor internal constructor(
               generateWriteSupport = request.generateWriteSupport,
               owner = "@Rdf(shacl = \"${request.shaclPath}\") on ${describe(symbol)}",
               at = symbol,
+              validationApiAvailable = {
+                ValidationAnnotationSpecs.constraintsPackage(request.validationAnnotations)
+                  ?.let { resolver.getClassDeclarationByName("$it.NotNull") != null } ?: true
+              },
             )
           } catch (e: Exception) {
             reportFailure("@Rdf(shacl = \"${request.shaclPath}\")", symbol, e)

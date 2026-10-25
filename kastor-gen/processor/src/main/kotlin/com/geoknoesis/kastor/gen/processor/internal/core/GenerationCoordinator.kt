@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassWriterGener
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.ValidationAnnotationSpecs
 import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.EnumGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.ShaclEnumExtractor
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileGenerationException
@@ -52,8 +53,11 @@ public class GenerationCoordinator(
     /**
      * Generates interfaces and wrappers from ontology model.
      *
+     * @param validationApiAvailable whether the Bean Validation annotations of [validationAnnotations] are on the
+     *   compile class path, asked only when the generated code uses them; when they are not, nothing is written
      * @throws InvalidConfigurationException when data classes would collide with interfaces (empty
-     *   [dataClassSuffix]) or when generated names collide
+     *   [dataClassSuffix]), when generated names collide, or when the generated code needs a Bean Validation API
+     *   that is not on the class path
      */
     public fun generateFromOntology(
         model: OntologyModel,
@@ -71,6 +75,7 @@ public class GenerationCoordinator(
         sources: List<KSFile> = emptyList(),
         owner: String = "@Rdf ontology request for package '$packageName'",
         at: KSNode? = null,
+        validationApiAvailable: () -> Boolean = { true },
     ) {
         GenerationNames.renamedTypeWarnings(model).forEach { logger.warn(it) }
         if (generateDataClass && dataClassSuffix.isBlank() && (generateInterfaces || generateWrappers || dataClassImplementsInterface)) {
@@ -126,8 +131,30 @@ public class GenerationCoordinator(
         }
 
         GenerationNames.checkUniqueFiles(files)
+        requireValidationApi(validationAnnotations, files, validationApiAvailable)
         if (!claim(files, owner, at)) return
         files.sortedBy { it.name }.forEach { writeFile(it, sources) }
+    }
+
+    /**
+     * Fails when [files] import annotations of [flavour] that the compile class path lacks: the generated code would
+     * not compile, with an "unresolved reference" far from the cause.
+     */
+    private fun requireValidationApi(flavour: ValidationAnnotations, files: List<FileSpec>, available: () -> Boolean) {
+        val pkg = ValidationAnnotationSpecs.constraintsPackage(flavour) ?: return
+        if (files.none { "import $pkg." in it.toString() } || available()) return
+        val artifact = when (flavour) {
+            ValidationAnnotations.JAVAX -> "javax.validation:validation-api:2.0.1.Final"
+            else -> "jakarta.validation:jakarta.validation-api:3.1.1"
+        }
+        throw InvalidConfigurationException(
+            config = "validationAnnotations",
+            reason = "validationAnnotations = ValidationAnnotations.$flavour generates $pkg annotations " +
+                "(@NotNull, @NotEmpty, @Size) but $pkg.NotNull is not on the compile class path. Add the API, " +
+                "e.g. dependencies { implementation(\"$artifact\") } (kastor-gen-runtime provides " +
+                "jakarta.validation-api at compile time unless it is excluded), or set " +
+                "validationAnnotations = ValidationAnnotations.NONE",
+        )
     }
 
     /**

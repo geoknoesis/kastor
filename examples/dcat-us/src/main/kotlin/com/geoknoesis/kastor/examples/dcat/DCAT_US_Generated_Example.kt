@@ -5,7 +5,8 @@
  * `src/main/resources/dcat-us_3.0_shacl_shapes.ttl` and `dcat-us_3.0_context.jsonld` and generate one
  * interface + RDF-backed wrapper per node shape into `com.geoknoesis.kastor.examples.dcat.generated`.
  * The JSON-LD context supplies distinct type names where two vocabularies use the same local name
- * (`vcard:Address` → `VcardAddress`, `locn:Address` → `LocnAddress`).
+ * (`vcard:Address` → `VcardAddress`, `locn:Address` → `LocnAddress`). The interfaces carry the default
+ * `jakarta.validation` annotations, whose API kastor-gen-runtime provides at compile time.
  *
  * Run: ./gradlew :examples:dcat-us:runGeneratedExample
  */
@@ -13,14 +14,12 @@
     shacl = "dcat-us_3.0_shacl_shapes.ttl",
     context = "dcat-us_3.0_context.jsonld",
     packageName = "com.geoknoesis.kastor.examples.dcat.generated",
-    validationAnnotations = ValidationAnnotations.NONE,
 )
 
 package com.geoknoesis.kastor.examples.dcat
 
 import com.geoknoesis.kastor.examples.dcat.generated.Catalog
 import com.geoknoesis.kastor.gen.annotations.Rdf
-import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.runtime.asRdf
 import com.geoknoesis.kastor.gen.runtime.materialize
 import com.geoknoesis.kastor.rdf.Iri

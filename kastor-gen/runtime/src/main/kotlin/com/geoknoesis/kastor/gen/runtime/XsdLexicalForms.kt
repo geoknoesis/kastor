@@ -79,15 +79,23 @@ internal object XsdLexicalForms {
     }
   }
 
-  /** The integer value of [lexical] when it is an integer within [min]..[max]. */
-  fun integerValue(lexical: String, min: BigInteger?, max: BigInteger?): BigInteger? {
-    val s = lexical.trim()
-    if (!INTEGER.matches(s)) return null
-    val value = BigInteger(s)
-    return value.takeIf { (min == null || it >= min) && (max == null || it <= max) }
+  /**
+   * Whether [s] (trimmed) is an integer within [min]..[max]. Linear in the length of [s]: a magnitude with more
+   * digits than any finite bound is decided by its sign alone, so a hostile multi-megabyte literal is never parsed
+   * into a [BigInteger].
+   */
+  private fun integerIn(s: String, min: BigInteger?, max: BigInteger?): Boolean {
+    if (!INTEGER.matches(s)) return false
+    if (min == null && max == null) return true
+    val negative = s.startsWith('-')
+    val digits = s.trimStart('+', '-').trimStart('0')
+    if (digits.length > MAX_BOUND_DIGITS) return if (negative) min == null else max == null
+    val value = if (digits.isEmpty()) BigInteger.ZERO else BigInteger(digits).let { if (negative) it.negate() else it }
+    return (min == null || value >= min) && (max == null || value <= max)
   }
 
-  private fun integerIn(s: String, min: BigInteger?, max: BigInteger?): Boolean = integerValue(s, min, max) != null
+  /** Digits of the largest finite bound in [INTEGER_RANGES] (`unsignedLong`'s maximum has 20). */
+  private const val MAX_BOUND_DIGITS = 20
 
   private fun validDateTime(s: String, requireTimezone: Boolean): Boolean {
     val m = DATE_TIME.matchEntire(s) ?: return false
@@ -98,11 +106,14 @@ internal object XsdLexicalForms {
 
   /** Year, month and day groups starting at [first]. */
   private fun validDay(m: MatchResult, first: Int): Boolean {
-    val year = m.groupValues[first].toBigInteger()
+    val year = m.groupValues[first]
     val month = m.groupValues[first + 1].toInt()
     val day = m.groupValues[first + 2].toInt()
-    // The leap-year rule only depends on the year modulo 400.
-    return dayInMonth(year.mod(BigInteger.valueOf(400)).toInt() + 2000, month, day)
+    // The leap-year rule only depends on the year modulo 400, and 10000 is a multiple of 400: the last four digits
+    // decide it, so a year of any length is checked without parsing all of its digits.
+    val lastDigits = year.takeLast(4).trimStart('-').toInt()
+    val yearMod400 = Math.floorMod(if (year.startsWith('-')) -lastDigits else lastDigits, 400)
+    return dayInMonth(yearMod400 + 2000, month, day)
   }
 
   private fun dayInMonth(year: Int, month: Int, day: Int): Boolean {

@@ -47,6 +47,13 @@ public class ShaclEnumExtractor(private val logger: KSPLogger) {
             }
         }
 
+        // An enum constant holds a lexical form and a datatype, not a language tag or a base direction: a constant
+        // could not be written back as the language-tagged member it came from.
+        if (kind == EnumMemberKind.LITERAL && members.any { it.language != null || it.datatype in LANGUAGE_DATATYPES }) {
+            logger.warn("sh:in on ${prop.path} has language-tagged members; not generating an enum (the member keeps its declared type)")
+            return prop
+        }
+
         // Malformed: literal members combined with sh:class
         if (kind == EnumMemberKind.LITERAL && prop.targetClass != null) {
             logger.warn("sh:in on ${prop.path} has literal members but also sh:class; malformed, skipping enum")
@@ -114,6 +121,13 @@ public class ShaclEnumExtractor(private val logger: KSPLogger) {
             return NamingUtils.extractInterfaceName(ctxTypeIri)
         }
         return null
+    }
+
+    private companion object {
+        val LANGUAGE_DATATYPES = setOf(
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString",
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString",
+        )
     }
 
     private fun localName(iri: String): String = iri.substringAfterLast('/').substringAfterLast('#')

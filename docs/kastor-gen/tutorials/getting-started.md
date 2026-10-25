@@ -68,6 +68,14 @@ Kastor Gen artifacts are **not yet published** to a public repository. Use one o
   }
   ```
 
+Code generated from SHACL shapes (`@Rdf(shacl = …)`) carries Bean Validation annotations by default
+(`validationAnnotations = ValidationAnnotations.JAKARTA`: `@NotNull`, `@NotEmpty`, `@Size` from `sh:minCount` /
+`sh:maxCount`). `kastor-gen-runtime` provides `jakarta.validation-api` at compile time, so the default compiles
+without another dependency (Gradle resolves it from the runtime's module metadata; it is not added to your
+runtime class path). With `ValidationAnnotations.JAVAX` add `javax.validation:validation-api` yourself, or use
+`ValidationAnnotations.NONE` for no annotations. If the selected API is missing, the processor reports an error
+at the annotation that names the dependency.
+
 The processor needs no KSP arguments for hand-written `@Rdf` interfaces. When you generate from SHACL files
 (`@Rdf(shacl = …)`), KSP cannot see edits to those files and the processor warns about each one it reads;
 declare `src/main/resources` as an input of the `kspKotlin` task and set

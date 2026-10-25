@@ -19,6 +19,8 @@ internal object KspRunner {
         /** Hand-written sources plus the generated Kotlin files, keyed by relative path, ready to compile. */
         val sources: Map<String, String>,
         val infos: List<String> = emptyList(),
+        /** Errors reported without a symbol (no source location). */
+        val unlocatedErrors: List<String> = emptyList(),
     ) {
         val generated: Map<String, String> get() = sources.filterKeys { it.startsWith(GENERATED) }
     }
@@ -63,6 +65,6 @@ internal object KspRunner {
         val exit = KotlinSymbolProcessing(config, providers, logger).execute()
         val generated = kotlinOut.walkTopDown().filter { it.isFile && it.extension == "kt" }
             .associate { GENERATED + it.relativeTo(kotlinOut).invariantSeparatorsPath to it.readText() }
-        return Result(exit, logger.errors.toList(), logger.warnings.toList(), sources + generated, logger.infos.toList())
+        return Result(exit, logger.errors.toList(), logger.warnings.toList(), sources + generated, logger.infos.toList(), logger.unlocatedErrors.toList())
     }
 }

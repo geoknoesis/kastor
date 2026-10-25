@@ -6,19 +6,19 @@
  * - the `@file:Rdf(shacl = …)` annotation below makes the Kastor KSP processor generate the
  *   `Person` interface and its RDF-backed `PersonWrapper` into `com.example.hello`
  * - `main` materializes RDF data as a typed `Person`
+ * - the default `validationAnnotations = ValidationAnnotations.JAKARTA` puts `@get:NotNull` on the required
+ *   members; the jakarta.validation API they need comes with kastor-gen-runtime at compile time
  *
  * Run: ./gradlew :examples:hello-codegen:run
  */
 @file:Rdf(
     shacl = "person-shape.ttl",
     packageName = "com.example.hello",
-    validationAnnotations = ValidationAnnotations.NONE,
 )
 
 package com.example.hello
 
 import com.geoknoesis.kastor.gen.annotations.Rdf
-import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.runtime.materialize
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.Rdf as RdfApi

@@ -47,6 +47,11 @@ dependencies {
   runtimeOnly(libs.jena.arq)
   
   testImplementation(libs.kotlin.test)
+  // The real Bean Validation API, which compiled generated sources and KSP test runs see on the class path.
+  testRuntimeOnly(libs.jakarta.validation.api)
+  // Providers for the round trips of generated records through Jena and RDF4J repositories.
+  testRuntimeOnly(project(":rdf:jena"))
+  testRuntimeOnly(project(":rdf:rdf4j"))
 
   // In-process Kotlin compiler used by tests that compile generated sources for tricky
   // ontology inputs (same artifact/version the Kotlin Gradle plugin already resolves).

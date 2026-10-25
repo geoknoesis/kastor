@@ -112,8 +112,13 @@ abstract class OntologyGenerationTask : DefaultTask() {
     val contextInput: File get() = resolveInput("JSON-LD context", "contextPath", contextFile, contextCandidates)
         ?: throw GradleException("kastorGen ontology '${ontologyName.getOrElse(name)}': no JSON-LD context is configured")
 
-    /** Test hook: called before each generated file is written to the staging directory. */
+    /**
+     * Test hook: called before each generated file is written to the staging directory. Transient, like
+     * [fileReplacement]: the configuration cache never serializes the lambda, and a task restored from the cache
+     * runs without it.
+     */
     @get:Internal
+    @Transient
     internal var beforeFileWritten: ((File) -> Unit)? = null
 
     init {

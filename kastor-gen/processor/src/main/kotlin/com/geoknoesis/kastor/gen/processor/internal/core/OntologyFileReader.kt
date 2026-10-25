@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileNotFoundException
+import com.geoknoesis.kastor.gen.processor.api.model.ErrorContext
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyClass
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
@@ -22,6 +23,10 @@ import java.io.InputStream
  * 2. [searchRoots] (the KSP option `kastor.gen.resources`, a path-separator separated list),
  * 3. the processor class path (legacy behaviour).
  * Absolute paths are used as-is.
+ *
+ * Problems are thrown, never logged, so that the processor reports each one once, at the annotated symbol: a missing
+ * file as [FileNotFoundException] (its cause lists the locations tried), an unreadable one as an [java.io.IOException]
+ * and a file that does not parse as an [IllegalArgumentException].
  *
  * @param searchRoots additional directories to resolve relative ontology paths against
  */
@@ -109,8 +114,12 @@ public class OntologyFileReader(
             return it.inputStream()
         }
         javaClass.classLoader.getResourceAsStream(path)?.let { return it }
-        logger.error("Ontology file '$path' not found; tried ${tried.joinToString { it.path }} and the processor class path")
-        throw FileNotFoundException(path)
+        // Not logged here: the processor reports it once, at the annotated symbol.
+        throw FileNotFoundException(
+            path = path,
+            context = near?.let { ErrorContext.forFile(it.path) },
+            cause = java.io.FileNotFoundException("tried ${tried.joinToString { it.path }} and the processor class path"),
+        )
     }
 
     /**

@@ -55,6 +55,25 @@ class ShaclEnumExtractorTest {
     }
 
     @Test
+    fun `language-tagged literal members yield no enum, since a constant could not be written back with its tag`() {
+        val langString = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+        val prop = ShaclProperty(
+            path = "https://ex/#stage", name = "stage", description = "",
+            datatype = langString, targetClass = null, minCount = 0, maxCount = 1,
+            inValuesTyped = listOf(
+                ShaclInValue("draft", isIri = false, datatype = langString, language = "en"),
+                ShaclInValue("final", isIri = false, datatype = langString, language = "en"),
+            ),
+        )
+        val context = ctx(mapOf("stage" to JsonLdProperty(
+            id = Iri("https://ex/#stage"), type = JsonLdType.Iri(Iri("https://ex/#Stage")))))
+        val out = ShaclEnumExtractor(logger).enrich(OntologyModel(
+            listOf(ShaclShape("s", "https://ex/#Doc", listOf(prop))), context))
+        assertTrue(out.enums.isEmpty(), out.enums.toString())
+        assertNull(out.shapes.single().properties.single().enumName)
+    }
+
+    @Test
     fun `sh in without a name source yields no enum`() {
         val prop = ShaclProperty(
             path = "https://ex/#code", name = "code", description = "",

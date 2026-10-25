@@ -102,7 +102,14 @@ object MaterializationPolicy {
    */
   @JvmStatic
   fun illTyped(literal: Literal, property: String, expected: String): Nothing? =
-    reject("Ill-typed value \"${literal.lexical}\"^^<${literal.datatype.value}> for $property (expected $expected)")
+    reject("Ill-typed value \"${abbreviate(literal.lexical)}\"^^<${literal.datatype.value}> for $property (expected $expected)")
+
+  /** At most [MAX_LEXICAL_IN_MESSAGE] characters of [lexical], so a hostile literal cannot bloat an error message. */
+  private fun abbreviate(lexical: String): String =
+    if (lexical.length <= MAX_LEXICAL_IN_MESSAGE) lexical
+    else lexical.take(MAX_LEXICAL_IN_MESSAGE) + "... (${lexical.length} characters)"
+
+  private const val MAX_LEXICAL_IN_MESSAGE = 200
 
   /**
    * Called by generated code for a [value] of [property] whose term kind is not [expected] (e.g. a literal where an
@@ -113,7 +120,7 @@ object MaterializationPolicy {
    */
   @JvmStatic
   fun unexpectedTerm(value: RdfTerm, property: String, expected: String): Nothing? =
-    reject("Unexpected value $value for $property (expected $expected)")
+    reject("Unexpected value ${abbreviate(value.toString())} for $property (expected $expected)")
 
   private fun reject(message: String): Nothing? {
     when (illTypedValues) {
