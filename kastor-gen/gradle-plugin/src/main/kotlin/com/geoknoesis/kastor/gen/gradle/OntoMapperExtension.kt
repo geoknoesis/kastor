@@ -1,45 +1,33 @@
 package com.geoknoesis.kastor.gen.gradle
 
+import org.gradle.api.Action
 import org.gradle.api.NamedDomainObjectContainer
 
 /**
- * Extension for configuring Kastor Gen plugin.
- * 
- * This extension allows configuring ontology generation through Gradle build scripts
- * without requiring annotations in the source code. Supports both single and multiple
- * ontology configurations.
+ * The `kastorGen` extension: ontology generation configured in the build script, without annotations in the
+ * source code. Each entry of [ontologies] gets a `generateOntology<Name>` task.
  */
-open class OntoMapperExtension {
-    
-    /**
-     * Container for multiple ontology configurations; set by the `com.geoknoesis.kastor.gen` plugin when it creates
-     * this extension (`null` only for an extension created without the plugin).
-     */
-    var ontologies: NamedDomainObjectContainer<OntologyConfig>? = null
+abstract class OntoMapperExtension {
 
-    private fun container(): NamedDomainObjectContainer<OntologyConfig> = checkNotNull(ontologies) {
-        "kastorGen has no ontologies container: apply the com.geoknoesis.kastor.gen plugin instead of creating " +
-            "OntoMapperExtension yourself"
-    }
+    /** The ontology configurations, by name (a Gradle-managed container). */
+    abstract val ontologies: NamedDomainObjectContainer<OntologyConfig>
 
     /**
-     * DSL method to configure a single ontology.
-     * 
+     * Adds and configures the ontology [name].
+     *
      * @param name The name of the ontology configuration
      * @param configure The configuration block
-     * @throws IllegalStateException when the extension was not created by the plugin
      */
-    fun ontology(name: String, configure: OntologyConfig.() -> Unit) {
-        container().create(name).configure()
+    fun ontology(name: String, configure: Action<in OntologyConfig>) {
+        ontologies.create(name, configure)
     }
-    
+
     /**
-     * DSL method to configure multiple ontologies.
-     * 
+     * Configures the [ontologies] container.
+     *
      * @param configure The configuration block for the ontologies container
-     * @throws IllegalStateException when the extension was not created by the plugin
      */
-    fun ontologies(configure: NamedDomainObjectContainer<OntologyConfig>.() -> Unit) {
-        container().configure()
+    fun ontologies(configure: Action<in NamedDomainObjectContainer<OntologyConfig>>) {
+        configure.execute(ontologies)
     }
 }
