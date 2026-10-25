@@ -187,4 +187,16 @@ class ShaclDslPropertyPathTest {
         val data = "ex:a a ex:T ; ex:parent ex:b . ex:b ex:name 'B' . ex:c ex:child ex:b ; ex:name 'C' . ex:d a ex:T ; ex:parent ex:c ."
         assertEquals(setOf<RdfTerm>(iri("d")), failing(validate(shapes, data)), ancestor)
     }
+    @Test
+    fun `a path object used several times is written once and shared`() {
+        // 40 levels of `p(i) = p(i+1) | p(i+1)`: written as a tree, 2^40 blank nodes.
+        var path: ShaclPropertyPath = ShaclPropertyPath.Predicate(iri("q"))
+        repeat(40) { path = ShaclPropertyPath.Alternative(listOf(path, path)) }
+        val (triples, root) = shapeWith { property(path) { minCount = 1 } }.pathOfOnlyProperty()
+        // One sh:alternativePath and two list cells (four triples) per level.
+        assertEquals(40, triples.count { it.predicate == SHACL.alternativePath })
+        val head = triples.objectsOf(root, SHACL.alternativePath).single()
+        val members = triples.list(head)
+        assertEquals(members[0], members[1])
+    }
 }

@@ -111,12 +111,20 @@ interface ShaclPathScope {
 
 /**
  * Serializes [path] to the standard SHACL path RDF and returns the `sh:path` value. The triples describing a complex
- * path (blank nodes, RDF lists) are appended to [triples]; a predicate path needs none.
+ * path (blank nodes, RDF lists) are appended to [triples]; a predicate path needs none. A path object used several
+ * times in [path] is written once and its node shared ([written], by identity), so a path built by reusing a
+ * sub-path object is written in size linear in the number of objects, not of its unfolding.
  */
-internal fun shaclPathToRdf(path: ShaclPropertyPath, nextBnode: (String) -> BlankNode, triples: MutableList<RdfTriple>): RdfTerm {
+internal fun shaclPathToRdf(
+    path: ShaclPropertyPath,
+    nextBnode: (String) -> BlankNode,
+    triples: MutableList<RdfTriple>,
+    written: java.util.IdentityHashMap<ShaclPropertyPath, RdfTerm> = java.util.IdentityHashMap(),
+): RdfTerm {
+    written[path]?.let { return it }
     fun list(members: List<ShaclPropertyPath>): RdfTerm {
         // Members first, so that nested structures are numbered before the list cells that refer to them.
-        val terms = members.map { shaclPathToRdf(it, nextBnode, triples) }
+        val terms = members.map { shaclPathToRdf(it, nextBnode, triples, written) }
         val cells = terms.map { nextBnode("path") }
         terms.forEachIndexed { i, term ->
             triples += RdfTriple(cells[i], RDF.first, term)
@@ -125,10 +133,10 @@ internal fun shaclPathToRdf(path: ShaclPropertyPath, nextBnode: (String) -> Blan
         return cells.first()
     }
     fun unary(property: Iri, child: ShaclPropertyPath): RdfTerm {
-        val value = shaclPathToRdf(child, nextBnode, triples)
+        val value = shaclPathToRdf(child, nextBnode, triples, written)
         return nextBnode("path").also { triples += RdfTriple(it, property, value) }
     }
-    return when (path) {
+    val term = when (path) {
         is ShaclPropertyPath.Predicate -> path.iri
         is ShaclPropertyPath.Inverse -> unary(SHACL.inversePath, path.path)
         is ShaclPropertyPath.Sequence -> list(path.steps)
@@ -140,4 +148,6 @@ internal fun shaclPathToRdf(path: ShaclPropertyPath, nextBnode: (String) -> Blan
         is ShaclPropertyPath.OneOrMore -> unary(SHACL.oneOrMorePath, path.path)
         is ShaclPropertyPath.ZeroOrOne -> unary(SHACL.zeroOrOnePath, path.path)
     }
+    written[path] = term
+    return term
 }
