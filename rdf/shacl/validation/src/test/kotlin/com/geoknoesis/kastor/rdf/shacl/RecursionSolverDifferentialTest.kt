@@ -45,7 +45,7 @@ class RecursionSolverDifferentialTest {
         data class Xone(val a: Int, val b: Int) : Conjunct()
         data class Not(val shape: Int) : Conjunct()
         data class Node(val shape: Int) : Conjunct()
-        /** `sh:expression [ shnex:conformsToShape ( focusNode shape ) ]`: an expression read, always negative. */
+        /** `sh:expression [ shnex:conformsToShape ( focusNode shape ) ]`: a monotone expression read. */
         data class Expr(val shape: Int) : Conjunct()
         /** The shape's `sh:deactivated [ shnex:conformsToShape ( focusNode shape ) ]` (at most one per shape). */
         data class Deact(val shape: Int) : Conjunct()
@@ -74,8 +74,14 @@ class RecursionSolverDifferentialTest {
         fun siblings(shape: Int, c: Conjunct.Qualified): List<Int> =
             if (!c.disjoint) emptyList() else shapes[shape].filterIsInstance<Conjunct.Qualified>().map { it.shape }.distinct().filter { it != c.shape }
 
-        fun dependencies(atom: Atom): List<Edge> =
-            shapes[atom.shape].flatMap { c ->
+        /**
+         * The questions [atom] reads. A deactivation settled to "conforms" ([settled]) deactivates what it guards,
+         * which then reads nothing: the solver records the reads evaluations make, not those of the shapes graph.
+         */
+        fun dependencies(atom: Atom, settled: Map<Atom, V> = emptyMap()): List<Edge> {
+            val deactivation = shapes[atom.shape].filterIsInstance<Conjunct.Deact>().firstOrNull()
+            if (deactivation != null && settled[Atom(atom.node, deactivation.shape)] == V.C) return listOf(Edge(Atom(atom.node, deactivation.shape), true))
+            return shapes[atom.shape].flatMap { c ->
                 when (c) {
                     Conjunct.HasName -> emptyList()
                     is Conjunct.All -> values(atom.node, c.pred).map { Edge(Atom(it, c.shape), false) }
@@ -89,12 +95,18 @@ class RecursionSolverDifferentialTest {
                     is Conjunct.Xone -> listOf(Edge(Atom(atom.node, c.a), true), Edge(Atom(atom.node, c.b), true))
                     is Conjunct.Not -> listOf(Edge(Atom(atom.node, c.shape), true))
                     is Conjunct.Node -> listOf(Edge(Atom(atom.node, c.shape), false))
-                    // Expression reads are negative dependencies.
-                    is Conjunct.Expr -> listOf(Edge(Atom(atom.node, c.shape), true))
+                    // A constant-shape shnex:conformsToShape at sh:expression is monotone: a positive dependency.
+                    is Conjunct.Expr -> listOf(Edge(Atom(atom.node, c.shape), false))
                     is Conjunct.Deact -> listOf(Edge(Atom(atom.node, c.shape), true))
-                    is Conjunct.ReifNode -> listOf(Edge(Atom(atom.node, c.node), false), Edge(Atom(atom.node, c.shape), true))
+                    is Conjunct.ReifNode ->
+                        if (settled[Atom(atom.node, c.shape)] == V.C) {
+                            listOf(Edge(Atom(atom.node, c.shape), true))
+                        } else {
+                            listOf(Edge(Atom(atom.node, c.node), false), Edge(Atom(atom.node, c.shape), true))
+                        }
                 }
             }
+        }
 
         /** The questions the node expressions of [atom]'s shape ask while [atom] is evaluated. */
         fun expressionReads(atom: Atom): List<Atom> =
@@ -167,11 +179,11 @@ class RecursionSolverDifferentialTest {
                 is Conjunct.Deact -> emptyList()
                 is Conjunct.ReifNode -> {
                     // Deactivated, or the constraint holds: a Kleene disjunction, undefined only when it does not hold.
-                    val constraint = answer(Atom(node, c.node))
+                    // The constraint is read only when the deactivation does not hold, as the engine reads it.
                     when (answer(Atom(node, c.shape))) {
                         V.C -> emptyList()
-                        V.F -> row(shape, ConstraintType.NODE, node, constraint)
-                        V.U -> if (constraint == V.C) emptyList() else listOf(Row(node, shape, ConstraintType.NODE, null, true))
+                        V.F -> row(shape, ConstraintType.NODE, node, answer(Atom(node, c.node)))
+                        V.U -> if (answer(Atom(node, c.node)) == V.C) emptyList() else listOf(Row(node, shape, ConstraintType.NODE, null, true))
                     }
                 }
             }
@@ -179,12 +191,12 @@ class RecursionSolverDifferentialTest {
 
         /** The rows of [atom]: its conjuncts', unless its shape's `sh:deactivated` holds (a Kleene disjunction). */
         fun rows(atom: Atom, answer: (Atom) -> V): List<Row> {
-            val body = shapes[atom.shape].indices.flatMap { rows(atom, it, answer) }
-            val deactivation = shapes[atom.shape].filterIsInstance<Conjunct.Deact>().firstOrNull() ?: return body
+            fun body() = shapes[atom.shape].indices.flatMap { rows(atom, it, answer) }
+            val deactivation = shapes[atom.shape].filterIsInstance<Conjunct.Deact>().firstOrNull() ?: return body()
             return when (answer(Atom(atom.node, deactivation.shape))) {
                 V.C -> emptyList()
-                V.F -> body
-                V.U -> if (body.isEmpty()) emptyList() else listOf(Row(atom.node, "S${atom.shape}", ConstraintType.NODE, null, true))
+                V.F -> body()
+                V.U -> if (body().isEmpty()) emptyList() else listOf(Row(atom.node, "S${atom.shape}", ConstraintType.NODE, null, true))
             }
         }
 
@@ -205,9 +217,9 @@ class RecursionSolverDifferentialTest {
             val all = (0 until nodes).flatMap { n -> shapes.indices.map { Atom(n, it) } }
             while (settled.size < all.size) {
                 val unsettled = all.filter { it !in settled }
-                val group = bottomGroup(unsettled) { a -> dependencies(a).map { it.to }.filter { it !in settled } }
+                val group = bottomGroup(unsettled) { a -> dependencies(a, settled).map { it.to }.filter { it !in settled } }
                 val members = group.toSet()
-                val negativeInside = group.any { a -> dependencies(a).any { it.negative && it.to in members } }
+                val negativeInside = group.any { a -> dependencies(a, settled).any { it.negative && it.to in members } }
                 if (!negativeInside) {
                     // Greatest fixpoint: assume conformance and lower the answers until nothing changes.
                     val current = group.associateWithTo(HashMap()) { V.C }
@@ -515,7 +527,7 @@ class RecursionSolverDifferentialTest {
 
     /**
      * The same comparison with shapes that read each other through node expressions as well: `sh:expression`, a
-     * shape's `sh:deactivated` and a reifier's `sh:deactivated` (all negative reads). An expression that reads a
+     * shape's `sh:deactivated` and a reifier's `sh:deactivated` (negative reads; the `sh:expression` is monotone). An expression that reads a
      * final undefined answer fails closed ([com.geoknoesis.kastor.rdf.shacl.providers.UndecidedConformanceException]):
      * when the oracle has such a read, the run may abort, and otherwise must give the oracle's report. A run that
      * does not abort always gives it.

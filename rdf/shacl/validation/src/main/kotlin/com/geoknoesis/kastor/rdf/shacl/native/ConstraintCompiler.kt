@@ -224,7 +224,9 @@ internal class ConstraintCompiler(
     // unsupported feature (see detectUnsupportedFeatures) and has no constraint.
     private fun expressions() {
         for (term in index.objects(subject, shExpression)) {
-            NodeExpressions.compile(term, index)?.let { add(PropertyConstraint.Expression(term, it), shExpression to term) }
+            NodeExpressions.compile(term, index)?.let {
+                add(PropertyConstraint.Expression(term, it, NodeExpressions.readsPositively(it, index)), shExpression to term)
+            }
         }
         for (term in index.objects(subject, SHACL.nodeByExpression)) {
             if (term is Iri) continue // A constant shape reference: PropertyConstraint.NodeByExpression / nodeByExpressionRefs.

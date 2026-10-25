@@ -40,6 +40,10 @@ and is kept as is; it was never published to Maven Central.
   it is now linear.
 - Changed: `shnex:nodesMatching` is computed once per shape and run outside the recursion solver, instead of once
   per focus node.
+- Changed: an `sh:expression` that is a `shnex:conformsToShape` with a constant shape, or a `shnex:matchAll`, whose
+  other argument reads no shape and runs no query, is monotone: its shape reads are positive dependencies, like
+  those of `sh:node`. A data cycle through it now conforms (greatest fixpoint) instead of being undefined recursion,
+  which failed validation. Every other shape-reading expression keeps negative reads.
 
 ### Added
 

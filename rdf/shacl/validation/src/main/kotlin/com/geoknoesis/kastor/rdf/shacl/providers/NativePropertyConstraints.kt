@@ -499,7 +499,7 @@ private fun NativeShaclValidator.evaluateExpression(
     sink: Sink,
 ) {
     eachValue(values, sink) { v ->
-        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v), shapeDepth = state.depth)
+        val out = evalNodeExpression(c.expr, ctx, focus, mapOf("value" to v), shapeDepth = state.depth, positiveReads = c.positive)
         if (out.size != 1 || TrueLiteral != out.single()) {
             val produced = if (out.size > 3) "${out.size} nodes" else out.joinToString(prefix = "( ", postfix = " )")
             tpl.add(focus, sink, ConstraintType.EXPRESSION, "sh:expression produced $produced instead of ( true ) for value $v", v, sourceConstraint = c.node)

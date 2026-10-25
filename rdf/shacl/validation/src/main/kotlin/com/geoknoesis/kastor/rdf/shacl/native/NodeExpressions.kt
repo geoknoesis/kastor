@@ -205,6 +205,24 @@ internal object NodeExpressions {
     }
 
     /**
+     * Whether the `sh:expression` [expr] is monotone in the conformance answers it reads: more conforming nodes can
+     * only turn "produces exactly `true`" from false to true. That holds for an expression that is a
+     * `shnex:conformsToShape` with a constant shape, or a `shnex:matchAll`, whose other argument reads no shape and
+     * runs no query. Its reads are then positive dependencies of the recursion solver, like those of `sh:node`, so a
+     * data cycle through them conforms (greatest fixpoint). Any other shape-reading expression may be non-monotone
+     * (`sparql:logical-not`, a count, an intersection...): its reads stay negative.
+     */
+    fun readsPositively(expr: NodeExpression, index: ShapeGraphIndex): Boolean {
+        fun readsNothing(e: NodeExpression?) =
+            e == null || (shapeRefs(e, index).isEmpty() && !computesShapes(e, index) && selects(e, index).isEmpty())
+        return when (expr) {
+            is NodeExpression.ConformsToShape -> expr.shape is NodeExpression.Constant && readsNothing(expr.node)
+            is NodeExpression.MatchAll -> readsNothing(expr.nodes)
+            else -> false
+        }
+    }
+
+    /**
      * The computed shape arguments of the `shnex:conformsToShape` calls of [expr] (those [computesShapes] finds),
      * custom function bodies included as for [shapeRefs].
      */

@@ -21,9 +21,13 @@ class UnrecordedSolverReadTest {
         @prefix sh: <http://www.w3.org/ns/shacl#> .
         @prefix ex: <http://example.org/> .
         @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
+        @prefix sparql: <http://www.w3.org/ns/sparql#> .
     """.trimIndent()
 
     private fun conformsTo(shape: String) = """[ shnex:conformsToShape ( [ shnex:var "focusNode" ] ex:$shape ) ]"""
+
+    /** [conformsTo] under a double negation: the same value, but no longer known to be monotone (a negative read). */
+    private fun notNot(shape: String) = "[ sparql:logical-not ( [ sparql:logical-not ( ${conformsTo(shape)} ) ] ) ]"
 
     @Test
     fun `a constraint evaluated only once the deactivation reads a definite false is a dependency`() {
@@ -31,7 +35,7 @@ class UnrecordedSolverReadTest {
         // self-referential read): undefined, which fails closed. ex:S2 used to conform.
         val shapes = """
             $prefixes
-            ex:S2 a sh:NodeShape ; sh:targetNode ex:n0 ; sh:expression ${conformsTo("S2")} ; sh:deactivated ${conformsTo("S0")} .
+            ex:S2 a sh:NodeShape ; sh:targetNode ex:n0 ; sh:expression ${notNot("S2")} ; sh:deactivated ${conformsTo("S0")} .
             ex:S0 a sh:NodeShape ; sh:property [ sh:path ex:p ; sh:minCount 1 ] ; sh:not ex:S2 .
         """
         val data = "$prefixes\nex:n0 a ex:Thing ."
