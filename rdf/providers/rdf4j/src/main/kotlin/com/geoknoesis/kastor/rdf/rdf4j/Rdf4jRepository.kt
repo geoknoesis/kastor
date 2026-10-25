@@ -448,27 +448,14 @@ class Rdf4jRepository(
             return Rdf4jRepository(repository).withVariant("native-shacl")
         }
 
-        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
         /** Update text that may introduce RDF-star triple values without them already being stored. */
         private val MAY_CREATE_TRIPLE_VALUES = Regex("<<|(?i)\\btriple\\s*\\(|\\bload\\b|\\bservice\\b")
-
-        /**
-         * For every operation of the update request [sparql], in order, whether it has a `USING` / `USING NAMED` clause
-         * of its own. Read from the syntax tree of RDF4J's SPARQL parser (the one the update was prepared with), so
-         * the word in a literal, an IRI or a comment, or a clause of another operation, is never taken for one.
-         */
-        private fun usingClauses(sparql: String): List<Boolean> =
-            org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder.parseUpdateSequence(sparql).updateContainers
-                .mapNotNull { it.update }
-                .map { operation ->
-                    val with = (operation as? org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify)?.withClause
-                    operation.datasetClauseList.any { it !== with }
-                }
 
         /** Default of [constructReifiesWindow]: bounds the memory of a streamed `CONSTRUCT` to this many triples. */
         internal const val DEFAULT_CONSTRUCT_REIFIES_WINDOW: Int = 65_536
 
-        private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
+        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
+        private val DIRECTIONAL_LITERAL = Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
     /**
@@ -570,9 +557,11 @@ class Rdf4jRepository(
      * propagate unchanged.
      *
      * A [SandboxedSelectQuery] may call its custom SPARQL functions ([SandboxedSelectQuery.functions]); see the timed
-     * overload for how their nested queries are bounded in time.
+     * overload for how their nested queries are bounded in time. It is refused with [UnsupportedOperationException],
+     * before anything is evaluated or sent, on a repository that wraps a store the factory methods did not create
+     * ([Rdf4jQuerySandbox.evaluatesSandboxed]).
      */
-    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = refusingUnsandboxable(query).withConnection { conn ->
         val prepared = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql) }
         val declared = if (query is SandboxedSelectQuery) checkSandboxed(prepared, query.sparql).dataset else null
         val result = withFunctions(query, Long.MAX_VALUE, declared, conn) {
@@ -586,8 +575,8 @@ class Rdf4jRepository(
      * ([Rdf4jFunctionScope]): its nested queries run on [conn] until [deadline] ([clock]; [Long.MAX_VALUE] for none),
      * on the dataset that [query] declares ([declared]; null without dataset clauses: Kastor's dataset). The nested
      * queries' parses are shared within this one query ([Rdf4jQuerySandbox.NestedParses]).
-     * Only the stores this class creates (factory methods) evaluate custom functions; on another store such a call
-     * is RDF4J's unknown-function error.
+     * Only the stores the factory methods create evaluate sandboxed queries: the entry points refuse them on any other
+     * store first ([refusingUnsandboxable]), and a query no Kastor strategy evaluated fails ([Rdf4jFunctionScope.with]).
      */
     private fun <T> withFunctions(
         query: SparqlSelect,
@@ -607,43 +596,14 @@ class Rdf4jRepository(
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
-        result.use { consume(it.viewTriples(constructReifiesWindow).guardedBy(query.sparql)) }
+        result.use { consume(it.viewTriples(hashedReifiersRead, constructReifiesWindow).guardedBy(query.sparql)) }
     }
 
     /**
      * How many `rdf:reifies` triples a streamed `CONSTRUCT` ([withConstructTriples]) remembers to return each of them
-     * once, see [viewTriples]. Internal: changed by tests only.
+     * once, see [viewTriples] (Rdf4jQuerySyntax.kt). Internal: changed by tests only.
      */
     @Volatile internal var constructReifiesWindow: Int = DEFAULT_CONSTRUCT_REIFIES_WINDOW
-
-    /**
-     * The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). A
-     * `_:r rdf:reifies <<( s p o )>>` triple may come from a stored statement (an explicit one), be implied by a
-     * statement about the quoted triple, or both, and by every statement about that quoted triple; it is returned
-     * once. Only those triples are remembered for that, and how many is bounded:
-     *
-     * - with a [window], the most recently seen `window` of them are remembered (least recently seen first out), so a
-     *   result of any size is streamed in bounded memory. A `rdf:reifies` triple whose statements are further apart in
-     *   the result than `window` other reified triples is returned again (as SPARQL allows for `CONSTRUCT`, whose
-     *   result a streaming consumer has to treat as a bag anyway);
-     * - without one (`null`: results that are materialized as a whole anyway) every one is remembered and the
-     *   de-duplication is exact.
-     */
-    private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(window: Int? = null): Sequence<RdfTriple> {
-        val seen: (RdfTriple) -> Boolean = if (window == null) {
-            val reifies = HashSet<RdfTriple>();
-            { triple -> !reifies.add(triple) }
-        } else {
-            val recent = object : LinkedHashMap<RdfTriple, Unit>(16, 0.75f, true) {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RdfTriple, Unit>?): Boolean = size > window
-            };
-            // containsKey does not count as an access: get does.
-            { triple -> (recent.get(triple) != null).also { known -> if (!known) recent[triple] = Unit } }
-        }
-        return iterator().asSequence()
-            .flatMap { statement -> Rdf4jTerms.triplesOf(statement, null, hashedReifiersRead) }
-            .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || !seen(it) }
-    }
 
     /**
      * Timed SELECT with initial bindings. RDF4J's `maxExecutionTime` has whole-second granularity, so
@@ -651,11 +611,9 @@ class Rdf4jRepository(
      * requested, but may run up to one second longer. A timeout too long for a nanosecond deadline (about 292 years)
      * is no limit at all.
      *
-     * The nested queries of the custom functions of a [SandboxedSelectQuery] end by the exact deadline: it is checked
-     * before each nested query, before each of its rows and before each statement it reads. Known RDF4J limitation
-     * (ruling R8): RDF4J checks its own limit only between rows, and work that reads no statements (a cross product of
-     * `VALUES` blocks, a catastrophic `REGEX` over a few statements) is not interrupted within a row, neither at the
-     * top level nor in a nested query. Jena checks cancellation per binding.
+     * A [SandboxedSelectQuery] and the nested queries of its custom functions end by the exact deadline: it is checked
+     * before each nested query, before each statement read and before each value expression is evaluated, and its
+     * expressions are bounded in size and cost ([Rdf4jEvaluationBounds]), as on Jena.
      *
      * Bindings follow the initial-bindings contract shared by every provider
      * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings], the rules of Jena's `substitution`), so every
@@ -677,6 +635,7 @@ class Rdf4jRepository(
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
+        refusingUnsandboxable(query)
         val bound = Rdf4jInitialBindings.bind(query.sparql, bindings)
         val sparql = bound.sparql
         return withConnection { conn ->
@@ -697,6 +656,14 @@ class Rdf4jRepository(
             }
             result.use { consume(it.rows(sparql, hidden = bound.hidden)) }
         }
+    }
+
+    /** Whether the store evaluates sandboxed queries with Kastor's strategy ([Rdf4jQuerySandbox.evaluatesSandboxed]). */
+    private val sandboxCapable: Boolean = Rdf4jQuerySandbox.evaluatesSandboxed(repository)
+
+    /** This repository, after refusing a [SandboxedSelectQuery] it cannot sandbox ([sandboxCapable]). */
+    private fun refusingUnsandboxable(query: SparqlSelect): Rdf4jRepository = also {
+        if (query is SandboxedSelectQuery && !sandboxCapable) throw UnsupportedOperationException(Rdf4jQuerySandbox.FOREIGN_STORE)
     }
 
     /** [Rdf4jQuerySandbox.check] of [sparql], parsed by RDF4J's own SPARQL parser; parse errors are query errors. */
@@ -968,7 +935,7 @@ class Rdf4jRepository(
             conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
         }
         val triples = queryOperation(sparql, "Failed to execute SPARQL CONSTRUCT query", "CONSTRUCT") {
-            prepared.evaluate().use { it.viewTriples().toList() }
+            prepared.evaluate().use { it.viewTriples(hashedReifiersRead).toList() }
         }
         RdfDebug.logQueryTrace("CONSTRUCT", sparql, null, System.currentTimeMillis() - startTime, triples.size)
         triples.asSequence()
@@ -1007,7 +974,7 @@ class Rdf4jRepository(
             conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
         }
         val triples = queryOperation(sparql, "Failed to execute SPARQL DESCRIBE query", "DESCRIBE") {
-            boundedDescription(conn, sparql, prepared) ?: prepared.onKastorDataset(conn).evaluate().use { it.viewTriples().toList() }
+            boundedDescription(conn, sparql, prepared) ?: prepared.onKastorDataset(conn).evaluate().use { it.viewTriples(hashedReifiersRead).toList() }
         }
         RdfDebug.logQueryTrace("DESCRIBE", sparql, null, System.currentTimeMillis() - startTime, triples.size)
         triples.asSequence()
@@ -1138,17 +1105,6 @@ class Rdf4jRepository(
         }
         if (!mayCreate) return null
         return if (holdsNoBlankContexts) emptySet() else blankContexts(conn)
-    }
-
-    private fun hasVariableContext(template: org.eclipse.rdf4j.query.algebra.TupleExpr): Boolean {
-        var found = false
-        template.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-            override fun meet(node: org.eclipse.rdf4j.query.algebra.StatementPattern) {
-                val context = node.contextVar
-                if (context != null && !context.hasValue()) found = true
-            }
-        })
-        return found
     }
 
     private fun blankContexts(conn: RepositoryConnection): Set<org.eclipse.rdf4j.model.BNode> {

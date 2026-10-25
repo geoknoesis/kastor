@@ -131,7 +131,7 @@ class JenaReasoner internal constructor(
     constructor(config: ReasonerConfig) : this(config, System::nanoTime, { it.prepare() }, PREPARATIONS)
 
     init {
-        require(config.timeout.toNanos() > 0) { "ReasonerConfig.timeout must be positive" }
+        require(!config.timeout.isNegative && !config.timeout.isZero) { "ReasonerConfig.timeout must be positive" }
         require(config.materializationThreshold > 0) { "ReasonerConfig.materializationThreshold must be positive" }
     }
 
@@ -179,7 +179,7 @@ class JenaReasoner internal constructor(
      * that makes the caller give up is the caller's, so without it the worker would read on until the deadline.
      */
     private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
-        private val deadline = clock() + timeout.toNanos()
+        private val deadline = clock() + timeout.budgetNanos()
         @Volatile private var abandoned = false
         fun remainingNanos(): Long = deadline - clock()
         fun abandon() {

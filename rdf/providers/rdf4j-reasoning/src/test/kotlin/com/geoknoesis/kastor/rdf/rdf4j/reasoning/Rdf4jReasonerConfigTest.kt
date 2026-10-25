@@ -270,4 +270,14 @@ class Rdf4jReasonerConfigTest {
         val error = assertThrows(IllegalArgumentException::class.java) { provider.createReasoner(ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO)) }
         assertTrue(error.message!!.contains("OWL_MICRO"), error.message)
     }
+
+    /** A timeout too long for a nanosecond deadline (`Duration.ofMillis(Long.MAX_VALUE)`) means no limit, as for the memory reasoner. */
+    @Test
+    fun `a timeout too long for nanoseconds means no limit`() {
+        val expected = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
+        assertTrue(expected.isNotEmpty())
+        for (timeout in listOf(java.time.Duration.ofMillis(Long.MAX_VALUE), java.time.Duration.ofSeconds(Long.MAX_VALUE), java.time.Duration.ofNanos(Long.MAX_VALUE))) {
+            assertEquals(expected, Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = timeout)).getInferredTriples(schema).toSet(), "$timeout")
+        }
+    }
 }

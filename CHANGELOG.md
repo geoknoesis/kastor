@@ -62,6 +62,80 @@ entries are regrouped under those kind headings.
   release checklist describe the timeouts, the baseline comparison, the stricter allowlist and floor gates, macOS on
   pull requests and the split rulesets.
 
+### Round twelve
+
+#### Providers (Jena, RDF4J, HermiT)
+
+- **Security (`rdf-jena`, `rdf-rdf4j`, `rdf-sparql-contract`):** the expressions of a `SandboxedSelectQuery` are
+  bounded, so one small query text can no longer hold a worker far past its timeout or exhaust the heap. Before,
+  `math:pow(2, 1000000000)` ran 110 s and then failed with `OutOfMemoryError` under a 500 ms timeout on Jena, and a
+  doubling chain of `CONCAT`, a squaring chain, a catastrophic `REGEX` or an amplifying `REPLACE` did the same on both
+  providers. Now (`SandboxLimits`, `SandboxLimitException` and `SandboxRegex`, new internal API of
+  `rdf-sparql-contract`):
+  - every expression checks the deadline, the engine's cancellation and the thread's interrupt flag before it runs;
+  - computed values are bounded (strings of 16 Mi characters, integers of 65,536 bits, decimal scale 65,536, triple
+    terms of 4,096 terms); powers, products, divisions, `CONCAT`, case mapping, URI encoding, Unicode normalization,
+    rounding precision and conversions of a lexical form to a number, date or duration are checked before they
+    compute; functions that only return (a part of) an argument (`STR`, `SUBSTR`, ...) are not checked;
+  - `REGEX`, `REPLACE`, `fn:matches` and `fn:replace` read at most 50 million characters and check the deadline while
+    they match, with each engine's own flags and semantics; a matcher stack overflow is a limit too;
+  - the `GROUP_CONCAT` aggregates of a query accumulate at most 16 Mi characters;
+  - an exceeded bound **fails the query** with an `RdfQueryException` caused by `SandboxLimitException` (behaviour
+    change: before, the query ran unbounded; a bound is deliberately not a SPARQL error, which a `FILTER` would turn
+    into a silent non-match);
+  - on RDF4J a top-level sandboxed query now ends by its exact deadline (statement reads, operator rows and expressions
+    check it), not by RDF4J's whole-second `maxExecutionTime` alone, and constant folding is off for it;
+  - on Jena the function allowlist is explicit (every function Jena registers in the XSD, XPath and SPARQL namespaces,
+    each with its cost); `fn:apply` and `fn:collation-key` are unknown functions to a sandboxed query (behaviour
+    change).
+- **Security (`rdf-rdf4j`):** `Rdf4jRepository` over a store it did not create (a plain `SailRepository`, an inferencer
+  over one, a repository wrapper, an `HTTPRepository` or `SPARQLRepository`) refuses every `SandboxedSelectQuery` with
+  `UnsupportedOperationException` before anything is evaluated or sent, as `SparqlRepository` does. Before, such a
+  query ran with the store's own evaluation (every globally registered function) or was sent to the remote server
+  unchanged, where its server's functions (Jena's `afn:wait`, ...) ran (behaviour change). A query that no Kastor
+  strategy evaluated fails as a backstop.
+- **Security (`rdf-rdf4j`):** the RDF4J SHACL validator (`providerId = "rdf4j"`) sandboxes the SPARQL an untrusted
+  shapes graph makes `ShaclSail` run (`sh:sparql` constraints and `sh:SPARQLTarget`s): `SERVICE` fails instead of
+  contacting the endpoint, only RDF4J's built-ins (and `ShaclSail`'s own pure helpers) are callable, every expression
+  is bounded as above, and queries end by the validation deadline; a refused or bounded query fails the validation
+  (behaviour change).
+- **Security (`rdf-rdf4j`):** a sandboxed query may use no custom aggregate (an IRI of RDF4J's global
+  `CustomAggregateFunctionRegistry`, which also holds RDF4J's own `stdev` and `variance`): it is refused with
+  `IllegalArgumentException` before evaluation, and by the evaluation strategy, as on Jena (behaviour change).
+- **Security (`rdf-jena`):** a sandboxed query is refused with `IllegalArgumentException` before evaluation when it
+  uses a script function (`http://jena.apache.org/ARQ/<language>Function#name`, which Jena runs without asking any
+  registry) or any other IRI in ARQ's namespaces, whether `jena:scripting` is on or off (before: a
+  `ScriptDenyException` query failure when off, the script engine when on); `fn:apply`, which calls a function by a
+  computed IRI as `CALL` does; ARQ's property-path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`,
+  `shortest(...)`), which Jena evaluates without checking the timeout (`<p>{1000000}` over a two-node cycle ran past
+  100 s under a 500 ms timeout); and any expression class the cost table does not list (behaviour change).
+- **Security (`rdf-jena`, `rdf-rdf4j`, `rdf-sparql-contract`), review follow-up:**
+  - a regular expression whose choices can read nothing (a repetition of something that matches the empty string,
+    two empty-matchable alternatives, a lookaround, groups nested more than 64 deep) is refused in a
+    sandboxed query before it runs: Java's matcher explored 2^24 zero-width paths of `(?:|)` x 24 in 0.4 s without
+    reading a character, so the step budget could not see them (behaviour change; this also applies to the
+    `sh:pattern` that RDF4J's `ShaclSail` evaluates for the RDF4J SHACL validator);
+  - `REPLACE` measures the groups a replacement refers to from their offsets and stops as soon as the result would
+    pass the string limit, checking the deadline while it reads the replacement;
+  - `GROUP_CONCAT` and `CONCAT` count the text of IRIs and blank nodes too, and `IRI()` / `URI()` results are checked;
+  - Jena refuses a triple-term expression with variables (`<<( ?s ?p ?o )>>`; `TRIPLE(?s, ?p, ?o)` builds the same
+    term, bounded) and property paths of more than 64 steps and operators or nested more than 16 deep (its sequences
+    keep duplicates, so `(p|q)/(p|q)/...` multiplied the work of one binding); RDF4J refuses more than 64 path closures
+    and more than 16 triple-term patterns or expressions (its join optimizer took minutes to plan a chain of 40
+    `BIND(<< ?t :p ?t >> AS ?u)`, before any deadline check) (behaviour change).
+- **Fixed (`rdf-jena`):** a `SELECT *` with a property-path sequence failed with "get(...) must not be null": Jena lists
+  the path's hidden variable (`??P0`) unbound among the result variables. Rows no longer carry Jena's own variables.
+- **Fixed (`rdf-jena-reasoning`, `rdf-rdf4j-reasoning`, `rdf-reasoning-hermit`):** a `ReasonerConfig.timeout` too long
+  for nanoseconds (`Duration.ofMillis(Long.MAX_VALUE)`) means no limit, as for the memory reasoner. Before, it threw
+  `ArithmeticException`, and a timeout just below the nanosecond range overflowed into a deadline in the past.
+- **Fixed (`rdf-jena`):** the nested-query parse cache of a custom-function call site keeps at most 64 parses (least
+  recently used first out), as on RDF4J; it grew by one parse per distinct query text before.
+- **Docs (`rdf-rdf4j`):** the nested-query parse cache of RDF4J keeps writing bound IRIs and literals into the query
+  text (so calls bound to different values parse their own texts): binding them natively trips an internal RDF4J
+  assertion (`BindingAssignerOptimizer`, a placeholder inside `COALESCE`).
+- **Internal:** the Jena `DESCRIBE` evaluation moved to `JenaDescribe` and the RDF4J graph-result and update-syntax
+  helpers to `Rdf4jQuerySyntax`, out of the repository classes (whose complexity ceilings are lowered).
+
 ### Round eleven
 
 #### Providers (Jena, RDF4J, HermiT)
