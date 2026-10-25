@@ -378,14 +378,27 @@ private class XPathRegexTranslator(
         return "\\p{$java}"
     }
 
+    /** How many class subtractions [charClass] is nested in. */
+    private var classDepth = 0
+
+    /** The subtracted class of a class subtraction ([charClass] recurses per level, so the nesting is bounded). */
+    private fun subtractedClass(): ClassExpr {
+        if (classDepth >= MAX_CLASS_NESTING) {
+            reject("character class subtractions are nested more than $MAX_CLASS_NESTING levels deep at index $i")
+        }
+        classDepth++
+        try {
+            return charClass()
+        } finally {
+            classDepth--
+        }
+    }
+
     /**
      * Translates the character class expression starting at [i] (`[`) into an expression that matches one character
      * and moves past its closing `]`.
      */
-    private fun charClass(depth: Int = 0): ClassExpr {
-        if (depth >= MAX_CLASS_NESTING) {
-            reject("character class subtractions are nested more than $MAX_CLASS_NESTING levels deep at index $i")
-        }
+    private fun charClass(): ClassExpr {
         val open = i
         i++ // [
         val negated = i < p.length && p[i] == '^'
@@ -443,7 +456,7 @@ private class XPathRegexTranslator(
                         )
                     }
                     i++
-                    val excluded = charClass(depth + 1)
+                    val excluded = subtractedClass()
                     if (i >= p.length || p[i] != ']') {
                         reject(
                             "the character class subtraction at index $at must end its class: ']' expected after " +
