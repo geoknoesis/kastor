@@ -79,6 +79,9 @@ for pom in poms:
 # without passing the checks above and the consumer builds that resolve through the BOM.
 staged = {(root.findtext("m:groupId", "", ns).strip(), root.findtext("m:artifactId", "", ns).strip())
           for root in (ET.parse(pom).getroot() for pom in poms)}
+# Without a staged BOM the member check below has nothing to compare against and would pass vacuously.
+if any(group == "com.geoknoesis.kastor" for group, _ in staged) and ("com.geoknoesis.kastor", "kastor-bom") not in staged:
+    raise SystemExit("Kastor publications were staged without com.geoknoesis.kastor:kastor-bom")
 for pom in poms:
     root = ET.parse(pom).getroot()
     if root.findtext("m:artifactId", "", ns).strip() != "kastor-bom":
