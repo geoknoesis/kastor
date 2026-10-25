@@ -60,6 +60,96 @@ and is kept as is; it was never published to Maven Central.
   `sh:closed` must be the only `sh:closed` value, and at most one `sh:ignoredProperties` value may be computed. With
   computed `sh:flags`, a constant `sh:pattern` is compiled at run time with the resolved flags.
 
+### Added (SHACL 1.2 SPARQL)
+
+- `rdf-shacl`: SPARQL-based constraint components (SHACL 1.2 SPARQL section 4). A SHACL instance of
+  `sh:ConstraintComponent` with `sh:parameter` (and `sh:optional`) is compiled and evaluated like a built-in component.
+  SELECT validators come from `sh:nodeValidator` / `sh:propertyValidator` and ASK validators from `sh:validator`,
+  chosen as in section 4.2.3; a component with no validator that fits the shape kind is ignored. Parameter values are
+  pre-bound, and a shape with several values for a parameter yields one constraint per combination, up to 1024 per shape
+  and component (more makes the shapes graph ill-formed). `$PATH` is substituted for property shapes and the Appendix A
+  restrictions are checked. Results report the component IRI as `sh:sourceConstraintComponent`, and the message comes
+  from the validator, else the component, else the shape, with `{$param}` substitution. `SPARQL_CONSTRAINT_COMPONENT` is
+  no longer reported as an unsupported feature.
+- `rdf-shacl`: custom SPARQL functions (SHACL 1.2 SPARQL section 7). A `sh:ListParameterExpressionFunction` whose
+  `sh:bodyExpression` is a `sh:select`, a `sh:sparqlExpr` or a `shnex:` node expression can be called by its IRI from any
+  SHACL-SPARQL query. A SPARQL body sees `$this` (the function IRI) and `$arg<i>`. Functions can call each other up to
+  16 levels deep (`MAX_FUNCTION_DEPTH`), and a built-in function wins over a declaration with the same IRI. Parameters
+  must be a contiguous run `shnex:arg0`, `shnex:arg1`, ..., and an optional parameter cannot be followed by a mandatory
+  one; otherwise the shapes graph is ill-formed (`ShapeCompileException`). A function error is an ordinary SPARQL error
+  (`BIND` leaves its variable unbound, `FILTER` is false), except that an undecided conformance check inside a `shnex:`
+  body fails the calling query. `SHACL_FUNCTION` is now reported only for a body that is no node expression. When
+  functions are declared, SHACL-SPARQL queries run on the engine's private copy of the data, never in place on the
+  caller's dataset. See [SPARQL functions](docs/kastor/features/shacl-validation.md#sparql-functions).
+- `rdf-shacl`: SPARQL node expressions (`sh:select`, `sh:sparqlExpr`) at `sh:values`, `sh:defaultValue`, `sh:targetNode`,
+  `sh:expression`, a computed `sh:nodeByExpression` and computed parameters, and constant IRI or literal `sh:values`. They are not
+  supported as `sh:targetWhere` values.
+- `rdf-shacl`: SHACL 1.2 prefix declaration rules. `sh:prefixes` is followed through `owl:imports` and
+  `owl:versionIRI`. Graph-level `sh:declare` on SHACL instances of `owl:Ontology`, `sh:DataGraph`, `sh:ShapesGraph` and
+  `sh:RulesGraph` applies to a node only when it has no `sh:prefixes`. Conflicting namespaces, a `sh:prefix` or
+  `sh:namespace` of the wrong datatype, and a `sh:prefix` that is no SPARQL `PN_PREFIX` make the shapes graph
+  ill-formed, so a declaration cannot inject query text.
+- `rdf-jena`, `rdf-rdf4j`: per-query custom functions for sandboxed queries. The `SparqlFunctionLibrary` of a
+  `SandboxedSelectQuery` is visible to that one execution only, and no global function registry is ever modified. Jena
+  consults it from the per-execution registry the sandbox installs. RDF4J consults it from `KastorEvaluationStrategy`,
+  which every store the repository factories create now uses (memory, native, and the RDFS and SHACL sails wrapping
+  them). Nested queries made by a function body are sandboxed again (no `SERVICE`, no `java:` code), run on the calling
+  query's dataset with their initial bindings checked, and stop at the calling query's deadline; a call deeper than
+  `MAX_FUNCTION_DEPTH` is an error. On RDF4J an unknown function in a sandboxed query is an error at evaluation, as on
+  Jena; ordinary queries keep RDF4J's behaviour.
+- W3C SHACL 1.2 suite: every `sht:Validate` and `sht:EvalNodeExpr` case of the pinned corpus passes on Jena, including
+  the SPARQL-based constraint component, SPARQL function and SPARQL node expression cases, except `hasLang.ttl`, which
+  is accepted as ill-formed (spec override). `W3cKnownDeviations` lists no unsupported feature; it lists one spec
+  override (`unsupported-sparql-002`, see the `VALUES` entry below).
+
+### API (SHACL 1.2 SPARQL)
+
+- `rdf-core`: new provider-neutral function contract: `SparqlFunction(iri, optional, body)`, `SparqlFunctionCall`
+  (the evaluated `arguments`, and `select(query, bindings, consume)` for a nested query), `SparqlFunctionLibrary`
+  (`function(iri)`, `EMPTY`, `of(functions)`), `bindArguments(function, arguments)` and `MAX_FUNCTION_DEPTH` (16).
+- **Breaking (binary):** `SandboxedSelectQuery` moved from `rdf-sparql-contract` to `rdf-core`, in the same package
+  `com.geoknoesis.kastor.rdf`. It is now a regular class instead of a `@JvmInline value class`, with a second
+  constructor parameter `functions: SparqlFunctionLibrary = SparqlFunctionLibrary.EMPTY`. Source that calls
+  `SandboxedSelectQuery(text)` compiles unchanged (`rdf-sparql-contract` depends on `rdf-core`); code compiled against
+  the value class must be recompiled. Two queries are equal when their text is equal and they carry the same library
+  instance.
+
+### Changed (SHACL 1.2 SPARQL behaviour)
+
+- **Breaking (behaviour):** `sh:sparql` constraints no longer pre-bind `$currentShape` and `$shapesGraph`. SHACL 1.2
+  SPARQL removed these optional variables (Appendix F, issue 426). Only `$this` is pre-bound; the two names are now
+  ordinary variables, unbound unless the query binds them, and the shapes graph is no longer copied into the private
+  query repository. A query that filtered on `$currentShape` or read `GRAPH $shapesGraph { ... }` now matches
+  differently, without an error. Write the shape IRI into the query instead of `$currentShape`, and put the triples the
+  query needs into the data graph.
+- `VALUES` is now allowed in SHACL-SPARQL queries when it mentions no potentially pre-bound variable (`$this`, a
+  component parameter, or `$value` in an ASK validator), as SHACL 1.2 SPARQL Appendix A and F specify. SHACL 1.0, and
+  Kastor before, rejected every `VALUES`. The approved W3C case `sparql/pre-binding/unsupported-sparql-002` still expects
+  `VALUES ?any` to fail; the harness runs it as a listed spec override.
+- A node with `sh:prefixes` no longer also receives the graph-level `sh:declare` declarations, and declarations that
+  bind one prefix to two namespaces are now ill-formed.
+
+### Round eleven — build and docs
+
+- Build: `./gradlew check` now runs the repository-level Python gates as the root task `verifyQualityGates`: the unit
+  tests of the gate scripts, `check-doc-versions.py`, `check-build-pins.py`, `check-readme-imports.py` and the
+  complexity ratchet `check-code-complexity.py`. They used to run only as CI steps, so a local `check` could pass while
+  CI failed. The interpreter is `python` on Windows and `python3` elsewhere, or `-Pkastor.python=<path>`; skip the gates
+  with `-x verifyQualityGates`.
+- CI: `ci.yml` runs the gates through `check --continue`, and every later verification step (dependency health, test
+  counts and skips, module populations, coverage, benchmark smoke) runs whenever `check` ran. One failing gate or module
+  no longer skips every other module's tests: before, a ratchet failure ahead of `Gradle check` skipped the Linux and
+  Windows test runs for about 100 commits.
+- `scripts/check-code-complexity.py --write-baseline` only lowers ceilings and drops files that meet the defaults. Growth,
+  a new over-limit file and a renamed over-limit function are refused unless named with `--raise PATH=REASON`, which
+  records the reviewed reason; the summary lists every lowered, removed and raised ceiling. A normal run lists ceilings
+  that can be lowered. The baseline is written with LF line endings on Windows too.
+- Release readiness: `release-smoke` consumes `rdf-holon` (with `rdf-shacl-validation` and `rdf-sparql-contract`)
+  through the staged BOM, and `check-staged-publications.py` fails when a module the BOM manages was not staged.
+  `release-readiness.yml` also runs weekly on `main` (nothing is published).
+- Coverage: `:rdf:holon` has a branch-coverage floor of 72% (measured 77.1%), and its line floor rises from 80% to 88%
+  (measured 93.0%).
+
 ### Changed (Dynamic SHACL behaviour)
 
 - `sh:in []` is now the empty node expression and rejects every value. `sh:class []`, `sh:ignoredProperties []` and
@@ -970,11 +1060,11 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
   - `sh:pattern` supports the `q` and `x` flags and is compiled at shape compile time.
   - Reports carry `sh:message` with language, full result paths, spec-conformant `sh:value`, one `sh:closed` result per triple, and `sh:sourceConstraint`.
 - **SHACL-SPARQL:**
-  - `sh:prefixes`/`sh:declare` and `$PATH` are supported, and `$this`, `$currentShape` and `$shapesGraph` are pre-bound.
+  - `sh:prefixes`/`sh:declare` and `$PATH` are supported, and `$this` is pre-bound. (`$currentShape` and `$shapesGraph` were also pre-bound at this point; SHACL 1.2 removed them, see [Changed (SHACL 1.2 SPARQL behaviour)](#changed-shacl-12-sparql-behaviour).)
   - Each solution row produces one result; message templates and `sh:deactivated` are honoured.
   - Queries run over the data graph.
   - Without `rdf-jena` or `rdf-rdf4j` on the runtime classpath, validation fails with a `ShaclValidationException` naming them, and capability flags reflect engine availability.
-- **W3C SHACL 1.2 suite:** 154 of 163 cases pass. The 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions) are listed in `W3cKnownDeviations`.
+- **W3C SHACL 1.2 suite:** at this point 154 of the 163 cases of the corpus then pinned passed, with 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions). All of them have since been implemented: every case of the current pinned corpus passes and `W3cKnownDeviations` lists no unsupported feature (see [Added (SHACL 1.2 SPARQL)](#added-shacl-12-sparql)).
 - **SHACL DSL:**
   - `and`/`or`/`xone` and `ignoredProperties` emit RDF lists.
   - `prefixes { }` in SPARQL constraints emits `sh:declare [ sh:prefix ; sh:namespace ]`.
