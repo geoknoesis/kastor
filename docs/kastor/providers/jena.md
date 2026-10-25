@@ -370,7 +370,7 @@ change:** such graphs used to stay blank-node graphs that `listGraphs()` did not
 ### Parsing, literals and Jena interop
 
 - **Lexical forms are preserved exactly**: `"007"^^xsd:integer` stays `"007"`. Only the exact lexical forms `"true"` / `"false"` become boolean singletons.
-- **`parseGraph` accepts triple formats only**: TriG and N-Quads are rejected with `RdfFormatException`; parse quad formats as a dataset instead.
+- **`parseGraph` accepts triple formats only**: TriG and N-Quads are rejected with `RdfFormatException`; parse quad formats as a dataset instead. A JSON-LD document that names a graph (`@graph` under an `@id`) fails every graph parse (`parseGraph`, `openTripleStream`, `JenaBridge.fromString` / `fromFile` / `fromUrl`) with `RdfFormatException` too, where Jena would drop the named graph with only a logged warning; `parseDataset` keeps its graphs.
 - **Strict parsing**: syntax errors are not silently skipped. Without a base IRI, relative IRIs are a parse error.
 - **Strict bridge reads**: graphs wrapped with `JenaBridge.fromJenaModel(model)`, `JenaBridge.fromJenaGraph(graph)` or `toKastorGraph()` fail a read with `IllegalArgumentException` when they meet a statement Kastor cannot represent (e.g. `xml:lang="en_US"` or an IRI that RFC 3987 rejects). Lenient reads are opt-in: `fromJenaModel(model, strictRead = false)` / `fromJenaGraph(graph, strictRead = false)` skip such statements with one warning per read, and `size()` then counts only the statements reads return (a full scan).
 - **Language-tag case**: Jena canonicalises tag case whenever it creates a language-tagged literal, so `"x"@en-us` is stored and read back as `"x"@en-US`. Kastor equality ignores tag case, so lookups by either spelling still match.
