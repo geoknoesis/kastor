@@ -29,13 +29,20 @@ internal data class LiteralMapping(
     fun encode(valueExpr: CodeBlock): CodeBlock =
         CodeBlock.of("%T.encode(%L, %T(%S))", XSD_LITERALS, valueExpr, IRI, writeDatatype)
 
-    /** `XsdLiterals.<decoder>(<literalExpr>)` (nullable result). */
-    fun decode(literalExpr: CodeBlock): CodeBlock = CodeBlock.of("%T.%N(%L)", XSD_LITERALS, decoder, literalExpr)
+    /**
+     * `XsdLiterals.<decoder>(<literalExpr>)` (nullable result); `XsdLiterals.lexical(<literalExpr>, Iri("<datatype>"))`
+     * for the [LEXICAL] decoder, which also needs the declared datatype.
+     */
+    fun decode(literalExpr: CodeBlock): CodeBlock =
+        if (decoder == LEXICAL) CodeBlock.of("%T.%N(%L, %T(%S))", XSD_LITERALS, decoder, literalExpr, IRI, writeDatatype)
+        else CodeBlock.of("%T.%N(%L)", XSD_LITERALS, decoder, literalExpr)
 
     /** Human-readable target of [decode] for diagnostics, e.g. `BigInteger (xsd:integer)`. */
     fun expectedDescription(): String = "${type.simpleName} (<$writeDatatype>)"
 
     companion object {
+        /** Decoder of String members that declare a datatype other than `xsd:string`. */
+        internal const val LEXICAL = "lexical"
         internal val STRING = String::class.asTypeName()
         private val NUMERIC_TYPES = setOf(
             Int::class.asTypeName(), Long::class.asTypeName(), Float::class.asTypeName(), Double::class.asTypeName(),
@@ -197,8 +204,9 @@ internal object TypeMapper {
      * small unsigned types to [Int]), `xsd:decimal` to [java.math.BigDecimal], `xsd:float` to [Float],
      * `xsd:date` to [java.time.LocalDate] and `rdf:langString` to the core `LangString` term. Every other
      * datatype (including `xsd:dateTime`, `xsd:time`, `xsd:duration` whose value spaces carry optional
-     * timezones that no single `java.time` type represents losslessly) keeps its lexical form as [String];
-     * writers always emit the declared datatype so the value round-trips.
+     * timezones that no single `java.time` type represents losslessly) keeps its lexical form as [String], read only
+     * from a well-formed literal of that datatype (`XsdLiterals.lexical`); without a datatype (or with `xsd:string`)
+     * the lexical form of any literal is read. Writers always emit the declared datatype so the value round-trips.
      */
     fun literalMapping(datatype: String?): LiteralMapping {
         fun m(type: ClassName, decoder: String) = LiteralMapping(type, decoder, datatype ?: "${XSD}string")
@@ -214,7 +222,9 @@ internal object TypeMapper {
             "${XSD}double" -> m(Double::class.asTypeName(), "double")
             "${XSD}date" -> m(ClassName("java.time", "LocalDate"), "localDate")
             RDF_LANG_STRING -> m(ClassName(CodegenConstants.RDF_PACKAGE, "LangString"), "langString")
-            else -> m(String::class.asTypeName(), "string")
+            null, "${XSD}string" -> m(String::class.asTypeName(), "string")
+            // A declared datatype is checked on read: "2020"^^xsd:gYear is not an xsd:dateTime value.
+            else -> m(String::class.asTypeName(), LiteralMapping.LEXICAL)
         }
     }
 }
