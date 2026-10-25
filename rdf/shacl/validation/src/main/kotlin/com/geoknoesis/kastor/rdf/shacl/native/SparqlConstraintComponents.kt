@@ -168,7 +168,7 @@ internal class SparqlComponentCatalog private constructor(
         val body = if (validator.ask) {
             SparqlQueryTemplate.askAsSelect(validator.text)
         } else {
-            SparqlQueryTemplate.substitutePath(validator.text, path?.let { { ShapesCompiler.renderSparqlPath(it) } })
+            SparqlQueryTemplate.substitutePath(validator.text, path?.let { { SparqlConstraintCompilation.renderSparqlPath(it) } })
         }
         val template = SparqlQueryTemplate.compileRestricted(
             validator.prologue, body, preBound, "Validator ${validator.node} of constraint component ${component.iri}",
