@@ -49,6 +49,11 @@ and is kept as is; it was never published to Maven Central.
   `select`, `ask`, the heap cap) against a local canned endpoint. Examples report a caught failure through one helper
   with a fixed marker, and the smoke test looks for it on standard output and standard error (three failure messages
   used to slip through). `JenaBridgeExample` uses `serialize(RdfFormat)` instead of the deprecated string overload.
+- **Conformance (`rdf-conformance`):** serializer rows driven by the W3C manifests: every eval test's parsed output is
+  written back by the provider in the same format and re-read by the reference parser. Jena passes all 334; RDF4J
+  loses 27 (numeric literals rewritten to canonical form, RDF 1.2 triple terms written as `urn:rdf4j:triple:` IRIs),
+  listed with reasons in `serializer-roundtrip-allowlist.tsv` as expected failures. PR CI now runs the full corpus
+  for the Jena provider (syntax and serializer rows), not only the bundled fixture.
 - **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).

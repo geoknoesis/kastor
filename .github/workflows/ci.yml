@@ -89,6 +89,17 @@ jobs:
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 
+      # The full W3C RDF 1.2 syntax suites and the serializer round-trip rows, for the Jena provider, so that a parser
+      # or serializer regression fails the PR instead of the next weekly run (conformance.yml runs both providers).
+      # After the gates above, which count the tests of `check` only.
+      - name: RDF 1.2 conformance, full corpus (Jena)
+        if: ${{ !cancelled() && steps.check.outcome != 'skipped' && runner.os == 'Linux' }}
+        run: |
+          python scripts/fetch-conformance-data.py --only rdf
+          ./gradlew :rdf:conformance:test --tests '*JenaConformanceTest*' --no-daemon
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1300 --require-suite com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest=1300 --skip-allowlist scripts/test-skip-allowlist.json
+        shell: bash
+
       - name: Coverage reports
         if: ${{ !cancelled() && steps.check.outcome != 'skipped' }}
         run: ./gradlew jacocoTestReport --no-daemon

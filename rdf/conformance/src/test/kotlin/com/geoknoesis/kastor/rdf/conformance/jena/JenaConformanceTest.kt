@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.conformance.jena
 import com.geoknoesis.kastor.rdf.conformance.ConformanceAllowlist
 import com.geoknoesis.kastor.rdf.conformance.Conformer
 import com.geoknoesis.kastor.rdf.conformance.Rdf12ConformanceRunner
+import com.geoknoesis.kastor.rdf.conformance.SerializerRoundTrip
 import com.geoknoesis.kastor.rdf.conformance.TestData
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
@@ -33,9 +34,15 @@ class JenaConformanceTest {
         provider = JenaProvider(),
         newDatasetRepo = { JenaRepository.MemoryRepository() },
         allowlist = ConformanceAllowlist.forProvider("Jena"),
+        roundTripAllowlist = SerializerRoundTrip.allowlist("Jena"),
     )
 
     @TestFactory
     fun `RDF 1 dot 2 syntax suite (Jena)`(): List<DynamicNode> =
         Rdf12ConformanceRunner.forRoot(conformer, TestData.rootDir)
+
+    /** Every eval test's parsed output, written back by the provider and re-read by the reference parser. */
+    @TestFactory
+    fun `RDF 1 dot 2 serializer round trip (Jena)`(): List<DynamicNode> =
+        SerializerRoundTrip.forRoot(conformer, TestData.rootDir)
 }

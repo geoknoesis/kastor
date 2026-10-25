@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.conformance.rdf4j
 import com.geoknoesis.kastor.rdf.conformance.ConformanceAllowlist
 import com.geoknoesis.kastor.rdf.conformance.Conformer
 import com.geoknoesis.kastor.rdf.conformance.Rdf12ConformanceRunner
+import com.geoknoesis.kastor.rdf.conformance.SerializerRoundTrip
 import com.geoknoesis.kastor.rdf.conformance.TestData
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository
@@ -32,9 +33,15 @@ class Rdf4jConformanceTest {
         provider = Rdf4jProvider(),
         newDatasetRepo = { Rdf4jRepository.MemoryRepository() },
         allowlist = ConformanceAllowlist.forProvider("RDF4J"),
+        roundTripAllowlist = SerializerRoundTrip.allowlist("RDF4J"),
     )
 
     @TestFactory
     fun `RDF 1 dot 2 syntax suite (RDF4J)`(): List<DynamicNode> =
         Rdf12ConformanceRunner.forRoot(conformer, TestData.rootDir)
+
+    /** Every eval test's parsed output, written back by the provider and re-read by the reference parser. */
+    @TestFactory
+    fun `RDF 1 dot 2 serializer round trip (RDF4J)`(): List<DynamicNode> =
+        SerializerRoundTrip.forRoot(conformer, TestData.rootDir)
 }

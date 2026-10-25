@@ -74,6 +74,35 @@ object ReferenceRdf {
         return dataset
     }
 
+    /** Parses [text] (a provider's serialization, so absolute IRIs only) with Jena RIOT, like [parse]. */
+    fun parseText(text: String, format: TestFormat): DatasetGraph {
+        val lang = when (format) {
+            TestFormat.TURTLE -> Lang.TURTLE
+            TestFormat.TRIG -> Lang.TRIG
+            TestFormat.N_TRIPLES -> Lang.NTRIPLES
+            TestFormat.N_QUADS -> Lang.NQUADS
+        }
+        val dataset = DatasetGraphFactory.create()
+        RDFParser.fromString(text, lang).factory(ExactLangTagFactory()).parse(dataset)
+        return dataset
+    }
+
+    /**
+     * [dataset] with every graph named by a provider skolem IRI ([SKOLEM_GRAPH_PREFIX]) named by the blank node it
+     * stands for, as [dataset] (the quads overload) does for provider output: a serialization writes such names as IRIs.
+     */
+    fun unskolemized(dataset: DatasetGraph): DatasetGraph {
+        val result = DatasetGraphFactory.create()
+        dataset.find().forEachRemaining { quad ->
+            val graph = quad.graph
+            val name = if (graph.isURI) SKOLEM_GRAPH_NAME.matchEntire(graph.uri)?.let { match ->
+                NodeFactory.createBlankNode(java.net.URLDecoder.decode(match.groupValues[2], Charsets.UTF_8))
+            } else null
+            result.add(Quad(name ?: graph, quad.subject, quad.predicate, quad.`object`))
+        }
+        return result
+    }
+
     /**
      * Stable fingerprint of how [actual] differs from [expected]: the quads only in one of them, with blank nodes
      * anonymised, as a multiset difference in both directions, hashed. Independent of blank-node labels and quad order.

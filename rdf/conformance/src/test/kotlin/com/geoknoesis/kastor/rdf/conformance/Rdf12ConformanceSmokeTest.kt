@@ -46,7 +46,8 @@ class Rdf12ConformanceSmokeTest {
             newDatasetRepo = { JenaRepository.MemoryRepository() },
         )
         return listOf(
-            Rdf12ConformanceRunner.forManifest(conformer, "fixture", fixtureRoot)
+            Rdf12ConformanceRunner.forManifest(conformer, "fixture", fixtureRoot),
+            SerializerRoundTrip.forManifest(conformer, "fixture serializer round trip", fixtureRoot),
         )
     }
 
@@ -58,7 +59,8 @@ class Rdf12ConformanceSmokeTest {
             newDatasetRepo = { Rdf4jRepository.MemoryRepository() },
         )
         return listOf(
-            Rdf12ConformanceRunner.forManifest(conformer, "fixture", fixtureRoot)
+            Rdf12ConformanceRunner.forManifest(conformer, "fixture", fixtureRoot),
+            SerializerRoundTrip.forManifest(conformer, "fixture serializer round trip", fixtureRoot),
         )
     }
 }
