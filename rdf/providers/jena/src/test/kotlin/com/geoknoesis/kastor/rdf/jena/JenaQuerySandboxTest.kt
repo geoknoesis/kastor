@@ -105,6 +105,41 @@ class JenaQuerySandboxTest {
         repository.withSelectRows(SparqlSelectQuery(sparql.replace("60000", "1"))) { it.toList() }
     }
 
+    /**
+     * Jena runs `http://jena.apache.org/ARQ/<language>Function#name` as a script function without asking any
+     * registry. A sandboxed query that names one is refused before evaluation, with the same error whether
+     * `jena:scripting` is on or off (before, it failed at run time with Jena's `ScriptDenyException` when off, and
+     * reached the script engine when on).
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["false", "true"])
+    fun `script functions are refused whether scripting is on or off`(scripting: String) {
+        val previous = System.getProperty(org.apache.jena.query.ARQ.systemPropertyScripting)
+        System.setProperty(org.apache.jena.query.ARQ.systemPropertyScripting, scripting)
+        try {
+            for (iri in listOf("http://jena.apache.org/ARQ/jsFunction#f", "http://jena.apache.org/ARQ/pythonFunction#f")) {
+                for (sparql in listOf(
+                    "SELECT ?x WHERE { BIND (<$iri>(1) AS ?x) }",
+                    "SELECT * WHERE { ?s ?p ?o FILTER (<$iri>(?o)) }",
+                )) {
+                    val error = assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
+                    assertTrue(error.message!!.contains(iri), error.message)
+                    assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
+                }
+            }
+        } finally {
+            if (previous == null) System.clearProperty(org.apache.jena.query.ARQ.systemPropertyScripting)
+            else System.setProperty(org.apache.jena.query.ARQ.systemPropertyScripting, previous)
+        }
+    }
+
+    @Test
+    fun `fn apply, which calls a function by a computed IRI, is refused`() {
+        val sparql = "SELECT ?x WHERE { BIND (<http://www.w3.org/2005/xpath-functions#apply>(<http://www.w3.org/2005/xpath-functions/math#pow>, 7, 3000000) AS ?x) }"
+        assertThrows(IllegalArgumentException::class.java) { bound(sparql) }
+        assertThrows(IllegalArgumentException::class.java) { plain(sparql) }
+    }
+
     @Test
     fun `a custom aggregate is refused`() {
         val iri = "urn:kastor:test:aggregate:" + java.util.UUID.randomUUID()
@@ -170,6 +205,10 @@ class JenaQuerySandboxTest {
             val builder = JenaQuerySandbox.restrict(
                 QueryExecution.dataset(dataset).query(query), SparqlFunctionLibrary.EMPTY, 0, Long.MAX_VALUE, System::nanoTime,
             )
+            // The full sandbox refuses CALL while it plans the query, as the static check does before.
+            assertThrows(IllegalArgumentException::class.java) { builder.build().use { it.execSelect().forEachRemaining { } } }
+            // The registries alone: Jena's standard optimizer in place of the bounds.
+            builder.set(org.apache.jena.sparql.ARQConstants.sysOptimizerFactory, org.apache.jena.sparql.algebra.optimize.Optimize.stdOptimizationFactory)
             return builder.build().use { exec -> exec.execSelect().asSequence().map { it.get("x") }.toList() }
         }
 

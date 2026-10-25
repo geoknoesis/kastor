@@ -1075,6 +1075,7 @@ class JenaRepository private constructor(
 
     private fun <T> consumeRows(exec: QueryExecution, sparql: String, deadline: Long?, consume: (Sequence<BindingSet>) -> T): T {
         val results = queryOperation(sparql) { withDeadline(deadline) { exec.execSelect() } }
+        JenaQuerySandbox.requireBounded(exec)
         val rows = results.asSequence().map { row ->
             MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
         }

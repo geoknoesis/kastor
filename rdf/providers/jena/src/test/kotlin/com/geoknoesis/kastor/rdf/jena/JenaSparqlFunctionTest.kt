@@ -284,4 +284,16 @@ class JenaSparqlFunctionTest {
         assertNull(value(sparql, SparqlFunctionLibrary.EMPTY))
         assertNull(repository.withSelectRows(SparqlSelectQuery(sparql)) { rows -> rows.single().get("v") })
     }
+
+    /** A body that builds its nested query text from data keeps a bounded number of parses per call site, as on RDF4J. */
+    @Test
+    fun `the nested-query parses of a call site are bounded`() {
+        val function = JenaLibraryFunction(com.geoknoesis.kastor.rdf.SparqlFunction("urn:kastor:test:p", emptyList()) { null }, 0, Long.MAX_VALUE, System::nanoTime)
+        val first = SandboxedSelectQuery("SELECT (1 AS ?x) {}")
+        val parsed = function.prepare(first, emptyMap())
+        assertTrue(parsed === function.prepare(first, emptyMap()), "a repeated text is parsed once")
+        for (i in 2..200) function.prepare(SandboxedSelectQuery("SELECT ($i AS ?x) {}"), emptyMap())
+        assertEquals(JenaLibraryFunction.NESTED_PARSES, function.cachedParses())
+        assertTrue(parsed !== function.prepare(first, emptyMap()), "the least recently used parse was dropped")
+    }
 }

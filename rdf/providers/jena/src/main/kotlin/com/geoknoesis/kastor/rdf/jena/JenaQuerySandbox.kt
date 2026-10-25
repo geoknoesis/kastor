@@ -9,23 +9,20 @@ import org.apache.jena.query.Query
 import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.QueryExecutionDatasetBuilder
 import org.apache.jena.query.QueryFactory
+import org.apache.jena.query.ARQ
 import org.apache.jena.sparql.ARQConstants
 import org.apache.jena.sparql.algebra.Algebra
 import org.apache.jena.sparql.algebra.Op
 import org.apache.jena.sparql.algebra.OpVisitorBase
 import org.apache.jena.sparql.algebra.op.OpBGP
 import org.apache.jena.sparql.algebra.op.OpGroup
-import org.apache.jena.sparql.algebra.op.OpOrder
 import org.apache.jena.sparql.algebra.op.OpService
 import org.apache.jena.sparql.algebra.op.OpTriple
-import org.apache.jena.sparql.algebra.walker.Walker
 import org.apache.jena.sparql.expr.E_Call
 import org.apache.jena.sparql.expr.E_Function
 import org.apache.jena.sparql.expr.ExprAggregator
-import org.apache.jena.sparql.expr.ExprFunctionN
+import org.apache.jena.sparql.expr.ExprFunction
 import org.apache.jena.sparql.expr.ExprFunctionOp
-import org.apache.jena.sparql.expr.ExprVisitor
-import org.apache.jena.sparql.expr.ExprVisitorBase
 import org.apache.jena.sparql.expr.aggregate.AggCustom
 import org.apache.jena.sparql.expr.aggregate.Aggregator
 import org.apache.jena.sparql.function.Function
@@ -38,37 +35,33 @@ import org.apache.jena.sparql.util.MappedLoader
 
 /**
  * The sandbox of a [com.geoknoesis.kastor.rdf.SandboxedSelectQuery] on Jena: what the query may evaluate is an
- * **allowlist**, not Jena's whole engine.
+ * **allowlist**, not Jena's whole engine, and what each expression may cost is bounded.
  *
  * - **Syntax:** the text is parsed with Jena's default syntax, which SHACL's generated queries need (the
  *   `SAMEVALUE` keyword of `sparql:sameValue` is not in Jena's strict SPARQL 1.2 grammar yet).
  * - **Static check** ([check]) on the algebra Jena evaluates, so no second parser can read the text differently:
- *   `SERVICE` (it would contact another endpoint), ARQ's `CALL(iri, ...)` (it builds a function IRI from data at run
- *   time), a function or property function that Jena would load as a class by name (`java:` IRIs, and ARQ's `afn:` /
- *   `apf:` namespaces, which Jena maps to its own classes), and custom aggregates are refused. Sub-patterns of `EXISTS` / `NOT EXISTS`, sort conditions, `GROUP BY` expressions and
- *   aggregate arguments are checked explicitly, whatever the walker does with them.
+ *   `SERVICE` (it would contact another endpoint), ARQ's `CALL(iri, ...)` and `fn:apply` (they build a function IRI
+ *   from data at run time), a function or property function that Jena would load as a class by name (`java:` IRIs,
+ *   and ARQ's `afn:` / `apf:` namespaces, which Jena maps to its own classes), any IRI in ARQ's own namespaces (Jena
+ *   runs `http://jena.apache.org/ARQ/<language>Function#name` as a script function without asking any registry,
+ *   whether `jena:scripting` is on or off), custom aggregates, and any expression class that is not on the
+ *   allowlist of [JenaCost] are refused. Sub-patterns of `EXISTS` / `NOT EXISTS`, sort conditions, `GROUP BY`
+ *   expressions and aggregate arguments are checked explicitly, whatever the walker does with them
+ *   ([JenaSandboxBounds.walk]).
  * - **Run time** ([restrict]): the functions the query can call are the SPARQL built-ins (which Jena evaluates
- *   without its registry), the functions of [STANDARD_FUNCTION_NAMESPACES] that Jena has registered (XSD casts, XPath
- *   `fn:` and `math:` functions, SPARQL's own namespace), and the query's custom functions. Every other IRI is an
- *   unknown function (a SPARQL error), however it was built: Jena's extension functions such as `afn:wait` (which
- *   sleeps through the query timeout and clears the thread's interrupt flag), `afn:print` or `afn:context`, and
- *   functions other code registered globally. Nothing is loaded and nothing is registered. Property functions are
- *   off (`rdfs:member` or `list:member` are matched as ordinary predicates, as in standard SPARQL) and `SERVICE`
- *   has no executor.
+ *   without its registry), the registered standard functions that [JenaCost.FUNCTIONS] lists (XSD casts, XPath `fn:`
+ *   and `math:` functions, SPARQL's own namespace), and the query's custom functions. Every other IRI is an unknown
+ *   function (a SPARQL error): Jena's extension functions such as `afn:wait` (which sleeps through the query timeout
+ *   and clears the thread's interrupt flag), `afn:print` or `afn:context`, and functions other code registered
+ *   globally. Nothing is loaded and nothing is registered. Property functions are off (`rdfs:member` or `list:member`
+ *   are matched as ordinary predicates, as in standard SPARQL) and `SERVICE` has no executor.
+ * - **Bounds** ([JenaSandboxRewrite]): every expression of the plan checks the deadline and cancellation before it
+ *   runs, is held to [com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits] (a power, a product, `CONCAT`, case
+ *   mapping and the other costly functions are checked before they compute, results after), regular expressions run
+ *   with a step budget, and `GROUP_CONCAT` accumulates a bounded number of characters. A query that would exceed a
+ *   limit fails with `SandboxLimitException`; one whose plan could not be bounded fails too.
  */
 internal object JenaQuerySandbox {
-
-    /**
-     * Namespaces of the registered functions a sandboxed query may call: XSD casts, XPath functions and operators
-     * (`fn:`, `math:`) and the SPARQL namespace. Jena's implementations of them are pure, deterministic (except the
-     * clock and random built-ins SPARQL itself has) and bounded by their arguments.
-     */
-    val STANDARD_FUNCTION_NAMESPACES: List<String> = listOf(
-        "http://www.w3.org/2001/XMLSchema#",
-        "http://www.w3.org/2005/xpath-functions#",
-        "http://www.w3.org/2005/xpath-functions/math#",
-        "http://www.w3.org/ns/sparql#",
-    )
 
     /** Parses the text of a sandboxed query (see [parseSelect]) and [check]s it. */
     fun parseChecked(sparql: String): Query = QueryFactory.create(sparql).also { check(it) }
@@ -107,13 +100,14 @@ internal object JenaQuerySandbox {
 
     /**
      * Runs a sandboxed query with registries that cannot reach outside the store, whatever IRI the query computes at
-     * run time (should a function IRI computed from data, as by ARQ's `CALL`, ever get past [check]): only standard functions ([STANDARD_FUNCTION_NAMESPACES]) already registered with Jena
-     * and the custom [functions] are found, so no class is loaded and no extension function runs; there are no
-     * property functions, and SERVICE has no executor.
+     * run time: only the standard functions of [JenaCost.FUNCTIONS] already registered with Jena and the custom
+     * [functions] are found, so no class is loaded and no extension function runs; there are no property functions,
+     * and SERVICE has no executor. Its plan is bounded by a [JenaSandboxRewrite] (Jena's optimizer is forced on, since
+     * the rewrite runs as the optimizer); call [requireBounded] once the plan is made.
      *
-     * The custom [functions] of the query are visible to this one execution only, at nesting [depth], and their nested
-     * queries end by [deadline] (a [clock] value; [Long.MAX_VALUE] for none). Per SHACL 1.2 SPARQL Extensions section
-     * 7.3, a built-in function wins over a custom function with the same IRI.
+     * The custom [functions] of the query are visible to this one execution only, at nesting [depth], and the query
+     * and their nested queries end by [deadline] (a [clock] value; [Long.MAX_VALUE] for none). Per SHACL 1.2 SPARQL
+     * Extensions section 7.3, a built-in function wins over a custom function with the same IRI.
      */
     fun restrict(
         builder: QueryExecutionDatasetBuilder,
@@ -125,10 +119,16 @@ internal object JenaQuerySandbox {
         .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock))
         .set(ARQConstants.registryPropertyFunctions, NoPropertyFunctions())
         .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
+        .set(ARQConstants.sysOptimizerFactory, JenaSandboxRewrite(JenaSandboxBudget(deadline, clock)))
+        .set(ARQ.optimization, true)
+
+    /** Fails a sandboxed execution whose plan was not bounded; see [JenaSandboxBounds.requireBounded]. */
+    fun requireBounded(exec: QueryExecution) = JenaSandboxBounds.requireBounded(exec)
 
     /**
-     * The standard functions [base] has registered, then the custom [functions]; nothing is ever loaded or registered
-     * (only [FunctionRegistry.isRegistered] entries of [base] are read, never its class-loading lookup).
+     * The standard functions [base] has registered that [JenaCost.FUNCTIONS] allows, then the custom [functions];
+     * nothing is ever loaded or registered (only [FunctionRegistry.isRegistered] entries of [base] are read, never its
+     * class-loading lookup).
      */
     private class SandboxFunctions(
         private val base: FunctionRegistry,
@@ -139,7 +139,7 @@ internal object JenaQuerySandbox {
     ) : FunctionRegistry() {
         override fun get(uri: String): FunctionFactory? = getFunctionFactory(uri)
         override fun getFunctionFactory(uri: String): FunctionFactory? {
-            if (isStandard(uri) && base.isRegistered(uri)) base.getFunctionFactory(uri)?.let { return it }
+            if (JenaCost.ofFunction(uri) != null && base.isRegistered(uri)) base.getFunctionFactory(uri)?.let { return it }
             val function = functions.function(uri) ?: return null
             return FunctionFactory { JenaLibraryFunction(function, depth, deadline, clock) }
         }
@@ -155,38 +155,48 @@ internal object JenaQuerySandbox {
     }
 
     private fun check(op: Op) {
-        val exprs = object : ExprVisitorBase() {
-            override fun visit(func: ExprFunctionN) {
-                if (func is E_Call) refuse("CALL, which computes a function IRI at run time")
-                (func as? E_Function)?.functionIRI?.let { if (loadsClass(it)) refuse("the Jena or Java function <$it>") }
+        val exprs = object : JenaSandboxBounds.ExprVisitorAdapter() {
+            override fun function(func: ExprFunction) {
+                when {
+                    func is E_Call -> refuse("CALL, which computes a function IRI at run time")
+                    func is ExprFunctionOp -> Unit
+                    JenaCost.of(func) == null -> refuse("the expression ${func.functionSymbol.symbol}")
+                    func is E_Function -> functionIri(func.functionIRI)
+                }
             }
-            override fun visit(funcOp: ExprFunctionOp) = check(funcOp.graphPattern)
-            override fun visit(eAgg: ExprAggregator) = aggregate(eAgg.aggregator, this)
+            override fun visit(eAgg: ExprAggregator) = aggregate(eAgg.aggregator)
         }
-        // The walker visits neither sort conditions nor GROUP BY expressions and aggregates: they are walked here.
         val ops = object : OpVisitorBase() {
             override fun visit(opService: OpService) = refuse("SERVICE <${opService.service}>")
             override fun visit(opBGP: OpBGP) = opBGP.pattern.forEach { predicate(it.predicate) }
             override fun visit(opTriple: OpTriple) = predicate(opTriple.triple.predicate)
-            override fun visit(opOrder: OpOrder) = opOrder.conditions.forEach { Walker.walk(it.expression, exprs) }
-            override fun visit(opGroup: OpGroup) {
-                opGroup.groupVars.exprs.values.forEach { Walker.walk(it, exprs) }
-                opGroup.aggregators.forEach { aggregate(it.aggregator, exprs) }
-            }
+            override fun visit(opGroup: OpGroup) = opGroup.aggregators.forEach { aggregate(it.aggregator) }
         }
-        Walker.walk(op, ops, exprs)
+        JenaSandboxBounds.walk(op, exprs, ops)
     }
 
-    private fun aggregate(aggregator: Aggregator, exprs: ExprVisitor) {
+    private fun functionIri(iri: String) {
+        when {
+            loadsClass(iri) -> refuse("the Jena or Java function <$iri>")
+            ARQ_NAMESPACES.any(iri::startsWith) -> refuse("the Jena function <$iri> (an ARQ extension or script function)")
+            iri == FN_APPLY -> refuse("fn:apply, which computes a function IRI at run time")
+        }
+    }
+
+    private fun aggregate(aggregator: Aggregator) {
         if (aggregator is AggCustom) refuse("the custom aggregate <${aggregator.iri}>")
-        aggregator.exprList?.forEach { Walker.walk(it, exprs) }
     }
 
     private fun predicate(node: Node) {
-        if (node.isURI && loadsClass(node.uri)) refuse("the Jena or Java property function <${node.uri}>")
+        if (node.isURI && (loadsClass(node.uri) || ARQ_NAMESPACES.any(node.uri::startsWith))) {
+            refuse("the Jena or Java property function <${node.uri}>")
+        }
     }
 
-    private fun isStandard(iri: String) = STANDARD_FUNCTION_NAMESPACES.any(iri::startsWith)
+    /** ARQ's own namespaces: its function and property-function libraries and its script functions. */
+    private val ARQ_NAMESPACES = listOf("http://jena.apache.org/ARQ/", "http://jena.hpl.hp.com/ARQ/")
+
+    private const val FN_APPLY = "http://www.w3.org/2005/xpath-functions#apply"
 
     /**
      * Whether Jena would resolve [iri] as a function or property function by loading a class: a `java:` IRI, or one

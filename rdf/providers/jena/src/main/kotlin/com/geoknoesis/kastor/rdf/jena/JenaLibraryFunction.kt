@@ -8,6 +8,7 @@ import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.TripleTerm
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryCancelledException
@@ -32,12 +33,12 @@ import java.util.concurrent.TimeUnit
  * ([SparqlFunction.bindArguments]), a body that returns null or throws, and a nested query that is refused, that
  * cannot be parsed or that nests deeper than [SparqlFunction.MAX_FUNCTION_DEPTH]. Only a cancellation
  * ([QueryCancelledException], also for a body interrupted with [InterruptedException], whose interrupt flag is
- * restored) stops the calling query.
+ * restored) and an exceeded sandbox limit ([SandboxLimitException], fail closed) stop the calling query.
  *
  * Nested queries run on the dataset of the calling query, restricted like it, and end by [deadline] (a [clock] value;
  * [Long.MAX_VALUE] when the calling query has no timeout). Jena creates one instance per call site and execution, so
- * a nested query is validated, parsed and checked once per instance ([prepared]), not once per row: the bindings of a
- * call are applied with `substitution`, never written into the text.
+ * a nested query is validated, parsed and checked once per instance ([prepared], a bounded cache), not once per row:
+ * the bindings of a call are applied with `substitution`, never written into the text.
  */
 internal class JenaLibraryFunction(
     private val function: SparqlFunction,
@@ -48,17 +49,31 @@ internal class JenaLibraryFunction(
 
     override fun build(uri: String, args: ExprList, context: Context) = Unit
 
+    internal companion object {
+        /** Most nested-query parses one call site keeps, as on RDF4J (`Rdf4jQuerySandbox.NestedParses`). */
+        const val NESTED_PARSES: Int = 64
+    }
+
     /** What a nested query's preparation depends on: its text and which variables are bound, to what kind of term. */
     private data class NestedKey(val sparql: String, val bound: Set<String>, val literals: Set<String>)
 
-    /** The checked parses of the nested queries of this call site; a refused or malformed query is never kept. */
-    private val prepared = HashMap<NestedKey, Query>()
+    /**
+     * The checked parses of the nested queries of this call site, at most [NESTED_PARSES] of them (the least recently
+     * used dropped first), so a body that builds its query text from data does not grow it for the whole execution;
+     * a refused or malformed query is never kept.
+     */
+    private val prepared = object : LinkedHashMap<NestedKey, Query>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<NestedKey, Query>?): Boolean = size > NESTED_PARSES
+    }
+
+    /** How many nested-query parses this call site keeps (for tests). */
+    internal fun cachedParses(): Int = synchronized(prepared) { prepared.size }
 
     /**
      * [query] validated against the initial-bindings contract of a top-level query (see JenaRepository.withSelectRows)
      * for [bindings], parsed as sandboxed SPARQL and checked, once per [NestedKey].
      */
-    private fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>): Query {
+    internal fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>): Query {
         val key = NestedKey(query.sparql, bindings.keys, bindings.filterValues { it is Literal || it is TripleTerm }.keys)
         synchronized(prepared) { prepared[key] }?.let { return it }
         SparqlInitialBindings.validate(key.sparql, key.bound, key.literals)
@@ -83,6 +98,8 @@ internal class JenaLibraryFunction(
             function.body(Call(arguments, env))
         } catch (e: QueryCancelledException) {
             throw e
+        } catch (e: SandboxLimitException) {
+            throw e
         } catch (e: ExprEvalException) {
             throw e
         } catch (e: InterruptedException) {
@@ -90,7 +107,9 @@ internal class JenaLibraryFunction(
             Thread.currentThread().interrupt()
             throw QueryCancelledException(e)
         } catch (e: Exception) {
-            generateSequence<Throwable>(e) { it.cause }.filterIsInstance<QueryCancelledException>().firstOrNull()?.let { throw it }
+            // A cancellation or an exceeded sandbox limit of a nested query stops the calling query too.
+            generateSequence<Throwable>(e) { it.cause }
+                .firstOrNull { it is QueryCancelledException || it is SandboxLimitException }?.let { throw it }
             throw ExprEvalException("The custom function <$uri> failed: ${e.message}", e)
         } ?: throw ExprEvalException("The custom function <$uri> has no result")
         return try {
@@ -123,7 +142,9 @@ internal class JenaLibraryFunction(
                 builder.timeout(TimeUnit.NANOSECONDS.toMillis(left).coerceAtLeast(1), TimeUnit.MILLISECONDS)
             }
             return builder.build().use { exec ->
-                consume(exec.execSelect().asSequence().map { row ->
+                val rows = exec.execSelect()
+                JenaQuerySandbox.requireBounded(exec)
+                consume(rows.asSequence().map { row ->
                     MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
                 })
             }
