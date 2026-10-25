@@ -63,9 +63,10 @@ and is kept as is; it was never published to Maven Central.
   100 s under a 500 ms timeout); and any expression class the cost table does not list (behaviour change).
 - **Security (`rdf-jena`, `rdf-rdf4j`, `rdf-sparql-contract`), review follow-up:**
   - a regular expression whose choices can read nothing (a repetition of something that matches the empty string,
-    two empty-matchable alternatives, a lookaround, an inline `(?x)`, groups nested more than 64 deep) is refused in a
+    two empty-matchable alternatives, a lookaround, groups nested more than 64 deep) is refused in a
     sandboxed query before it runs: Java's matcher explored 2^24 zero-width paths of `(?:|)` x 24 in 0.4 s without
-    reading a character, so the step budget could not see them (behaviour change);
+    reading a character, so the step budget could not see them (behaviour change; this also applies to the
+    `sh:pattern` that RDF4J's `ShaclSail` evaluates for the RDF4J SHACL validator);
   - `REPLACE` measures the groups a replacement refers to from their offsets and stops as soon as the result would
     pass the string limit, checking the deadline while it reads the replacement;
   - `GROUP_CONCAT` and `CONCAT` count the text of IRIs and blank nodes too, and `IRI()` / `URI()` results are checked;
