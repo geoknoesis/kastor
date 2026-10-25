@@ -22,7 +22,7 @@
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/Rdf.kt": {
       "lines": 928,
       "functions": {
-        "providerConsumedInput:0b80856fc3c2": 59
+        "providerConsumedInput:0b80856fc3c2": 53
       },
       "reason": "Round-ten upstream b5cfef13: asynchronous cancellation connection handoff and helper class. Lexical scanner includes following declarations in an expression body. Frozen at integration; further growth requires review."
     },
