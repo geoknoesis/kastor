@@ -17,13 +17,6 @@
       "lines": 787,
       "reason": "Round-ten upstream b5cfef13: bounded diagnostics for a known dataset difference. Frozen at integration; further growth requires review."
     },
-    "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/DatasetImpl.kt": {
-      "lines": 1082,
-      "functions": {
-        "tokenize:44569e344684": 85
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/GraphIsomorphism.kt": {
       "functions": {
         "search:f1dceb5e5f9b": 55
@@ -31,7 +24,7 @@
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/Rdf.kt": {
-      "lines": 971,
+      "lines": 928,
       "functions": {
         "providerConsumedInput:0b80856fc3c2": 59
       },
@@ -40,6 +33,13 @@
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/RdfTerms.kt": {
       "lines": 1403,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
+    },
+    "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/SparqlDatasetClauses.kt": {
+      "lines": 721,
+      "functions": {
+        "tokenize:44569e344684": 85
+      },
+      "reason": "Hand-written SPARQL dataset-clause scanner, split out of DatasetImpl.kt in round eleven (DatasetImpl.kt is now under the default limits). Existing implementation; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/UrlLoadOptions.kt": {
       "functions": {
