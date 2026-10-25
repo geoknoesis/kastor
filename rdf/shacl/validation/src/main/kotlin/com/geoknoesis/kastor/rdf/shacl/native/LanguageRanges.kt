@@ -2,9 +2,9 @@ package com.geoknoesis.kastor.rdf.shacl.native
 
 /**
  * The language ranges of an `sh:languageIn` list, for lookups (RFC 4647 basic filtering, case insensitive):
- * [matches] costs time linear in the length of the tag, not in the number of ranges. A range `r` or `r-*` matches the tag `r` and every tag that starts with `r-`, case
- * insensitively, so a tag is matched by looking up each of its prefixes that ends at a subtag boundary. `*` and
- * `-*` match every tag; the empty range matches none.
+ * [matches] costs time linear in the length of the tag, not in the number of ranges. A range `r` or `r-*` matches
+ * the tag `r` and every tag that starts with `r-`, so a tag is matched by looking up each of its prefixes that ends
+ * at a subtag boundary. `*` and `-*` match every tag; the empty range matches none.
  */
 internal class LanguageRanges(ranges: List<String>) {
     private val prefixes = HashSet<String>()
