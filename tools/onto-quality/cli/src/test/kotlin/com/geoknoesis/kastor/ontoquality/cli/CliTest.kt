@@ -605,6 +605,15 @@ class CliTest {
     }
 
     @Test
+    fun `--reasoner-timeout bounds the reasoner run and must be positive`() {
+        val onto = ontology().toString()
+        assertEquals(EXIT_USAGE, run(listOf("check", onto, "--reasoner", "rdfs", "--reasoner-timeout", "0")).status)
+        val out = dir.resolve("timed.json").toString()
+        val ok = run(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "rdfs", "--reasoner-timeout", "60", "--format", "json", "--output", out))
+        assertEquals(EXIT_OK, ok.status, ok.err)
+    }
+
+    @Test
     fun `--label-language reaches the enricher and is validated before any model is loaded`() {
         val captured = mutableListOf<EmbeddingCliOptions>()
         val capture = PipelineEnricherFactory { opts -> captured += opts; FakeEnricherFactory().open(opts) }
@@ -616,7 +625,17 @@ class CliTest {
         val bad = run(listOf("enrich", ontology().toString(), "--label-language", "not a tag"), CliEnvironment(enricherFactory = factory))
         assertEquals(EXIT_USAGE, bad.status, bad.err)
         assertTrue(bad.err.contains("--label-language"), bad.err)
+        // The error is attributed to the subcommand, not to the root command.
+        assertTrue(bad.err.contains("Usage: onto-qa enrich"), bad.err)
         assertEquals(0, factory.opened)
+
+        // `none` (or an empty value) asks for the untagged labels, as LabelExtractor documents for "".
+        for (untagged in listOf("none", "NONE", "")) {
+            captured.clear()
+            val result = run(listOf("enrich", ontology().toString(), "--label-language", untagged, "--output", out), CliEnvironment(enricherFactory = capture))
+            assertEquals(EXIT_OK, result.status, result.err)
+            assertEquals("", captured.single().labelLanguage, "--label-language '$untagged'")
+        }
     }
 
     @Test

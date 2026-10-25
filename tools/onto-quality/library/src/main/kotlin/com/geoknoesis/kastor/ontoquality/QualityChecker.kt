@@ -22,6 +22,7 @@ import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
+import java.time.Duration
 
 private val qualityCheckerLogger = LoggerFactory.getLogger(QualityChecker::class.java)
 
@@ -74,8 +75,23 @@ class QualityChecker private constructor(
      * So a reasoner can only add findings of the second kind. The [MetricsProvider] always receives the asserted
      * [ontology] as well: structural metrics and importance scores are meaningless on a closure.
      */
-    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport {
-        val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
+    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport = checkWithReasoning(ontology, reasoning, null)
+
+    /**
+     * [check] with the wall-clock budget of the reasoner run set to [reasonerTimeout] (default: the reasoner
+     * configuration's, 5 minutes). A reasoner that runs out of time fails the check (the reasoner's exception); the
+     * number of inferred triples is bounded by the reasoner configuration as well.
+     *
+     * @throws IllegalArgumentException when [reasonerTimeout] is not positive.
+     */
+    @Throws(IllegalArgumentException::class)
+    fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile, reasonerTimeout: Duration): QualityReport {
+        require(!reasonerTimeout.isNegative && !reasonerTimeout.isZero) { "reasonerTimeout must be positive, got $reasonerTimeout" }
+        return checkWithReasoning(ontology, reasoning, reasonerTimeout)
+    }
+
+    private fun checkWithReasoning(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile, reasonerTimeout: Duration?): QualityReport {
+        val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull(reasonerTimeout))
         val metricsContext = computeMetricsContext(ontology)
         val raw =
             if (materialized.graph === ontology) {
@@ -209,7 +225,7 @@ class QualityChecker private constructor(
         private fun mergeScopedCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
             val merged = JenaBridge.createEmptyModel()
             for (c in catalogs) {
-                merged.addTriples(c.loadShapesGraph().getTriples())
+                merged.addTriples(c.loadShapesGraph().getTriplesSequence())
             }
             return merged
         }

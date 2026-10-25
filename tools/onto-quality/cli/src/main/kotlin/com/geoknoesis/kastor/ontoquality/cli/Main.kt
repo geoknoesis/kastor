@@ -17,6 +17,7 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.ontoquality.embed.EnrichmentVocabulary
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededException
 import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.serialize
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
 import com.github.ajalt.clikt.core.CliktCommand
@@ -381,13 +382,15 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         val embeddingOptions = embedding.toOptions()
         // LLM prerequisites (opt-in, API key) are checked before the ontology is parsed or a model is loaded.
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
-        val ontology = parseOntology(ontologyArg, format, baseIri)
+        // Held only until it is enriched: the enriched graph is a copy, and the check runs on it alone.
+        var ontology: RdfGraph? = parseOntology(ontologyArg, format, baseIri)
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(reportOptions.validationConfig()), withMetricsProvider = false)
 
         val exitCode =
             openEnricher(environment, embeddingOptions).use { enricher ->
                 echo("Pipeline: enriching…", err = true)
-                val enriched = enricher.enrich(ontology)
+                val enriched = enricher.enrich(checkNotNull(ontology))
+                ontology = null
 
                 if (keepIntermediate) {
                     val tmp = Files.createTempFile("onto-qa-", ".enriched.ttl")
@@ -407,10 +410,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
                     }
                 }
 
-                if (reasoningProfile != OntoQualityReasoningProfile.NONE) {
-                    logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
-                }
-                val report = checker.check(enriched, reasoningProfile)
+                val report = runCheck(checker, enriched, reasoningProfile, reportOptions)
                 warnIfTruncated(report, reportOptions.maxFindings) { echo(it, err = true) }
                 val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
                 emitReport(
@@ -469,10 +469,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
             }
         }
 
-        if (reasoningProfile != OntoQualityReasoningProfile.NONE) {
-            logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
-        }
-        val report = checker.check(graph, reasoningProfile)
+        val report = runCheck(checker, graph, reasoningProfile, reportOptions)
         warnIfTruncated(report, reportOptions.maxFindings) { echo(it, err = true) }
         val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
         emitReport(

@@ -8,6 +8,7 @@ import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededExc
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchLimits
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
 import com.github.ajalt.clikt.parameters.options.check
+import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
@@ -58,9 +59,13 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     val labelLanguage by
         option(
             "--label-language",
-            help = "Language tag of the labels to embed, e.g. fr (default: the ontology's most common label language; " +
-                "an entity without a label in it falls back to untagged labels, then to its smallest language tag)",
-        )
+            help = "Language tag of the labels to embed, e.g. fr, or none for the untagged labels (default: the ontology's most " +
+                "common label language; an entity without a label in it falls back to untagged labels, then to its smallest " +
+                "language tag)",
+        ).convert { if (it.equals(UNTAGGED_LABELS, ignoreCase = true)) "" else it }
+            .check({ "must be a language tag such as en or pt-BR, or $UNTAGGED_LABELS, got '$it'" }) {
+                it.isEmpty() || LiteralValidation.isWellFormedLanguageTag(it)
+            }
     val similarityMode by
         option(
             "--similarity-mode",
@@ -71,11 +76,6 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
     fun toOptions(): EmbeddingCliOptions {
         try {
             OnnxEmbeddingModel.validateCliOptions(model, onnx, tokenizer, embeddingDim, maxTokens)
-            labelLanguage?.let {
-                require(it.isNotEmpty() && LiteralValidation.isWellFormedLanguageTag(it)) {
-                    "--label-language must be a language tag such as en or pt-BR, got '$it'"
-                }
-            }
         } catch (e: IllegalArgumentException) {
             throw usageError(e.message ?: "Invalid embedding options")
         }
@@ -98,6 +98,9 @@ internal class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.O
         )
     }
 }
+
+/** `--label-language none`: embed the untagged labels (the empty language tag of [EmbeddingCliOptions.labelLanguage]). */
+internal const val UNTAGGED_LABELS = "none"
 
 /** Report / LLM options shared by `check` and `pipeline`. */
 internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.OptionGroup() {
@@ -169,6 +172,12 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
             help = "none | rdfs | owl-micro | owl-rl | hermit — materialize inferences before SHACL (owl-micro = Jena OWL Micro " +
                 "rule reasoner, fast and incomplete; owl-rl = Jena OWL rule reasoner; hermit = OWL DL via HermiT)",
         ).choice(*REASONER_CHOICES, ignoreCase = true).default("none")
+    val reasonerTimeoutSeconds by
+        option(
+            "--reasoner-timeout",
+            help = "Wall-clock budget of the --reasoner run in seconds (1-86400, default 300); a reasoner that runs out of time " +
+                "fails the run (exit $EXIT_RUNTIME_ERROR)",
+        ).int().restrictTo(1..86_400)
     val markdownAscii by
         option(
             "--markdown-ascii",
@@ -180,6 +189,9 @@ internal class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Opti
      * `Int.MAX_VALUE`, not the library default of 1,000), so no finding is dropped without a trace.
      */
     fun validationConfig(): ValidationConfig = ValidationConfig(maxViolations = maxFindings ?: Int.MAX_VALUE)
+
+    /** `--reasoner-timeout`, or null for the reasoner configuration's default. */
+    fun reasonerTimeout(): Duration? = reasonerTimeoutSeconds?.let { Duration.ofSeconds(it.toLong()) }
 
     /**
      * `--explain` options, validated before anything is parsed, loaded or sent. The SHACL validation report

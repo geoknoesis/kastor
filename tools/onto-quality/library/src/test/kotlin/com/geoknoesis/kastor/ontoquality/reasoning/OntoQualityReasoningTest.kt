@@ -167,4 +167,29 @@ class OntoQualityReasoningTest {
         org.junit.jupiter.api.Assertions.assertEquals(true, sameAs in rl, "OWL_RL must derive ex:carol owl:sameAs ex:caroline")
         org.junit.jupiter.api.Assertions.assertEquals(false, sameAs in micro, "OWL_MICRO has no equality rules; triples: $micro")
     }
+
+    @Test
+    fun `the reasoner timeout reaches the reasoner configuration`() {
+        val config = OntoQualityReasoningProfile.OWL_RL.toReasonerConfigOrNull(java.time.Duration.ofSeconds(7))
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ofSeconds(7), config?.timeout)
+        org.junit.jupiter.api.Assertions.assertEquals(
+            java.time.Duration.ofSeconds(9),
+            OntoQualityReasoningProfile.HERMIT.toReasonerConfigOrNull(java.time.Duration.ofSeconds(9))?.timeout,
+        )
+        org.junit.jupiter.api.Assertions.assertEquals(null, OntoQualityReasoningProfile.NONE.toReasonerConfigOrNull(java.time.Duration.ofSeconds(1)))
+    }
+
+    @Test
+    fun `a checker run honours the reasoner timeout`() {
+        val checker =
+            com.geoknoesis.kastor.ontoquality.QualityChecker.builder(com.geoknoesis.kastor.rdf.shacl.ShaclValidation.validator())
+                .addCatalog(com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs.OWL_QUALITY)
+                .build()
+        val graph = Rdf.parse("@prefix ex: <http://example.org/ns#> . ex:a ex:p ex:b .", RdfFormat.TURTLE)
+        val report = checker.check(graph, OntoQualityReasoningProfile.RDFS, java.time.Duration.ofMinutes(1))
+        assertTrue(report.findings.isNotEmpty() || report.conforms)
+        org.junit.jupiter.api.assertThrows<IllegalArgumentException> {
+            checker.check(graph, OntoQualityReasoningProfile.RDFS, java.time.Duration.ZERO)
+        }
+    }
 }
