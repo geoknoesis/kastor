@@ -69,11 +69,11 @@ oqsh:JunkDrawerClassShape
     oqsh:pitfall     "P21" ;
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Class label suggests it is a 'miscellaneous' catch-all" ;
-    rdfs:comment     "OOPS! P21. Flags classes whose label or local name matches evasive patterns: Misc, Miscellaneous, Other, OtherStuff, Various, Things, Unspecified, Unknown." ;
+    rdfs:comment     "OOPS! P21. Flags classes whose label or local name starts with an evasive word: Misc, Miscellaneous, Other, Various, Things, Unspecified, Unknown (OtherStuff, Other organisation, Misc. items). The word must end there (a space, punctuation, a digit or, in a camelCase local name, a capital letter follows): Miscarriage, Otter or Thingsboard are not reported." ;
     sh:targetClass   owl:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
                        sh:message "Class {$this} has a label or local name suggesting a miscellaneous catch-all category." ;
-                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this a owl:Class . FILTER ( isIRI($this) ) { $this rdfs:label ?label . FILTER ( regex(str(?label), \"^(Misc|Miscellaneous|Other|OtherStuff|Various|Things|Unspecified|Unknown)\", \"i\") ) } UNION { BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( regex(?local, \"^(Misc|Miscellaneous|Other|OtherStuff|Various|Things|Unspecified|Unknown)\", \"i\") ) } BIND(1 AS ?v) }""" ] ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this a owl:Class . FILTER ( isIRI($this) ) { $this rdfs:label ?label . FILTER ( regex(str(?label), \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\", \"i\") ) } UNION { BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( regex(?local, \"^(Misc|Miscellaneous|Other|Various|Things|Unspecified|Unknown)([^a-z]|$)\") || regex(?local, \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\") ) } BIND(1 AS ?v) }""" ] ;
     sh:severity      sh:Info .
 
 ################################################################
@@ -88,11 +88,11 @@ oqsh:SameLabelDifferentClassShape
     oqsh:pitfall     "P32" ;
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Distinct classes share an identical label" ;
-    rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling." ;
+    rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling. Not reported: equivalent classes, and a deprecated class that keeps the label of its replacement." ;
     sh:targetClass   owl:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
                        sh:message "Class {$this} shares its label '{?label}' with another distinct class {?other}." ;
-                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label ?other WHERE { $this a owl:Class ; rdfs:label ?label . ?other a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) && isIRI(?other) && str($this) < str(?other) ) }""" ] ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label ?other WHERE { $this a owl:Class ; rdfs:label ?label . ?other a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) && isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentClass|^owl:equivalentClass ?other } FILTER NOT EXISTS { { $this owl:deprecated ?d1 } UNION { ?other owl:deprecated ?d2 } UNION { $this a owl:DeprecatedClass } UNION { ?other a owl:DeprecatedClass } } }""" ] ;
     sh:severity      sh:Warning .
 
 ################################################################

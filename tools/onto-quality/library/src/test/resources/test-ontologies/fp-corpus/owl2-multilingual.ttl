@@ -1,0 +1,53 @@
+# False-positive corpus: OWL 2 property characteristics and datatypes, and a multilingual vocabulary whose local
+# names are not ASCII (French, German, Japanese, Chinese) and whose labels and comments come in several languages,
+# one per language. OBO-style opaque identifiers with labels are used for imported terms. No detector may report a
+# warning or a violation.
+@prefix ex:   <https://w3id.org/kastor/fp/bâtiment#> .
+@prefix obo:  <http://purl.obolibrary.org/obo/> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<https://w3id.org/kastor/fp/bâtiment> a owl:Ontology ;
+    rdfs:label "Buildings"@en , "Bâtiments"@fr ;
+    rdfs:comment "Buildings and their parts."@en , "Les bâtiments et leurs parties."@fr ;
+    dct:creator <https://orcid.org/0000-0002-1825-0097> ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    dcat:contactPoint <mailto:batiment@example.org> ;
+    owl:versionIRI <https://w3id.org/kastor/fp/bâtiment/2.0> .
+
+ex:Bâtiment a owl:Class ; rdfs:label "building"@en , "bâtiment"@fr , "Gebäude"@de , "建物"@ja ;
+    rdfs:comment "A structure with a roof and walls."@en , "Une construction couverte."@fr ;
+    skos:example "a town hall"@en .
+ex:Straße a owl:Class ; rdfs:label "street"@en , "Straße"@de ; rdfs:comment "A public road in a town."@en ;
+    skos:example "Main Street"@en ; owl:disjointWith ex:Bâtiment .
+ex:建物部品 a owl:Class ; rdfs:label "building part"@en , "建物部品"@ja ; rdfs:comment "A part of a building."@en ;
+    skos:example "a wall"@en .
+ex:房间 a owl:Class ; rdfs:label "room"@en , "房间"@zh ; rdfs:comment "An enclosed space in a building."@en ;
+    rdfs:subClassOf ex:建物部品 .
+ex:Étage a owl:Class ; rdfs:label "storey"@en , "étage"@fr ; rdfs:comment "A level of a building."@en ;
+    rdfs:subClassOf ex:建物部品 , obo:BFO_0000040 .
+obo:BFO_0000040 a owl:Class ; rdfs:isDefinedBy <http://purl.obolibrary.org/obo/bfo.owl> ; rdfs:label "material entity"@en ; rdfs:comment "An independent continuant that has matter as part."@en ;
+    skos:example "a chair"@en .
+
+ex:aPourPartie a owl:ObjectProperty , owl:TransitiveProperty ; rdfs:label "has part"@en , "a pour partie"@fr ;
+    rdfs:comment "A part of a whole."@en ; rdfs:domain ex:Bâtiment ; rdfs:range ex:建物部品 ; owl:inverseOf ex:estPartieDe .
+ex:estPartieDe a owl:ObjectProperty ; rdfs:label "part of"@en , "est partie de"@fr ; rdfs:comment "The whole of a part."@en ;
+    rdfs:domain ex:建物部品 ; rdfs:range ex:Bâtiment .
+ex:voisin a owl:ObjectProperty , owl:SymmetricProperty , owl:IrreflexiveProperty ; rdfs:label "neighbour"@en , "voisin"@fr ;
+    rdfs:comment "A building next to another one."@en ; rdfs:domain ex:Bâtiment ; rdfs:range ex:Bâtiment .
+ex:höhe a owl:DatatypeProperty , owl:FunctionalProperty ; rdfs:label "height"@en , "Höhe"@de ;
+    rdfs:comment "The height of a building in metres."@en ; rdfs:domain ex:Bâtiment ; rdfs:range owl:real .
+ex:nom a owl:DatatypeProperty ; rdfs:label "name"@en , "nom"@fr ; rdfs:comment "The name of a building."@en ;
+    rdfs:domain ex:Bâtiment ; rdfs:range rdf:langString .
+ex:remarque a owl:DatatypeProperty ; rdfs:label "remark"@en , "remarque"@fr ; rdfs:comment "Free text about a building."@en ;
+    rdfs:domain ex:Bâtiment ; rdfs:range rdfs:Literal .
+ex:Code a rdfs:Datatype ; rdfs:label "code"@en ; rdfs:comment "A building code: letters and digits."@en ;
+    owl:equivalentClass [ a rdfs:Datatype ; owl:onDatatype xsd:string ; owl:withRestrictions ( [ xsd:pattern "[A-Z]+[0-9]+" ] ) ] .
+ex:code a owl:DatatypeProperty ; rdfs:label "code"@en ; rdfs:comment "The registry code of a building."@en ;
+    rdfs:domain ex:Bâtiment ; rdfs:range ex:Code .
+ex:hôtelDeVille a ex:Bâtiment ; rdfs:label "town hall"@en , "hôtel de ville"@fr ; ex:höhe "21.5"^^xsd:decimal ; ex:nom "Mairie"@fr .

@@ -60,8 +60,11 @@ class SkosHierarchyDirectionTest {
     @EnumSource(OntoQualityReasoningProfile::class, names = ["NONE", "OWL_RL"])
     fun `S27 is found whichever direction the hierarchy is stated in`(profile: OntoQualityReasoningProfile) {
         for ((name, hierarchy) in hierarchies) {
+            // skos:related is stated both ways: the pair is reported once, on the smaller IRI.
             val found = focus("$hierarchy ex:a skos:related ex:d . ex:d skos:related ex:a .", "S27", profile)
-            assertEquals(setOf(ex("a"), ex("d")), found, "$name hierarchy, $profile")
+            assertEquals(setOf(ex("a")), found, "$name hierarchy, $profile")
+            val oneWay = focus("$hierarchy ex:d skos:related ex:a .", "S27", profile)
+            assertEquals(setOf(ex("d")), oneWay, "$name hierarchy, one-way related, $profile")
         }
     }
 

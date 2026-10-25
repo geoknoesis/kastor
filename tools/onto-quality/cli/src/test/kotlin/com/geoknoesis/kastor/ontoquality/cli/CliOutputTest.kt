@@ -42,13 +42,14 @@ class CliOutputTest {
         :Dog a owl:Class ; rdfs:subClassOf :Animal .
         """.trimIndent()
 
-    /** OOPS P26: an owl:SymmetricProperty with owl:inverseOf violates a `sh:Violation` shape of owl-quality. */
+    /** OOPS P06: a property in an rdfs:subPropertyOf cycle violates a `sh:Violation` shape of owl-quality. */
     private val violationTtl =
         """
         @prefix : <http://example.org/sym#> .
         @prefix owl: <http://www.w3.org/2002/07/owl#> .
-        :knows a owl:ObjectProperty , owl:SymmetricProperty ; owl:inverseOf :knownBy .
-        :knownBy a owl:ObjectProperty .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        :knows a owl:ObjectProperty ; rdfs:subPropertyOf :knownBy .
+        :knownBy a owl:ObjectProperty ; rdfs:subPropertyOf :knows .
         """.trimIndent()
 
     private fun ontology(name: String = "onto.ttl", content: String = ontologyTtl): Path = dir.resolve(name).also { it.writeText(content) }
@@ -271,7 +272,7 @@ class CliOutputTest {
             assertTrue(debug.stderr.contains("Status code: 401"), debug.stderr)
             assertNoRawControls(debug.stderr)
             // Without --debug nothing but the one-line reason is printed, and the report still carries it.
-            assertTrue(dir.resolve("o.txt").readText().contains("LLM explanation failures: 8 finding(s) not explained"), dir.resolve("o.txt").readText())
+            assertTrue(dir.resolve("o.txt").readText().contains("LLM explanation failures: 9 finding(s) not explained"), dir.resolve("o.txt").readText())
         } finally {
             server.stop(0)
         }

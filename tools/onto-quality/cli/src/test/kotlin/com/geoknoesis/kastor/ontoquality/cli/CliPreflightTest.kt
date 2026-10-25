@@ -21,13 +21,14 @@ import kotlin.test.assertTrue
 class CliPreflightTest {
     @TempDir lateinit var dir: Path
 
-    /** OOPS P26: an owl:SymmetricProperty with owl:inverseOf violates a `sh:Violation` shape of owl-quality. */
+    /** OOPS P06: a property in an rdfs:subPropertyOf cycle violates a `sh:Violation` shape of owl-quality. */
     private val violationTtl =
         """
         @prefix : <http://example.org/sym#> .
         @prefix owl: <http://www.w3.org/2002/07/owl#> .
-        :knows a owl:ObjectProperty , owl:SymmetricProperty ; owl:inverseOf :knownBy .
-        :knownBy a owl:ObjectProperty .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        :knows a owl:ObjectProperty ; rdfs:subPropertyOf :knownBy .
+        :knownBy a owl:ObjectProperty ; rdfs:subPropertyOf :knows .
         """.trimIndent()
 
     private fun ontology(): Path = dir.resolve("onto.ttl").also { it.writeText(violationTtl) }
@@ -96,7 +97,7 @@ class CliPreflightTest {
 
         val dry = cli(checkArgs("--llm-provider", "ollama", "--explain-dry-run"), environment)
         assertEquals(EXIT_FINDINGS, dry.status, dry.err)
-        assertTrue(dry.err.contains("LLM explain dry-run: would send up to 8 findings (provider=OLLAMA"), dry.err)
+        assertTrue(dry.err.contains("LLM explain dry-run: would send up to 9 findings (provider=OLLAMA"), dry.err)
         assertTrue(dry.err.contains("max output tokens=${LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS}"), dry.err)
         assertEquals(1, dry.err.lines().count { it.contains("output tokens is not sent to ollama") }, dry.err)
         assertEquals(1, configs.size, "a dry run calls no LLM")
