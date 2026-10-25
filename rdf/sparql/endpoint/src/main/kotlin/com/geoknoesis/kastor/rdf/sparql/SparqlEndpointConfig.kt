@@ -315,6 +315,7 @@ data class SparqlEndpointConfig @JvmOverloads constructor(
          * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
          * accept `none` for unbounded.
          */
+        @JvmStatic
         fun fromOptions(options: Map<String, String>): SparqlEndpointConfig {
             val endpoint = options["location"] ?: throw IllegalArgumentException("SPARQL endpoint URL required (option 'location')")
             fun long(key: String): Long? = options[key]?.let {

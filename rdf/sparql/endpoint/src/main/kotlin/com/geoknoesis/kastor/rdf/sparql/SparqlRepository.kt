@@ -244,11 +244,13 @@ class SparqlRepository internal constructor(
         val startTime = System.currentTimeMillis()
         var rows = 0
         var decoder: JsonBindingRows? = null
+        // The rows can only be read while the response is open: inside consume.
+        val open = AtomicBoolean(true)
         try {
             val result = http.exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
                 val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms, maxRetainedBytes = retainedLimit)
                     .also { decoder = it }.rows()
-                    .guarded(sparql, checkDeadline)
+                    .guarded(sparql, checkDeadline, open)
                     .onEach { rows++ }
                 consume(sequence)
             }
@@ -258,6 +260,7 @@ class SparqlRepository internal constructor(
             RdfDebug.logQueryError("SELECT", sparql, "Failed to execute: ${e.message}")
             throw e
         } finally {
+            open.set(false)
             // Once per query, however it ended: the rows that were left out are not in what the caller saw.
             decoder?.let { read ->
                 if (read.skippedRows > 0) {
@@ -410,16 +413,30 @@ class SparqlRepository internal constructor(
 
     /**
      * Wrap failures while producing rows (I/O, size cap, malformed JSON) as [RdfQueryException],
-     * without touching exceptions thrown by the code consuming the rows.
+     * without touching exceptions thrown by the code consuming the rows. Once [open] is false (the
+     * consumer returned and the response is closed) the rows fail with [IllegalStateException]
+     * instead of a confusing "stream closed" read failure.
      */
-    private fun <R> Sequence<R>.guarded(sparql: String, checkDeadline: () -> Unit): Sequence<R> {
+    private fun <R> Sequence<R>.guarded(sparql: String, checkDeadline: () -> Unit, open: AtomicBoolean): Sequence<R> {
         val source = this
+        fun checkOpen() = check(open.get()) {
+            "SPARQL result rows can only be read inside the withSelectRows consumer: the response is closed once it returns " +
+                "(collect them, for example with toList(), inside the consumer)"
+        }
         return Sequence {
+            checkOpen()
             val iterator = source.iterator()
             object : Iterator<R> {
                 // Rows already buffered are served without a read, so check the deadline per row too.
-                override fun hasNext(): Boolean = readResponse(sparql) { checkDeadline(); iterator.hasNext() }
-                override fun next(): R = readResponse(sparql) { iterator.next() }
+                override fun hasNext(): Boolean {
+                    checkOpen()
+                    return readResponse(sparql) { checkDeadline(); iterator.hasNext() }
+                }
+
+                override fun next(): R {
+                    checkOpen()
+                    return readResponse(sparql) { iterator.next() }
+                }
             }
         }
     }

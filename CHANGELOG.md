@@ -58,6 +58,9 @@ and is kept as is; it was never published to Maven Central.
   loses 27 (numeric literals rewritten to canonical form, RDF 1.2 triple terms written as `urn:rdf4j:triple:` IRIs),
   listed with reasons in `serializer-roundtrip-allowlist.tsv` as expected failures. PR CI now runs the full corpus
   for the Jena provider (syntax and serializer rows), not only the bundled fixture.
+- **Fixed (`rdf-sparql`):** rows of `withSelectRows` that escape the consumer (a returned `Sequence` or iterator) fail
+  with `IllegalStateException` saying they must be read inside the consumer, instead of a "stream closed" read error.
+- **API (`rdf-sparql`):** `SparqlEndpointConfig.fromOptions` is `@JvmStatic` (callable from Java without `Companion`).
 - **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).

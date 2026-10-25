@@ -158,4 +158,14 @@ class SparqlBufferedResultLimitTest {
         assertTrue(decoder.cacheBytes <= RowAssembler.MAX_CACHE_BYTES, "caches hold ${decoder.cacheBytes} bytes")
         assertTrue(decoder.retainedBytes >= 6_000L * 2 * 1_000, "estimate ${decoder.retainedBytes}")
     }
+    @Test
+    fun `rows that escape the withSelectRows consumer fail clearly`() {
+        repository(literalRows(10)).use { repo ->
+            val escaped = repo.withSelectRows(selectAll) { rows -> rows }
+            val e = assertThrows(IllegalStateException::class.java) { escaped.count() }
+            assertTrue(e.message!!.contains("inside the withSelectRows consumer"), e.message)
+            val iterator = repo.withSelectRows(selectAll) { rows -> rows.iterator().also { it.next() } }
+            assertThrows(IllegalStateException::class.java) { iterator.hasNext() }
+        }
+    }
 }
