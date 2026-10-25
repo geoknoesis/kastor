@@ -270,33 +270,32 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, budget: ValidationBudge
     /**
      * Triples describing the blank-node structure reachable from [root] (e.g. a complex `sh:path`). The rest of an
      * RDF list is followed through cells named with IRIs as well (their `rdf:first` / `rdf:rest` triples only).
+     * Depth-first, in index order, with an explicit stack: a long list must not overflow the call stack. Each node is
+     * visited once and ticks the budget.
      */
     fun blankNodeClosure(root: RdfTerm): List<RdfTriple> {
         val out = mutableListOf<RdfTriple>()
         val seen = HashSet<RdfResource>()
-        fun visit(term: RdfTerm, listRest: Boolean) {
+        val stack = ArrayDeque<Iterator<RdfTriple>>()
+        fun enter(term: RdfTerm, listRest: Boolean) {
             when {
-                term is BlankNode -> {
-                    if (!seen.add(term)) return
-                    bySubject[term]?.forEach { (p, objs) ->
-                        objs.forEach { o ->
-                            out.add(RdfTriple(term, p, o))
-                            visit(o, p == RDF.rest)
-                        }
-                    }
+                term is BlankNode -> if (seen.add(term)) {
+                    stack.addLast(ownTriples(term).iterator())
                 }
-                term is Iri && listRest && term != RDF.nil -> {
-                    if (!seen.add(term)) return
-                    for (p in listOf(RDF.first, RDF.rest)) {
-                        objects(term, p).forEach { o ->
-                            out.add(RdfTriple(term, p, o))
-                            visit(o, p == RDF.rest)
-                        }
-                    }
+                term is Iri && listRest && term != RDF.nil -> if (seen.add(term)) {
+                    stack.addLast(listOf(RDF.first, RDF.rest).flatMap { p -> objects(term, p).map { RdfTriple(term, p, it) } }.iterator())
                 }
             }
         }
-        visit(root, false)
+        enter(root, false)
+        while (stack.isNotEmpty()) {
+            val top = stack.last()
+            if (!top.hasNext()) { stack.removeLast(); continue }
+            tick("path compilation")
+            val t = top.next()
+            out.add(t)
+            enter(t.obj, t.predicate == RDF.rest)
+        }
         return out
     }
 

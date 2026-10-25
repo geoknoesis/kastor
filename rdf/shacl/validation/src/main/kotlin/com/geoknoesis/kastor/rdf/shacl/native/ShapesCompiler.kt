@@ -364,7 +364,12 @@ internal object ShapesCompiler {
         val pathValues = index.objects(ps, SHACL.path)
         if (isDeactivated(ps, index)) {
             val pathNode = pathValues.firstOrNull() ?: RDF.nil
-            val path = runCatching { ShaclPathParser.parse(pathNode, index) }.getOrDefault(ShaclPath.Predicate(RDF.nil))
+            // An ill-formed path does not matter on a deactivated shape; a timeout or cancellation still stops compilation.
+            val path = try {
+                ShaclPathParser.parse(pathNode, index)
+            } catch (_: ShapeCompileException) {
+                ShaclPath.Predicate(RDF.nil)
+            }
             return CompiledPropertyShape(
                 shapeNode = ps, path = path, pathNode = pathNode, pathTriples = emptyList(),
                 severity = ViolationSeverity.VIOLATION, messages = emptyList(), constraints = emptyList(), deactivated = true,

@@ -20,7 +20,7 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * `sh:conforms` mirrors [ValidationReport.isValid]: per SHACL, a report conforms only when it has no
  * validation results of any severity. `sh:resultPath` is exported in full: engines that populate
  * [ValidationViolation.resultPathNode] get their complete path structure copied (with fresh blank nodes
- * per result); otherwise a single IRI or a sequence of IRIs from [ValidationViolation.path] is used.
+ * per result, one per source blank node); otherwise a single IRI or a sequence of IRIs from [ValidationViolation.path] is used.
  * `sh:resultMessage` uses [ValidationViolation.resultMessages] (the shape's `sh:message` values, language
  * tags preserved) when present, else the engine message.
  *
@@ -107,26 +107,34 @@ private fun GraphDsl.addValidationResult(
 }
 
 /**
- * Copies a blank-node path structure as a tree with fresh blank nodes: results never share path nodes, and a
- * blank node referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is unfolded per occurrence.
- * List cells named with IRIs keep their IRI; their `rdf:first` / `rdf:rest` triples are copied too.
+ * Copies a blank-node path structure with fresh blank nodes, one per source blank node: results never share path
+ * nodes, and a blank node referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is shared by the copy
+ * as it is by the source, so the copy is isomorphic to the source structure and as large as [triples] (a path whose
+ * blank nodes are shared level after level would otherwise unfold exponentially). List cells named with IRIs keep
+ * their IRI; their `rdf:first` / `rdf:rest` triples are copied too, once.
  */
 private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoesis.kastor.rdf.RdfTriple>, prefix: String): RdfTerm {
     if (root !is BlankNode) return root
     val bySubject = triples.groupBy { it.subject }
-    var counter = 0
-    fun copy(term: RdfTerm, ancestors: Set<RdfResource>): RdfTerm {
-        if (term !is RdfResource || term in ancestors) return term
-        val described = bySubject[term]
+    val copies = HashMap<RdfResource, RdfResource>()
+    val pending = ArrayDeque<RdfResource>()
+    fun copyOf(term: RdfTerm): RdfTerm {
+        if (term !is RdfResource) return term
+        copies[term]?.let { return it }
         // An IRI is kept; it is only expanded when the path structure describes it (an IRI-named list cell).
-        if (term !is BlankNode && described == null) return term
-        val copied: RdfResource = if (term is BlankNode) bnode("${prefix}p${counter++}") else term
-        for (t in described.orEmpty()) {
-            triple(copied, t.predicate, copy(t.obj, ancestors + term))
-        }
-        return copied
+        if (term !is BlankNode && term !in bySubject) return term
+        val copy: RdfResource = if (term is BlankNode) bnode("${prefix}p${copies.size}") else term
+        copies[term] = copy
+        pending.addLast(term)
+        return copy
     }
-    return copy(root, emptySet())
+    val result = copyOf(root)
+    while (pending.isNotEmpty()) {
+        val node = pending.removeFirst()
+        val copy = copies.getValue(node)
+        for (t in bySubject[node].orEmpty()) triple(copy, t.predicate, copyOf(t.obj))
+    }
+    return result
 }
 
 /** The copies of the source constraint blank nodes written in one report: their labels, by shapes graph and node. */
