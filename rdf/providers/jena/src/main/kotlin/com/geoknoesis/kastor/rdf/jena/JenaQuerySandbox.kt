@@ -1,8 +1,12 @@
 package com.geoknoesis.kastor.rdf.jena
 
+import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
+import com.geoknoesis.kastor.rdf.SparqlSelect
 import org.apache.jena.graph.Node
+import org.apache.jena.query.Dataset
 import org.apache.jena.query.Query
+import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.QueryExecutionDatasetBuilder
 import org.apache.jena.sparql.ARQConstants
 import org.apache.jena.sparql.algebra.Algebra
@@ -37,6 +41,36 @@ import org.apache.jena.sparql.service.ServiceExecutorRegistry
 internal object JenaQuerySandbox {
 
     fun check(query: Query) = check(Algebra.compile(query))
+
+    /**
+     * Parses [query] once with [parse], so a [SandboxedSelectQuery] is checked on the very query that is executed. A
+     * refused sandboxed query fails with [IllegalArgumentException] before evaluation.
+     */
+    fun parseSelect(query: SparqlSelect, parse: () -> Query): Query {
+        val parsed = parse()
+        if (query is SandboxedSelectQuery) check(parsed)
+        return parsed
+    }
+
+    /**
+     * An execution of [parsed] over [dataset], restricted ([restrict]) for a sandboxed [query], whose custom functions
+     * then run their nested queries until [deadline] (a [clock] value; [Long.MAX_VALUE] for none).
+     */
+    fun execution(dataset: Dataset, query: SparqlSelect, parsed: Query, deadline: Long, clock: () -> Long): QueryExecutionDatasetBuilder {
+        val builder = QueryExecution.dataset(dataset).query(parsed)
+        return if (query is SandboxedSelectQuery) {
+            restrict(builder, query.functions, 0, deadline, clock)
+        } else {
+            builder
+        }
+    }
+
+    /** [now] plus [timeout] (at least 1 ns); [Long.MAX_VALUE] (no deadline) when that does not fit in a Long. */
+    fun deadlineAfter(now: Long, timeout: java.time.Duration): Long = try {
+        Math.addExact(now, timeout.toNanos().coerceAtLeast(1)).let { if (it == Long.MAX_VALUE) it - 1 else it }
+    } catch (e: ArithmeticException) {
+        Long.MAX_VALUE
+    }
 
     /**
      * Runs a sandboxed query with registries that cannot reach outside the store, whatever IRI the query computes at

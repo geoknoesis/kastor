@@ -2,7 +2,6 @@ package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
-import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
@@ -874,28 +873,6 @@ class SparqlRepository internal constructor(
             watchdog.unregister(this)
             raw.close()
         }
-    }
-
-    private class BoundedInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
-        private var count = 0L
-
-        private fun counted(n: Long): Long {
-            if (n > 0) {
-                count += n
-                if (count > limit) throw IOException("SPARQL response exceeds $limit bytes")
-            }
-            return n
-        }
-
-        override fun read(): Int {
-            val b = `in`.read()
-            if (b >= 0) counted(1)
-            return b
-        }
-
-        override fun read(b: ByteArray, off: Int, len: Int): Int = counted(`in`.read(b, off, len).toLong()).toInt()
-
-        override fun skip(n: Long): Long = counted(`in`.skip(n))
     }
 
     internal companion object {
