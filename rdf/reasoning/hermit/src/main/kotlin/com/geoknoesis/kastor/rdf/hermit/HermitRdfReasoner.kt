@@ -3,10 +3,7 @@ package com.geoknoesis.kastor.rdf.hermit
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.reasoning.*
 import org.semanticweb.HermiT.ReasonerFactory
-import org.semanticweb.owlapi.apibinding.OWLManager
-import org.semanticweb.owlapi.io.StringDocumentSource
 import org.semanticweb.owlapi.model.*
-import org.semanticweb.owlapi.model.IRI
 import org.semanticweb.owlapi.reasoner.OWLReasoner
 import org.semanticweb.owlapi.util.*
 import java.time.Duration
@@ -36,6 +33,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * HermiT's own per-task timeout is fixed when the engine is created, so it is set to the budget remaining at
  * that point; the checks above bound every later task. A timed-out call fails with [IllegalStateException].
+ *
+ * **Imports are never resolved.** The graph is loaded as one in-memory document ([HermitOntologyLoading]): an
+ * `owl:imports` in it is neither fetched (HTTP, `file:`) nor merged, and an unresolvable import does not fail the call.
  *
  * **Only a timeout is reported as a timeout.** A failure that is not one (the materialization threshold, an error of
  * the engine or of an inferred-axiom generator) keeps its own exception also when the deadline has passed in the
@@ -121,7 +121,7 @@ class HermitRdfReasoner internal constructor(
         fun remainingMillis() = TimeUnit.NANOSECONDS.toMillis(deadline - clock()).coerceAtLeast(1)
         // Conservative admission estimate; an in-process engine cannot offer a hard per-request JVM heap quota.
         require(graph.size().toLong() <= config.maxMemoryUsage / 512) { "Input exceeds HermiT memory admission budget" }
-        val manager = OWLManager.createOWLOntologyManager()
+        val manager = HermitOntologyLoading.isolatedManager()
         var reasoner: OWLReasoner? = null
         var ownsResources = true
         val engineRef = java.util.concurrent.atomic.AtomicReference<OWLReasoner?>()
@@ -300,7 +300,7 @@ class HermitRdfReasoner internal constructor(
         val body = Runnable {
             var engine: OWLReasoner? = null
             try {
-                val ontology = manager.loadOntologyFromOntologyDocument(StringDocumentSource(turtle, IRI.create("urn:kastor:hermit-input")))
+                val ontology = manager.loadOntologyFromOntologyDocument(HermitOntologyLoading.inputDocument(turtle))
                 val options = org.semanticweb.HermiT.Configuration().apply {
                     individualTaskTimeout = TimeUnit.NANOSECONDS.toMillis(remainingNanos()).coerceAtLeast(1)
                 }

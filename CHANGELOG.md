@@ -14,6 +14,17 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Round eleven
+
+#### Providers (Jena, RDF4J, HermiT)
+
+- **Security (`rdf-reasoning-hermit`):** HermiT no longer follows `owl:imports`. The OWL API's default loader
+  dereferenced every import IRI of the reasoned graph (HTTP with redirects, or `file:`) and merged what it found into
+  the closure, so graph data could choose a request (SSRF), read a local file into the inferred triples, or hold a
+  load permit past the deadline. The graph is now loaded as one in-memory document: every other document source is
+  refused, and an unresolvable import is ignored instead of failing the call. To reason over an imported ontology,
+  merge it into the graph first under your own `UrlLoadOptions`.
+
 ### Added
 
 - Added the optional `rdf-holon` module for RDF-H 0.8: immutable processing contexts, explicit M/registry,
