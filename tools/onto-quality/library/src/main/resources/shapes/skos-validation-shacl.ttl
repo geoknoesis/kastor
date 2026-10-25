@@ -204,6 +204,7 @@ skvsh:HasPrefLabelShape
     rdfs:comment    "Not in the SKOS spec — a concept may legitimately have only altLabels (see SKOS Reference §5.6.4) — but consumers almost always need a preferred label for display. Issued as a Warning rather than Violation." ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path skos:prefLabel ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "Concept has no skos:prefLabel; consumers will not be able to display it." ] ;
     sh:severity     sh:Warning .
@@ -239,10 +240,12 @@ skvsh:NoWhitespaceLabelShape
     rdfs:label      "Labels must not start or end with whitespace" ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path skos:prefLabel ;
+                      sh:severity sh:Warning ;
                       sh:pattern "^\\S(.*\\S)?$" ;
                       sh:flags "s" ;
                       sh:message "skos:prefLabel has leading or trailing whitespace." ] ;
     sh:property     [ sh:path skos:altLabel ;
+                      sh:severity sh:Warning ;
                       sh:pattern "^\\S(.*\\S)?$" ;
                       sh:flags "s" ;
                       sh:message "skos:altLabel has leading or trailing whitespace." ] ;
@@ -257,7 +260,12 @@ skvsh:NoWhitespaceLabelShape
 # This requires reasoning over the transitive closure of skos:broader. SHACL-
 # Core cannot express transitive disjointness, so we use SPARQL. Note that
 # skos:broader is a sub-property of skos:broaderTransitive (S22), so we
-# include direct skos:broader/skos:narrower edges in the closure.
+# include direct skos:broader edges in the closure. skos:narrower is the
+# inverse of skos:broader (S25) and skos:narrowerTransitive the inverse of
+# skos:broaderTransitive, so both are walked backwards: a vocabulary that
+# states its hierarchy only with skos:narrower is checked the same way, with
+# or without a reasoner (Jena OWL-RL does not know the SKOS inverses unless
+# the SKOS ontology is loaded).
 
 skvsh:RelatedBroaderTransitiveDisjointShape
     a               sh:NodeShape ;
@@ -275,9 +283,9 @@ skvsh:RelatedBroaderTransitiveDisjointShape
                         SELECT $this ?value WHERE {
                           $this skos:related ?value .
                           {
-                            $this (skos:broader|skos:broaderTransitive)+ ?value .
+                            $this (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ ?value .
                           } UNION {
-                            ?value (skos:broader|skos:broaderTransitive)+ $this .
+                            ?value (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ $this .
                           }
                         }
                       """ ] .
@@ -298,6 +306,7 @@ skvsh:RelatedSymmetryShape
     rdfs:comment    "skos:related is owl:SymmetricProperty (S23), so the inverse is entailed. This shape flags one-sided assertions as a serialisation hygiene issue, not a logical error." ;
     sh:targetClass  skos:Concept ;
     sh:property     [ sh:path [ sh:inversePath skos:related ] ;
+                      sh:severity sh:Info ;
                       sh:equals skos:related ;
                       sh:message "skos:related triple lacks its symmetric counterpart." ] ;
     sh:severity     sh:Info .
@@ -332,14 +341,14 @@ skvsh:NoBroaderCycleShape
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "convention" ;
     rdfs:label      "No cycles in the skos:broader hierarchy" ;
-    rdfs:comment    "The SKOS Reference (§8.6.8) explicitly notes that broader cycles are consistent with the spec but problematic for most applications. Flags any concept that is its own transitive broader." ;
+    rdfs:comment    "The SKOS Reference (§8.6.8) explicitly notes that broader cycles are consistent with the spec but problematic for most applications. Flags any concept that is its own transitive broader, whether the hierarchy is stated with skos:broader, skos:narrower or their transitive super-properties." ;
     sh:targetClass  skos:Concept ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Concept {$this} appears in a skos:broader cycle." ;
                       sh:prefixes <http://example.org/skos-validation-shacl> ;
                       sh:select """
                         SELECT $this WHERE {
-                          $this (skos:broader|skos:broaderTransitive)+ $this .
+                          $this (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ $this .
                         }
                       """ ] .
 
@@ -545,6 +554,7 @@ skvsh:OrderedCollectionMemberListShape
     rdfs:comment    "An OrderedCollection without a memberList is missing the very thing that distinguishes it from a regular Collection." ;
     sh:targetClass  skos:OrderedCollection ;
     sh:property     [ sh:path skos:memberList ;
+                      sh:severity sh:Warning ;
                       sh:minCount 1 ;
                       sh:message "OrderedCollection has no skos:memberList; the ordering it claims to express is absent." ] ;
     sh:severity     sh:Warning .

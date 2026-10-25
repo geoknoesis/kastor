@@ -40,4 +40,20 @@ class KastorMetricsProviderTest {
         assertTrue(context.entityImportance.isEmpty())
         assertTrue(context.summary.isNotEmpty())
     }
+
+    @Test
+    fun `summary numbers do not follow the default locale`() {
+        val graph = Rdf.parse(loadFixture("hub-and-spokes.ttl"), "TURTLE")
+        val previous = java.util.Locale.getDefault()
+        val summary =
+            try {
+                java.util.Locale.setDefault(java.util.Locale.GERMANY)
+                KastorMetricsProvider().compute(graph).summary
+            } finally {
+                java.util.Locale.setDefault(previous)
+            }
+        val numbers = Regex("""\((?:DITOnto|TMOnto|RROnto|ANOnto)\): ([0-9.,]+)""").findAll(summary).map { it.groupValues[1] }.toList()
+        assertTrue(numbers.size == 4, summary)
+        numbers.forEach { assertTrue(',' !in it && '.' in it, "locale-formatted number '$it' in: $summary") }
+    }
 }

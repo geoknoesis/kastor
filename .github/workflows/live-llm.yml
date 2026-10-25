@@ -20,7 +20,7 @@ jobs:
       - name: Run one bounded live fixture and the offline transport contracts
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KASTOR_SKIP_OPENAI_LLM_TESTS: "0"
+          KASTOR_RUN_OPENAI_LLM_TESTS: "1"
           KASTOR_SKIP_EMBEDDING_TESTS: "1"
         shell: bash
         run: |

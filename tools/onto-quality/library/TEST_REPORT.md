@@ -32,4 +32,4 @@ This file does not record per-run test counts; they change as tests are added, s
 
 ## CI hint
 
-Semantic / ONNX-heavy tests respect **`KASTOR_SKIP_EMBEDDING_TESTS=1`**. When unset (as on this verified run when semantic nested class ran successfully), ONNX and model downloads may be required — see **`README.md`**.
+Semantic / ONNX-heavy tests are opt-in with **`KASTOR_RUN_EMBEDDING_TESTS=1`** (this verified run predates the switch and ran them with the old skip flag unset); they download the ONNX model — see **`README.md`**.

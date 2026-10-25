@@ -28,7 +28,7 @@ For this module, selected inputs were converted to Turtle and committed under `s
 | Structural — original v0.1 rows (`calibrationCases()` in `OopsCalibrationTest`) | 15 | **14** | 0 | **1** (`P09` — skipped at assumption: no `P09.ttl` on classpath) |
 | Structural — **v0.1.x** extension (`extended OOPS pitfall fixtures`) | 10 | **10** | 0 | 0 |
 | Reasoning preflight — **K07** (`HermiT preflight surfaces Kastor K07…`) | 1 | **0–1** | 0 | **1** when HermiT not supported (`assumeTrue` on classpath) |
-| Semantic tier (nested `SemanticTierAfterEnrichment`; ONNX + `EMBEDDING_QUALITY`) | 4 | **4** | 0 | **4** not executed when `KASTOR_SKIP_EMBEDDING_TESTS=1` |
+| Semantic tier (nested `SemanticTierAfterEnrichment`; ONNX + `EMBEDDING_QUALITY`) | 4 | **4** | 0 | **4** executed only with `KASTOR_RUN_EMBEDDING_TESTS=1` |
 
 **Combined outcome (latest run with `KASTOR_SKIP_EMBEDDING_TESTS` unset):** **29** passing pitfall assertions (**24** structural + **1** HermiT K07 + **4** semantic), **0** failures, **1** skip (**P09** — no fixture). With semantic tests gated off, **25** structural + K07 assertions still run; the **4** semantic rows are not executed.
 
@@ -43,7 +43,7 @@ For this module, selected inputs were converted to Turtle and committed under `s
 | P21 | Miscellaneous classes | `oops-corpus/P21.ttl` | `JunkDrawerClassShape` | ✓ Pass |
 | P32 | Same label, different class | `oops-corpus/P32.ttl` | `SameLabelDifferentClassShape` | ✓ Pass |
 
-`./gradlew :tools:onto-quality:test --tests "*OopsCalibrationTest*"` schedules **30** JUnit test invocations when embeddings are enabled: **15** original structural + **10** v0.1.x + **1** K07 HermiT + **4** semantic. With **`KASTOR_SKIP_EMBEDDING_TESTS=1`**, the nested semantic class is disabled (**26** invocations: structural + K07 HermiT).
+`./gradlew :tools:onto-quality:test --tests "*OopsCalibrationTest*"` schedules **30** JUnit test invocations when embeddings are enabled: **15** original structural + **10** v0.1.x + **1** K07 HermiT + **4** semantic. Without **`KASTOR_RUN_EMBEDDING_TESTS=1`** (the default since round 11; the semantic tier downloads the ONNX model), the nested semantic class is disabled (**26** invocations: structural + K07 HermiT).
 
 **Status legend (all tables below)**
 
@@ -134,7 +134,7 @@ $env:KASTOR_OOPS_BENCHMARK='1'
 ```
 
 - **Structural:** all available Turtle fixtures, `BundledCatalogs.OWL_QUALITY`, configurable warmup and iterations via `-Dkastor.oops.benchmark.warmup=…` and `-Dkastor.oops.benchmark.iterations=…` (defaults documented in `OopsBenchmarkTest`).
-- **Semantic:** P02, P12, P21, P32 — one ONNX enrichment pass timed separately, then repeated `EMBEDDING_QUALITY` checks (`-Dkastor.oops.benchmark.embeddingWarmup` / `embeddingIterations`). Skipped when `KASTOR_SKIP_EMBEDDING_TESTS=1`.
+- **Semantic:** P02, P12, P21, P32 — one ONNX enrichment pass timed separately, then repeated `EMBEDDING_QUALITY` checks (`-Dkastor.oops.benchmark.embeddingWarmup` / `embeddingIterations`). Runs only with `KASTOR_RUN_EMBEDDING_TESTS=1`.
 
 ## Reproducing this calibration
 
@@ -196,7 +196,7 @@ The semantic tier adds embedding-driven materialization of `oqsh:semanticallyClo
 Model used: **all-MiniLM-L6-v2** (sentence-transformers ONNX export)  
 Default cosine threshold for `semanticallyCloseTo`: **0.85**
 
-CI / resource-constrained hosts: set **`KASTOR_SKIP_EMBEDDING_TESTS=1`** so Gradle skips the ONNX-backed calibration nest (`OopsCalibrationTest.SemanticTierAfterEnrichment`). Structural OOPS calibration remains enabled.
+The ONNX-backed calibration nest (`OopsCalibrationTest.SemanticTierAfterEnrichment`) is opt-in: set **`KASTOR_RUN_EMBEDDING_TESTS=1`** to run it. Structural OOPS calibration always runs.
 
 Pass/fail status for each semantic code is in the **Summary** section (**Embedding pitfalls matrix** table above). Notes:
 
@@ -205,7 +205,7 @@ Pass/fail status for each semantic code is in the **Summary** section (**Embeddi
 - **P21:** OOPS `P21.owl` conversion; labels match junk-drawer regex patterns.
 - **P32:** OOPS `P32.owl` conversion; `SameLabelDifferentClassShape` is severity **Warning** in SHACL.
 
-Deterministic reproduction (requires ~300 MB heap for the model; **do not** set `KASTOR_SKIP_EMBEDDING_TESTS`):
+Deterministic reproduction (requires ~300 MB heap for the model; set `KASTOR_RUN_EMBEDDING_TESTS=1`):
 
 ```bash
 ./gradlew :tools:onto-quality:test --tests "*OopsCalibrationTest*SemanticTierAfterEnrichment*"

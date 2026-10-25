@@ -20,7 +20,10 @@ import org.openjdk.jmh.infra.Blackhole;
  * (see {@link ComplexShapesBenchmarkSupport}).
  *
  * <p>{@code validateWarm} reuses the compiled shapes cache; {@code validateCold} clears it first so shape
- * compilation (including every referenced inline shape) is part of the measurement.
+ * compilation (including every referenced inline shape) is part of the measurement. "Cold" means a cold
+ * <em>shapes</em> side only: the native validator keeps no state per data graph between calls (its data-graph index
+ * is rebuilt by every {@code validate}), so both benchmarks pay for indexing the data, and neither measures a cold
+ * JVM (JIT, class loading) or cold OS caches.
  *
  * <p>Run: {@code ./gradlew :benchmarks:shacl:jmh -Pjmh.includes=NativeComplexShapesBenchmark}
  */

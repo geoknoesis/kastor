@@ -307,6 +307,7 @@ oqsh:LabelNotSentenceShape
     rdfs:comment    "LLM consumability. A label like 'A type of mammal that lives in water' is a definition pretending to be a label. Labels are nouns or short noun phrases used for display, lookup, and LLM tokenization. Definitions go in rdfs:comment or skos:definition. Heuristic: flag labels longer than 50 characters OR containing sentence-terminating punctuation OR starting with an article ('A ', 'An ', 'The ')." ;
     sh:targetClass  owl:Class ;
     sh:property     [ sh:path rdfs:label ;
+                      sh:severity sh:Info ;
                       sh:maxLength 80 ;
                       sh:message "rdfs:label is suspiciously long (>80 chars) — possibly a definition mistakenly used as a label." ] ;
     sh:sparql       [ a sh:SPARQLConstraint ;

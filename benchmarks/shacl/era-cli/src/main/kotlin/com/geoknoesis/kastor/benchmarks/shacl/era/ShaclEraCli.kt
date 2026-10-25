@@ -208,17 +208,26 @@ private class IoTrackingInputStream(delegate: InputStream) : FilterInputStream(d
 internal fun formatSeconds(nanos: Long): String = String.format(Locale.ROOT, "%.6f", nanos / 1_000_000_000.0)
 
 /**
- * Makes untrusted text (paths, parser messages) safe for a terminal: C0 / C1 control characters other than newline and
- * tab, and Unicode bidi controls (U+202A–U+202E, U+2066–U+2069, U+200E, U+200F, U+061C), are rendered as `\uXXXX`.
+ * Makes untrusted text (paths, parser messages) safe for a terminal, on one line: every run of whitespace (newlines,
+ * tabs and carriage returns included) becomes one space and the ends are trimmed, so a multi-line parser message is
+ * still one stderr line; other C0 / C1 control characters and Unicode bidi controls (U+202A–U+202E, U+2066–U+2069,
+ * U+200E, U+200F, U+061C) are rendered as `\uXXXX`.
  */
 internal fun sanitize(text: String?): String {
   val value = text ?: "(no message)"
   val sb = StringBuilder(value.length)
+  var pendingSpace = false
   for (ch in value) {
+    if (ch.isWhitespace()) {
+      pendingSpace = sb.isNotEmpty()
+      continue
+    }
+    if (pendingSpace) sb.append(' ')
+    pendingSpace = false
     val unsafe =
-        (ch.isISOControl() && ch != '\n' && ch != '\t') ||
+        ch.isISOControl() ||
             ch in '\u202A'..'\u202E' || ch in '\u2066'..'\u2069' || ch == '\u200E' || ch == '\u200F' || ch == '\u061C'
     if (unsafe) sb.append("\\u").append(String.format(Locale.ROOT, "%04X", ch.code)) else sb.append(ch)
   }
-  return sb.toString()
+  return if (sb.isEmpty()) "(no message)" else sb.toString()
 }

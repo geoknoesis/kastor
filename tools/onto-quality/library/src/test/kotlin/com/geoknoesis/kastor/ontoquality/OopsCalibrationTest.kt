@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
@@ -152,8 +152,9 @@ class OopsCalibrationTest {
         assertTrue(report.findings.any { it.tier == QualityTier.REASONING })
     }
 
+    /** Downloads the all-MiniLM-L6-v2 ONNX model (about 90 MB), so it is opt-in: `KASTOR_RUN_EMBEDDING_TESTS=1`. */
     @Nested
-    @DisabledIfEnvironmentVariable(named = "KASTOR_SKIP_EMBEDDING_TESTS", matches = "1")
+    @EnabledIfEnvironmentVariable(named = "KASTOR_RUN_EMBEDDING_TESTS", matches = "1")
     inner class SemanticTierAfterEnrichment {
 
         private val validator by lazy { ShaclValidation.validator() }

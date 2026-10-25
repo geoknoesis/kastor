@@ -205,7 +205,7 @@ Never read secrets from files checked into git.
 
 - **Unit:** Canonical `FindingRef` hashing; JSON parser with golden fixtures; **`ExplainedQualityReport.hasLlmExplanations`** and markdown/text sections (`ExplainedQualityReportTest` in `:tools:onto-quality`).
 - **No-network:** Koog test double or stub `QualityExplanationEnricher` returning canned JSON.
-- **Integration (OpenAI):** `OpenAiExplanationIntegrationTest` in `:tools:onto-quality-llm-koog` runs when **`OPENAI_API_KEY`** is set; asserts **`hasLlmExplanations`**, an explanation for the expected **`FindingRef`**, substantive **summary** length, and **markdown** section marker. Set **`KASTOR_SKIP_OPENAI_LLM_TESTS=1`** to skip on shared agents.
+- **Integration (OpenAI):** `OpenAiExplanationIntegrationTest` in `:tools:onto-quality-llm-koog` runs only with **`KASTOR_RUN_OPENAI_LLM_TESTS=1`** (and fails without **`OPENAI_API_KEY`**); asserts **`hasLlmExplanations`**, an explanation for the expected **`FindingRef`**, substantive **summary** length, and **markdown** section marker. An API key alone never runs it.
 
 **Application code:** after `enrich`, use **`explained.hasLlmExplanations`** (or **`explained.explanations.isNotEmpty()`**) and optionally **`explained.explanationsByRef()[FindingRef.from(...)]`** to gate CI or UX.
 

@@ -24,10 +24,14 @@ public final class com/geoknoesis/kastor/ontoquality/embed/EnrichmentVocabulary 
 
 public final class com/geoknoesis/kastor/ontoquality/embed/LabelExtractor {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;
+	public final fun extractLabelAndDefinitionTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/List;
 	public final fun extractLabelAndDefinitionTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)Ljava/util/List;
-	public static synthetic fun extractLabelAndDefinitionTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/List;
+	public final fun extractLabelAndDefinitionTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
+	public static synthetic fun extractLabelAndDefinitionTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/List;
+	public final fun extractLabelTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/Map;
 	public final fun extractLabelTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)Ljava/util/Map;
-	public static synthetic fun extractLabelTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/Map;
+	public final fun extractLabelTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Ljava/lang/String;)Ljava/util/Map;
+	public static synthetic fun extractLabelTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/Map;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/ModelDownloader {
@@ -74,6 +78,7 @@ public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher : ja
 	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;D)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DLcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchMode;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DLcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchMode;Ljava/lang/String;)V
 	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DLcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;)V
 	public fun close ()V
 	public final fun enrich (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
@@ -128,6 +133,10 @@ public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudge
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits {
 	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits$Companion;
+	public static final field DEFAULT_MAX_DISTANCE_EVALUATIONS J
+	public static final field DEFAULT_TIMEOUT Ljava/time/Duration;
+	public static final field MAX_SCALED_DISTANCE_EVALUATIONS J
+	public static final field MAX_SCALED_TIMEOUT Ljava/time/Duration;
 	public fun <init> ()V
 	public fun <init> (JILjava/time/Duration;)V
 	public synthetic fun <init> (JILjava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
