@@ -81,9 +81,14 @@ internal class GuardedInputStream(
         }
     }
 
+    /** Tests: makes a read with [deadline] pending, as [read] does, without blocking in one. */
+    internal fun publishForTest(deadline: Long) {
+        pending.set(PendingRead(deadline, readTimeoutMessage))
+    }
+
     override fun expireIfDue(now: Long): Long {
         val read = pending.get() ?: return Long.MAX_VALUE
-        if (now < read.deadline) return read.deadline
+        if (!Durations.reached(now, read.deadline)) return read.deadline
         if (pending.compareAndSet(read, null)) {
             failure = failure ?: read.message
             closeRaw()

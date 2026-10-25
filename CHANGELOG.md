@@ -40,6 +40,9 @@ and is kept as is; it was never published to Maven Central.
 - **Security (`rdf-sparql`):** `SparqlEndpointConfig.toString()`, the plain-http credential warning and configuration
   errors print endpoint URLs without their query string (`https://host/sparql?...`): an API key in the query
   (`?apikey=...`) was printed verbatim.
+- **Fixed (`rdf-sparql`):** request deadlines are compared by difference, as `System.nanoTime()` requires, and a
+  deadline whose clock sum wraps around is kept: it used to be dropped as "no deadline", which would have disabled the
+  read timeout and the request deadline on a JVM whose clock reads close to `Long.MAX_VALUE`.
 - **API (`rdf-sparql`):** `SparqlEndpointConfig` gained the trailing constructor parameters `maxBufferedResultBytes`
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).
