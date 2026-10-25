@@ -93,8 +93,12 @@ class MissingCorpusTest {
         val root = Files.createDirectories(tmp.resolve("present/rdf"))
         Files.createDirectories(root.resolve("rdf12"))
         Files.list(fixture.parent).use { files -> files.forEach { Files.copy(it, root.resolve("rdf12").resolve(it.fileName.toString())) } }
-        val container = Rdf12ConformanceRunner.forRoot(conformer, root, allowMissingData = false).single()
-        assertTrue(container is DynamicContainer, "$container")
+        val nodes = Rdf12ConformanceRunner.forRoot(conformer, root, allowMissingData = false)
+        val container = nodes.filterIsInstance<DynamicContainer>().single()
         assertTrue(container.children.count() > 0)
+        // The fixture is far smaller than the pinned corpus: the count floor fails, whatever allowMissingData says.
+        val floor = nodes.filterIsInstance<DynamicTest>().single()
+        val shortfall = assertFailsWith<AssertionError> { floor.executable.execute() }
+        assertTrue("fewer tests than the pinned one" in shortfall.message.orEmpty(), shortfall.message)
     }
 }

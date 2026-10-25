@@ -41,6 +41,12 @@ and is kept as is; it was never published to Maven Central.
 - Tests: `SparqlEndpointProtocolTest`'s stalled-header test no longer fails when the 500 ms deadline ends before
   the client has connected (on a loaded host the exchange is then cancelled before it reaches the server, which saw
   "6 of 8 connections"). Such an attempt is repeated until each call shape has a connection whose closing is checked.
+- Conformance harness: an `rdft:Test*` type that is neither run nor listed as out of scope (RDF/XML, C14N) fails the
+  manifest parse, as does a test without a local `mf:action`; before, such rows were dropped silently. The full suite
+  also fails when the corpus has fewer tests per format than the pinned one (Turtle 419, TriG 418, N-Triples 99,
+  N-Quads 114). `forManifest` fails instead of skipping a missing or empty manifest. The conformance guide no longer
+  says that a missing corpus is skipped (it fails unless `-PconformanceAllowMissingData=true`), and `ReferenceRdf`
+  no longer claims parser independence for the Jena provider.
 
 ### Added
 
