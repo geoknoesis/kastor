@@ -12,7 +12,9 @@ import java.util.regex.Pattern
  * - a quantifier (`*`, `+`, `?`, `{n,m}`, except `{1}`) on something that can match the empty string;
  * - an alternation with two or more alternatives that can match the empty string;
  * - lookahead and lookbehind (`(?=`, `(?!`, `(?<=`, `(?<!`), which XPath regular expressions do not have;
- * - an inline comments flag (`(?x)`), and groups nested more than [MAX_GROUP_DEPTH] deep.
+ * - groups nested more than [MAX_GROUP_DEPTH] deep.
+ *
+ * An inline comments flag (`(?x)`) switches the rest of the pattern to comments mode for the analysis.
  *
  * What remains has, between two choices it explores, at least one counted read, so the step budget of
  * [SandboxRegex] bounds all its work. Back-references count as possibly empty (their group may be). A pattern compiled
@@ -30,7 +32,7 @@ object SandboxRegexPatterns {
         Analysis(pattern.pattern(), pattern.flags() and Pattern.COMMENTS != 0, what).run()
     }
 
-    private class Analysis(private val p: String, private val comments: Boolean, private val what: String) {
+    private class Analysis(private val p: String, private var comments: Boolean, private val what: String) {
         private var i = 0
 
         fun run() {
@@ -119,7 +121,9 @@ object SandboxRegexPatterns {
                         // Inline flags: (?idmsux-idmsux) or (?idmsux-idmsux:X).
                         val start = i
                         while (i < p.length && p[i] != ')' && p[i] != ':') i++
-                        if ('x' in p.substring(start, i)) refuse("an inline comments flag")
+                        // An inline comments flag: whitespace stops being an atom from here on. Analyzing the rest in
+                        // comments mode is conservative (fewer atoms can only make more groups empty-matchable).
+                        if ('x' in p.substring(start, i)) comments = true
                         if (i < p.length && p[i] == ')') {
                             i++
                             return true

@@ -128,7 +128,7 @@ class SandboxRegexTest {
         assertThrows(SandboxLimitException::class.java) { replaceAll(zeroWidth, "b", "x") }
         assertTrue(java.time.Duration.ofNanos(System.nanoTime() - started) < java.time.Duration.ofMillis(500))
         for (refused in listOf(
-            "(|){30}x", "(?:a?|b?){40}c", "(a*)*b", "(a?)+", "(?:)*", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?x) a",
+            "(|){30}x", "(?:a?|b?){40}c", "(a*)*b", "(a?)+", "(?:)*", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?x)( a ? ) +",
             "(a|b?|c?)", "(\\b)*", "(\\1)*", "(?:^)+", "(a{0,3}){2}",
         )) {
             assertThrows(SandboxLimitException::class.java, { SandboxRegexPatterns.requireBounded(Pattern.compile(refused), "t") }, refused)
@@ -140,7 +140,7 @@ class SandboxRegexTest {
         for (allowed in listOf(
             "", "b", "^b$", "^AB", "a|", "x*", "^.*$", "[a-z]+@[a-z]+\\.com", "^(\\d{3})-(\\d{4})$", "(a|b)*c", "\\p{L}+",
             "(?i)abc", "a{1000}", "(?<n>b)", "((a+)+)+$", "(?:ab)?", "([a-z]+ ?)+$", "[(|)]*", "\\Q(|)*\\E", "(a|b?)",
-            "(?i:x)+", "[a-z&&[^b]]+", "\\(a\\|\\)*",
+            "(?i:x)+", "(?x)^ a b $", "[a-z&&[^b]]+", "\\(a\\|\\)*",
         )) {
             SandboxRegexPatterns.requireBounded(Pattern.compile(allowed), "t")
         }
