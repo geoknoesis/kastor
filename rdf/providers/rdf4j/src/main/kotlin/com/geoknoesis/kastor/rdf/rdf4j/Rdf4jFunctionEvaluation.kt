@@ -143,17 +143,32 @@ internal fun kastorNativeStore(location: String): NativeStore = NativeStore(java
 }
 
 /**
+ * A [MemoryStore] on which **every** query is sandboxed, as a [SandboxedSelectQuery] without custom functions that ends
+ * by [deadline] (a [System.nanoTime] value; [Long.MAX_VALUE] for none): the base store of the RDF4J SHACL validator,
+ * whose `ShaclSail` runs the SPARQL of an untrusted shapes graph (`sh:sparql`, `sh:SPARQLTarget`).
+ */
+internal fun sandboxedMemoryStore(deadline: Long): MemoryStore = MemoryStore().apply {
+    val scope = Rdf4jFunctionScope.Scope(
+        SparqlFunctionLibrary.EMPTY, 0, deadline, System::nanoTime,
+        { _, _, _ -> throw IllegalStateException("A store-wide sandbox has no custom functions") }, null,
+    )
+    evaluationStrategyFactory = KastorEvaluationStrategyFactory(federatedServiceResolver, QueryEvaluationMode.STANDARD, scope)
+}
+
+/**
  * The factory a Kastor store creates its strategies with: RDF4J's own (default or strict) evaluation, plus the custom
- * functions of the sandboxed query being evaluated, if any ([Rdf4jFunctionScope]). An inferencer or SHACL sail that
- * wraps the store evaluates queries with the store's connection, so with this factory too.
+ * functions of the sandboxed query being evaluated, if any ([Rdf4jFunctionScope]), or else the store-wide sandbox
+ * [everyQuery] ([sandboxedMemoryStore]). An inferencer or SHACL sail that wraps the store evaluates queries with the
+ * store's connection, so with this factory too.
  */
 internal class KastorEvaluationStrategyFactory(
     resolver: FederatedServiceResolver?,
     private val mode: QueryEvaluationMode,
+    private val everyQuery: Rdf4jFunctionScope.Scope? = null,
 ) : DefaultEvaluationStrategyFactory(resolver) {
 
     override fun createEvaluationStrategy(dataset: Dataset?, tripleSource: TripleSource, statistics: EvaluationStatistics): EvaluationStrategy {
-        val scope = Rdf4jFunctionScope.claim()
+        val scope = Rdf4jFunctionScope.claim() ?: everyQuery
         // A sandboxed query checks its exact deadline on every statement it reads, as its nested queries do.
         val source = if (scope == null || scope.deadline == Long.MAX_VALUE) tripleSource
         else DeadlineTripleSource.of(tripleSource, Rdf4jSandboxBudget(scope.deadline, scope.clock)::check)

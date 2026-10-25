@@ -34,6 +34,10 @@ class SandboxedQueryContractTest {
         "memory" to { MemoryRepository(RdfConfig()) },
         "jena" to { JenaRepository.MemoryRepository() },
         "rdf4j" to { Rdf4jRepository.MemoryRepository() },
+        // A store Kastor did not create: it cannot be held to the sandbox, so every sandboxed query is refused.
+        "rdf4j (wrapped plain store)" to {
+            Rdf4jRepository(org.eclipse.rdf4j.repository.sail.SailRepository(org.eclipse.rdf4j.sail.memory.MemoryStore()).also { it.init() })
+        },
     )
 
     /** A way of querying a repository: the repository itself, or a [Dataset] view planned one way or another. */

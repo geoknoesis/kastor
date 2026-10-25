@@ -116,8 +116,9 @@ class Rdf4jSandboxFunctionsTest {
     fun `every function the sandbox allows is one of RDF4J's own built-ins`() {
         val allowed = FunctionRegistry.getInstance().keys.filter(Rdf4jSandboxFunctions::isStandard)
         assertTrue(allowed.size >= 50, "$allowed")
-        // W3C IRIs (XPath functions, XSD casts, rdf:subject ...) or the bare names of SPARQL keywords (RAND, UUID ...).
-        assertTrue(allowed.all { it.startsWith("http://www.w3.org/") || ':' !in it }, "$allowed")
+        // W3C IRIs (XPath functions, XSD casts, rdf:subject ...), the bare names of SPARQL keywords (RAND, UUID ...), or
+        // the pure helpers of ShaclSail's generated queries.
+        assertTrue(allowed.all { it.startsWith("http://www.w3.org/") || ':' !in it || it.startsWith("http://rdf4j.org/shacl-extensions#") }, "$allowed")
         assertTrue("RAND" in allowed && "http://www.w3.org/2001/XMLSchema#integer" in allowed, "$allowed")
     }
 

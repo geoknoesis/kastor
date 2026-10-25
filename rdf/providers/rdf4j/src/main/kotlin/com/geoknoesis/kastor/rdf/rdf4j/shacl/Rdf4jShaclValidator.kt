@@ -207,7 +207,8 @@ internal class Rdf4jShaclValidator(
     }
     val task = java.util.concurrent.FutureTask<SailOutcome> {
       sailPhaseStarted?.invoke()
-      val sail = ShaclSail(MemoryStore())
+      // The shapes graph is untrusted: the SPARQL ShaclSail runs from it is sandboxed and bounded, and ends by the deadline.
+      val sail = ShaclSail(com.geoknoesis.kastor.rdf.rdf4j.sandboxedMemoryStore(deadline))
       sail.validationResultsLimitTotal = limit
       sail.validationResultsLimitPerConstraint = limit
       val repo = SailRepository(sail)
