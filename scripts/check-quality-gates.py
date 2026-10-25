@@ -31,10 +31,25 @@ def dependencies(report, policy):
     unexpected = actual - allowed
     if unexpected:
         raise ValueError('Unreviewed dependency advice:\n' + '\n'.join(map(str, sorted(unexpected))))
-    print(f'Dependency gate: {len(actual)} reviewed exceptions, {len(allowed - actual)} inactive exceptions')
+    # A stale exception would silently accept the advice if it came back; remove it once the advice is gone.
+    inactive = allowed - actual
+    if inactive:
+        raise ValueError('Inactive dependency exceptions (the advice is gone; remove them):\n'
+                         + '\n'.join(map(str, sorted(inactive))))
+    print(f'Dependency gate: {len(actual)} reviewed exceptions, all active')
 
 
 def tests(directory, policy):
+    # Every module that produced test results needs a floor, or a new module's tests are not gated at all.
+    tested = sorted(path.parent.parent.parent.relative_to(directory).as_posix()
+                    for path in directory.glob('**/test-results/test/TEST-*.xml'))
+    # `excluded` names modules whose `test` task is gated elsewhere (for example the full corpus), with a reason.
+    excluded = policy.get('excluded', {})
+    if any(not str(reason).strip() for reason in excluded.values()):
+        raise ValueError('Every excluded module needs a reason')
+    unlisted = sorted(set(tested) - set(policy['modules']) - set(excluded))
+    if unlisted:
+        raise ValueError('Modules with test results but no floor in the policy: ' + ', '.join(unlisted))
     for module, minimum in policy['modules'].items():
         reports = list((directory / module / 'test-results/test').glob('TEST-*.xml'))
         executed = 0

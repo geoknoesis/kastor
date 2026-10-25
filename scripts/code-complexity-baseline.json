@@ -21,10 +21,7 @@
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/Rdf.kt": {
       "lines": 928,
-      "functions": {
-        "providerConsumedInput:0b80856fc3c2": 53
-      },
-      "reason": "Round-ten upstream b5cfef13: asynchronous cancellation connection handoff and helper class. Lexical scanner includes following declarations in an expression body. Frozen at integration; further growth requires review."
+      "reason": "Round-ten upstream b5cfef13: asynchronous cancellation connection handoff and helper class. Frozen at integration; further growth requires review."
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/RdfTerms.kt": {
       "lines": 1403,
@@ -45,12 +42,6 @@
     },
     "rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/dsl/OwlDsl.kt": {
       "lines": 1058,
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
-    "rdf/providers/jena/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/JenaInference.kt": {
-      "functions": {
-        "inferenceViewInvalidated:ccc8d4971bc8": 70
-      },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/providers/jena/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/JenaRepository.kt": {
@@ -79,9 +70,6 @@
     },
     "rdf/shacl/dsl/src/main/kotlin/com/geoknoesis/kastor/rdf/dsl/ShaclDsl.kt": {
       "lines": 1335,
-      "functions": {
-        "Number.toBoundLiteral:d564639c2ac8": 43
-      },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/LiteralComparison.kt": {
@@ -117,9 +105,6 @@
     },
     "rdf/sparql/lang/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/SparqlRenderer.kt": {
       "lines": 821,
-      "functions": {
-        "graphOrDefault:d5590a67bbdc": 51
-      },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
     "tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/catalog/ResourceCatalog.kt": {

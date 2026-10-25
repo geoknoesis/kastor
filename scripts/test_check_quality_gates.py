@@ -38,6 +38,29 @@ class QualityGatesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Failed tests'):
                 GATES.tests(directory, {'modules': {'present': 1}})
 
+    def test_an_exception_for_advice_that_is_gone_fails(self):
+        # Round 12: an inactive exception was only counted, and would silently accept the advice if it returned.
+        report = {'projectAdvice': [{'projectPath': ':library', 'dependencyAdvice': []}]}
+        stale = {'entries': [{'project': ':library', 'dependency': 'group:gone', 'from': '', 'to': 'api',
+                              'reason': 'reviewed once'}]}
+        with self.assertRaisesRegex(ValueError, 'Inactive'):
+            GATES.dependencies(report, stale)
+
+    def test_a_tested_module_without_a_floor_fails(self):
+        # Round 12: a new module's tests were not gated at all until someone remembered to add a floor.
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            for module in ['present', 'group/unlisted']:
+                report = directory/module/'test-results/test/TEST-example.xml'
+                report.parent.mkdir(parents=True)
+                report.write_text('<testsuite tests="1"><testcase/></testsuite>')
+            with self.assertRaisesRegex(ValueError, 'group/unlisted'):
+                GATES.tests(directory, {'modules': {'present': 1}})
+            GATES.tests(directory, {'modules': {'present': 1, 'group/unlisted': 1}})
+            GATES.tests(directory, {'modules': {'present': 1}, 'excluded': {'group/unlisted': 'gated elsewhere'}})
+            with self.assertRaisesRegex(ValueError, 'reason'):
+                GATES.tests(directory, {'modules': {'present': 1}, 'excluded': {'group/unlisted': ' '}})
+
     def test_empty_or_negative_coverage_counts_fail_closed(self):
         with tempfile.TemporaryDirectory() as scratch:
             directory = Path(scratch)

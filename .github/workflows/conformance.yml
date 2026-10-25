@@ -44,7 +44,8 @@ jobs:
         shell: bash
 
       - name: Require populated conformance suites
-        # October floors protect 1,913 executed RDF cases and 487 SHACL tests, including 166 upstream harness cases.
+        # Floors are about 95% of the executed population: 1,943 RDF cases (2,124 tests, 181 allowlisted skips,
+        # 2026-10-25) and 479 SHACL tests. The SHACL corpus is pinned, so all 166 upstream cases must execute.
         run: |
-          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1820 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 460 --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=160 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1845 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 460 --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=166 --skip-allowlist scripts/test-skip-allowlist.json

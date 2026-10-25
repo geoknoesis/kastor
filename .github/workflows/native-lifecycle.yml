@@ -34,10 +34,11 @@ jobs:
           cache: gradle
       - name: Verify native inference, ownership and repeated cleanup
         shell: bash
+        # The soak test's duration scales with KASTOR_SOAK_CYCLES, so it gets more than the 5-minute default per test.
         run: >-
           ./gradlew :tools:onto-quality-embed:test :tools:onto-quality:test
           :tools:onto-quality-embed:jacocoTestReport :tools:onto-quality:jacocoTestReport
-          --no-daemon --max-workers=1
+          --no-daemon --max-workers=1 -Pkastor.test.timeout=20m
       - name: Require native line and branch coverage
         run: python scripts/check-quality-gates.py coverage build/modules scripts/coverage-native.json
       - name: Reject missing or skipped native tests

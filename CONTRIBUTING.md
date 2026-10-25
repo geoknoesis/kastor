@@ -41,6 +41,11 @@ kastor.test.maxParallelForks=2
 org.gradle.workers.max=2
 ```
 
+Every test has a default timeout of 5 minutes (JUnit's `junit.jupiter.execution.timeout.default`), so a hung test fails
+instead of stalling the run; tests that need longer declare `@Timeout`. Each test task is also stopped after 60 minutes,
+for a deadlock that ignores interruption. Raise either for a slow machine with `kastor.test.timeout=10m` or
+`kastor.test.taskTimeoutMinutes=90` in the same file.
+
 On memory-constrained machines, avoid running several Gradle builds at once. Every daemon, Kotlin daemon, test JVM and Gradle TestKit build is a separate JVM.
 
 ### Dependencies, locks and verification metadata
@@ -76,7 +81,11 @@ The complexity ratchet prevents growth beyond reviewed Kotlin file and function 
 `scripts/code-complexity-baseline.json`. Prefer extracting responsibilities to raising a ceiling. After you shrink a
 file, `python scripts/check-code-complexity.py --write-baseline` lowers its ceilings; the normal run lists ceilings
 that can be lowered. `--write-baseline` never raises a ceiling or adds a file on its own: growth needs
-`--raise PATH=REASON`, which records the reviewed reason, and the change then needs review in the pull request.
+`--raise PATH=REASON`, which records the reviewed reason, and the change then needs review in the pull request. On
+pull requests CI also runs `check-code-complexity.py --baseline-ref origin/<base>`, which fails when the baseline raises
+any ceiling above the base branch's (or adds a file or function entry) without a newly written reason, so a hand-edited
+baseline cannot slip through. The scanner counts branches inside string templates (`"${if (a) x else y}"`) and measures
+annotated functions (`@JvmStatic fun`) like any other.
 
 Dependency advice and the test-population gates need build outputs, so they stay CI steps:
 
@@ -86,21 +95,24 @@ python scripts/check-quality-gates.py dependencies build/reports/dependency-anal
 python scripts/check-quality-gates.py tests build/modules scripts/test-module-minimums.json
 ```
 
+Every module with test results needs a floor in `scripts/test-module-minimums.json` (or an `excluded` entry with a
+reason); a new module without one fails the gate. A dependency exception whose advice is gone also fails: remove it.
+
 Review each dependency exception for service loading, reflection and public API exposure. The native workflow
 adds inference/soak coverage; `live-llm.yml` manually runs a bounded synthetic OpenAI fixture with the repository's
 `OPENAI_API_KEY` secret and rejects a skipped integration test. Performance comparison is part of release readiness.
 
 ### Tests that skip
 
-Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json), keyed by test class and test name. CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. Every entry needs a non-empty reason without absolute machine paths (`file:///`, `C:\`, `/home/...`); `scripts/check-test-results.py` enforces this. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
+Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json), keyed by test class and test name. CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. Every entry needs a non-empty reason without absolute machine paths (`file:///`, `C:\`, `/home/...`); `scripts/check-test-results.py` enforces this. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run, and fails on an entry whose test class ran but whose test no longer exists (renamed or deleted).
 
-Suites that must never disappear are named with `--require-suite CLASS=MIN`. The suite must execute at least `MIN` tests, and only allowlisted skips are tolerated. This is how CI detects the W3C SHACL harness silently falling back to its 4-case bundled fixture (`Shacl12NativeConformanceTest=150`).
+Suites that must never disappear are named with `--require-suite CLASS=MIN`. The suite must execute at least `MIN` tests, and only allowlisted skips are tolerated. This is how CI detects the W3C SHACL harness silently falling back to its 4-case bundled fixture (`Shacl12NativeConformanceTest=166`: the corpus is pinned, so every upstream case must execute).
 
 ### Automation reference
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check --continue` (including the quality gates), conformance smoke, test-count/skip gate, `buildHealth` and reviewed dependency advice (Linux, Windows; macOS on push/schedule). Later verification steps run even when `check` fails, so one red gate does not hide test results. `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check --continue` (including the quality gates), conformance smoke, test-count/skip gate, `buildHealth` and reviewed dependency advice (Linux, Windows and macOS, on every PR and push). Later verification steps run even when `check` fails, so one red gate does not hide test results. `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
 | [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
 | [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Weekly + manual; called by `publish.yml` | Staging (every module the BOM manages), metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
 | [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |

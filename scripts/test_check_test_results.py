@@ -96,6 +96,29 @@ class TestReportGate(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("now execute", result.stdout)
 
+    def test_allowlist_entry_for_a_test_that_no_longer_exists_fails(self):
+        # Round 12: an entry for a renamed or deleted test was never reported, and would later hide a real
+        # regression that re-skips a test of that name. Its class ran, so the entry is provably stale.
+        self.report("OrdinarySuite", 12)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "renamed()", 1)))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("OrdinarySuite > renamed()", result.stderr)
+
+    def test_allowlist_entry_for_a_parameterized_method_that_runs_is_not_judged(self):
+        # When the method runs, its cases are named after their invocations, never `name(String)`.
+        self.report("OrdinarySuite", 12)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "pitfall(String)", 1)))
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_allowlist_entry_for_a_class_outside_the_run_is_not_judged(self):
+        # The build job does not run the full conformance corpus; its entries are judged by conformance.yml.
+        self.report("OrdinarySuite", 12)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("CorpusSuite", "case()", 1)))
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_allowlist_entry_without_reason_fails(self):
         self.report("OrdinarySuite", 14, skipped=1)
         self.report("NativeSuite", 1)

@@ -110,6 +110,7 @@ class StagedPublicationGate(unittest.TestCase):
         for artifact, ok in (("rdf-sparql-lang", True), ("kastor-gen-runtime", True), ("onto-quality", True),
                              ("kastor-bom", True), ("sparql-lang", False), ("gradle-plugin", False)):
             with self.subTest(artifact=artifact):
+                self.bom(artifact, group="com.geoknoesis.kastor")
                 self.sbom("com.geoknoesis.kastor", artifact)
                 self.pom.write_text(POM.format(packaging="").replace("<groupId>example</groupId>", "<groupId>com.geoknoesis.kastor</groupId>")
                                     .replace("<artifactId>library</artifactId>", f"<artifactId>{artifact}</artifactId>"), encoding="utf-8")
@@ -140,14 +141,15 @@ class StagedPublicationGate(unittest.TestCase):
                 self.pom.write_text(POM.format(packaging="").replace(element, ""), encoding="utf-8")
                 self.assertNotEqual(0, self.gate().returncode)
 
-    def bom(self, *members):
-        managed = "".join(f"<dependency><groupId>example</groupId><artifactId>{member}</artifactId>"
+    def bom(self, *members, group="example"):
+        managed = "".join(f"<dependency><groupId>{group}</groupId><artifactId>{member}</artifactId>"
                           "<version>1</version></dependency>" for member in members)
         bom = self.directory / "bom" / "kastor-bom-1.pom"
         bom.parent.mkdir(exist_ok=True)
         bom.write_text(POM.format(packaging="<packaging>pom</packaging><dependencyManagement><dependencies>"
                                             f"{managed}</dependencies></dependencyManagement>")
-                       .replace("<artifactId>library</artifactId>", "<artifactId>kastor-bom</artifactId>"),
+                       .replace("<artifactId>library</artifactId>", "<artifactId>kastor-bom</artifactId>")
+                       .replace("<groupId>example</groupId>", f"<groupId>{group}</groupId>", 1),
                        encoding="utf-8")
 
     def test_bom_whose_members_are_all_staged_passes(self):
@@ -160,6 +162,18 @@ class StagedPublicationGate(unittest.TestCase):
         result = self.gate()
         self.assertNotEqual(0, result.returncode)
         self.assertIn("example:rdf-holon", result.stdout + result.stderr)
+
+    def test_kastor_publications_without_a_staged_bom_fail(self):
+        # Round 12: without a staged kastor-bom the BOM-member check had nothing to compare and passed.
+        self.sbom("com.geoknoesis.kastor", "rdf-core")
+        self.pom.write_text(POM.format(packaging="").replace("<groupId>example</groupId>", "<groupId>com.geoknoesis.kastor</groupId>")
+                            .replace("<artifactId>library</artifactId>", "<artifactId>rdf-core</artifactId>"), encoding="utf-8")
+        result = self.gate()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("kastor-bom", result.stdout + result.stderr)
+        self.bom("rdf-core", group="com.geoknoesis.kastor")
+        result = self.gate()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_invalid_zip_fails(self):
         (self.directory / "library-1.jar").write_bytes(b"not a zip")
