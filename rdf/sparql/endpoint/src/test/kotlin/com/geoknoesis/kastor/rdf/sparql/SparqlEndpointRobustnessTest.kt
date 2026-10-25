@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /**
- * Seventh audit of the SPARQL HTTP adapter: unbounded timeouts, failures around the exchange,
+ * Unbounded timeouts, failures around the exchange,
  * the read watchdog and the strictness of the result decoder as seen through the repository.
  */
 class SparqlEndpointRobustnessTest {

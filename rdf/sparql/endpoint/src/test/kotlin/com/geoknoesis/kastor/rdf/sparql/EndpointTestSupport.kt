@@ -46,6 +46,8 @@ internal class RecordedRequest(
     val headers: Map<String, String>,
     val rawQuery: String?,
     val body: String,
+    /** The client's port: requests over one kept-alive connection share it. */
+    val remotePort: Int = -1,
 )
 
 /** Local HTTP endpoint recording every request. */
@@ -63,6 +65,7 @@ internal class LocalEndpoint(private val handler: (HttpExchange, RecordedRequest
                     headers = exchange.requestHeaders.entries.associate { it.key.lowercase() to it.value.first() },
                     rawQuery = exchange.requestURI.rawQuery,
                     body = exchange.requestBody.readBytes().toString(Charsets.UTF_8),
+                    remotePort = exchange.remoteAddress.port,
                 )
                 requests += recorded
                 handler(exchange, recorded)
@@ -80,6 +83,30 @@ internal class LocalEndpoint(private val handler: (HttpExchange, RecordedRequest
     override fun close() {
         server.stop(0)
         pool.shutdownNow()
+    }
+}
+
+/** SPARQL 1.1 Protocol handler backed by a Jena dataset (POST, POST form and GET; queries and updates). */
+internal fun jenaProtocolHandler(dataset: org.apache.jena.query.Dataset): (HttpExchange, RecordedRequest) -> Unit = { exchange, request ->
+    try {
+        val form = if (request.contentType == "application/x-www-form-urlencoded") request.body else request.rawQuery.orEmpty()
+        val params = form.split('&').filter { '=' in it }
+            .associate { it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('='), Charsets.UTF_8) }
+        val update = if (request.contentType == "application/sparql-update") request.body else params["update"]
+        if (update != null) {
+            org.apache.jena.update.UpdateAction.parseExecute(update, dataset)
+            exchange.respond(200, "")
+        } else {
+            val query = if (request.contentType == "application/sparql-query") request.body else params.getValue("query")
+            org.apache.jena.query.QueryExecutionFactory.create(query, dataset).use { execution ->
+                val out = java.io.ByteArrayOutputStream()
+                if (execution.query.isAskType) org.apache.jena.query.ResultSetFormatter.outputAsJSON(out, execution.execAsk())
+                else org.apache.jena.query.ResultSetFormatter.outputAsJSON(out, execution.execSelect())
+                exchange.respond(200, out.toString(Charsets.UTF_8))
+            }
+        }
+    } catch (e: Exception) {
+        exchange.respond(400, e.toString(), "text/plain")
     }
 }
 

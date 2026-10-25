@@ -13,8 +13,8 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 
-/** Ninth audit of the SPARQL HTTP adapter: host names, message hygiene, streaming cap, Accept, Basic user names. */
-class SparqlEndpointRound9Test {
+/** Host names the JDK client cannot use, what a response may put into a message, the overall stream cap, the Accept header and Basic user names. */
+class SparqlEndpointHostAndMessageTest {
 
     private val selectAll = SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")
     private val url = "http://sparql.example/sparql"

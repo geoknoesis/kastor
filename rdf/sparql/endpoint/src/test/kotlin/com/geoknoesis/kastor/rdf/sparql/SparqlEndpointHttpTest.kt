@@ -19,96 +19,15 @@ import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
+/** The SPARQL 1.1 Protocol as the adapter speaks it: methods, headers, limits, keep-alive, provider options. */
 class SparqlEndpointHttpTest {
-
-    private class Recorded(
-        val method: String,
-        val contentType: String?,
-        val headers: Map<String, String>,
-        val rawQuery: String?,
-        val body: String,
-        val remotePort: Int,
-    )
-
-    /** Local HTTP endpoint recording every request. */
-    private class TestEndpoint(private val handler: (HttpExchange, Recorded) -> Unit) : AutoCloseable {
-        val requests = CopyOnWriteArrayList<Recorded>()
-        private val pool = Executors.newFixedThreadPool(4)
-        private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
-            executor = pool
-            createContext("/") { exchange ->
-                try {
-                    val recorded = Recorded(
-                        method = exchange.requestMethod,
-                        contentType = exchange.requestHeaders.getFirst("Content-Type"),
-                        headers = exchange.requestHeaders.entries.associate { it.key.lowercase() to it.value.first() },
-                        rawQuery = exchange.requestURI.rawQuery,
-                        body = exchange.requestBody.readBytes().toString(Charsets.UTF_8),
-                        remotePort = exchange.remoteAddress.port,
-                    )
-                    requests += recorded
-                    handler(exchange, recorded)
-                } catch (_: Exception) {
-                    // Client disconnects (deadline tests) surface here.
-                } finally {
-                    exchange.close()
-                }
-            }
-            start()
-        }
-        val url: String get() = "http://127.0.0.1:${server.address.port}/sparql"
-        override fun close() {
-            server.stop(0)
-            pool.shutdownNow()
-        }
-    }
-
-    private fun HttpExchange.respond(status: Int, body: String, type: String = "application/sparql-results+json") {
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        responseHeaders.add("Content-Type", type)
-        sendResponseHeaders(status, if (bytes.isEmpty()) -1 else bytes.size.toLong())
-        if (bytes.isNotEmpty()) responseBody.use { it.write(bytes) }
-    }
-
-    /** SPARQL 1.1 Protocol handler backed by a Jena dataset (POST, POST form and GET). */
-    private fun jena(dataset: Dataset): (HttpExchange, Recorded) -> Unit = { exchange, request ->
-        try {
-            val form = if (request.contentType == "application/x-www-form-urlencoded") request.body else request.rawQuery.orEmpty()
-            val params = form.split('&').filter { '=' in it }
-                .associate { it.substringBefore('=') to URLDecoder.decode(it.substringAfter('='), Charsets.UTF_8) }
-            val update = if (request.contentType == "application/sparql-update") request.body else params["update"]
-            if (update != null) {
-                UpdateAction.parseExecute(update, dataset)
-                exchange.respond(200, "")
-            } else {
-                val query = if (request.contentType == "application/sparql-query") request.body else params.getValue("query")
-                QueryExecutionFactory.create(query, dataset).use { execution ->
-                    val out = ByteArrayOutputStream()
-                    if (execution.query.isAskType) ResultSetFormatter.outputAsJSON(out, execution.execAsk())
-                    else ResultSetFormatter.outputAsJSON(out, execution.execSelect())
-                    exchange.respond(200, out.toString(Charsets.UTF_8))
-                }
-            }
-        } catch (e: Exception) {
-            exchange.respond(400, e.toString(), "text/plain")
-        }
-    }
-
-    private fun rowsJson(n: Int) = buildString {
-        append("{\"head\":{\"vars\":[\"x\"]},\"results\":{\"bindings\":[")
-        repeat(n) {
-            if (it > 0) append(',')
-            append("{\"x\":{\"type\":\"literal\",\"value\":\"row-$it\"}}")
-        }
-        append("]}}")
-    }
 
     private fun basic(credentials: String) = "Basic " + Base64.getEncoder().encodeToString(credentials.toByteArray())
 
     private val selectAll = SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")
 
     @Test
-    fun `HTTP error status and body are surfaced`(): Unit = TestEndpoint { exchange, _ ->
+    fun `HTTP error status and body are surfaced`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(503, "backend exploded: details", "text/plain")
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -125,7 +44,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `buffered responses are capped while streamed rows use their own limit`(): Unit = TestEndpoint { exchange, _ ->
+    fun `buffered responses are capped while streamed rows use their own limit`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(200))
     }.use { endpoint ->
         val config = SparqlEndpointConfig(endpoint.url, maxResponseBytes = 1_000)
@@ -141,7 +60,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `overall deadline aborts a response that keeps trickling within the read timeout`(): Unit = TestEndpoint { exchange, _ ->
+    fun `overall deadline aborts a response that keeps trickling within the read timeout`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
         exchange.sendResponseHeaders(200, 0)
         exchange.responseBody.use { out ->
@@ -164,7 +83,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `result terms keep language datatype and blank node identifiers`(): Unit = TestEndpoint { exchange, _ ->
+    fun `result terms keep language datatype and blank node identifiers`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(
             200,
             """{"head":{"vars":["l","t","b","p","u"]},"results":{"bindings":[{""" +
@@ -186,7 +105,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `exceptions thrown by the row consumer propagate unchanged`(): Unit = TestEndpoint { exchange, _ ->
+    fun `exceptions thrown by the row consumer propagate unchanged`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(3))
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -214,7 +133,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `custom headers credentials and request methods are applied`(): Unit = TestEndpoint { exchange, _ ->
+    fun `custom headers credentials and request methods are applied`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         val authority = endpoint.url.removePrefix("http://")
@@ -243,7 +162,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `connections are kept alive across requests`(): Unit = TestEndpoint { exchange, _ ->
+    fun `connections are kept alive across requests`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(200, """{"head":{},"boolean":true}""")
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo -> repeat(3) { assertTrue(repo.ask(SparqlAskQuery("ASK {}"))) } }
@@ -253,7 +172,7 @@ class SparqlEndpointHttpTest {
     @Test
     fun `inserts are batched and removals avoid per-triple round trips`() {
         val dataset = DatasetFactory.create()
-        TestEndpoint(jena(dataset)).use { endpoint ->
+        LocalEndpoint(jenaProtocolHandler(dataset)).use { endpoint ->
             SparqlRepository(SparqlEndpointConfig(endpoint.url, insertBatchSize = 5)).use { repo ->
                 val graph = repo.editGraph(Iri("urn:g"))
                 val triples = (0 until 12).map { RdfTriple(Iri("urn:s$it"), Iri("urn:p"), Literal("v\"$it\n")) }
@@ -275,7 +194,7 @@ class SparqlEndpointHttpTest {
     @Test
     fun `blank nodes follow one rule and endpoint-assigned labels can be copied back`() {
         val dataset = DatasetFactory.create()
-        TestEndpoint(jena(dataset)).use { endpoint ->
+        LocalEndpoint(jenaProtocolHandler(dataset)).use { endpoint ->
             SparqlRepository(SparqlEndpointConfig(endpoint.url, insertBatchSize = 2)).use { repo ->
                 val graph = repo.editDefaultGraph()
                 graph.addTriple(RdfTriple(BlankNode("a"), Iri("urn:p"), Literal("single")))
@@ -302,7 +221,7 @@ class SparqlEndpointHttpTest {
     @Test
     fun `bound and timed select rows are supported`() {
         val dataset = DatasetFactory.create()
-        TestEndpoint(jena(dataset)).use { endpoint ->
+        LocalEndpoint(jenaProtocolHandler(dataset)).use { endpoint ->
             SparqlRepository(endpoint.url).use { repo ->
                 repo.editDefaultGraph().addTriples((1..3).map { RdfTriple(Iri("urn:s$it"), Iri("urn:p"), Literal("v$it")) })
                 val values = repo.withSelectRows(
@@ -320,7 +239,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `provider passes options and reports the same truthful capabilities as the repository`(): Unit = TestEndpoint { exchange, _ ->
+    fun `provider passes options and reports the same truthful capabilities as the repository`(): Unit = LocalEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         val provider = SparqlProvider()

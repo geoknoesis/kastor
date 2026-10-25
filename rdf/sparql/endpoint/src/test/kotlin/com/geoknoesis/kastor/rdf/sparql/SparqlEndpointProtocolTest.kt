@@ -19,7 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import javax.net.ssl.SSLSession
 
 /**
- * Header wait, redirects and Content-Type handling of the SPARQL HTTP adapter (fifth audit). Timing
+ * Header wait, redirects and Content-Type handling of the SPARQL HTTP adapter. Timing
  * assertions follow the rules in `EndpointTestSupport.kt`: the exception says which limit fired, a
  * lower bound shows it did not fire early, and upper bounds are generous.
  */
