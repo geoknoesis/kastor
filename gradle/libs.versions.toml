@@ -146,7 +146,10 @@ jena-shex = { module = "org.apache.jena:jena-shex", version.ref = "jena" }
 jena-tdb1 = { module = "org.apache.jena:jena-tdb1", version.ref = "jena" }
 rdf4j-common-exception = { module = "org.eclipse.rdf4j:rdf4j-common-exception", version.ref = "rdf4j" }
 rdf4j-common-iterator = { module = "org.eclipse.rdf4j:rdf4j-common-iterator", version.ref = "rdf4j" }
+rdf4j-common-order = { module = "org.eclipse.rdf4j:rdf4j-common-order", version.ref = "rdf4j" }
+rdf4j-common-transaction = { module = "org.eclipse.rdf4j:rdf4j-common-transaction", version.ref = "rdf4j" }
 rdf4j-query = { module = "org.eclipse.rdf4j:rdf4j-query", version.ref = "rdf4j" }
+rdf4j-queryalgebra-evaluation = { module = "org.eclipse.rdf4j:rdf4j-queryalgebra-evaluation", version.ref = "rdf4j" }
 rdf4j-queryalgebra-model = { module = "org.eclipse.rdf4j:rdf4j-queryalgebra-model", version.ref = "rdf4j" }
 rdf4j-queryparser-api = { module = "org.eclipse.rdf4j:rdf4j-queryparser-api", version.ref = "rdf4j" }
 rdf4j-queryparser-sparql = { module = "org.eclipse.rdf4j:rdf4j-queryparser-sparql", version.ref = "rdf4j" }
