@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * [Rdf4jGraph]). Repositories wrapping an externally created store (whose content other code may change) are never
  * tracked: their state is always unknown, and `size()` always counts in one pass.
  *
+ * **Sandboxed queries** are refused on a store the factory methods did not create ([Rdf4jQuerySandbox.evaluatesSandboxed]).
+ *
  * **No state outside the store:** which `rdf:reifies` triples are explicit is recorded by stored statements (see
  * [Rdf4jGraph]), so several repositories may wrap one RDF4J repository, and a persistent store can be reopened.
  *
@@ -448,14 +450,14 @@ class Rdf4jRepository(
             return Rdf4jRepository(repository).withVariant("native-shacl")
         }
 
-        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
         /** Update text that may introduce RDF-star triple values without them already being stored. */
         private val MAY_CREATE_TRIPLE_VALUES = Regex("<<|(?i)\\btriple\\s*\\(|\\bload\\b|\\bservice\\b")
 
         /** Default of [constructReifiesWindow]: bounds the memory of a streamed `CONSTRUCT` to this many triples. */
         internal const val DEFAULT_CONSTRUCT_REIFIES_WINDOW: Int = 65_536
 
-        private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
+        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
+        private val DIRECTIONAL_LITERAL = Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
     /**
