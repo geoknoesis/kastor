@@ -91,6 +91,8 @@ internal data class EmbeddingCliOptions(
     /** `--similarity-max-pairs`; null keeps the default result-pair limit. */
     val similarityMaxPairs: Int? = null,
     val similarityMode: SimilaritySearchMode = SimilaritySearchMode.Exact,
+    /** `--label-language`; null embeds the ontology's most common label language. */
+    val labelLanguage: String? = null,
 )
 
 /** Scaled similarity limits with the CLI overrides applied. */
@@ -111,7 +113,7 @@ internal object OnnxPipelineEnricherFactory : PipelineEnricherFactory {
     override fun open(options: EmbeddingCliOptions): PipelineEnricher {
         val model = loadOnnxEmbeddingModel(options)
         return try {
-            val enricher = SemanticEnricher(model, options.threshold, options.similarityLimitsPolicy(), options.similarityMode)
+            val enricher = SemanticEnricher(model, options.threshold, options.similarityLimitsPolicy(), options.similarityMode, options.labelLanguage)
             object : PipelineEnricher {
                 override fun enrich(ontology: RdfGraph): RdfGraph = enricher.enrich(ontology)
 

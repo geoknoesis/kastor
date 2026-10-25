@@ -69,6 +69,27 @@ class LabelExtractorTest {
     }
 
     @Test
+    fun `a requested language overrides the dominant one`() {
+        val graph =
+            Rdf.parse(
+                prefixes + "\n" +
+                    """
+                    ex:car skos:prefLabel "car"@en , "voiture"@fr .
+                    ex:bike skos:prefLabel "bicycle"@en , "vélo"@FR .
+                    ex:bus skos:prefLabel "bus"@en .
+                    ex:Tram a owl:Class ; rdfs:label "tram"@en , "tramway"@fr ; rdfs:comment "A tram."@en , "Un tramway."@fr .
+                    """.trimIndent(),
+                RdfFormat.TURTLE,
+            )
+        val found = LabelExtractor.extractLabelTexts(graph, language = "FR").mapKeys { (it.key as Iri).value.substringAfter('#') }
+        // English is dominant, French is requested; ex:bus has no French label and keeps its only language.
+        assertEquals(mapOf("car" to "voiture", "bike" to "vélo", "bus" to "bus", "Tram" to "tramway"), found)
+        val drift = LabelExtractor.extractLabelAndDefinitionTexts(graph, language = "fr").single()
+        assertEquals("tramway" to "Un tramway.", drift.second)
+        kotlin.test.assertFailsWith<IllegalArgumentException> { LabelExtractor.extractLabelTexts(graph, language = "not a tag") }
+    }
+
+    @Test
     fun `the definition follows the language of the label`() {
         val graph =
             Rdf.parse(
@@ -83,5 +104,24 @@ class LabelExtractorTest {
             )
         val pairs = LabelExtractor.extractLabelAndDefinitionTexts(graph).associate { (iri, p) -> iri.value.substringAfter('#') to p }
         assertEquals(mapOf("Car" to ("car" to "A road vehicle."), "Velo" to ("vélo" to "Un deux-roues.")), pairs)
+    }
+
+    @Test
+    fun `the enricher embeds the requested label language`() {
+        val graph =
+            Rdf.parse(
+                prefixes + "\n" + "ex:car skos:prefLabel \"car\"@en , \"voiture\"@fr . ex:bus skos:prefLabel \"bus\"@en .",
+                RdfFormat.TURTLE,
+            )
+        val seen = mutableListOf<String>()
+        val model = PrecomputedEmbeddingModel("fake", 2) { text -> seen += text; floatArrayOf(1f, text.length.toFloat()) }
+        SemanticEnricher(model, 0.85, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.Exact, "fr").enrichmentOnly(graph)
+        assertEquals(listOf("bus", "voiture"), seen.sorted())
+        seen.clear()
+        SemanticEnricher(model, 0.85, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.Exact, null).enrichmentOnly(graph)
+        assertEquals(listOf("bus", "car"), seen.sorted())
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            SemanticEnricher(model, 0.85, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.Exact, "not a tag")
+        }
     }
 }

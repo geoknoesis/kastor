@@ -182,9 +182,10 @@ Similarity options on `enrich` and `pipeline`:
 
 | Option | Meaning |
 |--------|---------|
-| `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, at least 50,000,000. |
+| `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, 50,000,000 to 3,000,000,000. |
 | `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30 and at most 600. |
 | `--similarity-max-pairs N` | Maximum similar pairs the search may return before failing (≥ 1). Default: 1,000,000. |
+| `--label-language TAG` | Language of the labels to embed, e.g. `fr`. Default: the ontology's most common label language. An entity without a label in it falls back to its untagged labels, then to its smallest language tag. |
 | `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
 
 When a similarity budget is exhausted, the command exits with status 5. The message says which limit was reached, and the hint matches it:

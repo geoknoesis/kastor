@@ -39,10 +39,20 @@ and is kept as is; it was never published to Maven Central.
   ontology's dominant label language, else untagged, else the smallest tag), with preferred labels before
   `skos:altLabel`, de-duplicated and sorted; definitions follow the label's language. Before, every label in every
   language was joined in graph order. Similarity scores, `oqsh:semanticallyCloseTo` pairs and drift scores of
-  multilingual vocabularies change.
+  multilingual vocabularies change. The language is configurable: `LabelExtractor.extractLabelTexts` and
+  `extractLabelAndDefinitionTexts` take a `language` parameter (`@JvmOverloads`; null, the default, keeps the
+  dominant language), `SemanticEnricher` has a constructor with a `labelLanguage` argument, and `onto-qa enrich` /
+  `pipeline` have `--label-language`. **ABI:** the two `LabelExtractor` functions gained a parameter (their
+  `$default` bridges changed); the dump is updated.
+- **Changed: `ClassLabelUniqueLangShape` is a Warning.** Two same-language `rdfs:label`s on a class were a Violation
+  (the shape declared no severity); the node shape and its property shape now declare `sh:Warning`.
 - **Changed: the scaled similarity limits are capped** at a 10-minute deadline and 3,000,000,000 distance
   evaluations (`SimilaritySearchLimits.forEntityCount`); before, 200,000 labels got a 66-minute default. Explicit
-  limits are not capped. Embedding stops at the next batch boundary when the thread is interrupted.
+  limits are not capped. Embedding stops at the next batch boundary when the thread is interrupted. The bounds are
+  public (`SimilaritySearchLimits.DEFAULT_MAX_DISTANCE_EVALUATIONS`, `MAX_SCALED_DISTANCE_EVALUATIONS`,
+  `DEFAULT_TIMEOUT`, `MAX_SCALED_TIMEOUT`). The budget-exceeded messages carry the limit's value, and the exit-5 hint
+  of `onto-qa` names the exact option and range (`--similarity-timeout <seconds>`, `--similarity-max-work
+  <evaluations>`, `--similarity-mode approximate`).
 - **Fixed:** the Markdown "Metrics summary" and the "centrality" hint used the default locale (`3,50` under
   `de-DE`); they use `Locale.ROOT`.
 - **Fixed:** with metrics, findings on blank nodes and several findings on one IRI kept the SHACL engine's order;
@@ -55,7 +65,7 @@ and is kept as is; it was never published to Maven Central.
   needs `KASTOR_RUN_OPENAI_LLM_TESTS=1` (it then fails without `OPENAI_API_KEY`). Before, an API key in the shell
   made a plain `gradle test` spend money, and an offline box tried a 90 MB download. `live-llm.yml` sets the new
   switch; `KASTOR_SKIP_OPENAI_LLM_TESTS` and `KASTOR_SKIP_EMBEDDING_TESTS` no longer gate these tests.
-- No public ABI change.
+- ABI additions and changes in `onto-quality-embed` only, listed above; the dump is updated.
 
 ### Added
 

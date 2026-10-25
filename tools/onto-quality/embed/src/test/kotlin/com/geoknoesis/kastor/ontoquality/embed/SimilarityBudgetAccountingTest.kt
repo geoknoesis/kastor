@@ -63,7 +63,12 @@ class SimilarityBudgetAccountingTest {
             assertFailsWith<SimilaritySearchBudgetExceededException> {
                 index().pairsAboveThreshold(0.9, SimilaritySearchLimits(timeout = Duration.ofNanos(1))).toList()
             }
-        assertEquals("Similarity search deadline exceeded", deadline.message)
+        assertEquals("Similarity search deadline exceeded (limit 0.000000001 s)", deadline.message)
+        val work =
+            assertFailsWith<SimilaritySearchBudgetExceededException> {
+                index().pairsAboveThreshold(0.9, SimilaritySearchLimits(maxDistanceEvaluations = 1)).toList()
+            }
+        assertEquals("Similarity distance-evaluation limit exceeded (limit 1 evaluations)", work.message)
         assertEquals(SimilaritySearchBudgetExceededException.Limit.DEADLINE, deadline.limit)
         // The message-only constructor stays available and carries no limit.
         assertEquals(null, SimilaritySearchBudgetExceededException("custom").limit)

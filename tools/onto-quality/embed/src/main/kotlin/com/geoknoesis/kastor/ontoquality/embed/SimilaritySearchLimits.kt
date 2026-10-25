@@ -14,17 +14,22 @@ data class SimilaritySearchLimits(
     }
 
     companion object {
-        private const val DEFAULT_MAX_DISTANCE_EVALUATIONS = 50_000_000L
-        private val DEFAULT_TIMEOUT: Duration = Duration.ofSeconds(30)
+        /** The smallest work budget [forEntityCount] chooses. */
+        const val DEFAULT_MAX_DISTANCE_EVALUATIONS: Long = 50_000_000L
+
+        /** The shortest deadline [forEntityCount] chooses. */
+        @JvmField
+        val DEFAULT_TIMEOUT: Duration = Duration.ofSeconds(30)
 
         /** Conservative throughput assumption for the deadline: 5,000 distance evaluations per millisecond. */
         private const val EVALUATIONS_PER_MILLI = 5_000L
 
         /** The longest deadline [forEntityCount] chooses on its own; a longer search needs an explicit limit. */
-        private val MAX_SCALED_TIMEOUT: Duration = Duration.ofMinutes(10)
+        @JvmField
+        val MAX_SCALED_TIMEOUT: Duration = Duration.ofMinutes(10)
 
-        /** The work [MAX_SCALED_TIMEOUT] allows at [EVALUATIONS_PER_MILLI]. */
-        private val MAX_SCALED_DISTANCE_EVALUATIONS: Long = MAX_SCALED_TIMEOUT.toMillis() * EVALUATIONS_PER_MILLI
+        /** The largest work budget [forEntityCount] chooses: what [MAX_SCALED_TIMEOUT] allows at 5,000 evaluations per ms. */
+        const val MAX_SCALED_DISTANCE_EVALUATIONS: Long = 3_000_000_000L
 
         /**
          * Limits sized for [entities] embedded entities, never below the fixed defaults.

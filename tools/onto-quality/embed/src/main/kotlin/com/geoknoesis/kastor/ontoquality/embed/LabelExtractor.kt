@@ -3,19 +3,22 @@ package com.geoknoesis.kastor.ontoquality.embed
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.LiteralValidation
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.SKOS
+import java.util.Locale
 
 /**
  * Builds the text that is embedded for each entity.
  *
- * One entity is embedded in **one language**: the ontology's dominant label language (the tag carried by most
- * label literals; ties go to the smallest tag) when the entity has a label in it, else its untagged labels, else
- * its labels in the smallest language tag. Within that language the preferred labels (`rdfs:label`,
+ * One entity is embedded in **one language**: the preferred language (the `language` argument; by default the
+ * ontology's dominant label language, the tag carried by most label literals, ties going to the smallest tag) when
+ * the entity has a label in it, else its untagged labels, else its labels in the smallest language tag. Language
+ * tags are compared case-insensitively; `""` prefers untagged labels. Within that language the preferred labels (`rdfs:label`,
  * `skos:prefLabel`) are used, and `skos:altLabel` only when the entity has no preferred label in it. The literals
  * are de-duplicated and sorted, so the text does not depend on the serialisation order of the graph. Without this a
  * multilingual SKOS scheme embedded a polyglot string, and similarity followed shared translations, not meaning.
@@ -51,28 +54,38 @@ object LabelExtractor {
     /** One literal of an entity: its predicate's preference rank, its lower-case language tag ("" if none), its text. */
     private data class Text(val rank: Int, val language: String, val lexical: String)
 
-    /** One text per labelled entity, in one language (see the class documentation). */
+    /**
+     * One text per labelled entity, in one language (see the class documentation).
+     *
+     * @param language the preferred label language, for example `"fr"`; null (the default) uses the ontology's
+     *   dominant label language.
+     */
+    @JvmOverloads
     fun extractLabelTexts(
         graph: RdfGraph,
         separator: String = " ; ",
+        language: String? = null,
     ): Map<RdfResource, String> {
         val labels = collectTexts(graph, labelPredicates)
-        val language = dominantLanguage(labels.values)
-        return labels.mapValues { (_, texts) -> select(texts, language, separator) }.filterValues { it.isNotBlank() }
+        val preferred = preferredLanguage(language, labels.values)
+        return labels.mapValues { (_, texts) -> select(texts, preferred, separator) }.filterValues { it.isNotBlank() }
     }
 
     /**
      * Label + definition strings for `owl:Class` resources only (for label–definition drift). The label is the
-     * one [extractLabelTexts] builds; the definition is taken in the label's language when the class has one there.
+     * one [extractLabelTexts] builds with the same [language]; the definition is taken in the label's language when
+     * the class has one there.
      */
+    @JvmOverloads
     fun extractLabelAndDefinitionTexts(
         graph: RdfGraph,
         separator: String = " ; ",
+        language: String? = null,
     ): List<Pair<Iri, Pair<String, String>>> {
         val classes = owlClassIris(graph)
         if (classes.isEmpty()) return emptyList()
         val allLabels = collectTexts(graph, labelPredicates)
-        val language = dominantLanguage(allLabels.values)
+        val preferred = preferredLanguage(language, allLabels.values)
         val labels = allLabels.filterKeys { it in classes }
         val definitions = collectTexts(graph, definitionPredicates).filterKeys { it in classes }
 
@@ -80,8 +93,8 @@ object LabelExtractor {
         for (iri in classes.sortedBy { it.value }) {
             val labelTexts = labels[iri] ?: continue
             val definitionTexts = definitions[iri] ?: continue
-            val labelLanguage = chooseLanguage(labelTexts, language)
-            val label = select(labelTexts, language, separator)
+            val labelLanguage = chooseLanguage(labelTexts, preferred)
+            val label = select(labelTexts, preferred, separator)
             val definition = select(definitionTexts, labelLanguage, separator)
             if (label.isBlank() || definition.isBlank()) continue
             out.add(iri to (label to definition))
@@ -111,6 +124,16 @@ object LabelExtractor {
             acc.getOrPut(s) { HashSet() }.add(Text(rank, language, literal.lexical))
         }
         return acc.mapValues { it.value.toList() }
+    }
+
+    /** [requested] in lower case, or the dominant language of [labels] when null. */
+    private fun preferredLanguage(requested: String?, labels: Collection<List<Text>>): String =
+        if (requested == null) dominantLanguage(labels) else normalizeLanguage(requested)
+
+    /** [tag] in lower case; `""` (untagged) or a well-formed language tag, else [IllegalArgumentException]. */
+    internal fun normalizeLanguage(tag: String): String {
+        require(tag.isEmpty() || LiteralValidation.isWellFormedLanguageTag(tag)) { "Invalid label language tag: '$tag'" }
+        return tag.lowercase(Locale.ROOT)
     }
 
     /** The language tag most label literals carry (ties: the smallest tag); "" when no label is language-tagged. */

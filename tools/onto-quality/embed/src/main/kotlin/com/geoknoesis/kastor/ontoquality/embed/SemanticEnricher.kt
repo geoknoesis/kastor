@@ -33,6 +33,7 @@ class SemanticEnricher(
     private var ownedModel: AutoCloseable? = null
     private var limitsPolicy: SimilarityLimitsPolicy = SimilarityLimitsPolicy.scaled()
     private var searchMode: SimilaritySearchMode = SimilaritySearchMode.Exact
+    private var labelLanguage: String? = null
     init { require(threshold.isFinite() && threshold in -1.0..1.0) }
 
     /** Exact search with the same fixed [limits] for every ontology. */
@@ -48,6 +49,20 @@ class SemanticEnricher(
     ) : this(model, threshold) {
         this.limitsPolicy = limitsPolicy
         searchMode = mode
+    }
+
+    /**
+     * As the four-argument constructor, embedding labels in [labelLanguage] (for example `"fr"`) where an entity has
+     * one; null uses the ontology's dominant label language (see [LabelExtractor]).
+     */
+    constructor(
+        model: EmbeddingModel,
+        threshold: Double,
+        limitsPolicy: SimilarityLimitsPolicy,
+        mode: SimilaritySearchMode,
+        labelLanguage: String?,
+    ) : this(model, threshold, limitsPolicy, mode) {
+        this.labelLanguage = labelLanguage?.let(LabelExtractor::normalizeLanguage)
     }
     /**
      * Reads labels from [ontology], embeds them, and returns a NEW [RdfGraph] containing the
@@ -66,7 +81,7 @@ class SemanticEnricher(
      */
     fun enrichmentOnly(ontology: RdfGraph): RdfGraph {
         check(!closed.get()) { "Semantic enricher is closed" }
-        val labelMap = LabelExtractor.extractLabelTexts(ontology)
+        val labelMap = LabelExtractor.extractLabelTexts(ontology, language = labelLanguage)
         if (labelMap.isEmpty()) {
             return provenanceGraph(
                 modelHash = modelHash(),
@@ -108,7 +123,7 @@ class SemanticEnricher(
         ontology: RdfGraph,
         labelVectors: Map<out RdfResource, FloatArray>,
     ): List<RdfTriple> {
-        val pairs = LabelExtractor.extractLabelAndDefinitionTexts(ontology)
+        val pairs = LabelExtractor.extractLabelAndDefinitionTexts(ontology, language = labelLanguage)
         if (pairs.isEmpty()) return emptyList()
         val missingLabels = pairs.filter { (iri, _) -> iri !in labelVectors }
         val freshLabels =

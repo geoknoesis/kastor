@@ -532,8 +532,22 @@ class CliTest {
         val deadline =
             SimilaritySearchBudgetExceededException("Similarity search deadline exceeded", SimilaritySearchBudgetExceededException.Limit.DEADLINE)
         assertEquals(
-            "Re-run with a larger --similarity-timeout (seconds), or use --similarity-mode approximate for large vocabularies.",
+            "Re-run with a larger --similarity-timeout <seconds> (1 to 86400; the scaled default is 30 to 600), " +
+                "or use --similarity-mode approximate for large vocabularies.",
             similarityBudgetHint(deadline),
+        )
+        val work =
+            SimilaritySearchBudgetExceededException("x", SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS)
+        assertEquals(
+            "Re-run with a larger --similarity-max-work <evaluations> (the scaled default is 50000000 to 3000000000), " +
+                "or use --similarity-mode approximate for large vocabularies.",
+            similarityBudgetHint(work),
+        )
+        assertEquals(
+            "Re-run with a larger --similarity-max-work <evaluations> (the scaled default is 50000000 to 3000000000) " +
+                "or --similarity-timeout <seconds> (1 to 86400; the scaled default is 30 to 600), " +
+                "or use --similarity-mode approximate for large vocabularies.",
+            similarityBudgetHint(SimilaritySearchBudgetExceededException("x")),
         )
     }
 
@@ -586,6 +600,22 @@ class CliTest {
         assertEquals(Duration.ofSeconds(7), captured.single().similarityTimeout)
         assertEquals(SimilaritySearchMode.ApproximateLsh(), captured.single().similarityMode)
         assertEquals(99, captured.single().similarityMaxPairs)
+        assertEquals(null, captured.single().labelLanguage)
+    }
+
+    @Test
+    fun `--label-language reaches the enricher and is validated before any model is loaded`() {
+        val captured = mutableListOf<EmbeddingCliOptions>()
+        val capture = PipelineEnricherFactory { opts -> captured += opts; FakeEnricherFactory().open(opts) }
+        val out = dir.resolve("lang.ttl").toString()
+        val ok = run(listOf("enrich", ontology().toString(), "--label-language", "fr", "--output", out), CliEnvironment(enricherFactory = capture))
+        assertEquals(EXIT_OK, ok.status, ok.err)
+        assertEquals("fr", captured.single().labelLanguage)
+        val factory = FakeEnricherFactory()
+        val bad = run(listOf("enrich", ontology().toString(), "--label-language", "not a tag"), CliEnvironment(enricherFactory = factory))
+        assertEquals(EXIT_USAGE, bad.status, bad.err)
+        assertTrue(bad.err.contains("--label-language"), bad.err)
+        assertEquals(0, factory.opened)
     }
 
     @Test
