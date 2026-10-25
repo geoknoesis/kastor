@@ -53,7 +53,7 @@ internal const val USAGE = "Usage: shacl-era-cli <data.ttl> <shapes.ttl> <report
  * report file is outside both timers.
  *
  * **Exit status** (same convention as `onto-qa`): 0 success; 2 an input could not be parsed; 4 usage error (wrong
- * arguments, missing input file); 5 runtime error (validation failure, report not writable, internal error). Errors
+ * arguments, missing input file); 5 runtime error (validation failure, truncated results, report not writable, internal error). Errors
  * are one sanitised line on stderr (`shacl-era-cli: …`), never a stack trace.
  */
 fun main(args: Array<String>) {
@@ -97,14 +97,7 @@ internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: S
   val shapes = loadTurtle(shapesPath, "shapes")
   out.println("Load time: ${formatSeconds(System.nanoTime() - loadStart)}")
 
-  val validator =
-      ShaclValidation.validator(
-          ValidationConfig(
-              profile = ValidationProfile.SHACL_CORE,
-              providerId = "kastor",
-              parallelValidation = false,
-          ),
-      )
+  val validator = ShaclValidation.validator(eraValidationConfig())
   val valStart = System.nanoTime()
   val report =
       try {
@@ -113,6 +106,10 @@ internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: S
         throw EraCliException(EXIT_RUNTIME_ERROR, "validation failed: ${e.javaClass.simpleName}: ${e.message}", e)
       }
   out.println("Validation time: ${formatSeconds(System.nanoTime() - valStart)}")
+  // Never write a partial report: the comparison with other engines counts results.
+  if (report.violationsTruncated) {
+    throw EraCliException(EXIT_RUNTIME_ERROR, "the validator returned only ${report.violations.size} of its results; no report written")
+  }
 
   val ttl = report.toShaclValidationReportRdf().serialize(RdfFormat.TURTLE)
   try {
@@ -123,6 +120,19 @@ internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: S
     throw EraCliException(EXIT_USAGE, "invalid report path: ${e.message}", e)
   }
 }
+
+/**
+ * The engine settings of the benchmark: the native engine, SHACL Core, and no cap on the results. The library
+ * default `maxViolations` of 1,000 would cut the report of a typical ERA workload, while the other engines of the
+ * comparison report every result, so result counts and conformance would not be comparable.
+ */
+internal fun eraValidationConfig(): ValidationConfig =
+    ValidationConfig(
+        profile = ValidationProfile.SHACL_CORE,
+        providerId = "kastor",
+        parallelValidation = false,
+        maxViolations = Int.MAX_VALUE,
+    )
 
 /**
  * Writes [text] as UTF-8 to a temporary file next to [target] and moves it over [target], so a failed run leaves an
