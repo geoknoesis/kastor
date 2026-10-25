@@ -38,12 +38,17 @@ internal object Durations {
      * deadline that wraps still holds. (Treating a sum that wrapped as "no deadline" would have dropped
      * the timeout of a JVM whose clock reads close to `Long.MAX_VALUE`.) The result is never
      * `Long.MAX_VALUE` or `Long.MIN_VALUE`, which callers use as markers; such a sum is moved one
-     * nanosecond earlier.
+     * nanosecond towards zero (`MAX_VALUE - 1`, `MIN_VALUE + 1`: subtracting from `MIN_VALUE` would
+     * wrap to the "no deadline" marker).
      */
     fun deadline(startNanos: Long, budgetNanos: Long): Long? {
         if (budgetNanos == UNBOUNDED) return null
         val sum = startNanos + budgetNanos
-        return if (sum == Long.MAX_VALUE || sum == Long.MIN_VALUE) sum - 1 else sum
+        return when (sum) {
+            Long.MAX_VALUE -> sum - 1
+            Long.MIN_VALUE -> sum + 1
+            else -> sum
+        }
     }
 
     /** Whether the clock reading [now] is at or after [deadline], compared by difference as `System.nanoTime` requires. */

@@ -20,9 +20,17 @@ class DurationsWrapTest {
         assertFalse(Durations.reached(nearWrap + 4_999, deadline))
         assertTrue(Durations.reached(nearWrap + 5_000, deadline))
         assertNull(Durations.deadline(nearWrap, Durations.UNBOUNDED))
-        // The markers are never returned.
+        // The markers are never returned: not for a sum of MAX_VALUE, nor for one that wraps to MIN_VALUE.
+        val markers = setOf(Long.MAX_VALUE, Long.MIN_VALUE)
+        for ((start, budget) in listOf(Long.MAX_VALUE - 10 to 10L, Long.MAX_VALUE to 1L, 0L to Long.MAX_VALUE - 1, -1L to Long.MAX_VALUE - 1)) {
+            val deadline = Durations.deadline(start, budget)
+            assertNotNull(deadline, "$start + $budget")
+            assertFalse(deadline in markers, "$start + $budget gave the marker $deadline")
+            // One nanosecond off at most, and still compared correctly against its start.
+            assertTrue(Durations.reached(start + budget + 1, deadline!!) && !Durations.reached(start, deadline), "$start + $budget")
+        }
         assertEquals(Long.MAX_VALUE - 1, Durations.deadline(Long.MAX_VALUE - 10, 10))
-        assertEquals(Long.MIN_VALUE - 1, Durations.deadline(Long.MAX_VALUE, 1))
+        assertEquals(Long.MIN_VALUE + 1, Durations.deadline(Long.MAX_VALUE, 1))
     }
 
     @Test
