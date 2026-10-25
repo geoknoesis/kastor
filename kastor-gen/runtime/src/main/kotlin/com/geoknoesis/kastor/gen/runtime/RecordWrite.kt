@@ -32,7 +32,10 @@ class RecordField<T : Any>(
   /** The terms of [terms] to remove and the terms to add so that the predicate holds this field's values. */
   internal fun diff(terms: List<RdfTerm>): Pair<List<RdfTerm>, List<RdfTerm>> {
     val representable = terms.mapNotNull { term -> decode(term)?.let { term to it } }
-    if (singleValued && values.isNotEmpty() && representable.any { it.second == values.single() }) {
+    // Unchanged only when the value is the one the reader returns (the first representable term in `find` order).
+    // A value equal to another term beyond sh:maxCount is an update: the other representable terms are removed so
+    // that the next read returns it.
+    if (singleValued && values.isNotEmpty() && representable.firstOrNull()?.second == values.single()) {
       return emptyList<RdfTerm>() to emptyList()
     }
     val pending = values.toMutableList()
@@ -49,8 +52,11 @@ class RecordField<T : Any>(
  * have changed. For each [field]:
  *
  * - a graph term the record cannot represent (`decode` returns `null`) is kept;
- * - a single-valued field whose value equals the decoded value of one of the graph's terms is unchanged: all of
- *   the predicate's terms are kept, including values beyond `sh:maxCount` that the reader did not return;
+ * - a single-valued field whose value equals the value its reader returns (the decoded value of the first
+ *   representable term, in `find` order) is unchanged: all of the predicate's terms are kept, including values
+ *   beyond `sh:maxCount` that the reader did not return. Any other value is written, even when the graph already
+ *   holds it beyond `sh:maxCount`: one term of that value is kept and every other representable term is removed,
+ *   so the next read returns it;
  * - otherwise each graph term whose decoded value is still among the record's values is kept as it is (its
  *   language tag, datatype and lexical form survive), the other representable terms are removed, and the record's
  *   remaining values are added with `encode`.
