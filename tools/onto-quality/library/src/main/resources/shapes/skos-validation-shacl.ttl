@@ -260,7 +260,12 @@ skvsh:NoWhitespaceLabelShape
 # This requires reasoning over the transitive closure of skos:broader. SHACL-
 # Core cannot express transitive disjointness, so we use SPARQL. Note that
 # skos:broader is a sub-property of skos:broaderTransitive (S22), so we
-# include direct skos:broader/skos:narrower edges in the closure.
+# include direct skos:broader edges in the closure. skos:narrower is the
+# inverse of skos:broader (S25) and skos:narrowerTransitive the inverse of
+# skos:broaderTransitive, so both are walked backwards: a vocabulary that
+# states its hierarchy only with skos:narrower is checked the same way, with
+# or without a reasoner (Jena OWL-RL does not know the SKOS inverses unless
+# the SKOS ontology is loaded).
 
 skvsh:RelatedBroaderTransitiveDisjointShape
     a               sh:NodeShape ;
@@ -278,9 +283,9 @@ skvsh:RelatedBroaderTransitiveDisjointShape
                         SELECT $this ?value WHERE {
                           $this skos:related ?value .
                           {
-                            $this (skos:broader|skos:broaderTransitive)+ ?value .
+                            $this (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ ?value .
                           } UNION {
-                            ?value (skos:broader|skos:broaderTransitive)+ $this .
+                            ?value (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ $this .
                           }
                         }
                       """ ] .
@@ -336,14 +341,14 @@ skvsh:NoBroaderCycleShape
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "convention" ;
     rdfs:label      "No cycles in the skos:broader hierarchy" ;
-    rdfs:comment    "The SKOS Reference (§8.6.8) explicitly notes that broader cycles are consistent with the spec but problematic for most applications. Flags any concept that is its own transitive broader." ;
+    rdfs:comment    "The SKOS Reference (§8.6.8) explicitly notes that broader cycles are consistent with the spec but problematic for most applications. Flags any concept that is its own transitive broader, whether the hierarchy is stated with skos:broader, skos:narrower or their transitive super-properties." ;
     sh:targetClass  skos:Concept ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Concept {$this} appears in a skos:broader cycle." ;
                       sh:prefixes <http://example.org/skos-validation-shacl> ;
                       sh:select """
                         SELECT $this WHERE {
-                          $this (skos:broader|skos:broaderTransitive)+ $this .
+                          $this (skos:broader|^skos:narrower|skos:broaderTransitive|^skos:narrowerTransitive)+ $this .
                         }
                       """ ] .
 
