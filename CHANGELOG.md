@@ -19,6 +19,53 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round fourteen
+
+#### Shared XSD lexical parsing (round fourteen)
+
+- **Added (internal API):** `com.geoknoesis.kastor.rdf.xsd` in `:rdf:core`, one linear-time parser and comparator
+  of the XSD 1.1 numeric, boolean, date/time, Gregorian and duration lexical spaces (`XsdNumbers`, `XsdDecimal`,
+  `XsdNumeric`, `XsdTemporals`, `XsdLexical`). Exact decimals are kept as significant digits and an exponent and
+  compared by sign, exponent and digits; fractional seconds stay digit strings; years of any length carry in linear
+  time. `BigInteger`/`BigDecimal` are built only below `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH` (10,000), and
+  float/double conversion keeps 800 digits plus a sticky digit, so it stays correctly rounded in constant work. The
+  package is marked `@InternalKastorApi` (new opt-in annotation, at ERROR level, left out of the ABI dump; only the
+  annotation class is added to `core.api`). The SHACL validator, Kastor Gen, the memory reasoner, the typed
+  bindings and both providers now use it; their own copies of the XSD grammars are removed.
+- **Fixed (SHACL):** `sh:datatype` and the value-range and order constraints (`sh:min/maxInclusive/Exclusive`,
+  `sh:lessThan(OrEquals)`, node-expression ordering) no longer build a `BigDecimal` of fractional seconds: a
+  `xsd:dateTime` with a million fraction digits took 21 s (round 13 P2-2). `orderViolations` parses each term once.
+- **Fixed (SHACL):** `sh:languageIn` reads at most the longest range plus one character of a tag; it was quadratic in
+  the tag length, about 80 s for a 1.2 MB tag (round 13 P2-1).
+- **Fixed (SHACL):** `sh:datatype xsd:base64Binary` and `xsd:language` matched regular expressions that repeat a
+  group per character and threw `StackOverflowError` near 300,000 characters; both are now linear scanners.
+- **Changed (SHACL):** `sh:datatype` accepts date/time literals whose year exceeds the `Int` range (XSD 1.1 years are
+  unbounded); they were rejected.
+- **Fixed (Kastor Gen):** `replaceInGraph`/`mergeRecord` matched graph terms and record values with
+  `BigDecimal.equals`, so a record holding `1E+3` (e.g. `BigDecimal("1000").stripTrailingZeros()`) deleted the
+  graph's `"1000"^^xsd:decimal` and wrote nothing (round 13 P1). Values are now compared by value, independent of
+  scale, and adds are checked against the terms that remain.
+- **Fixed (Kastor Gen):** `XsdLiterals.isWellFormed` (behind `sh:datatype` checks and every `xsd:dateTime`/`xsd:time`
+  read) no longer parses the fractional seconds as a `BigDecimal` (round 13 P2-1).
+- **Changed (Kastor Gen):** `XsdLiterals.compareNumeric` compares literals of any length by their digits; it returned
+  `null` (a violation) above 10,000 characters. `encode` writes a `BigDecimal` without an exponent and refuses one
+  whose decimal form exceeds 10,000 characters before building it. The processor parses a numeric bound against its
+  own datatype (`"1.5"^^xsd:integer` is ignored with a warning) and ignores one whose decimal form exceeds 10,000
+  characters (`"1e999999999"^^xsd:double` would have built a billion digits).
+- **Changed (core):** `decimal(BigDecimal)`, `BigDecimal.toLiteral()` and `Literal(BigDecimal)` throw
+  `IllegalArgumentException` for a value whose decimal form exceeds 10,000 characters (both providers refuse such a
+  literal anyway). `BindingSet.getInt` no longer accepts non-ASCII digits.
+- **Changed (providers):** the 10,000-character limit (`LiteralValidation.BOUNDED_NUMERIC_DATATYPES`) now also covers
+  `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:date`, `xsd:time`, the Gregorian types and the duration types: Jena
+  compares their seconds and years with `BigDecimal` in quadratic time (2.5 s for one comparison of a dateTime with
+  400,000 fraction digits).
+- **Fixed (Jena):** a parse of a `xsd:dateTime`, `xsd:time` or duration with 18 or more fraction digits threw a raw
+  `NumberFormatException` from Jena's literal checker; it is now an `RdfFormatException`. Jena still cannot read such
+  a literal (RDF4J can).
+- **Fixed (Jena):** in SPARQL text a number's digits count across its point and exponent; `<10,000 digits>.<10,000
+  digits>` passed the 10,000-digit check (round 13 providers P3-5).
+- **Changed (reasoning):** the memory reasoner's ill-typed-literal check also covers the Gregorian and duration types.
+
 ### Round twelve
 
 #### Build, CI and docs (round twelve)
