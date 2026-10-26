@@ -19,6 +19,53 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round fourteen
+
+#### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`, `rdf-shacl`), behaviour change:** every untrusted
+  regular expression now runs on **RE2/J** (BSD-3-Clause, new dependency of `rdf-sparql-contract`), a linear-time
+  engine: `REGEX`, `REPLACE`, `fn:matches` and `fn:replace` of a `SandboxedSelectQuery` on both providers (so also the
+  SPARQL that `ShaclSail` runs for the RDF4J SHACL validator) and `sh:pattern` in the native SHACL engine. A match costs
+  at most the size of the compiled pattern per input character, so no pattern can backtrack catastrophically. This
+  replaces round twelve's defence, whose shape analyzer was bypassed by `\Q[\E` in a class and by `(?-x)` / `(?x:...)`
+  prefixes (round-thirteen review): the analyzer `SandboxRegexPatterns` and the 50-million read cap are removed
+  (internal API of `rdf-sparql-contract`; its ABI dump is updated), and round twelve's claims that patterns "whose
+  choices can read nothing are refused" and "read at most 50 million characters" no longer apply.
+  - One translator (`XPathRegex`, internal API) reads every pattern as an XPath regular expression with XPath flags
+    (`s`, `m`, `i`, `x`, `q`) and computes every character class into explicit ranges (subtraction, the case orbits of
+    the `i` flag, `\p{IsBlock}`, `\i`, `\c`, `Cn`), so the semantics do not depend on RE2's flags or tables.
+  - Sandboxed SPARQL now has XPath semantics instead of Java's (behaviour change): `$` is the end of the input,
+    `.` excludes line feed and carriage return, `\d` / `\w` are Unicode-aware (`\w` keeps the underscore), unknown
+    flags (RDF4J's `d`, `u`) are errors, and `REPLACE` uses `fn:replace` replacement syntax (`$N`, `\$`, `\\`; a missing
+    group up to 9 is empty; `${name}` and other escapes are errors).
+  - Refused, fail closed: back-references, lookarounds, atomic groups, possessive quantifiers, `\b` / `\B` (RE2's are
+    ASCII-only), non-leading inline flag groups, repetition counts above 1000, groups or class subtractions nested more
+    than 64 deep, and programs above 50,000 instructions. In a sandboxed query such a pattern fails the query
+    (`SandboxLimitException`); a syntax error stays a SPARQL error. In a shapes graph it is a `ShapeCompileException`.
+    Nothing ever falls back to `java.util.regex`. (Jena still compiles a **constant** pattern with `java.util.regex`
+    while it parses the query, so a pattern Java rejects fails the parse there.)
+  - Native SHACL (behaviour change): back-references, lookarounds and possessive quantifiers in `sh:pattern`, which
+    were passed to `java.util.regex`, are now rejected at compile time. The pattern evaluation thread with a fixed
+    stack is removed (RE2 does not recurse on its input), so `ksh:PatternTooComplex` / `isPatternTooComplex` is no
+    longer reported (the term and the property stay). The step budget (`patternTimeout`) still bounds a very long value.
+- **Security (`rdf-rdf4j`), behaviour change:** the RDF4J SHACL validator refuses a shapes graph with a `sh:pattern`
+  under `sh:or`, `sh:and`, `sh:xone`, `sh:not` or `sh:qualifiedValueShape`, whatever `unsupportedFeatures` says:
+  `ShaclSail` evaluates those in a transactional plan with its own `PatternFilter` on `java.util.regex`, which nothing
+  can bound (probed: a back-reference matched there). Patterns directly on a shape or behind `sh:node` run as sandboxed
+  `REGEX` on the linear-time engine.
+- **Security (`rdf-jena`):** property paths of a sandboxed query are **metered**. Jena's path engine runs over a view
+  of the active graph whose every `find` and returned triple is charged: the deadline, cancellation and interrupt flag
+  are checked every 256 reads, and more than 4 Mi reads without a solution fail the query with
+  `SandboxLimitException` (that bounds what one evaluation collects in memory). Before, a sequence nested in `?`, `*`,
+  `+` or `|` (`(p/p/p/p/p/p)?` over a 400-triple complete graph) ran 8.7 s under a 1 s timeout, or out of a 256 MiB
+  heap; it now stops in about 0.5 s (RDF4J stops at the 1 s deadline). A closure along a chain too deep for Jena's
+  recursion is a limit, not a `StackOverflowError`. The structural path limit is relaxed from 64 steps / 16 levels to
+  256 / 32.
+- **Fixed (`rdf-sparql-contract`, `rdf-core`):** unbalanced leading `}` tokens no longer defeat the nesting guards of
+  `SparqlInitialBindings` (the query is refused with `IllegalArgumentException`) and of the dataset-view rewrite
+  `SparqlDatasetClauses` (the query is unanalysable): 5,000 nested groups behind 5,000 `}` overflowed the stack.
+
 ### Round twelve
 
 #### Build, CI and docs (round twelve)

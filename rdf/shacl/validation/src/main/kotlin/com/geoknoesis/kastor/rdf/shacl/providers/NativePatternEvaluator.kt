@@ -27,19 +27,12 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
      * time, so whether a value is decided does not depend on the machine, its load or a garbage collection pause.
      * The wall clock is only a backstop, at [PATTERN_WALL_CLOCK_FACTOR] times the configured duration.
      *
-     * **Stack.** `java.util.regex` matches an alternation under a quantifier recursively (one group of frames per
-     * repetition), so a long value can exhaust the stack, and whether it does depends on the stack that is left
-     * where the match starts. Values of [PATTERN_INLINE_MAX_LENGTH] characters or more are therefore matched on the
-     * run's pattern evaluation thread ([PatternWorker]), whose stack has a fixed size
-     * ([PATTERN_WORKER_STACK_BYTES]): the outcome is the same at any shape nesting depth and for any stack size of
-     * the validating thread. Shorter values are matched on the validating thread (a thread hand-over per value would
-     * dominate the cost of ordinary patterns); if that overflows, the match is repeated on the evaluation thread,
-     * so it is still the fixed stack that decides. Every outcome of the evaluation thread is remembered for the run.
-     *
-     * A value on which the pattern uses up its budget, or exhausts the stack of the evaluation thread, has no
-     * answer. That is not an error of the run: one slow or hostile literal must not prevent the validation of
+     * **Engine.** Patterns run on the linear-time RE2/J engine ([compileShaclPattern]): no pattern backtracks, and a
+     * match does not recurse on its input, so it cannot exhaust the stack; the budget bounds the cost of a long value.
+
+     * A value on which the pattern uses up its budget has no answer. That is not an error of the run: one slow or hostile literal must not prevent the validation of
      * everything else. The constraint is **undecided** for that value ([PatternOutcome.undecided]): the caller
-     * reports a result naming the pattern, marked `ksh:PatternTimeout` / `ksh:PatternTooComplex`, which blocks
+     * reports a result naming the pattern, marked `ksh:PatternTimeout`, which blocks
      * conformance as a failure would (the value is not accepted), and a shape that reads the answer through `sh:not`,
      * `sh:or`… gets "undefined", so an undecided pattern can neither satisfy nor silently fail an outer constraint.
      * Validation then goes on. With [ValidationConfig.strictMode] it fails instead, as for undefined recursion. The
@@ -73,12 +66,7 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
         val reduced = reducedPatternSteps(lexical.length)
         val steps = if (ctx.patternBudgetExhaustions < PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS) patternStepBudget else reduced
         val stepsBefore = ctx.counters.patternSteps
-        var result = if (lexical.length < ctx.patternInlineMaxLength) runPattern(c, lexical, ctx, steps) else null
-        val onWorker = result == null || result == PatternRun.OUT_OF_STACK
-        if (onWorker) {
-            ctx.counters.patternWorkerEvaluations++
-            result = ctx.patternWorker().run { runPattern(c, lexical, ctx, steps) }
-        }
+        val result = runPattern(c, lexical, ctx, steps)
         if (result == PatternRun.OUT_OF_BUDGET) ctx.patternBudgetExhaustions++
         val outcome =
             when (result) {
@@ -93,25 +81,14 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
                             "$PATTERN_WALL_CLOCK_FACTOR times that duration; $reduced steps for this value once " +
                             "${PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS} evaluations of the run have used up the whole budget; " +
                             "this evaluation had $steps) on a value of ${lexical.length} characters, so " +
-                            "whether the value matches is unknown and it is not accepted; the pattern probably backtracks " +
-                            "catastrophically (nested or overlapping quantifiers)",
-                    ),
-                )
-                PatternRun.OUT_OF_STACK -> PatternOutcome(
-                    false,
-                    Undecided(
-                        ValidationViolation.PATTERN_TOO_COMPLEX_CODE,
-                        "${describe(c, shape)} could not be evaluated on a value of ${lexical.length} characters: the regular " +
-                            "expression engine ran out of stack, so whether the value matches is unknown and it is not accepted; " +
-                            "an alternation under a quantifier such as (a|b)* recurses once per repetition - rewrite it as a " +
-                            "character class ([ab]*) or bound the value with sh:maxLength",
+                            "whether the value matches is unknown and it is not accepted; bound the value with sh:maxLength",
                     ),
                 )
             }
         val undecided = outcome.undecided
         if (undecided != null && config.strictMode) throw ShaclValidationException(undecided.reason)
         // Remember every outcome another budget could change: one value, one answer for the whole run.
-        if (undecided != null || onWorker || ctx.counters.patternSteps - stepsBefore >= reduced) {
+        if (undecided != null || ctx.counters.patternSteps - stepsBefore >= reduced) {
             ctx.patternOutcomes[c to lexical] = outcome
         }
         return outcome
@@ -126,18 +103,13 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
         return maxOf(patternStepBudget / PATTERN_DEGRADED_STEP_DIVISOR, PATTERN_MIN_DEGRADED_STEPS, linear).coerceAtMost(patternStepBudget)
     }
 
-    /**
-     * Matches [c] against [lexical] on the current thread. A stack overflow is caught here: the stack is unwound up
-     * to this frame, so it is safe to go on; only the match is abandoned.
-     */
+    /** Matches [c] against [lexical], within [steps] steps of the engine. */
     private fun runPattern(c: PropertyConstraint.Pattern, lexical: String, ctx: NativeValidationContext, steps: Long): PatternRun {
         val evaluation = ctx.patternBudget(steps, patternBackstopNanos)
         try {
             return if (c.regex.containsMatchIn(ctx.text(lexical, evaluation))) PatternRun.MATCH else PatternRun.NO_MATCH
         } catch (e: PatternBudgetExceeded) {
             return PatternRun.OUT_OF_BUDGET
-        } catch (e: StackOverflowError) {
-            return PatternRun.OUT_OF_STACK
         } finally {
             ctx.counters.patternSteps += evaluation.steps
         }

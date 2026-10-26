@@ -18,7 +18,7 @@ data class ValidationConfig(
     /**
      * Native engine: fail with a [ShaclValidationException] instead of reporting a result when a constraint cannot
      * be decided ([ValidationViolation.isUndecided]: undefined recursion, a `sh:pattern` evaluation that exceeds
-     * [patternTimeout] or exhausts the stack).
+     * [patternTimeout]).
      */
     val strictMode: Boolean = false,
     /**
@@ -111,8 +111,8 @@ data class ValidationConfig(
     val conformanceDisallows: Set<Iri>? = null,
     /**
      * Budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native engine).
-     * Regular expressions with nested quantifiers can backtrack exponentially on short inputs; without this budget
-     * such an evaluation is only stopped by the run-wide [timeout].
+     * Patterns run on a linear-time engine (RE2/J; no pattern backtracks), so the cost of a match grows with the
+     * length of the value: this budget bounds what one very long value can cost.
      *
      * The budget is **counted in steps** of the regular expression engine (character reads), at 50,000 steps per
      * millisecond of this duration: the default of one second is fifty million steps, which current hardware performs
@@ -125,14 +125,10 @@ data class ValidationConfig(
      * ksh:PatternTimeout` in RDF), with the shape's severity, so the value is not accepted and the report cannot
      * conform because of it. Validation continues with the other values and focus nodes; only [timeout] aborts a run.
      *
-     * A pattern on which the regular expression engine runs out of stack (an alternation under a quantifier such as
-     * `(a|b)*` on a very long value) is reported the same way ([ValidationViolation.isPatternTooComplex]). Whether
-     * that happens does not depend on the stack size of the calling thread or on how deeply the shape is nested:
-     * values of 1,024 characters or more are matched on a dedicated thread with a fixed stack of 16 MiB (one per
-     * validation run, created when first needed), and a shorter value whose match overflows the calling thread's
-     * stack is matched there again.
+     * The linear-time engine does not recurse on its input, so a match can no longer exhaust the stack
+     * ([ValidationViolation.isPatternTooComplex] is never reported any more).
      *
-     * With [strictMode] both fail validation with a [ShaclValidationException] naming the pattern instead. Must be
+     * With [strictMode] it fails validation with a [ShaclValidationException] naming the pattern instead. Must be
      * positive; it never extends [timeout].
      */
     val patternTimeout: Duration = Duration.ofSeconds(1),

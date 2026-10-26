@@ -105,7 +105,8 @@ internal object JenaQuerySandbox {
      * run time: only the standard functions of [JenaCost.FUNCTIONS] already registered with Jena and the custom
      * [functions] are found, so no class is loaded and no extension function runs; there are no property functions,
      * and SERVICE has no executor. Its plan is bounded by a [JenaSandboxRewrite] (Jena's optimizer is forced on, since
-     * the rewrite runs as the optimizer); call [requireBounded] once the plan is made.
+     * the rewrite runs as the optimizer), and its property paths are metered by [JenaSandboxPaths]; call
+     * [requireBounded] once the plan is made.
      *
      * The custom [functions] of the query are visible to this one execution only, at nesting [depth], and the query
      * and their nested queries end by [deadline] (a [clock] value; [Long.MAX_VALUE] for none). Per SHACL 1.2 SPARQL
@@ -117,12 +118,16 @@ internal object JenaQuerySandbox {
         depth: Int,
         deadline: Long,
         clock: () -> Long,
-    ): QueryExecutionDatasetBuilder = builder
-        .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock))
-        .set(ARQConstants.registryPropertyFunctions, NoPropertyFunctions())
-        .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
-        .set(ARQConstants.sysOptimizerFactory, JenaSandboxRewrite(JenaSandboxBudget(deadline, clock)))
-        .set(ARQ.optimization, true)
+    ): QueryExecutionDatasetBuilder {
+        val budget = JenaSandboxBudget(deadline, clock)
+        return builder
+            .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock))
+            .set(ARQConstants.registryPropertyFunctions, NoPropertyFunctions())
+            .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
+            .set(ARQConstants.sysOptimizerFactory, JenaSandboxRewrite(budget))
+            .set(ARQConstants.sysOpExecutorFactory, JenaSandboxPaths(budget))
+            .set(ARQ.optimization, true)
+    }
 
     /** Fails a sandboxed execution whose plan was not bounded; see [JenaSandboxBounds.requireBounded]. */
     fun requireBounded(exec: QueryExecution) = JenaSandboxBounds.requireBounded(exec)
@@ -193,10 +198,11 @@ internal object JenaQuerySandbox {
     }
 
     /**
-     * Refuses a path longer than [MAX_PATH_NODES] or deeper than [MAX_PATH_DEPTH], and ARQ's path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`, `shortest(...)`): Jena evaluates
-     * one of them for a binding without checking the timeout (`<p>{1000000}` over a two-node cycle ran past 100 s under
-     * a 500 ms timeout), and standard SPARQL has none of them. The standard operators are allowed: their evaluation is
-     * bounded by the graph.
+     * Refuses ARQ's path extensions (`p{n}`, `p{n,m}`, `distinct(...)`, `multi(...)`, `shortest(...)`), which standard
+     * SPARQL does not have, and paths of more than [MAX_PATH_NODES] steps and operators or nested more than
+     * [MAX_PATH_DEPTH] deep (a structural limit: Jena compiles and evaluates a path recursively). The **cost** of the
+     * standard operators is not bounded here but metered while they run ([JenaSandboxPaths]): every graph read of a
+     * path evaluation counts, checks the deadline, and is capped between two solutions.
      */
     private fun path(path: Path) {
         var nodes = 0
@@ -241,12 +247,11 @@ internal object JenaQuerySandbox {
     }
 
     /**
-     * Most steps and operators one property path may have, and its deepest nesting: Jena evaluates a path for one
-     * binding without checking the timeout, and its sequences keep duplicates, so `(p|p)/(p|p)/...` multiplies the
-     * work at every step.
+     * Most steps and operators one property path may have, and its deepest nesting: a structural limit only (Jena
+     * compiles and evaluates a path recursively); what a path costs is metered by [JenaSandboxPaths].
      */
-    private const val MAX_PATH_NODES = 64
-    private const val MAX_PATH_DEPTH = 16
+    private const val MAX_PATH_NODES = 256
+    private const val MAX_PATH_DEPTH = 32
 
     /** ARQ's own namespaces: its function and property-function libraries and its script functions. */
     private val ARQ_NAMESPACES = listOf("http://jena.apache.org/ARQ/", "http://jena.hpl.hp.com/ARQ/")

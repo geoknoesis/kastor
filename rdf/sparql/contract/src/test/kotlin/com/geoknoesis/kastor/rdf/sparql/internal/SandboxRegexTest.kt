@@ -8,31 +8,31 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 
 /**
- * [SandboxRegex] matches and replaces as Java does (with Jena's rule for empty matches when asked), and bounds what a
- * hostile pattern or replacement can cost: the characters read (deterministically, without a clock), the output size,
- * and the matcher's recursion.
+ * [SandboxRegex] matches and replaces with `fn:matches` / `fn:replace` semantics on a linear-time engine, and bounds
+ * what a hostile pattern, input or replacement can cost: the work per input character (no backtracking), the deadline
+ * check while it reads, and the output size.
  */
 @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SandboxRegexTest {
 
     private val none = Runnable { }
 
-    /** Still exponential on Java 21's matcher, whose memoization defuses simpler shapes such as `(a+)+$`. */
-    private val catastrophic = "((a+)+)+$"
+    private fun compile(regex: String, flags: String? = null) = SandboxRegex.compile(regex, flags)
 
-    private fun replaceAll(regex: String, text: String, replacement: String) =
-        SandboxRegex.replace(Pattern.compile(regex), text, replacement, skipEmptyAfterFirst = false, check = none)
+    private fun replaceAll(regex: String, text: String, replacement: String, check: Runnable = none) =
+        SandboxRegex.replace(compile(regex), text, replacement, skipEmptyAfterFirst = false, check = check)
 
     @Test
-    fun `replace gives what Java gives`() {
+    fun `replace gives what Java gives where the syntaxes agree`() {
         val cases = listOf(
-            Triple("b", "abcb", "x"), Triple("(b)", "abc", "[$1]"), Triple("b", "abc", "$0$0"),
-            Triple("(?<n>b)", "abcd", "\${n}"), Triple("b", "ab", "\\\\"), Triple("b", "ab", "\\$"),
-            Triple("x*", "abc", "-"), Triple("", "abc", "x"), Triple("(a)(b)?", "ac", "<$2>"),
+            Triple("b", "abcb", "x"), Triple("(b)", "abc", "[$1]"), Triple("b", "abc", "$0$0"), Triple("b", "ab", "\\\\"),
+            Triple("b", "ab", "\\$"), Triple("x*", "abc", "-"), Triple("", "abc", "x"), Triple("(a)(b)?", "ac", "<$2>"),
             Triple("(a)", "aa", "$10"), Triple("(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)", "abcdefghijk", "$11$1"),
+            Triple("[a-c]+", "xabcyab", "($0)"), Triple("(?:a|b)+?", "abab", "-"),
         )
         for ((regex, text, replacement) in cases) {
             val expected = Pattern.compile(regex).matcher(text).replaceAll(replacement)
@@ -42,44 +42,108 @@ class SandboxRegexTest {
         assertNull(replaceAll("z", "abc", "x"))
     }
 
+    /** The expressions of the W3C SPARQL 1.1 function tests on `REGEX` / `REPLACE` (functions/replace0x, regex/). */
+    @Test
+    fun `the W3C SPARQL regex and replace cases give their expected results`() {
+        assertEquals("[1=ab][2=]cd", replaceAll("(ab)|(a)", "abcd", "[1=$1][2=$2]"))
+        assertEquals("aZcd", replaceAll("b", "abcd", "Z"))
+        assertEquals("abc-def", replaceAll("[^a-z0-9]", "abc DEF".lowercase(), "-"))
+        assertEquals("bbb", replaceAll("a", "aaa", "b"))
+        assertTrue(SandboxRegex.find(compile("^mailto:example\\.com$"), "mailto:example.com", none))
+        assertTrue(SandboxRegex.find(compile("example\\.COM", "i"), "mailto:Example.com", none))
+        assertFalse(SandboxRegex.find(compile("^example"), "mailto:example.com", none))
+        assertTrue(SandboxRegex.find(compile("^\\w+$"), "abc_1", none))
+    }
+
+    @Test
+    fun `replacement references follow fn replace`() {
+        // A missing group up to 9 is empty (Java would throw); beyond 9, trailing digits are literal.
+        assertEquals("a<>c", replaceAll("(b)", "abc", "<$5>"))
+        assertEquals("a<b0>c", replaceAll("(b)", "abc", "<$10>"))
+        assertEquals("a<b99>c", replaceAll("(b)", "abc", "<$199>"))
+        // A group that did not take part is empty.
+        assertEquals("<a>", replaceAll("(a)|(b)", "a", "<$1$2>"))
+    }
+
+    @Test
+    fun `malformed replacements are errors`() {
+        assertThrows(XPathRegexException::class.java) { compile("(a") }
+        for (bad in listOf("$", "a$", "\${n}", "\\x", "\\", "$-1")) {
+            assertThrows(XPathRegexException::class.java, { replaceAll("b", "abc", bad) }, bad)
+        }
+    }
+
     @Test
     fun `jena's rule skips empty matches after the first`() {
-        assertEquals("xabc", SandboxRegex.replace(Pattern.compile(""), "abc", "x", skipEmptyAfterFirst = true, check = none))
-        assertEquals("-abc", SandboxRegex.replace(Pattern.compile("x*"), "abc", "-", skipEmptyAfterFirst = true, check = none))
+        assertEquals("xabc", SandboxRegex.replace(compile(""), "abc", "x", skipEmptyAfterFirst = true, check = none))
+        assertEquals("-abc", SandboxRegex.replace(compile("x*"), "abc", "-", skipEmptyAfterFirst = true, check = none))
         // A non-empty match after the first is still replaced.
-        assertEquals("xbx", SandboxRegex.replace(Pattern.compile("a|"), "aba", "x", skipEmptyAfterFirst = true, check = none))
+        assertEquals("xbx", SandboxRegex.replace(compile("a|"), "aba", "x", skipEmptyAfterFirst = true, check = none))
     }
 
     @Test
-    fun `malformed replacements fail as in Java`() {
-        assertThrows(IllegalArgumentException::class.java) { replaceAll("b", "abc", "$") }
-        assertThrows(IndexOutOfBoundsException::class.java) { replaceAll("b", "abc", "$2") }
-        assertThrows(IllegalArgumentException::class.java) { replaceAll("b", "abc", "\${missing}") }
+    fun `find follows fn matches`() {
+        assertTrue(SandboxRegex.find(compile("b"), "abc", none))
+        assertFalse(SandboxRegex.find(compile("^b"), "abc", none))
+        assertTrue(SandboxRegex.find(compile("B", "i"), "abc", none))
+        // `$` is the end of the input, not before a final line feed (Java's `$`).
+        assertFalse(SandboxRegex.find(compile("^\\d+$"), "123\n", none))
+    }
+
+    /**
+     * Patterns that backtrack catastrophically in java.util.regex read a linear number of characters here: the work
+     * is measured deterministically, through the reads the deadline check counts.
+     */
+    @Test
+    fun `catastrophic patterns read their input a linear number of times`() {
+        for (regex in listOf("((a+)+)+$", "(a|aa)+$", "(a*)*b", "(a|a?)+c", "^(\\w+\\s?)*$")) {
+            val text = "a".repeat(5000) + "!"
+            val reads = AtomicLong()
+            val pattern = compile(regex)
+            val interval = minOf(4096L, maxOf(16L, 4096L * 64 / pattern.programSize))
+            assertFalse(SandboxRegex.find(pattern, text, Runnable { reads.addAndGet(interval) }), regex)
+            assertTrue(reads.get() <= 8L * text.length, "$regex read ${reads.get()} characters of ${text.length}")
+        }
+    }
+
+    /**
+     * Round thirteen's bypasses of the shape analyzer (core P1-1, providers P2-1): choices that read nothing, hidden
+     * behind `\Q[\E` in a class or a comments-mode prefix. On java.util.regex `[\Q[\E]?` + `(|)` x 26 + `(?!)` took
+     * 2.2 s with no deadline check, doubling per group. Now lookarounds and flag groups are refused, and what is
+     * accepted is linear.
+     */
+    @Test
+    fun `round thirteen's analyzer bypasses are refused or linear`() {
+        for (refused in listOf(
+            "[\\Q[\\E]?" + "(|)".repeat(40) + "(?!)", "(?x)[a#[\n]?" + "(|)".repeat(40) + "(?!)", "(?-x)#" + "(?:|)".repeat(20) + "x",
+            "(?x:a)#" + "(?:|)".repeat(20) + "x", "(?-x)#" + "(?:a?|b?)".repeat(20) + "x",
+        )) {
+            val error = assertThrows(XPathRegexException::class.java, { XPathRegex.compile(refused, null) }, refused)
+            assertTrue(error.unsupported, refused)
+            // In a sandboxed query, a valid pattern the engine cannot honour fails the query (fail closed).
+            assertThrows(SandboxLimitException::class.java, { compile(refused) }, refused)
+        }
+        for (accepted in listOf("[\\Q[\\E]" + "(?:|)".repeat(40) + "x", "[\\Q[\\E]?" + "(|)".repeat(60) + "\\z.", "(?:a?|b?)".repeat(40) + "c")) {
+            assertFalse(SandboxRegex.find(compile(accepted), "", none), accepted)
+            assertNull(SandboxRegex.replace(compile(accepted), "", "x", skipEmptyAfterFirst = false, check = none), accepted)
+        }
     }
 
     @Test
-    fun `find gives what Java gives`() {
-        assertTrue(SandboxRegex.find(Pattern.compile("b"), "abc", none))
-        assertFalse(SandboxRegex.find(Pattern.compile("^b"), "abc", none))
-        assertTrue(SandboxRegex.find(Pattern.compile("B", Pattern.CASE_INSENSITIVE), "abc", none))
-    }
-
-    @Test
-    fun `a catastrophic pattern ends at the step limit without a clock`() {
-        val text = "a".repeat(40) + "!"
-        val error = assertThrows(SandboxLimitException::class.java) { SandboxRegex.find(Pattern.compile(catastrophic), text, none) }
-        assertTrue(error.message!!.contains("characters"), error.message)
-        assertThrows(SandboxLimitException::class.java) { replaceAll(catastrophic, text, "x") }
-    }
-
-    @Test
-    fun `the check runs while the matcher works, so a deadline stops it`() {
+    fun `the check runs while the matcher reads, so a deadline stops a long input`() {
         val checks = AtomicInteger()
         class Stop : RuntimeException()
         assertThrows(Stop::class.java) {
-            SandboxRegex.find(Pattern.compile(catastrophic), "a".repeat(40) + "!", Runnable { if (checks.incrementAndGet() == 3) throw Stop() })
+            SandboxRegex.find(compile("(a|b)*c"), "ab".repeat(200_000), Runnable { if (checks.incrementAndGet() == 3) throw Stop() })
         }
         assertEquals(3, checks.get())
+    }
+
+    @Test
+    fun `a long alternation under a star is no stack overflow`() {
+        // java.util.regex recursed per repetition and overflowed the stack on this input.
+        assertFalse(SandboxRegex.find(compile("(a|b)*c"), "ab".repeat(200_000), none))
+        assertTrue(SandboxRegex.find(compile("^(a|b)*$"), "ab".repeat(200_000), none))
     }
 
     @Test
@@ -94,60 +158,19 @@ class SandboxRegexTest {
         assertEquals(2 * text.length, replaceAll("^.*$", text, "$0$0")!!.length)
     }
 
-    @Test
-    fun `a pattern too deep for the matcher's recursion is a limit, not a stack overflow`() {
-        val text = "ab".repeat(200_000)
-        assertThrows(SandboxLimitException::class.java) { SandboxRegex.find(Pattern.compile("(a|b)*c"), text, none) }
-    }
-
     /** Group lengths are taken from offsets: a replacement that refers to a huge group many times is refused at once. */
     @Test
     fun `a replacement is measured from group offsets before anything is copied`() {
         val text = "a".repeat(1 shl 20)
         val error = assertThrows(SandboxLimitException::class.java) { replaceAll("(a+)", text, "$1".repeat(64)) }
         assertTrue(error.message!!.contains("REPLACE"), error.message)
-        // The check runs while a long replacement is read.
+    }
+
+    /** Many empty matches of a long replacement cost its length each time, so the check runs while they expand. */
+    @Test
+    fun `the check runs while replacements expand`() {
         val checks = AtomicInteger()
-        replaceAll("b", "abc", "x".repeat(3 * SandboxLimits.CHECK_INTERVAL), Runnable { checks.incrementAndGet() })
-        assertTrue(checks.get() >= 3, "checks: ${checks.get()}")
-    }
-
-    private fun replaceAll(regex: String, text: String, replacement: String, check: Runnable) =
-        SandboxRegex.replace(Pattern.compile(regex), text, replacement, skipEmptyAfterFirst = false, check = check)
-
-    /**
-     * Choices that match the empty string are explored without reading a character, so the step budget cannot see
-     * them: 24 groups `(?:|)` take Java's matcher 0.4 s with zero reads, and every further group doubles that. Such
-     * patterns are refused before they run.
-     */
-    @Test
-    fun `patterns whose choices read nothing are refused before they run`() {
-        val zeroWidth = "(?:|)".repeat(40) + "\\z."
-        val started = System.nanoTime()
-        assertThrows(SandboxLimitException::class.java) { SandboxRegex.find(Pattern.compile(zeroWidth), "b", none) }
-        assertThrows(SandboxLimitException::class.java) { replaceAll(zeroWidth, "b", "x") }
-        assertTrue(java.time.Duration.ofNanos(System.nanoTime() - started) < java.time.Duration.ofMillis(500))
-        for (refused in listOf(
-            "(|){30}x", "(?:a?|b?){40}c", "(a*)*b", "(a?)+", "(?:)*", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?x)( a ? ) +",
-            "(a|b?|c?)", "(\\b)*", "(\\1)*", "(?:^)+", "(a{0,3}){2}",
-        )) {
-            assertThrows(SandboxLimitException::class.java, { SandboxRegexPatterns.requireBounded(Pattern.compile(refused), "t") }, refused)
-        }
-    }
-
-    @Test
-    fun `ordinary patterns are allowed`() {
-        for (allowed in listOf(
-            "", "b", "^b$", "^AB", "a|", "x*", "^.*$", "[a-z]+@[a-z]+\\.com", "^(\\d{3})-(\\d{4})$", "(a|b)*c", "\\p{L}+",
-            "(?i)abc", "a{1000}", "(?<n>b)", "((a+)+)+$", "(?:ab)?", "([a-z]+ ?)+$", "[(|)]*", "\\Q(|)*\\E", "(a|b?)",
-            "(?i:x)+", "(?x)^ a b $", "[a-z&&[^b]]+", "\\(a\\|\\)*",
-        )) {
-            SandboxRegexPatterns.requireBounded(Pattern.compile(allowed), "t")
-        }
-        // A literal pattern has no choice at all.
-        SandboxRegexPatterns.requireBounded(Pattern.compile("(|)*", Pattern.LITERAL), "t")
-        // In comments mode, whitespace is not an atom.
-        SandboxRegexPatterns.requireBounded(Pattern.compile("a + b", Pattern.COMMENTS), "t")
-        assertThrows(SandboxLimitException::class.java) { SandboxRegexPatterns.requireBounded(Pattern.compile("( a ? ) +", Pattern.COMMENTS), "t") }
+        replaceAll("x*", "a".repeat(1000), "$0".repeat(SandboxLimits.CHECK_INTERVAL), Runnable { checks.incrementAndGet() })
+        assertTrue(checks.get() >= 1000, "checks: ${checks.get()}")
     }
 }

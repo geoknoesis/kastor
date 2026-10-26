@@ -26,6 +26,7 @@ com.google.guava:guava:33.7.1-jre=testRuntimeClasspath
 com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava=testRuntimeClasspath
 com.google.j2objc:j2objc-annotations:3.1=testRuntimeClasspath
 com.google.protobuf:protobuf-java:4.35.1=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.re2j:re2j:1.8=kspKotlinProcessorClasspath,runtimeClasspath,testRuntimeClasspath
 com.squareup:kotlinpoet-jvm:2.4.0=kspKotlinProcessorClasspath
 com.squareup:kotlinpoet:2.4.0=kspKotlinProcessorClasspath
 commons-codec:commons-codec:1.22.0=compileClasspath,kspKotlinProcessorClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

@@ -3,7 +3,9 @@ plugins {
 }
 
 dependencies {
-  // Marker types only; no runtime deps beyond the Kotlin stdlib from the JVM plugin.
+  // The shared internals of the providers (marker types, sandbox limits) need the Kotlin stdlib only, except the
+  // regular expressions of sandboxed queries and SHACL shapes, which run on RE2/J (linear time, BSD-3-Clause).
+  implementation(libs.re2j)
 }
 
 publishing {

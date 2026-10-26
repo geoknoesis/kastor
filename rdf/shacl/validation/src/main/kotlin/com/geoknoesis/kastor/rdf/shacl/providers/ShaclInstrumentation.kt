@@ -11,7 +11,6 @@ internal class RunCounters {
     var shapeEvaluations = 0L
     var solverRestarts = 0L
     var patternEvaluations = 0L
-    var patternWorkerEvaluations = 0L
     var patternSteps = 0L
     var recordedReports = 0L
     var separateReportEvaluations = 0L
@@ -28,7 +27,6 @@ internal class ShaclInstrumentation {
     val shapeEvaluations = LongAdder()
     val solverRestarts = LongAdder()
     val patternEvaluations = LongAdder()
-    val patternWorkerEvaluations = LongAdder()
     val patternSteps = LongAdder()
     val recordedReports = LongAdder()
     val separateReportEvaluations = LongAdder()
@@ -54,17 +52,10 @@ internal class ShaclInstrumentation {
     /** Bound on what the recorded evaluations of recursive focus nodes may retain; `0` disables recording. */
     @Volatile var reportRecordingCapacity: Long = 200_000L
 
-    /** Stack size of the pattern evaluation thread. */
-    @Volatile var patternWorkerStackBytes: Long = PATTERN_WORKER_STACK_BYTES
-
-    /** Values shorter than this are first matched on the validating thread. */
-    @Volatile var patternInlineMaxLength: Int = PATTERN_INLINE_MAX_LENGTH
-
     fun absorb(c: RunCounters) {
         shapeEvaluations.add(c.shapeEvaluations)
         solverRestarts.add(c.solverRestarts)
         patternEvaluations.add(c.patternEvaluations)
-        patternWorkerEvaluations.add(c.patternWorkerEvaluations)
         patternSteps.add(c.patternSteps)
         recordedReports.add(c.recordedReports)
         separateReportEvaluations.add(c.separateReportEvaluations)

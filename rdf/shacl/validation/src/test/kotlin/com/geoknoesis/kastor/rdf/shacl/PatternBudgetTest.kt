@@ -16,15 +16,13 @@ import org.junit.jupiter.api.Test
 
 /**
  * One `sh:pattern` evaluation has its own budget ([ValidationConfig.patternTimeout]). A value on which a
- * pattern uses it up, or on which the regular expression engine runs out of stack, is **reported** — a result with
- * the status `ksh:PatternTimeout` / `ksh:PatternTooComplex` that blocks conformance — and validation goes on with
+ * pattern uses it up is **reported** — a result with the status `ksh:PatternTimeout` that blocks conformance — and
+ * validation goes on with
  * the other values and focus nodes: one slow or hostile literal does not abort the run. Only the run-wide
  * [ValidationConfig.timeout] (and `strictMode`) aborts.
  *
  * The tests are deterministic. The budget is counted in steps of the regular expression engine (character reads);
- * the wall clock is only a backstop, and the tests inject it ([NativeShaclValidator.patternClock]). Stack exhaustion
- * does not depend on the stack of the test thread either: long values are matched on the run's pattern evaluation
- * thread, whose stack size the tests set ([NativeShaclValidator.patternWorkerStackBytes]).
+ * the wall clock is only a backstop, and the tests inject it ([NativeShaclValidator.patternClock]).
  */
 class PatternBudgetTest {
 
@@ -32,9 +30,13 @@ class PatternBudgetTest {
     private fun graph(turtle: String): RdfGraph = Rdf.parse(prefixes + turtle, RdfFormat.TURTLE)
     private fun ex(local: String) = Iri("http://example.org/$local")
 
-    /** `(.*a){30}` needs astronomically many backtracking steps to reject sixty `a`s followed by `!`. */
-    private val catastrophic = "^(.*a){30}$"
-    private val hostile = "a".repeat(60) + "!"
+    /**
+     * Patterns run on a linear-time engine, so what uses up a budget is a long value: three million characters read
+     * once each are more than the 2.5 million steps of a 50 ms budget. (`(.*a){30}` on sixty `a`s, which backtracked
+     * catastrophically on java.util.regex, is decided at once now.)
+     */
+    private val catastrophic = "^a+b$"
+    private val hostile = "a".repeat(3_000_000) + "!"
 
     private fun propertyShape(constraint: String) = graph("ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:p ; $constraint ] .")
     private val shapes = propertyShape("""sh:pattern "$catastrophic"""")
@@ -184,7 +186,7 @@ class PatternBudgetTest {
     fun `the run-wide timeout is the only thing that aborts`() {
         // The pattern budget is out of reach (an hour of steps, a frozen clock), so only the run timeout can end this
         // match. The run budget is work here, not time: its clock advances by one each time the match consults it.
-        val validator = validator(ValidationConfig(timeout = Duration.ofNanos(10_000), patternTimeout = Duration.ofHours(1)), frozenClock)
+        val validator = validator(ValidationConfig(timeout = Duration.ofNanos(1_000), patternTimeout = Duration.ofHours(1)), frozenClock)
         var consultations = 0L
         validator.budgetClock = { consultations++ }
         val error = assertThrows(ShaclValidationException::class.java) { validator.validate(graph("""ex:a a ex:T ; ex:p "$hostile" ."""), shapes) }
@@ -323,121 +325,26 @@ class PatternBudgetTest {
     // --- stack exhaustion --------------------------------------------------------------------------------------------
 
     /**
-     * `java.util.regex` matches an alternation under a quantifier recursively: one group of stack frames per
-     * repetition, several hundred bytes each. The 300,000 repetitions of [deep] need tens of megabytes of stack.
+     * java.util.regex matched an alternation under a quantifier recursively, one group of stack frames per
+     * repetition, so 300,000 repetitions needed tens of megabytes of stack. The linear-time engine does not recurse on
+     * its input: the same match succeeds on a thread with a 512 KiB stack, and no value is ever undecided for want
+     * of stack (`ksh:PatternTooComplex` is no longer reported).
      */
-    private val deep = "ab".repeat(150_000)
-    private val recursive = "^(a|b)*$"
-
-    /** A stack on which [deep] cannot be matched, whatever the JVM and its settings (it needs a hundred times more). */
-    private val smallStack = 512L * 1024
-
-    /** A validator whose pattern evaluation thread has a [smallStack]: the overflow does not depend on `-Xss`. */
-    private fun smallStackValidator(config: ValidationConfig = ValidationConfig()) =
-        validator(config, frozenClock).also { it.patternWorkerStackBytes = smallStack }
-
-    /** Runs [block] on a thread with [stackBytes] of stack, so that the test does not depend on the default stack size. */
-    private fun <T> onThreadWithStack(stackBytes: Long, block: () -> T): T {
-        var result: Result<T>? = null
-        val thread = Thread(null, { result = runCatching(block) }, "pattern-budget-test", stackBytes)
+    @Test
+    fun `a long value is decided on a small stack because the engine does not recurse`() {
+        val deep = "ab".repeat(150_000)
+        var result: Result<ValidationReport>? = null
+        val thread = Thread(null, {
+            result = runCatching {
+                validator(ValidationConfig(), frozenClock).validate(
+                    graph("""ex:a a ex:T ; ex:p "$deep" . ex:b a ex:T ; ex:p "abc" ."""),
+                    propertyShape("""sh:pattern "^(a|b)*$""""),
+                )
+            }
+        }, "pattern-budget-test", 512L * 1024)
         thread.start()
         thread.join()
-        return result!!.getOrThrow()
-    }
-
-    @Test
-    fun `a pattern that exhausts the stack is reported and the other focus nodes are still validated`() {
-        val data = graph(
-            """
-            ex:a a ex:T ; ex:p "$deep" .
-            ex:b a ex:T ; ex:p "abc" .
-            ex:c a ex:T ; ex:p "abba" .
-            """,
-        )
-        val validator = smallStackValidator()
-        val report = validator.validate(data, propertyShape("""sh:pattern "$recursive""""))
-        assertFalse(report.isValid)
-        assertEquals(setOf<Any>(ex("a"), ex("b")), report.violations.map { it.focusNode }.toSet(), report.violations.map { it.message }.toString())
-        val result = report.violations.single { it.focusNode == ex("a") }
-        assertTrue(result.isPatternTooComplex && result.isUndecided && !result.isPatternTimeout, result.violationCode)
-        assertEquals(ConstraintType.PATTERN, result.constraint.constraintType)
-        assertEquals(KastorShaclVocabulary.PatternTooComplex, result.resultStatus)
-        assertTrue(result.message.contains(recursive), result.message)
-        assertTrue(result.message.contains("${deep.length} characters"), result.message)
-        assertFalse(report.violations.single { it.focusNode == ex("b") }.isUndecided)
-        // Only the long value went to the pattern evaluation thread.
-        assertEquals(1L, validator.patternWorkerEvaluations)
-
-        val rdf = report.toShaclValidationReportRdf().getTriples()
-        assertEquals(listOf<Any>(KastorShaclVocabulary.PatternTooComplex), rdf.filter { it.predicate == KastorShaclVocabulary.resultStatus }.map { it.obj })
-    }
-
-    @Test
-    fun `stack exhaustion fails validation in strict mode instead of escaping as an Error`() {
-        val strict = smallStackValidator(ValidationConfig(strictMode = true))
-        val error = assertThrows(ShaclValidationException::class.java) {
-            strict.validate(graph("""ex:a a ex:T ; ex:p "$deep" ."""), propertyShape("""sh:pattern "$recursive""""))
-        }
-        assertTrue(error.message.orEmpty().contains(recursive), error.message)
-    }
-
-    /** 4,000 repetitions: more stack than a 512 KiB thread has, a fraction of the 16 MiB of the evaluation thread. */
-    private val long = "ab".repeat(2_000)
-
-    @Test
-    fun `a long value is decided on the evaluation thread whatever the stack and the nesting of the caller`() {
-        // The same pattern at the top of a shape and twenty sh:node levels down, validated on a thread with a small
-        // stack: on the calling thread the match would overflow, and the more so the deeper the shape is nested.
-        val nested = (1..20).joinToString("\n") { i -> "ex:N$i a sh:NodeShape ; sh:node ex:N${i + 1} ." }
-        val shapes = graph(
-            """
-            ex:Shallow a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:pattern "$recursive" ] .
-            ex:Deep a sh:NodeShape ; sh:targetNode ex:a ; sh:node ex:N1 .
-            $nested
-            ex:N21 a sh:NodeShape ; sh:property [ sh:path ex:p ; sh:pattern "$recursive" ; sh:minLength 1 ] .
-            """,
-        )
-        val validator = validator(ValidationConfig(), frozenClock)
-        val report = onThreadWithStack(smallStack) { validator.validate(graph("""ex:a ex:p "$long" ."""), shapes) }
-        assertTrue(report.isValid, report.violations.map { it.message }.toString())
-        assertEquals(2L, validator.patternWorkerEvaluations, "both pattern constraints were evaluated on the evaluation thread")
-        // A value that does not match is decided just the same.
-        val failing = onThreadWithStack(smallStack) { validator.validate(graph("""ex:a ex:p "${long}c" ."""), shapes) }
-        assertEquals(listOf(false, false), failing.violations.map { it.isUndecided }, failing.violations.map { it.message }.toString())
-    }
-
-    @Test
-    fun `a match that overflows the stack of the validating thread is repeated on the evaluation thread`() {
-        // The seam makes every value start on the validating thread, whose 512 KiB cannot hold this match.
-        val validator = validator(ValidationConfig(), frozenClock).also { it.patternInlineMaxLength = Int.MAX_VALUE }
-        val shapes = propertyShape("""sh:pattern "$recursive"""")
-        val report = onThreadWithStack(smallStack) { validator.validate(graph("""ex:a a ex:T ; ex:p "$long" . ex:b a ex:T ; ex:p "ab" ."""), shapes) }
-        assertTrue(report.isValid, report.violations.map { it.message }.toString())
-        assertEquals(1L, validator.patternWorkerEvaluations, "the long value overflowed and was repeated; the short one was not")
-    }
-
-    @Test
-    fun `a value decided on the evaluation thread stays decided for the run`() {
-        val data = graph(
-            """
-            ex:a a ex:T ; ex:p "$long" .
-            ex:b a ex:T ; ex:p "$long" .
-            ex:c a ex:T ; ex:p "$long" , "ab" .
-            """,
-        )
-        val validator = validator(ValidationConfig(), frozenClock)
-        assertTrue(validator.validate(data, propertyShape("""sh:pattern "$recursive"""")).isValid)
-        assertEquals(2L, validator.patternEvaluations, "one evaluation of the long value, one of the short one")
-        assertEquals(1L, validator.patternWorkerEvaluations)
-    }
-
-    @Test
-    fun `the step budget is enforced on the evaluation thread too`() {
-        // A long hostile value: matched on the evaluation thread, stopped by the step budget, reported as a timeout.
-        val hostileLong = "a".repeat(2_000) + "!"
-        val validator = validator(ValidationConfig(patternTimeout = Duration.ofMillis(50)), frozenClock)
-        val report = validator.validate(graph("""ex:a a ex:T ; ex:p "$hostileLong" . ex:b a ex:T ; ex:p "b" ."""), shapes)
-        assertEquals(listOf<Any>(ex("a") to true, ex("b") to false), report.violations.map { it.focusNode to it.isPatternTimeout })
-        assertEquals(1L, validator.patternWorkerEvaluations)
+        val report = result!!.getOrThrow()
+        assertEquals(listOf<Any>(ex("b") to false), report.violations.map { it.focusNode to it.isUndecided })
     }
 }

@@ -1,18 +1,11 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
-import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 
-// Regular-expression evaluation support of [NativeShaclValidator]: step budget, counting CharSequence, worker thread.
+// Regular-expression evaluation support of [NativeShaclValidator]: step budget and counting CharSequence.
 
 /** Thrown out of a regex match exceeding [com.geoknoesis.kastor.rdf.shacl.ValidationConfig.patternTimeout]. */
 internal class PatternBudgetExceeded : RuntimeException(null, null, false, false)
-
-/** Stack size of the pattern evaluation thread of a run (see `matchPattern`). */
-internal const val PATTERN_WORKER_STACK_BYTES = 16L * 1024 * 1024
-
-/** Values at least this long (UTF-16 code units) are matched on the pattern evaluation thread. */
-internal const val PATTERN_INLINE_MAX_LENGTH = 1024
 
 /** After this many evaluations of a run have used up their whole step budget, the budget of further values shrinks. */
 internal const val PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS = 16
@@ -67,37 +60,5 @@ internal class DeadlineCharSequence(
     override fun toString(): String = value
 }
 
-/**
- * The pattern evaluation thread of one validation run: a single daemon thread with a fixed stack size, created
- * when the first evaluation needs it and stopped when the run ends. `java.util.regex` matches an alternation
- * under a quantifier recursively, so whether such a match completes depends on the stack that is left; on this
- * thread that is always the same amount, whatever the stack size of the validating thread and however deeply
- * nested the shape that asks.
- */
-internal class PatternWorker(stackBytes: Long) : AutoCloseable {
-    private val executor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
-        Thread(null, task, "kastor-shacl-pattern", stackBytes).apply { isDaemon = true }
-    }
-
-    /** Runs [task] on the thread and waits for it; its exceptions are rethrown here. */
-    fun <T> run(task: () -> T): T {
-        val future = executor.submit(java.util.concurrent.Callable { task() })
-        try {
-            return future.get()
-        } catch (e: java.util.concurrent.ExecutionException) {
-            throw e.cause ?: e
-        } catch (e: InterruptedException) {
-            // The validating thread was cancelled: stop the match (it checks its interrupt flag) and fail the run.
-            future.cancel(true)
-            Thread.currentThread().interrupt()
-            throw ShaclValidationException("SHACL pattern matching timed out or was cancelled")
-        }
-    }
-
-    override fun close() {
-        executor.shutdownNow()
-    }
-}
-
 /** Result of running one pattern against one value. */
-internal enum class PatternRun { MATCH, NO_MATCH, OUT_OF_BUDGET, OUT_OF_STACK }
+internal enum class PatternRun { MATCH, NO_MATCH, OUT_OF_BUDGET }

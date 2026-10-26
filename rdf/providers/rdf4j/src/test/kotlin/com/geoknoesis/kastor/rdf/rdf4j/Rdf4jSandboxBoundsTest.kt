@@ -49,8 +49,11 @@ class Rdf4jSandboxBoundsTest {
     private fun doublings(steps: Int, seed: String = "\"ab\"", step: (String) -> String = { "CONCAT($it, $it)" }) =
         "BIND ($seed AS ?x0) " + (1..steps).joinToString(" ") { "BIND (${step("?x${it - 1}")} AS ?x$it)" }
 
-    /** A catastrophic regular expression: exponential on Java's matcher, so only its step budget ends it. */
-    private val bomb = "REGEX(\"${"a".repeat(40)}!\", \"((a+)+)+$\")"
+    /** An amplifying replacement: 4,096 matches, each expanded to 4,097 copies, passes the string limit at once. */
+    private val bomb = "REPLACE(\"${"a".repeat(4096)}\", \"a\", \"${"\$0".repeat(4097)}\")"
+
+    /** A regular expression that is exponential on Java's backtracking matcher. */
+    private val catastrophic = "\"((a+)+)+$\""
 
     @Test
     fun `a chain of doublings stops at the string limit`() {
@@ -72,9 +75,22 @@ class Rdf4jSandboxBoundsTest {
     }
 
     @Test
-    fun `a catastrophic regular expression ends at its step budget, without a timeout`() {
-        assertLimited("SELECT ?m { BIND ($bomb AS ?m) }")
-        assertLimited("SELECT ?m { BIND (REPLACE(\"${"a".repeat(40)}!\", \"((a+)+)+$\", \"x\") AS ?m) }")
+    fun `a catastrophic regular expression runs in linear time, without a timeout`() {
+        // Exponential on java.util.regex (round twelve stopped it at a step budget); linear on the RE2 engine.
+        val text = "\"${"a".repeat(10_000)}!\""
+        assertEquals(listOf(com.geoknoesis.kastor.rdf.FalseLiteral), plain("SELECT ?m { BIND (REGEX($text, $catastrophic) AS ?m) }").map { it.get("m") })
+        assertEquals(1, plain("SELECT ?m { BIND (REPLACE($text, $catastrophic, \"x\") AS ?m) }").size)
+    }
+
+    @Test
+    fun `regular expressions the linear-time engine lacks fail the query, invalid ones are SPARQL errors`() {
+        // Fail closed: a valid pattern the engine cannot honour must not become a silent non-match in a FILTER.
+        for (pattern in listOf("(a)\\\\1", "a(?=b)", "a*+", "(?<!a)b", "a{1001}")) {
+            assertLimited("SELECT ?m { BIND (REGEX(\"ab\", \"$pattern\") AS ?m) }")
+        }
+        assertEquals(listOf(null), plain("SELECT ?m { BIND (REGEX(\"ab\", CONCAT(\"(\", \"a\")) AS ?m) }").map { it.get("m") })
+        // Unknown flags are errors too (RDF4J ignored them).
+        assertEquals(listOf(null), plain("SELECT ?m { BIND (REGEX(\"ab\", \"a\", \"u\") AS ?m) }").map { it.get("m") })
     }
 
     @Test
@@ -179,7 +195,9 @@ class Rdf4jSandboxBoundsTest {
     @Test
     fun `a malformed replacement is a SPARQL error, not a query failure`() {
         assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$\") AS ?r) }").map { it.get("r") })
-        assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$2\") AS ?r) }").map { it.get("r") })
+        assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"\\\\x\") AS ?r) }").map { it.get("r") })
+        // fn:replace: a reference to a missing group up to 9 is empty.
+        assertEquals(listOf("ac"), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$2\") AS ?r) }").map { it.get("r")?.let { t -> (t as com.geoknoesis.kastor.rdf.Literal).lexical } })
     }
 
     @Test

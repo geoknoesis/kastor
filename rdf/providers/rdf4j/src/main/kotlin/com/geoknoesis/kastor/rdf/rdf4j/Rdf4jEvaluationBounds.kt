@@ -3,6 +3,8 @@ package com.geoknoesis.kastor.rdf.rdf4j
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxRegex
+import com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern
+import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegexException
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Literal
 import org.eclipse.rdf4j.model.Triple
@@ -28,7 +30,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility
 import java.util.concurrent.atomic.AtomicLong
-import java.util.regex.Pattern
 
 /**
  * What a function of RDF4J's own built-ins may cost in a sandboxed query (see [SandboxLimits]), by IRI. Every
@@ -151,7 +152,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         ) {
             throw ValueExprEvaluationException("REGEX: the text must be a string literal, the pattern and flags simple literals")
         }
-        val regex = compiled.get(pattern.stringValue(), flags?.stringValue(), ::regexFlags)
+        val regex = compiled.get(pattern.stringValue(), flags?.stringValue())
         return valueFactory.createLiteral(SandboxRegex.find(regex, (text as Literal).label, Runnable { budget.check() }))
     }
 
@@ -162,12 +163,10 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         if (text !is Literal || !QueryEvaluationUtility.isStringLiteral(text) || args.drop(1).any { !QueryEvaluationUtility.isSimpleLiteral(it) }) {
             throw ValueExprEvaluationException("REPLACE: the text must be a string literal, the other arguments simple literals")
         }
-        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue(), ::replaceFlags)
+        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue())
         val result = try {
             SandboxRegex.replace(regex, text.label, args[2].stringValue(), skipEmptyAfterFirst = false, check = Runnable { budget.check() })
-        } catch (e: IllegalArgumentException) {
-            throw ValueExprEvaluationException("REPLACE: ${e.message}", e)
-        } catch (e: IndexOutOfBoundsException) {
+        } catch (e: XPathRegexException) {
             throw ValueExprEvaluationException("REPLACE: ${e.message}", e)
         } ?: text.label
         val language = text.language
@@ -178,20 +177,22 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         }
     }
 
-    /** The last compiled pattern of one call site and the text and flags it was compiled from. */
+    /**
+     * The last compiled pattern of one call site and the text and flags it was compiled from. Patterns are XPath
+     * regular expressions with XPath flags (`s`, `m`, `i`, `x`, `q`), compiled for the linear-time engine
+     * ([SandboxRegex.compile]); an invalid or unsupported pattern or flag is an expression error.
+     */
     class PatternCache {
-        private class Compiled(val text: String, val flags: String?, val pattern: Pattern)
+        @Volatile private var last: XPathPattern? = null
 
-        @Volatile private var last: Compiled? = null
-
-        fun get(text: String, flags: String?, toFlags: (String?) -> Int): Pattern {
-            last?.let { if (it.text == text && it.flags == flags) return it.pattern }
+        fun get(text: String, flags: String?): XPathPattern {
+            last?.let { if (it.pattern == text && it.flags == flags) return it }
             val pattern = try {
-                Pattern.compile(text, toFlags(flags))
-            } catch (e: java.util.regex.PatternSyntaxException) {
+                SandboxRegex.compile(text, flags)
+            } catch (e: XPathRegexException) {
                 throw ValueExprEvaluationException(e.message, e)
             }
-            return pattern.also { last = Compiled(text, flags, it) }
+            return pattern.also { last = it }
         }
     }
 
@@ -259,32 +260,5 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         }
 
         fun describe(expr: ValueExpr): String = (expr as? FunctionCall)?.uri ?: expr.signature
-
-        /** RDF4J's `REGEX` flags: `s`, `m`, `i` (Unicode-aware), `x`, `d`, `u` and `q`; other characters are ignored. */
-        fun regexFlags(flags: String?): Int = (flags ?: "").fold(0) { mask, c ->
-            mask or when (c) {
-                's' -> Pattern.DOTALL
-                'm' -> Pattern.MULTILINE
-                'i' -> Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE
-                'x' -> Pattern.COMMENTS
-                'd' -> Pattern.UNIX_LINES
-                'u' -> Pattern.UNICODE_CASE
-                'q' -> Pattern.LITERAL
-                else -> 0
-            }
-        }
-
-        /** RDF4J's `fn:replace` flags: `s`, `m`, `i`, `x`, `d` and `u`; any other character is an error. */
-        fun replaceFlags(flags: String?): Int = (flags ?: "").fold(0) { mask, c ->
-            mask or when (c) {
-                's' -> Pattern.DOTALL
-                'm' -> Pattern.MULTILINE
-                'i' -> Pattern.CASE_INSENSITIVE
-                'x' -> Pattern.COMMENTS
-                'd' -> Pattern.UNIX_LINES
-                'u' -> Pattern.UNICODE_CASE
-                else -> throw ValueExprEvaluationException("REPLACE: flag character '$c' is not allowed")
-            }
-        }
     }
 }

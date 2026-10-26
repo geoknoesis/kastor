@@ -95,7 +95,6 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits {
 	public static final field MAX_GROUP_CONCAT_LENGTH J
 	public static final field MAX_INTEGER_BITS I
 	public static final field MAX_NUMERIC_LEXICAL_LENGTH I
-	public static final field MAX_REGEX_STEPS J
 	public static final field MAX_STRING_LENGTH I
 	public static final fun checkDecimal (JJLjava/lang/String;)V
 	public static final fun checkIntegerBits (JLjava/lang/String;)V
@@ -106,14 +105,9 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits {
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex;
-	public static final fun find (Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/lang/Runnable;)Z
-	public static final fun replace (Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Runnable;)Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegexPatterns {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegexPatterns;
-	public static final field MAX_GROUP_DEPTH I
-	public static final fun requireBounded (Ljava/util/regex/Pattern;Ljava/lang/String;)V
+	public static final fun compile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
+	public static final fun find (Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;Ljava/lang/String;Ljava/lang/Runnable;)Z
+	public static final fun replace (Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Runnable;)Ljava/lang/String;
 }
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings {
@@ -140,5 +134,28 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical {
 	public final fun varName (Ljava/lang/String;)Ljava/lang/String;
 	public final fun versionDecl (Ljava/lang/String;)Ljava/lang/String;
 	public final fun xsdLexical (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathPattern {
+	public final fun containsMatchIn (Ljava/lang/CharSequence;)Z
+	public final fun firstMatch (Ljava/lang/CharSequence;)Lkotlin/ranges/IntRange;
+	public final fun getFlags ()Ljava/lang/String;
+	public final fun getGroupCount ()I
+	public final fun getPattern ()Ljava/lang/String;
+	public final fun getProgramSize ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathRegex {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathRegex;
+	public static final fun compile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathRegexException : java/lang/IllegalArgumentException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getPattern ()Ljava/lang/String;
+	public final fun getReason ()Ljava/lang/String;
+	public final fun getUnsupported ()Z
 }
 

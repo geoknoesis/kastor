@@ -71,4 +71,14 @@ class SparqlDatasetClausesScaleTest {
         }
         org.junit.jupiter.api.Assertions.assertTrue(error.message!!.contains("nest"), error.message)
     }
+    /** Round thirteen, core P2-1: leading unbalanced `}` drove the count negative, so 5,000 groups overflowed the stack. */
+    @Test
+    fun `unbalanced closing braces cannot hide deeper nesting`() {
+        for (n in listOf(1000, 5000, 20_000)) {
+            val query = "}".repeat(n) + " SELECT * WHERE { GRAPH ?g " + "{ ?s ?p ?o ".repeat(n) + "}".repeat(n) + " }"
+            assertTimeoutPreemptively(Duration.ofSeconds(20)) {
+                assertEquals(null, SparqlDatasetClauses.withoutNamedGraphs(query))
+            }
+        }
+    }
 }
