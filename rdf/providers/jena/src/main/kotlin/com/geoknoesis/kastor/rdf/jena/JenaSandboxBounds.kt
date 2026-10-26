@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import org.apache.jena.query.QueryCancelledException
 import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.SortCondition
@@ -53,9 +54,12 @@ import java.util.concurrent.atomic.AtomicLong
  * The deadline and cancellation that the expressions of one sandboxed query (and its regular expressions, while they
  * work) check: the deadline [deadline] on [clock] ([Long.MAX_VALUE] for none), the execution's cancel signal (Jena's
  * own timeout and `abort`), and the thread's interrupt flag (kept). Each failure is a [QueryCancelledException], as for
- * a timeout.
+ * a timeout. [memory] is the execution's budget of computed characters.
  */
 internal class JenaSandboxBudget(private val deadline: Long, private val clock: () -> Long) {
+    /** The characters the expressions of this execution computed ([SandboxLimits.MAX_COMPUTED_CHARACTERS]). */
+    val memory = SandboxMemoryBudget()
+
     fun check(env: FunctionEnv?) {
         if (Thread.currentThread().isInterrupted) throw QueryCancelledException()
         if ((env as? ExecutionContext)?.cancelSignal?.get() == true) throw QueryCancelledException()
@@ -170,13 +174,17 @@ internal class BoundedExpr(val inner: ExprFunction, private val cost: JenaCost, 
                 JenaCost.REPLACE -> evaluation.replace(args, check)
                 else -> {
                     evaluation.precheck(args)
+                    if (cost == JenaCost.CONCAT) budget.memory.require(args.sumOf { JenaSandboxBounds.textLength(it.asNode()).toLong() }, label)
                     compute(args, binding, env)
                 }
             }
         } else {
             inner.eval(binding, env)
         }
-        if (cost != JenaCost.COPYING) JenaSandboxBounds.checkResult(value, label)
+        if (cost != JenaCost.COPYING) {
+            JenaSandboxBounds.checkResult(value, label)
+            budget.memory.charge(JenaSandboxBounds.size(value), label)
+        }
         value
     }
 
@@ -226,7 +234,8 @@ internal class BoundedExpr(val inner: ExprFunction, private val cost: JenaCost, 
 
 /**
  * The argument of a `GROUP_CONCAT` aggregate, counted: every value adds its length (and the separator's, [separator])
- * to the execution's [counter], and more than [SandboxLimits.MAX_GROUP_CONCAT_LENGTH] characters fail the query.
+ * to the execution's [counter] and to its memory budget, and more than [SandboxLimits.MAX_GROUP_CONCAT_LENGTH]
+ * characters fail the query.
  */
 internal class CountedExpr(
     expr: Expr,
@@ -243,6 +252,7 @@ internal class CountedExpr(
         if (total > SandboxLimits.MAX_GROUP_CONCAT_LENGTH) {
             throw SandboxLimitException("GROUP_CONCAT would accumulate more than ${SandboxLimits.MAX_GROUP_CONCAT_LENGTH} characters")
         }
+        budget.memory.charge(length.toLong() + separator, "GROUP_CONCAT")
         value
     }
 
@@ -307,6 +317,19 @@ internal object JenaSandboxBounds {
                         throw SandboxLimitException("$what would compute a triple term of more than $MAX_TRIPLE_TERM_NODES terms")
                     }
                 }
+            }
+        }
+    }
+
+    /** The characters [value], computed, is charged to the memory budget (see [SandboxMemoryBudget]). */
+    fun size(value: NodeValue): Long = when {
+        value.isInteger -> SandboxMemoryBudget.numberSize(value.integer.bitLength().toLong())
+        value.isDecimal -> SandboxMemoryBudget.numberSize(value.decimal.unscaledValue().bitLength().toLong())
+        else -> value.asNode().let { node ->
+            when {
+                node.isTripleTerm -> nodes(node, MAX_TRIPLE_TERM_NODES + 1).toLong()
+                node.isLiteral && (value.isNumber || value.isBoolean) -> 0L
+                else -> textLength(node).toLong()
             }
         }
     }

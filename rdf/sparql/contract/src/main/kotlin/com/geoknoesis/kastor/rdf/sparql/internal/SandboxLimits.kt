@@ -32,6 +32,15 @@ object SandboxLimits {
      */
     const val MAX_NUMERIC_LEXICAL_LENGTH: Int = 32 * 1024
 
+    /**
+     * Most characters the expressions of one sandboxed query may compute **in total**, over all its rows, aggregates,
+     * nested patterns and subqueries: 64 Mi chars (128 MiB). Every value an expression computes counts (see
+     * [SandboxMemoryBudget]), whether it is kept (by a row, `ORDER BY`, `DISTINCT`, `GROUP BY`, a subquery) or not,
+     * so the budget is deterministic and bounds what the query can retain. Values read from the data or copied from an
+     * argument (`STR`, `SUBSTR`, `IF`, ...) do not count: their size is the data's.
+     */
+    const val MAX_COMPUTED_CHARACTERS: Long = 64L * 1024 * 1024
+
     /** Most characters the `GROUP_CONCAT` aggregates of one query may accumulate, over all their groups. */
     const val MAX_GROUP_CONCAT_LENGTH: Long = MAX_STRING_LENGTH.toLong()
 

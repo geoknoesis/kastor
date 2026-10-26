@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.rdf4j
 
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxRegex
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegexException
@@ -77,9 +78,12 @@ internal enum class Rdf4jCost {
 /**
  * The deadline and interruption that the expressions and statement reads of one sandboxed query check: [deadline] on
  * [clock] ([Long.MAX_VALUE] for none) and the thread's interrupt flag (kept); each fails with
- * [QueryInterruptedException], as RDF4J's own time limit does.
+ * [QueryInterruptedException], as RDF4J's own time limit does. [memory] is the query's budget of computed characters.
  */
 internal class Rdf4jSandboxBudget(private val deadline: Long, private val clock: () -> Long) {
+    /** The characters the expressions of this query computed ([SandboxLimits.MAX_COMPUTED_CHARACTERS]). */
+    val memory = SandboxMemoryBudget()
+
     fun check() {
         if (Thread.currentThread().isInterrupted) throw QueryInterruptedException("The sandboxed query was interrupted")
         if (deadline != Long.MAX_VALUE && clock() - deadline >= 0) throw QueryInterruptedException("The sandboxed query ran out of time")
@@ -96,8 +100,9 @@ internal class Rdf4jSandboxLimitExceeded(cause: SandboxLimitException) : Runtime
 /**
  * The bounds of the value expressions of one sandboxed query on RDF4J ([KastorEvaluationStrategy] applies them to
  * every step it precompiles): [budget] before each expression runs, the operands of a multiplication or division,
- * the results against [SandboxLimits] (unless an expression only copies an argument), the characters of
- * `GROUP_CONCAT`, and the arguments of the costly built-ins ([Rdf4jCost]) before they compute.
+ * the results against [SandboxLimits] (unless an expression only copies an argument) and against the query's memory
+ * budget ([SandboxMemoryBudget]), the characters of `GROUP_CONCAT`, and the arguments of the costly built-ins
+ * ([Rdf4jCost]) before they compute.
  */
 internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val valueFactory: ValueFactory) {
 
@@ -116,7 +121,11 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
             failing {
                 budget.check()
                 val value = step.evaluate(bindings)
-                if (checked) checkResult(value, describe(expr))
+                if (checked) {
+                    val what = describe(expr)
+                    checkResult(value, what)
+                    budget.memory.charge(size(value), what)
+                }
                 if (operand) checkOperand(value)
                 if (counted) count(value)
                 value
@@ -127,7 +136,10 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     /** Fails with [SandboxLimitException] when calling the built-in [iri] of [cost] on [args] would exceed a limit. */
     fun precheck(cost: Rdf4jCost, iri: String, args: List<Value>) {
         when (cost) {
-            Rdf4jCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { text(it) }, iri)
+            Rdf4jCost.CONCAT -> args.sumOf { text(it) }.let {
+                SandboxLimits.checkStringLength(it, iri)
+                budget.memory.require(it, iri)
+            }
             Rdf4jCost.CASE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 3L, iri)
             Rdf4jCost.ENCODE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 9L, iri)
             Rdf4jCost.XSD_CAST -> args.firstOrNull()?.let { SandboxLimits.checkNumericLexical(label(it), iri) }
@@ -222,10 +234,24 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     }
 
     private fun count(value: Value) {
-        val total = groupConcat.addAndGet(text(value) + 1L)
+        val length = text(value) + 1L
+        val total = groupConcat.addAndGet(length)
         if (total > SandboxLimits.MAX_GROUP_CONCAT_LENGTH) {
             throw SandboxLimitException("GROUP_CONCAT would accumulate more than ${SandboxLimits.MAX_GROUP_CONCAT_LENGTH} characters")
         }
+        budget.memory.charge(length, "GROUP_CONCAT")
+    }
+
+    /** The characters [value], computed, is charged to the memory budget (see [SandboxMemoryBudget]). */
+    private fun size(value: Value): Long = when (value) {
+        is Literal -> when {
+            value.isIntegerValued() -> SandboxMemoryBudget.numberSize(value.integerValue().bitLength().toLong())
+            value.isDecimalValued() -> SandboxMemoryBudget.numberSize(value.decimalValue().unscaledValue().bitLength().toLong())
+            value.coreDatatype in FIXED_SIZE -> 0L
+            else -> value.label.length.toLong()
+        }
+        is Triple -> terms(value, MAX_TRIPLE_TERM_NODES + 1).toLong()
+        else -> value.stringValue().length.toLong()
     }
 
     private fun label(value: Value): Int = if (value is Literal) value.label.length else 0
@@ -251,6 +277,9 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     private companion object {
         /** Most terms a computed triple term may hold (a chain of `TRIPLE(?t, :p, ?t)` doubles them at every step). */
         const val MAX_TRIPLE_TERM_NODES = 4096
+
+        /** Datatypes of fixed-size values, which cost the memory budget nothing. */
+        val FIXED_SIZE = setOf(CoreDatatype.XSD.BOOLEAN, CoreDatatype.XSD.DOUBLE, CoreDatatype.XSD.FLOAT)
 
         fun copying(expr: ValueExpr): Boolean = when (expr) {
             // IRI() resolves against a base, so it is checked like any computation.
