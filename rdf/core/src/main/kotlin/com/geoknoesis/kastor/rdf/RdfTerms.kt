@@ -319,7 +319,7 @@ sealed interface Literal : RdfTerm {
         operator fun invoke(value: Double): Literal = value.toLiteral()
         operator fun invoke(value: Float): Literal = value.toLiteral()
         operator fun invoke(value: Boolean): Literal = if (value) TrueLiteral else FalseLiteral
-        operator fun invoke(value: BigDecimal): Literal = Literal(value.stripTrailingZeros().toPlainString(), XSD.decimal)
+        operator fun invoke(value: BigDecimal): Literal = Literal(com.geoknoesis.kastor.rdf.xsd.XsdDecimal.canonicalLexical(value), XSD.decimal)
         operator fun invoke(value: BigInteger): Literal = Literal(value.toString(), XSD.integer)
         operator fun invoke(value: LocalDate): Literal = value.toLiteral()
         operator fun invoke(value: LocalTime): Literal = value.toLiteral()

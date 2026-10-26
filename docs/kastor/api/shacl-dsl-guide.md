@@ -318,7 +318,7 @@ property("http://example.org/email") {
 - `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`: the underscore plus every Unicode letter, mark, number and symbol.
 - `\W` is the exact complement, so it does not match `_`.
 
-Everything else follows XPath. A pattern therefore still behaves differently on the native validator than on an engine that uses Java regular expressions (the `rdf4j` provider, Jena SHACL) in these cases:
+Everything else follows XPath. The `rdf4j` provider follows the same rules for patterns that `ShaclSail` runs as SPARQL `REGEX` (on Kastor's sandbox), and refuses a pattern under `sh:or`, `sh:and`, `sh:xone`, `sh:not` or `sh:qualifiedValueShape`. A pattern therefore still behaves differently on the native validator than on an engine that uses Java regular expressions (Jena SHACL) in these cases:
 
 | Construct | Native validator (XPath / XML Schema) | `java.util.regex` |
 |-----------|----------------------------------------|-------------------|
@@ -341,6 +341,8 @@ Write `[A-Za-z0-9_]`, `[0-9]` or an explicit class when a pattern must mean the 
 | A leading inline flag group: `(?i)^abc$`, `(?im)…`, `(?s)…`, `(?x)…` | the same flags in `sh:flags`. Only at the very start of the pattern, only the flags `i`, `m`, `s`, `x` (several groups in a row are allowed), and merged with `flags` if both are given. After a leading `(?x)`, an unescaped `#` and whitespace inside a character class are rejected: Java's comments mode reads them differently from the XPath `x` flag. |
 | A script name: `\p{IsLatin}`, `\p{IsHan}` | the Unicode script, when the name is not a Unicode block name. A name that is both (`Greek`, `Cyrillic`, `Arabic`, …) is the block, as in XML Schema. |
 | A POSIX bracket expression inside a class: `[[:alpha:]_-]`, `[^[:space:]]` | the US-ASCII class of that name. The twelve standard names are supported: `alpha`, `digit`, `alnum`, `upper`, `lower`, `space`, `punct`, `xdigit`, `blank`, `cntrl`, `graph`, `print`. |
+
+Patterns run on RE2/J, a linear-time engine, so no pattern can backtrack catastrophically. What it cannot evaluate is rejected when the shapes are compiled: back-references (`\1`), lookarounds, atomic groups, possessive quantifiers, word boundaries (`\b`), repetition counts above 1000.
 
 Syntax that would otherwise change meaning is rejected when the shapes are compiled (`ShapeCompileException`), never reinterpreted:
 

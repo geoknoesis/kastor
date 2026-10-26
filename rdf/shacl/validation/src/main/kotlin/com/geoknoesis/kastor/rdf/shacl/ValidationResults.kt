@@ -164,7 +164,8 @@ data class ValidationViolation(
     /**
      * True when this result reports that a constraint could not be decided because the regular expression engine ran
      * out of stack while matching a `sh:pattern` ([violationCode] is [PATTERN_TOO_COMPLEX_CODE]). Like
-     * [isPatternTimeout], it blocks conformance as a failure would.
+     * [isPatternTimeout], it blocks conformance as a failure would. The native engine no longer reports it: patterns
+     * run on a linear-time engine that does not recurse on its input.
      */
     val isPatternTooComplex: Boolean get() = violationCode == PATTERN_TOO_COMPLEX_CODE
 

@@ -254,6 +254,15 @@ class SparqlLangHardeningTest {
     private fun row(term: RdfTerm): BindingSet = MapBindingSet(mapOf("v" to term))
 
     @Test
+    fun `a huge integer binding is read in linear work, never as a BigInteger`() {
+        val n = 4_000_000
+        val (value, work) = com.geoknoesis.kastor.rdf.xsd.XsdWork.measure { row(Literal("7".repeat(n), XSD.integer)).getAs<Long>("v") }
+        assertNull(value)
+        assertTrue(work in n.toLong()..4L * n, "the shared linear parser read the literal (work $work)")
+        assertEquals(7L, row(Literal(" 0".padEnd(n, '0') + "7 ", XSD.integer)).getAs<Long>("v"))
+    }
+
+    @Test
     fun `numbers are only read from literals of a numeric datatype and within range`() {
         assertEquals(42, row(Literal("42", XSD.integer)).getAs<Int>("v"))
         assertEquals(42L, row(Literal("42", XSD.integer)).getAs<Long>("v"))

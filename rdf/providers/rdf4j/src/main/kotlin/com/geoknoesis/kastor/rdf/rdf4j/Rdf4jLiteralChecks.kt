@@ -10,7 +10,7 @@ internal object Rdf4jLiteralChecks {
     /**
      * Rejects a literal (also inside a triple term) whose lexical form holds an unpaired UTF-16 surrogate: Rio decodes
      * a numeric escape of a surrogate code point into one, which is not a Unicode string (RDF 1.2 Turtle forbids such
-     * escapes; the Jena provider and the SPARQL JSON reader reject them), or a numeric literal longer than
+     * escapes; the Jena provider and the SPARQL JSON reader reject them), or a numeric or temporal literal longer than
      * [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH]. IRIs are checked by [com.geoknoesis.kastor.rdf.Iri] itself.
      * @throws IllegalArgumentException for such a literal
      */

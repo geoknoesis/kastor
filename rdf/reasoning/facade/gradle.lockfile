@@ -9,6 +9,7 @@ com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.22.3=dokkaHtmlGenerato
 com.fasterxml.jackson.module:jackson-module-kotlin:2.22.3=dokkaHtmlGeneratorRuntimeResolver~internal
 com.fasterxml.jackson:jackson-bom:2.22.3=compileClasspath,cyclonedxBom,dokkaHtmlGeneratorRuntimeResolver~internal,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.fasterxml.woodstox:woodstox-core:7.2.0=dokkaHtmlGeneratorRuntimeResolver~internal
+com.google.re2j:re2j:1.8=runtimeClasspath,testRuntimeClasspath
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation
 io.netty:netty-bom:4.2.18.Final=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.opentelemetry:opentelemetry-bom:1.66.0=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

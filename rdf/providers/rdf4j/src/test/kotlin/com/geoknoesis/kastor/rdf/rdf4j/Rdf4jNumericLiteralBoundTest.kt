@@ -46,4 +46,17 @@ class Rdf4jNumericLiteralBoundTest {
             assertEquals(expected, Rdf4jProvider().parseGraph(doc.byteInputStream(), "TURTLE").getTriples().single().obj)
         }
     }
+
+    @Test
+    fun `temporal literals longer than the limit are refused, as on Jena`() {
+        val fraction = "1".repeat(limit)
+        for ((lexical, type) in listOf(
+            "2020-01-01T00:00:00.$fraction" to "dateTime", "00:00:00.$fraction" to "time",
+            "PT1.${fraction}S" to "duration", "1$fraction" to "gYear", "1$fraction-01-01" to "date",
+        )) {
+            assertRefused { Rdf4jProvider().parseGraph(turtle("\"$lexical\"^^<$xsd$type>").byteInputStream(), "TURTLE") }
+        }
+        val accepted = "2020-01-01T00:00:00.${"1".repeat(100)}"
+        assertEquals(TypedLiteral(accepted, Iri("${xsd}dateTime")), Rdf4jProvider().parseGraph(turtle("\"$accepted\"^^<${xsd}dateTime>").byteInputStream(), "TURTLE").getTriples().single().obj)
+    }
 }

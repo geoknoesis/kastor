@@ -135,6 +135,15 @@ internal class Rdf4jShaclValidator(
     val dataTriples = graph.getTriples()
     val shapeTriples = shapes.getTriples()
 
+    // Fail closed, whatever unsupportedFeatures says: ShaclSail would run these patterns with java.util.regex.
+    val unbounded = ShaclSailPatterns.javaEvaluated(shapeTriples)
+    if (unbounded.isNotEmpty()) {
+      throw ShaclValidationException(
+          "RDF4J ShaclSail evaluates sh:pattern inside sh:or, sh:and, sh:xone, sh:not or sh:qualifiedValueShape with " +
+              "java.util.regex, which an untrusted pattern can make backtrack without bound (shapes ${unbounded.joinToString()}); " +
+              "use the native engine (providerId = \"kastor\"), which runs every pattern on a linear-time engine",
+      )
+    }
     val unsupported = ShaclSailFeatures.scan(shapeTriples)
     if (unsupported.descriptions.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
       val cause =

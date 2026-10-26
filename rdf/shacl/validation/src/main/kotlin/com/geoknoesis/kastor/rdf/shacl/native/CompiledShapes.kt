@@ -76,7 +76,7 @@ internal sealed class PropertyConstraint {
     /** Focus/value satisfies **any** listed node kind (`sh:nodeKind` lists). */
     data class NodeKind(val kinds: List<Iri>) : PropertyConstraint()
     /** One `sh:pattern` value combined with the shape's (single) `sh:flags`, compiled once at shape compile time. */
-    class Pattern(val pattern: String, val flags: String?, val regex: Regex) : PropertyConstraint()
+    class Pattern(val pattern: String, val flags: String?, val regex: com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern) : PropertyConstraint()
     data class MinLength(val n: Int) : PropertyConstraint()
     data class MaxLength(val n: Int) : PropertyConstraint()
     data class In(val allowed: List<RdfTerm>) : PropertyConstraint() {

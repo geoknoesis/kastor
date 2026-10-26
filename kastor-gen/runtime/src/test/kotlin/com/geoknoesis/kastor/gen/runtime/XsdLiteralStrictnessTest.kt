@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.TypedLiteral
+import com.geoknoesis.kastor.rdf.decimal
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -111,10 +112,23 @@ class XsdLiteralStrictnessTest {
             assertTrue(local in e.message.orEmpty() && value.toString() in e.message.orEmpty(), e.message)
         }
         assertEquals(lit("255", "unsignedByte"), XsdLiterals.encode(255, xsd("unsignedByte")))
-        assertEquals(lit("10.50", "decimal"), XsdLiterals.encode(BigDecimal("10.50"), xsd("decimal")))
+        assertEquals(lit("10.5", "decimal"), XsdLiterals.encode(BigDecimal("10.50"), xsd("decimal")))
         assertEquals(lit("INF", "double"), XsdLiterals.encode(Double.POSITIVE_INFINITY, xsd("double")))
         assertEquals(lit("2020-01-01T10:00:00Z", "dateTime"), XsdLiterals.encode("2020-01-01T10:00:00Z", xsd("dateTime")))
         val tagged = LangString("chat", "fr")
         assertEquals(tagged, XsdLiterals.encode(tagged, XSD.string), "literals are returned unchanged")
+    }
+
+    @Test
+    fun `encode writes the canonical xsd decimal form, as the core factories do`() {
+        for (value in listOf("10.50", "10.5", "1E+3", "1000.000", "-0.0100", "0.00", "7")) {
+            val number = BigDecimal(value)
+            val encoded = XsdLiterals.encode(number, xsd("decimal"))
+            assertEquals(decimal(number), encoded, value)
+            assertEquals(0, number.compareTo(XsdLiterals.bigDecimal(encoded)!!), "round trip of $value")
+        }
+        assertEquals(lit("1000", "decimal"), XsdLiterals.encode(BigDecimal("1000.00"), xsd("decimal")))
+        assertEquals(lit("-0.01", "decimal"), XsdLiterals.encode(BigDecimal("-0.0100"), xsd("decimal")))
+        assertThrows<IllegalArgumentException>("other datatypes keep the scale") { XsdLiterals.encode(BigDecimal("10.0"), xsd("integer")) }
     }
 }

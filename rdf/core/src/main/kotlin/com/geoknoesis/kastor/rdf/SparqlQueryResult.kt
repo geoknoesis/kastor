@@ -1,16 +1,9 @@
 package com.geoknoesis.kastor.rdf
 
-import com.geoknoesis.kastor.rdf.vocab.XSD
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 
-private val XSD_DOUBLE_NUMBER = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?")
-
-/** Parses the `xsd:double` lexical space; returns null for anything outside it. */
-private fun parseXsdDouble(lexical: String): Double? = when (lexical) {
-    "INF", "+INF" -> Double.POSITIVE_INFINITY
-    "-INF" -> Double.NEGATIVE_INFINITY
-    "NaN" -> Double.NaN
-    else -> if (XSD_DOUBLE_NUMBER.matches(lexical)) lexical.toDouble() else null
-}
+/** Parses the `xsd:double` lexical space (with `INF`, `+INF`, `-INF`, `NaN`); returns null for anything outside it. */
+private fun parseXsdDouble(lexical: String): Double? = XsdNumbers.parseFloating(lexical)?.toDouble()
 
 /**
  * Result of a SPARQL SELECT query.
@@ -86,7 +79,7 @@ interface BindingSet {
     /**
      * Get an integer value for a variable.
      */
-    fun getInt(variable: String): Int? = getString(variable)?.toIntOrNull()
+    fun getInt(variable: String): Int? = getString(variable)?.let { XsdNumbers.parseInteger(it)?.toIntOrNull() }
     
     /**
      * Get a double value for a variable.

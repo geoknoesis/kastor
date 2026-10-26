@@ -20,19 +20,27 @@ object LiteralValidation {
     const val RDF_DIR_LANG_STRING: String = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
 
     /**
-     * The longest lexical form of an `xsd:decimal` literal, or of an `xsd:integer` literal or one of a type derived
-     * from it ([BOUNDED_NUMERIC_DATATYPES]), that Kastor's parsers accept, and that the Jena provider accepts through
-     * its graph API. Computing the value of such a literal (`BigInteger` / `BigDecimal`, as Jena does for every one it
-     * parses and SPARQL engines do to compare them) takes time quadratic in its length: 12 s for 800,000 digits.
-     * Both providers apply this limit to every parse ([numericLengthProblem]).
+     * The longest lexical form of a literal of one of the [BOUNDED_NUMERIC_DATATYPES] (`xsd:decimal`, `xsd:integer`
+     * and its derived types, and the date/time, Gregorian and duration types) that Kastor's parsers accept, and that
+     * the Jena provider accepts through its graph API. The engines compute the value of such a literal with
+     * `BigInteger` / `BigDecimal` (Jena does for every number it parses, and SPARQL engines do to compare numbers,
+     * years and fractional seconds), in time quadratic in its length: 12 s for an 800,000-digit integer, 2.5 s for one
+     * comparison of a dateTime with 400,000 fraction digits. Both providers apply this limit to every parse
+     * ([numericLengthProblem]). Kastor's own XSD code (`com.geoknoesis.kastor.rdf.xsd`) is linear and needs no limit.
      */
     const val MAX_NUMERIC_LEXICAL_LENGTH: Int = 10_000
 
-    /** The datatype IRIs [MAX_NUMERIC_LEXICAL_LENGTH] applies to: `xsd:decimal`, `xsd:integer` and its derived types. */
+    /**
+     * The datatype IRIs [MAX_NUMERIC_LEXICAL_LENGTH] applies to: `xsd:decimal`, `xsd:integer` and its derived types,
+     * `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:date`, `xsd:time`, the Gregorian types and the duration types.
+     * (`xsd:double` and `xsd:float` are not limited: the JDK reads them in linear time.)
+     */
     @JvmField
     val BOUNDED_NUMERIC_DATATYPES: Set<String> = listOf(
         "decimal", "integer", "long", "int", "short", "byte", "nonNegativeInteger", "positiveInteger",
         "nonPositiveInteger", "negativeInteger", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
+        "dateTime", "dateTimeStamp", "date", "time", "gYear", "gYearMonth", "gMonthDay", "gDay", "gMonth",
+        "duration", "dayTimeDuration", "yearMonthDuration",
     ).mapTo(HashSet()) { "http://www.w3.org/2001/XMLSchema#$it" }
 
     /**

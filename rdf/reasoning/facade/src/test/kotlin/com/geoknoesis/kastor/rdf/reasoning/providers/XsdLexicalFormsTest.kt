@@ -68,4 +68,18 @@ class XsdLexicalFormsTest {
         assertTrue(reasoner.isConsistent(MemoryGraph(valid.map { (lexical, type) -> RdfTriple(s, p, TypedLiteral(lexical, xsd(type))) })))
         assertFalse(reasoner.isConsistent(MemoryGraph(listOf(RdfTriple(s, p, TypedLiteral("2023-02-29", xsd("date")))))))
     }
+
+    @Test
+    fun `huge years numbers and fractions are checked in linear work`() {
+        val n = 1_000_000
+        for ((lexical, type) in listOf(
+            "9".repeat(n) + "6-02-29" to "date", "2020-01-01T00:00:00." + "5".repeat(n) to "dateTime",
+            "9".repeat(n) to "nonNegativeInteger", "1.${"0".repeat(n)}1" to "decimal",
+        )) {
+            val (ok, work) = com.geoknoesis.kastor.rdf.xsd.XsdWork.measure { XsdLexicalForms.isWellTyped(lexical, xsd(type)) }
+            assertTrue(ok, type)
+            assertTrue(work in n.toLong()..8L * n, "the shared linear parser read the $type literal (work $work)")
+        }
+        assertFalse(XsdLexicalForms.isWellTyped("9".repeat(n), xsd("long")))
+    }
 }

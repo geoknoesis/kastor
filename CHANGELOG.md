@@ -19,6 +19,108 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round fourteen
+
+#### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`, `rdf-shacl`), behaviour change:** every untrusted
+  regular expression now runs on **RE2/J** (BSD-3-Clause, new dependency of `rdf-sparql-contract`), a linear-time
+  engine: `REGEX`, `REPLACE`, `fn:matches` and `fn:replace` of a `SandboxedSelectQuery` on both providers (so also the
+  SPARQL that `ShaclSail` runs for the RDF4J SHACL validator) and `sh:pattern` in the native SHACL engine. A match costs
+  at most the size of the compiled pattern per input character, so no pattern can backtrack catastrophically. This
+  replaces round twelve's defence, whose shape analyzer was bypassed by `\Q[\E` in a class and by `(?-x)` / `(?x:...)`
+  prefixes (round-thirteen review): the analyzer `SandboxRegexPatterns` and the 50-million read cap are removed
+  (internal API of `rdf-sparql-contract`; its ABI dump is updated), and round twelve's claims that patterns "whose
+  choices can read nothing are refused" and "read at most 50 million characters" no longer apply.
+  - One translator (`XPathRegex`, internal API) reads every pattern as an XPath regular expression with XPath flags
+    (`s`, `m`, `i`, `x`, `q`) and computes every character class into explicit ranges (subtraction, the case orbits of
+    the `i` flag, `\p{IsBlock}`, `\i`, `\c`, `Cn`), so the semantics do not depend on RE2's flags or tables.
+  - Sandboxed SPARQL now has XPath semantics instead of Java's (behaviour change): `$` is the end of the input,
+    `.` excludes line feed and carriage return, `\d` / `\w` are Unicode-aware (`\w` keeps the underscore), unknown
+    flags (RDF4J's `d`, `u`) are errors, and `REPLACE` uses `fn:replace` replacement syntax (`$N`, `\$`, `\\`; a missing
+    group up to 9 is empty; `${name}` and other escapes are errors).
+  - Refused, fail closed: back-references, lookarounds, atomic groups, possessive quantifiers, `\b` / `\B` (RE2's are
+    ASCII-only), non-leading inline flag groups, repetition counts above 1000, groups or class subtractions nested more
+    than 64 deep, and programs above 50,000 instructions. In a sandboxed query such a pattern fails the query
+    (`SandboxLimitException`); a syntax error stays a SPARQL error. In a shapes graph it is a `ShapeCompileException`.
+    Nothing ever falls back to `java.util.regex`. (Jena still compiles a **constant** pattern with `java.util.regex`
+    while it parses the query, so a pattern Java rejects fails the parse there.)
+  - Native SHACL (behaviour change): back-references, lookarounds and possessive quantifiers in `sh:pattern`, which
+    were passed to `java.util.regex`, are now rejected at compile time. The pattern evaluation thread with a fixed
+    stack is removed (RE2 does not recurse on its input), so `ksh:PatternTooComplex` / `isPatternTooComplex` is no
+    longer reported (the term and the property stay). The step budget (`patternTimeout`) still bounds a very long value.
+- **Security (`rdf-rdf4j`), behaviour change:** the RDF4J SHACL validator refuses a shapes graph with a `sh:pattern`
+  under `sh:or`, `sh:and`, `sh:xone`, `sh:not` or `sh:qualifiedValueShape`, whatever `unsupportedFeatures` says:
+  `ShaclSail` evaluates those in a transactional plan with its own `PatternFilter` on `java.util.regex`, which nothing
+  can bound (probed: a back-reference matched there). Patterns directly on a shape or behind `sh:node` run as sandboxed
+  `REGEX` on the linear-time engine.
+- **Security (`rdf-jena`):** property paths of a sandboxed query are **metered**. Jena's path engine runs over a view
+  of the active graph whose every `find` and returned triple is charged: the deadline, cancellation and interrupt flag
+  are checked every 256 reads, and more than 4 Mi reads without a solution fail the query with
+  `SandboxLimitException` (that bounds what one evaluation collects in memory). Before, a sequence nested in `?`, `*`,
+  `+` or `|` (`(p/p/p/p/p/p)?` over a 400-triple complete graph) ran 8.7 s under a 1 s timeout, or out of a 256 MiB
+  heap; it now stops in about 0.5 s (RDF4J stops at the 1 s deadline). A closure along a chain too deep for Jena's
+  recursion is a limit, not a `StackOverflowError`. The structural path limit is relaxed from 64 steps / 16 levels to
+  256 / 32.
+- **Fixed (`rdf-sparql-contract`, `rdf-core`):** unbalanced leading `}` tokens no longer defeat the nesting guards of
+  `SparqlInitialBindings` (the query is refused with `IllegalArgumentException`) and of the dataset-view rewrite
+  `SparqlDatasetClauses` (the query is unanalysable): 5,000 nested groups behind 5,000 `}` overflowed the stack.
+
+#### Shared XSD lexical parsing (round fourteen)
+
+- **Added (internal API):** `com.geoknoesis.kastor.rdf.xsd` in `:rdf:core`, one linear-time parser and comparator
+  of the XSD 1.1 numeric, boolean, date/time, Gregorian and duration lexical spaces (`XsdNumbers`, `XsdDecimal`,
+  `XsdNumeric`, `XsdTemporals`, `XsdLexical`). Exact decimals are kept as significant digits and an exponent and
+  compared by sign, exponent and digits; fractional seconds stay digit strings; years of any length carry in linear
+  time. `BigInteger`/`BigDecimal` are built only below `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH` (10,000), and
+  float/double conversion keeps 800 digits plus a sticky digit, so it stays correctly rounded in constant work. The
+  package is marked `@InternalKastorApi` (new opt-in annotation, at ERROR level, left out of the ABI dump; only the
+  annotation class is added to `core.api`). The SHACL validator, Kastor Gen, the memory reasoner, the typed
+  bindings and both providers now use it; their own copies of the XSD grammars are removed.
+- **Fixed (SHACL):** `sh:datatype` and the value-range and order constraints (`sh:min/maxInclusive/Exclusive`,
+  `sh:lessThan(OrEquals)`, node-expression ordering) no longer build a `BigDecimal` of fractional seconds: a
+  `xsd:dateTime` with a million fraction digits took 21 s (round 13 P2-2). `orderViolations` parses each term once.
+- **Fixed (SHACL):** `sh:languageIn` reads at most the longest range plus one character of a tag; it was quadratic in
+  the tag length, about 80 s for a 1.2 MB tag (round 13 P2-1).
+- **Fixed (SHACL):** `sh:datatype xsd:base64Binary` and `xsd:language` matched regular expressions that repeat a
+  group per character and threw `StackOverflowError` near 300,000 characters; both are now linear scanners.
+- **Changed (SHACL):** `sh:datatype` accepts date/time literals whose year exceeds the `Int` range (XSD 1.1 years are
+  unbounded); they were rejected.
+- **Fixed (Kastor Gen):** `replaceInGraph`/`mergeRecord` matched graph terms and record values with
+  `BigDecimal.equals`, so a record holding `1E+3` (e.g. `BigDecimal("1000").stripTrailingZeros()`) deleted the
+  graph's `"1000"^^xsd:decimal` and wrote nothing (round 13 P1). Values are now compared by value, independent of
+  scale, and adds are checked against the terms that remain.
+- **Fixed (Kastor Gen):** `XsdLiterals.isWellFormed` (behind `sh:datatype` checks and every `xsd:dateTime`/`xsd:time`
+  read) no longer parses the fractional seconds as a `BigDecimal` (round 13 P2-1).
+- **Changed (Kastor Gen):** `XsdLiterals.compareNumeric` compares literals of any length by their digits; it returned
+  `null` (a violation) above 10,000 characters. `encode` writes a `BigDecimal` without an exponent and refuses one
+  whose decimal form exceeds 10,000 characters before building it. The processor parses a numeric bound against its
+  own datatype (`"1.5"^^xsd:integer` is ignored with a warning) and ignores one whose decimal form exceeds 10,000
+  characters (`"1e999999999"^^xsd:double` would have built a billion digits).
+- **Changed (core):** `decimal(BigDecimal)`, `BigDecimal.toLiteral()` and `Literal(BigDecimal)` throw
+  `IllegalArgumentException` for a value whose decimal form exceeds 10,000 characters (both providers refuse such a
+  literal anyway). `BindingSet.getInt` no longer accepts non-ASCII digits.
+- **Changed (providers):** the 10,000-character limit (`LiteralValidation.BOUNDED_NUMERIC_DATATYPES`) now also covers
+  `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:date`, `xsd:time`, the Gregorian types and the duration types: Jena
+  compares their seconds and years with `BigDecimal` in quadratic time (2.5 s for one comparison of a dateTime with
+  400,000 fraction digits).
+- **Fixed (Jena):** a parse of a `xsd:dateTime`, `xsd:time` or duration with 18 or more fraction digits threw a raw
+  `NumberFormatException` from Jena's literal checker; it is now an `RdfFormatException`. Jena still cannot read such
+  a literal (RDF4J can).
+- **Fixed (Jena):** in SPARQL text a number's digits count across its point and exponent; `<10,000 digits>.<10,000
+  digits>` passed the 10,000-digit check (round 13 providers P3-5).
+- **Changed (reasoning):** the memory reasoner's ill-typed-literal check also covers the Gregorian and duration types.
+
+#### Integration (round fourteen)
+
+- **Changed (Kastor Gen), behaviour change:** `XsdLiterals.encode` writes a `BigDecimal` as an `xsd:decimal` in the
+  canonical form the core factories write (`decimal(BigDecimal)`): `10.50` is now `"10.5"`, not `"10.50"`. Other
+  datatypes keep the plain form (`BigDecimal("10.0")` is still refused as `xsd:integer`). `mergeRecord` /
+  `replaceInGraph` compare decimals by value, so a graph that already holds `"10.50"` keeps it unchanged; only new
+  values are written canonically.
+- **Docs (providers):** the Jena and RDF4J provider pages now state that the 10,000-character limit covers the
+  date/time, Gregorian and duration types as well as the numeric ones, on both providers.
+
 ### Round twelve
 
 #### Build, CI and docs (round twelve)

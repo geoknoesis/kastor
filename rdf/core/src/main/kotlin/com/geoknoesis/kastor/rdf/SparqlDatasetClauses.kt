@@ -333,7 +333,10 @@ internal object SparqlDatasetClauses {
         return if (SparqlGroupScope(text, tokens).group(from, until, variables)) variables.toList() else null
     }
 
-    /** Deepest nesting of `{` groups in [tokens] of [text]. */
+    /**
+     * Deepest nesting of `{` groups in [tokens] of [text]; [Int.MAX_VALUE] (unanalysable) when a `}` closes a group
+     * that was never opened, so unbalanced closers cannot hide deeper nesting after them.
+     */
     private fun groupDepth(text: String, tokens: List<Token>): Int {
         var depth = 0
         var deepest = 0
@@ -341,7 +344,7 @@ internal object SparqlDatasetClauses {
             if (t.kind != Kind.PUNCT) continue
             when (text[t.start]) {
                 '{' -> deepest = maxOf(deepest, ++depth)
-                '}' -> depth--
+                '}' -> if (--depth < 0) return Int.MAX_VALUE
             }
         }
         return deepest

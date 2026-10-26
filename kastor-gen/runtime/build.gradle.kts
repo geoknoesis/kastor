@@ -25,6 +25,8 @@ dependencies {
 // GraphStateCache and its settings are shared with the validation adapters only (@KastorGenInternalApi, opt-in at
 // ERROR level): they are not part of the supported ABI and stay out of the dump.
 kotlin {
+  // The shared XSD lexical parsers of :rdf:core (com.geoknoesis.kastor.rdf.xsd) are internal Kastor API.
+  compilerOptions { optIn.add("com.geoknoesis.kastor.rdf.InternalKastorApi") }
   @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
   abiValidation {
     filters {
