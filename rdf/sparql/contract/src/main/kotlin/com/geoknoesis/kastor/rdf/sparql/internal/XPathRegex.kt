@@ -35,6 +35,15 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  * quantifiers, word boundaries (`\b`, `\B`: RE2's are ASCII-only), inline flag groups other than leading ones,
  * class intersection (`&&`) and nested classes, repetition counts above 1000, groups nested more than 64 deep, class
  * subtractions nested more than 64 deep, and patterns whose compiled program would pass 50,000 instructions.
+ *
+ * **Compile cost.** No deadline can interrupt RE2/J while it parses and compiles a pattern, and its parser takes time
+ * quadratic in the pattern's text. So a pattern is refused (as unsupported) when it is longer than
+ * [MAX_PATTERN_LENGTH] characters, or when its translation's structural cost passes the bounds of
+ * [XPathRegexTranslator]: syntax elements times text length ([XPathRegexTranslator.MAX_PARSE_COST]; about eight
+ * classes the size of `\p{L}`, or 16,000 literal characters), and the estimated program. These are counts, so
+ * whether a pattern is accepted does not depend on the machine. The translation also runs the caller's `check`.
+ * Counts are written to RE2 in canonical form (`{01}` is `{1}`), and `\uHHHH\uHHHH` of a surrogate pair is the one
+ * character it encodes.
  */
 object XPathRegex {
 
@@ -45,7 +54,20 @@ object XPathRegex {
      */
     @JvmStatic
     @Throws(XPathRegexException::class)
-    fun compile(pattern: String, flags: String?): XPathPattern {
+    fun compile(pattern: String, flags: String?): XPathPattern = compile(pattern, flags, NO_CHECK)
+
+    /**
+     * [pattern] compiled with the XPath [flags], running [check] (a deadline, a cancellation) while it is translated.
+     *
+     * @throws XPathRegexException when the pattern or the flags are invalid or not supported (see [XPathRegex]).
+     */
+    @JvmStatic
+    @Throws(XPathRegexException::class)
+    fun compile(pattern: String, flags: String?, check: Runnable): XPathPattern {
+        // Checked before anything is built from the pattern: translating it costs (and allocates) about its length.
+        if (pattern.length > MAX_PATTERN_LENGTH) {
+            throw XPathRegexException(pattern, "the pattern is longer than $MAX_PATTERN_LENGTH characters (${pattern.length})", unsupported = true)
+        }
         var ignoreCase = false
         var multiLine = false
         var dotAll = false
@@ -61,7 +83,7 @@ object XPathRegex {
                 else -> throw XPathRegexException(pattern, "unsupported flag character '$c' in \"$flags\" (the flags are s, m, i, x and q)")
             }
         }
-        if (literal) return compileTranslation(pattern, flags, literalTranslation(pattern, ignoreCase))
+        if (literal) return compileTranslation(pattern, flags, literalTranslation(pattern, ignoreCase, check))
         var start = 0
         var leadingExtended = false
         // Leading inline flag groups: "(?" + one or more of i, m, s, x + ")", repeated, at the very start.
@@ -80,15 +102,15 @@ object XPathRegex {
             start = end + 1
         }
         val translation = XPathRegexTranslator(
-            pattern, start, ignoreCase, multiLine, dotAll, extended || leadingExtended, javaComments = leadingExtended,
+            pattern, start, ignoreCase, multiLine, dotAll, extended || leadingExtended, javaComments = leadingExtended, check,
         ).translate()
         return compileTranslation(pattern, flags, translation)
     }
 
     /** The `q` flag: every character of [pattern] is literal (under `i`, the class of its case variants). */
-    private fun literalTranslation(pattern: String, ignoreCase: Boolean): XPathRegexTranslator.Translation {
+    private fun literalTranslation(pattern: String, ignoreCase: Boolean, check: Runnable): XPathRegexTranslator.Translation {
         val quoted = "\\Q" + pattern.replace("\\E", "\\E\\\\E\\Q")
-        return XPathRegexTranslator(quoted, 0, ignoreCase, multiLine = false, dotAll = false, extended = false, javaComments = false).translate()
+        return XPathRegexTranslator(quoted, 0, ignoreCase, multiLine = false, dotAll = false, extended = false, javaComments = false, check).translate()
     }
 
     private fun compileTranslation(pattern: String, flags: String?, translation: XPathRegexTranslator.Translation): XPathPattern {
@@ -104,6 +126,17 @@ object XPathRegex {
         }
         return XPathPattern(pattern, flags, compiled, translation.groups)
     }
+
+    /**
+     * The longest pattern compiled, in UTF-16 units: a longer one is refused before it is read. (What a pattern costs
+     * to compile is bounded by the translation's structural cost, [XPathRegexTranslator.MAX_PARSE_COST]; this bound
+     * keeps the work and the allocation of reading it small too.)
+     */
+    const val MAX_PATTERN_LENGTH = 64 * 1024
+
+    /** A check that does nothing (a pattern of a trusted source, or one compiled without a deadline). */
+    @JvmField
+    val NO_CHECK: Runnable = Runnable { }
 
     /** Flags a leading inline flag group may set. */
     private const val LEADING_INLINE_FLAGS = "imsx"
@@ -155,4 +188,15 @@ class XPathRegexException(
     val reason: String,
     /** Whether the pattern is refused because the engine cannot evaluate it as meant (not because it is invalid). */
     val unsupported: Boolean = false,
-) : IllegalArgumentException("${if (unsupported) "Unsupported" else "Invalid"} regular expression \"$pattern\": $reason")
+) : IllegalArgumentException("${if (unsupported) "Unsupported" else "Invalid"} regular expression \"${abbreviated(pattern)}\": $reason")
+
+/** [pattern] for a message: a long one is cut (a refused pattern may be megabytes long). */
+private fun abbreviated(pattern: String): String =
+    if (pattern.length <= MESSAGE_PATTERN_LENGTH) {
+        pattern
+    } else {
+        val cut = if (Character.isHighSurrogate(pattern[MESSAGE_PATTERN_LENGTH - 1])) MESSAGE_PATTERN_LENGTH - 1 else MESSAGE_PATTERN_LENGTH
+        pattern.take(cut) + "... (${pattern.length} characters)"
+    }
+
+private const val MESSAGE_PATTERN_LENGTH = 200
