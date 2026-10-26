@@ -4,28 +4,30 @@ This is the exact procedure for the first release from the hardened build. `rele
 
 Expected runtimes: CI about 20 minutes on Windows (Linux is shorter); release readiness about 60–90 minutes per OS plus 25–40 minutes for the signing job; publish about 20 minutes plus Central Portal validation (up to 30 minutes).
 
-## Status of repository settings (pending user action)
+## Status of repository settings
 
-The workflows and scripts are committed, but the GitHub settings they depend on are **not applied yet**. A maintainer with admin rights must do these steps; nothing in CI applies them. The table below was last checked read-only on 2026-09-14 (private vulnerability reporting: 2026-09-30); re-check each row with the `gh api` commands in step 3.5 before relying on it:
+The settings below are applied. They were last read back with read-only `gh api` calls on 2026-10-26; re-check each row with the commands in step 3.5 before relying on it. Two items are still open: the Dependency graph (optional) and the four environment secrets, which only a maintainer can enter.
 
 | Setting | Current state | Required by | Step |
 |---|---|---|---|
-| Dependency graph | **disabled** (`GET repos/geoknoesis/kastor/dependency-graph/sbom` returns 404) | GitHub dependency review in `dependency-review.yml` (skipped with a notice while disabled) | 3.1 (optional) |
-| `release` environment and its reviewers | **missing** | `publish.yml` approval gate | 3.3 |
-| `release-tags` tag ruleset | **missing** | only admins may push `v*` tags | 3.3 |
-| `main-protection` branch ruleset | **active** since 2026-10-24 (ruleset 24258020), but it also holds the required checks, so its admin bypass lets an admin merge a red PR; the disabled "My ruleset" (16510997) is still there | PRs, no force-push or deletion on `main` | 3.3 |
-| `main-required-checks` branch ruleset | **missing** (checked 2026-10-25) | required checks that nobody, including admins, can bypass | 3.3 |
-| Pages source | **legacy** (`build_type: legacy`, branch `main` `/docs`) so every push deploys twice | `pages.yml` as the only deployment | 3.3 |
-| Code security: Dependabot security updates, secret scanning + push protection | **disabled** as of the 2026-09-30 read-only check (Dependabot vulnerability alerts already enabled) | leaked-secret blocking, dependency fixes | 3.3 |
-| Private vulnerability reporting | **enabled as of 2026-09-30** (configured then; verify with `gh api repos/geoknoesis/kastor/private-vulnerability-reporting`, expect `{"enabled":true}`) | `SECURITY.md` reporting channel | 3.3 (verify) |
-| Environment secrets (4) | **not set** | `publish.yml` signing and upload | 3.4 |
+| Dependency graph | **disabled** (`GET repos/geoknoesis/kastor/dependency-graph/sbom` returns 404) | GitHub dependency review in `dependency-review.yml` (skipped with a notice while disabled; `dependency-review` is therefore not a required check) | 3.1 (optional) |
+| `release` environment and its reviewers | **live**: required reviewers, deployments only from `v*` tags | `publish.yml` approval gate | 3.3 |
+| `release-tags` tag ruleset | **active** (24258018): only admins may create, update or delete `v*` tags | only admins may push `v*` tags | 3.3 |
+| `main-protection` branch ruleset | **active** (24258020): pull requests (0 approvals), no force-push or deletion, admin bypass in `pull_request` mode only. The disabled "My ruleset" (16510997) is still there and unused | PRs, no force-push or deletion on `main` | 3.3 |
+| `main-required-checks` branch ruleset | **active** (25840953), strict, no bypass actors. Required checks: `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, `macos` | required checks that nobody, including admins, can bypass | 3.3 |
+| Pages source | **workflow** (`build_type: workflow`) | `pages.yml` as the only deployment | 3.3 |
+| Code security | **enabled**: Dependabot vulnerability alerts, Dependabot security updates, secret scanning and push protection | leaked-secret blocking, dependency fixes | 3.3 |
+| Private vulnerability reporting | **enabled** (`{"enabled":true}`) | `SECURITY.md` reporting channel | 3.3 |
+| Environment secrets (4) | **not set** (`gh api repos/geoknoesis/kastor/environments/release/secrets` lists none) | `publish.yml` signing and upload | 3.4 |
+
+`scripts/check-release-checklist.py` (run by the gate-script unit tests) fails when the test floors quoted in step 2 differ from those `release-readiness.yml` enforces. The table above is not generated: it records the live state, so re-read it when settings change.
 
 ## 1. Land the changes through a pull request
 
 1. Push the branch: `git push -u origin <branch>`.
 2. Open a pull request to `main`. Wait for these checks to go green:
    - `build (ubuntu-latest)`, `build (windows-latest)`: `check` (including the quality gates), conformance smoke, `buildHealth` and reviewed dependency advice, executed-test floor, module floors and skip allowlist; on pull requests the Linux job also compares the complexity baseline with the base branch's. `buildHealth` itself only reports advice; the next step fails on any advice that `scripts/dependency-advice-exceptions.json` does not review.
-   - `macos`: the same `check` and test gates on macOS.
+   - `macos`: the same `check` and test gates on macOS (it does not run `buildHealth`).
    - `shacl-w3c-suite`: the pinned W3C SHACL 1.2 corpus (the required suite must execute all 166 cases).
    - `dependency-review`: OSV lockfile audit and secret scan; GitHub dependency review runs only when the Dependency graph is enabled, otherwise the step is skipped with a notice.
 3. Fix failures in the PR. Do not lower floors or add allowlist entries without a reason.
@@ -43,7 +45,7 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 
 2. Verify in the run:
    - `staged-consumer (ubuntu-latest)` and `staged-consumer (windows-latest)` both pass, then `local-signing` passes.
-   - The *Verify executed test counts and skips* step prints the counts above the floors (overall 3,500; RDF corpus 1,700; SHACL module 285 with `Shacl12NativeConformanceTest=150`).
+   - The *Verify executed test counts and skips* step prints the counts above the floors (overall 5,800; RDF corpus 1,845; SHACL module 460 with `Shacl12NativeConformanceTest=166`).
    - The *Inspect metadata and documentation jars* step prints `Validated metadata, required artifacts and SBOMs for N staged publications`.
    - The *Verify plugin configuration cache reuse* step passes (`Reusing configuration cache`).
 3. Download and inspect the artifacts (`gh run download <run-id>`):
@@ -51,7 +53,9 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
    - `local-signing-evidence`: `signing-verification.json` lists the verified artifacts with `"tampered_artifact_rejected": true`. Only a run on the release commit counts.
 4. Run **Conformance** manually (`gh workflow run conformance.yml --ref main`) and check that the full RDF 1.2 and SHACL 1.2 floors pass.
 
-## 3. Configure GitHub (once, maintainer with admin rights) — pending user action
+## 3. Configure GitHub (once, maintainer with admin rights)
+
+The settings are already applied (see the status table). Re-running the script is safe: it changes only what differs and warns before removing a required check.
 
 Run these in this order.
 
@@ -63,12 +67,12 @@ Run these in this order.
    ```
 
    Check that the plan shows:
-   - required checks `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, plus `macos` with `--require-macos` and `dependency-review` only if the graph is enabled, in the ruleset `main-required-checks`, which has no bypass actors;
+   - required checks `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, plus `macos` (unless `--no-macos`) and `dependency-review` only if the graph is enabled, in the ruleset `main-required-checks`, which has no bypass actors;
    - `bypass: repository admins (RepositoryRole 5, pull_request mode)` on `main-protection`: an admin may merge their own PR without an approval, but never pushes to `main` directly and never merges past a red or pending required check. Pass `--no-admin-bypass` to require approvals from admins too;
    - `Pages build type: legacy -> workflow`;
    - the *Code security* block with the current state of each setting (settings already enabled are skipped).
 
-   Flags: `--require-dependency-review` forces the check to be required, and `--no-dependency-review` never requires it. `--require-macos` requires the `macos` job (it runs on every PR since round twelve). `--approvals N` requires N approving reviews (default 0).
+   Flags: `--require-dependency-review` forces the check to be required, and `--no-dependency-review` never requires it. `macos` is required by default (it runs on every PR); `--no-macos` drops it, and the dry run then prints a WARNING that applying removes it. The script keeps every currently required check it does not manage; a "WARNING: applying REMOVES" line in the dry run means a check would disappear. `--approvals N` requires N approving reviews (default 0).
 3. **Apply:**
 
    ```bash

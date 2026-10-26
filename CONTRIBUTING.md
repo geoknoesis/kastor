@@ -112,7 +112,7 @@ Suites that must never disappear are named with `--require-suite CLASS=MIN`. The
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check --continue` (including the quality gates), conformance smoke, test-count/skip gate, `buildHealth` and reviewed dependency advice (Linux, Windows and macOS, on every PR and push). Later verification steps run even when `check` fails, so one red gate does not hide test results. `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check --continue` (including the quality gates), conformance smoke, test-count/skip gate, `buildHealth` and reviewed dependency advice (Linux and Windows; macOS runs `check` and the test gates only, on every PR and push). Later verification steps run even when `check` fails, so one red gate does not hide test results. `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
 | [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
 | [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Weekly + manual; called by `publish.yml` | Staging (every module the BOM manages), metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
 | [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |

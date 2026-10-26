@@ -17,11 +17,16 @@
 #                                 (RepositoryRole 5) may bypass its pull-request rule in `pull_request` mode, so a
 #                                 solo maintainer can merge their own PR; they can never push to main directly.
 #                                 The required checks live in `main-required-checks`, which nobody bypasses.
-#   --require-macos               Also require the `macos` CI job (it runs on every PR). Off by default until the
-#                                 job has a record of stable runs.
+#   --no-macos                    Do not require the `macos` CI job. By default `macos` is required (it runs on
+#                                 every PR and is already required on the live ruleset). --require-macos is kept
+#                                 as a no-op for old command lines.
 #   --no-security-features        Leave the repository's code-security settings (step 5) untouched.
 #   --apply                       Perform the calls. Without it, every call is printed and nothing changes.
 #
+# The script never silently removes a required check. It reads the current checks of `main-required-checks` first
+# and keeps every one it does not manage itself (anything outside build/shacl-w3c-suite/macos/dependency-review),
+# and in auto mode it keeps `dependency-review` when the ruleset already requires it. A managed check is removed
+# only by an explicit opt-out (--no-macos, --no-dependency-review); the dry run then prints a WARNING naming it.
 # What it configures (see docs/reference/release-checklist.md):
 #   1. Environment `release`: required reviewers, deployments only from tags matching `v*`.
 #   2. Tag ruleset `release-tags`: only repository admins may create, update or delete `v*` tags.
@@ -45,7 +50,7 @@ approvals=0
 reviewers=()
 dependency_review=auto   # auto | always | never
 admin_bypass=true
-require_macos=false
+require_macos=true
 security_features=true
 
 while [ $# -gt 0 ]; do
@@ -59,8 +64,9 @@ while [ $# -gt 0 ]; do
     --no-dependency-review) dependency_review=never ;;
     --no-admin-bypass) admin_bypass=false ;;
     --require-macos) require_macos=true ;;
+    --no-macos) require_macos=false ;;
     --no-security-features) security_features=false ;;
-    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -91,15 +97,37 @@ esac
 # Required status checks: the check-run names GitHub reports for jobs that run on every pull request.
 #   ci.yml                job `build` (matrix os)         -> "build (ubuntu-latest)", "build (windows-latest)"
 #   ci.yml                job `shacl-w3c-suite`           -> "shacl-w3c-suite"
-#   ci.yml                job `macos`                     -> "macos" (only with --require-macos)
+#   ci.yml                job `macos`                     -> "macos" (unless --no-macos)
 #   dependency-review.yml job `dependency-review`         -> "dependency-review"
 required_checks=(
   "build (ubuntu-latest)"
   "build (windows-latest)"
   "shacl-w3c-suite"
 )
+# Checks the ruleset requires today (empty when the ruleset does not exist yet or the read fails).
+managed_checks=("build (ubuntu-latest)" "build (windows-latest)" "shacl-w3c-suite" "macos" "dependency-review")
+current_checks=()
+rc_id="$(gh api "repos/$repo/rulesets" --jq '.[] | select(.name == "main-required-checks") | .id' 2>/dev/null || true)"
+if [ -n "$rc_id" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && current_checks+=("$line")
+  done < <(gh api "repos/$repo/rulesets/$rc_id"     --jq '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' 2>/dev/null || true)
+fi
+has_check() { local needle="$1"; shift; local c; for c in "$@"; do [ "$c" = "$needle" ] && return 0; done; return 1; }
+# In auto mode an already-required dependency-review stays required even if the graph probe fails.
+if [ "$dependency_review" = auto ] && ! $require_dependency_review    && has_check "dependency-review" "${current_checks[@]+"${current_checks[@]}"}"; then
+  require_dependency_review=true
+fi
 $require_macos && required_checks+=("macos")
 $require_dependency_review && required_checks+=("dependency-review")
+# Keep every current check this script does not manage.
+for c in "${current_checks[@]+"${current_checks[@]}"}"; do
+  has_check "$c" "${managed_checks[@]}" || has_check "$c" "${required_checks[@]}" || required_checks+=("$c")
+done
+removed_checks=()
+for c in "${current_checks[@]+"${current_checks[@]}"}"; do
+  has_check "$c" "${required_checks[@]}" || removed_checks+=("$c")
+done
 
 current_pages="$(gh api "repos/$repo/pages" --jq .build_type 2>/dev/null || echo "unavailable")"
 # Code security state. `vulnerability-alerts` answers 204 when enabled and 404 when disabled.
@@ -127,6 +155,10 @@ else
 fi
 echo "- Ruleset 'main-required-checks' on the default branch (no bypass actors, strict):"
 echo "    required checks: $(printf '"%s" ' "${required_checks[@]}")"
+if [ "${#removed_checks[@]}" -gt 0 ]; then
+  echo "    WARNING: applying REMOVES these currently required checks: $(printf '"%s" ' "${removed_checks[@]}")"
+  echo "             (explicit opt-out: --no-macos / --no-dependency-review)"
+fi
 if $require_dependency_review; then
   echo "    dependency-review is required (dependency graph enabled: $graph_enabled, mode: $dependency_review)"
 else

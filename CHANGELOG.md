@@ -19,6 +19,21 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### Build and docs (round sixteen)
+
+- **Fixed (release tooling):** `scripts/configure-github-release.sh` required `macos` only with `--require-macos`, so
+  re-running the documented command would have removed `macos` from the live `main-required-checks` ruleset. `macos` is
+  now required by default (`--no-macos` opts out), the script reads the ruleset's current checks first, keeps every
+  check it does not manage (and an already-required `dependency-review`), and the dry run prints a WARNING naming any
+  check an apply would remove. Covered by `scripts/test_configure_github_release.py` (fake `gh`, read-only).
+- **Fixed (docs):** the release checklist's settings table and step-2 test floors were stale. The table now matches the
+  live repository, the floors match `release-readiness.yml`, and `scripts/check-release-checklist.py` (run by the
+  gate-script tests) fails when they diverge again. `pages.yml`'s header and CONTRIBUTING no longer describe the legacy
+  Pages source or claim that macOS runs `buildHealth`.
+- **Fixed (docs):** the changelog's repeated `### Round twelve` headings are merged into one.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
@@ -122,7 +137,6 @@ entries are regrouped under those kind headings.
   date/time, Gregorian and duration types as well as the numeric ones, on both providers.
 
 ### Round twelve
-
 #### Build, CI and docs (round twelve)
 
 - **Fixed (build):** the complexity ratchet (`scripts/check-code-complexity.py`) counts branches inside string
@@ -163,8 +177,6 @@ entries are regrouped under those kind headings.
 - **Changed (docs):** the changelog entries of round eleven carry their Keep a Changelog kind; CONTRIBUTING and the
   release checklist describe the timeouts, the baseline comparison, the stricter allowlist and floor gates, macOS on
   pull requests and the split rulesets.
-
-### Round twelve
 
 #### Providers (Jena, RDF4J, HermiT)
 
@@ -238,8 +250,6 @@ entries are regrouped under those kind headings.
 - **Internal:** the Jena `DESCRIBE` evaluation moved to `JenaDescribe` and the RDF4J graph-result and update-syntax
   helpers to `Rdf4jQuerySyntax`, out of the repository classes (whose complexity ceilings are lowered).
 
-### Round twelve
-
 #### Core (`rdf-core`, `rdf-holon`, `rdf-testkit`)
 
 - **Breaking: `RdfException` is unchecked.** It extends `RuntimeException` instead of `Exception`, and so do all its
@@ -300,8 +310,6 @@ entries are regrouped under those kind headings.
   deadline test no longer asserts that the request reached the server; the interrupt test of URL loading runs in
   well under a second and now fails if a socket timeout, rather than the interrupt, ends the load.
 
-### Round twelve
-
 #### SPARQL endpoint, CLI and examples
 
 - **Fixed (`rdf-cli`):** `diff`, `parse` and `to-turtle` no longer drop the named graphs of a JSON-LD input. Only TriG
@@ -354,8 +362,6 @@ entries are regrouped under those kind headings.
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).
 
-### Round twelve
-
 #### Code generation (kastor-gen)
 
 - **Fixed (`replaceInGraph` lost update):** a single-valued member counted as unchanged when its value equalled
@@ -392,8 +398,6 @@ entries are regrouped under those kind headings.
   JAKARTA compilation test uses the real API jar.
 - **Docs:** the annotation reference lists the ontology generation fields (including `validationAnnotations` and
   its dependency) and `replaceInGraph`; the `GraphStateCache` `DETACHED` KDoc describes the wait it can do.
-
-### Round twelve
 
 #### onto-quality (onto-qa, benchmarks)
 
@@ -466,8 +470,6 @@ entries are regrouped under those kind headings.
   blank nodes, OWL 2 constructs, imports, punning, SKOS in both directions, multilingual names and 3,000 classes: no
   warning or violation), `DetectorRegressionTest`, `DeepHierarchyTest`, `CliTruncationTest`, `QualityReportTextTest`.
 
-### Round twelve
-
 #### Integration follow-ups (providers, core, SPARQL endpoint)
 
 - **Fixed (data integrity):** a graph parse of a document that names a graph (JSON-LD `@graph` under an `@id`) fails
@@ -520,8 +522,6 @@ entries are regrouped under those kind headings.
   streaming thread) is reported as a parse error.
 - **API (core):** `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`, `BOUNDED_NUMERIC_DATATYPES` and
   `numericLengthProblem(datatypeIri, lexical)`: the limit both providers share.
-
-### Round twelve
 
 #### SHACL (`rdf-shacl-validation`, `rdf-shacl-dsl`)
 
