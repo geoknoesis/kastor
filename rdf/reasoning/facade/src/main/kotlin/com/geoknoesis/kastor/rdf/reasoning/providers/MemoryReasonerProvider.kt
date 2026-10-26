@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.rdf.reasoning.providers
 
+import com.geoknoesis.kastor.rdf.xsd.XsdLexical
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 import com.geoknoesis.kastor.rdf.reasoning.*
 import com.geoknoesis.kastor.rdf.*
 
@@ -300,77 +302,15 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
 }
 
 /**
- * Lexical-space checks (XML Schema 1.1 Part 2) for the XSD datatypes the memory reasoner recognises.
- * Unknown datatypes are accepted.
+ * Lexical-space checks (XML Schema 1.1 Part 2) for the XSD datatypes the memory reasoner recognises: numbers (with
+ * the value ranges of the integer types), booleans, dates and times, the Gregorian types and durations, by the shared
+ * linear-time parser of `:rdf:core` (a year or a number of millions of digits costs linear time; no `BigInteger` is
+ * built). Unknown datatypes are accepted.
  *
  * All recognised types have the `whiteSpace=collapse` facet, so leading and trailing XML whitespace is removed
- * before matching. Dates use the XSD 1.1 grammar: years of four or more digits (optionally negative, `0000`
- * allowed), day-of-month checked against the month and leap years, and `24:00:00` as end-of-day time.
+ * before matching.
  */
 internal object XsdLexicalForms {
-    private const val XSD = "http://www.w3.org/2001/XMLSchema#"
-    private val integer = Regex("[+-]?[0-9]+")
-    private val decimal = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
-    private val floating = Regex("([+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?|[+-]?INF|NaN)")
-    private const val YEAR_MONTH_DAY = "(-?(?:[1-9][0-9]{3,}|0[0-9]{3}))-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"
-    private const val TIME = "(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?|24:00:00(?:\\.0+)?)"
-    private const val TIMEZONE = "(?:Z|[+-](?:(?:0[0-9]|1[0-3]):[0-5][0-9]|14:00))"
-    private val date = Regex("$YEAR_MONTH_DAY$TIMEZONE?")
-    private val dateTime = Regex("${YEAR_MONTH_DAY}T$TIME$TIMEZONE?")
-    private val dateTimeStamp = Regex("${YEAR_MONTH_DAY}T$TIME$TIMEZONE")
-    private val time = Regex("$TIME$TIMEZONE?")
-
-    fun isWellTyped(lexical: String, datatype: Iri): Boolean {
-        val type = datatype.value
-        if (!type.startsWith(XSD)) return true
-        val value = lexical.trim(' ', '\t', '\n', '\r')
-        return when (type.removePrefix(XSD)) {
-            "boolean" -> value in setOf("true", "false", "1", "0")
-            "integer", "long", "int", "short", "byte",
-            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
-            "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte" ->
-                integer.matches(value) && inRange(value, type.removePrefix(XSD))
-            "decimal" -> decimal.matches(value)
-            "double", "float" -> floating.matches(value)
-            "date" -> date.matchEntire(value)?.let(::validDay) ?: false
-            "dateTime" -> dateTime.matchEntire(value)?.let(::validDay) ?: false
-            "dateTimeStamp" -> dateTimeStamp.matchEntire(value)?.let(::validDay) ?: false
-            "time" -> time.matches(value)
-            else -> true
-        }
-    }
-
-    /** Day-of-month is within the month (proleptic Gregorian leap years; XSD 1.1 treats year 0000 as a leap year). */
-    private fun validDay(match: MatchResult): Boolean {
-        val (yearText, monthText, dayText) = match.destructured
-        val year = yearText.toBigInteger()
-        val leap = year.mod(400.toBigInteger()).signum() == 0 ||
-            (year.mod(4.toBigInteger()).signum() == 0 && year.mod(100.toBigInteger()).signum() != 0)
-        val maxDay = when (monthText.toInt()) {
-            2 -> if (leap) 29 else 28
-            4, 6, 9, 11 -> 30
-            else -> 31
-        }
-        return dayText.toInt() <= maxDay
-    }
-
-    private fun inRange(lexical: String, type: String): Boolean {
-        val value = lexical.toBigInteger()
-        fun between(min: Long, max: Long) = value >= min.toBigInteger() && value <= max.toBigInteger()
-        return when (type) {
-            "long" -> between(Long.MIN_VALUE, Long.MAX_VALUE)
-            "int" -> between(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
-            "short" -> between(Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong())
-            "byte" -> between(Byte.MIN_VALUE.toLong(), Byte.MAX_VALUE.toLong())
-            "nonNegativeInteger" -> value.signum() >= 0
-            "positiveInteger" -> value.signum() > 0
-            "nonPositiveInteger" -> value.signum() <= 0
-            "negativeInteger" -> value.signum() < 0
-            "unsignedLong" -> value.signum() >= 0 && value <= "18446744073709551615".toBigInteger()
-            "unsignedInt" -> between(0, 4294967295L)
-            "unsignedShort" -> between(0, 65535)
-            "unsignedByte" -> between(0, 255)
-            else -> true
-        }
-    }
+    fun isWellTyped(lexical: String, datatype: Iri): Boolean =
+        XsdLexical.isValid(datatype.value, XsdNumbers.trimXmlWhitespace(lexical)) ?: true
 }
