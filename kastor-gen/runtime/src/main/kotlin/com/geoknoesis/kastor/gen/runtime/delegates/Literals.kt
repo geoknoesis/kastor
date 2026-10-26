@@ -32,7 +32,7 @@ fun rdfStrings(predicate: Iri): ReadOnlyProperty<RdfBacked, List<String>> =
 fun rdfInt(predicate: Iri): ReadOnlyProperty<RdfBacked, Int> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toIntOrNull() }
+      .mapNotNull { lexicalInt(it.lexical) }
       .firstOrNull() ?: 0
   }
 
@@ -40,21 +40,21 @@ fun rdfInt(predicate: Iri): ReadOnlyProperty<RdfBacked, Int> =
 fun rdfIntOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Int?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toIntOrNull() }
+      .mapNotNull { lexicalInt(it.lexical) }
       .firstOrNull()
   }
 
 @Deprecated("rdfInts $DROPPING", ReplaceWith("rdfLiterals(predicate, XsdLiterals::int)", XSD_LITERALS))
 fun rdfInts(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Int>> =
   rdfLazy { ref ->
-    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { it.lexical.toIntOrNull() }
+    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { lexicalInt(it.lexical) }
   }
 
 @Deprecated("rdfDouble $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::double)", XSD_LITERALS))
 fun rdfDouble(predicate: Iri): ReadOnlyProperty<RdfBacked, Double> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toDoubleOrNull() }
+      .mapNotNull { lexicalDouble(it.lexical) }
       .firstOrNull() ?: 0.0
   }
 
@@ -62,14 +62,14 @@ fun rdfDouble(predicate: Iri): ReadOnlyProperty<RdfBacked, Double> =
 fun rdfDoubleOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Double?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toDoubleOrNull() }
+      .mapNotNull { lexicalDouble(it.lexical) }
       .firstOrNull()
   }
 
 @Deprecated("rdfDoubles $DROPPING", ReplaceWith("rdfLiterals(predicate, XsdLiterals::double)", XSD_LITERALS))
 fun rdfDoubles(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Double>> =
   rdfLazy { ref ->
-    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { it.lexical.toDoubleOrNull() }
+    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { lexicalDouble(it.lexical) }
   }
 
 @Deprecated("rdfBoolean $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::boolean)", XSD_LITERALS))
@@ -116,3 +116,11 @@ fun <T : Any> rdfLiteralOrNull(predicate: Iri, decoder: (Literal) -> T?): ReadOn
 /** All decoded literals. Ill-typed values follow [MaterializationPolicy]. */
 fun <T : Any> rdfLiterals(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, List<T>> =
   rdfLazy { ref -> decodeAll(ref, predicate, decoder) }
+
+/** The `Int` an integer lexical form (XSD white space collapsed) denotes, by the shared XSD parser of `:rdf:core`. */
+private fun lexicalInt(lexical: String): Int? =
+  com.geoknoesis.kastor.rdf.xsd.XsdNumbers.parseInteger(com.geoknoesis.kastor.rdf.xsd.XsdNumbers.trimXmlWhitespace(lexical))?.toIntOrNull()
+
+/** The `Double` an `xsd:double` lexical form denotes (`INF`, `NaN` included; not Java's `Infinity` or `1d`). */
+private fun lexicalDouble(lexical: String): Double? =
+  com.geoknoesis.kastor.rdf.xsd.XsdNumbers.parseFloating(com.geoknoesis.kastor.rdf.xsd.XsdNumbers.trimXmlWhitespace(lexical))?.toDouble()

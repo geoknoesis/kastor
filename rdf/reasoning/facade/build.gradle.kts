@@ -11,6 +11,9 @@ dependencies {
 
 }
 
+// The shared XSD lexical parsers of :rdf:core (com.geoknoesis.kastor.rdf.xsd) are internal Kastor API.
+kotlin { compilerOptions { optIn.add("com.geoknoesis.kastor.rdf.InternalKastorApi") } }
+
 publishing {
     publications {
         create<MavenPublication>("maven") {

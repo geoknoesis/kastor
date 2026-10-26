@@ -7,7 +7,8 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.TripleTerm
-import java.math.BigInteger
+import com.geoknoesis.kastor.rdf.xsd.XsdDecimal
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 import kotlin.reflect.KClass
 
 /**
@@ -74,8 +75,8 @@ internal fun typedBinding(binding: BindingSet, variable: String, type: KClass<*>
         RdfResource::class -> raw as? RdfResource
         TripleTerm::class -> raw as? TripleTerm
         String::class -> (raw as? Literal)?.lexical
-        Int::class -> integer(raw)?.takeIf { it.bitLength() < Int.SIZE_BITS }?.toInt()
-        Long::class -> integer(raw)?.takeIf { it.bitLength() < Long.SIZE_BITS }?.toLong()
+        Int::class -> integer(raw)?.toIntOrNull()
+        Long::class -> integer(raw)?.toLongOrNull()
         Double::class -> if (datatypeOf(raw) in NUMERIC_DATATYPES) binding.getDouble(variable) else null
         Boolean::class -> if (datatypeOf(raw) == XSD_NAMESPACE + "boolean") binding.getBoolean(variable) else null
         else -> error("unreachable: $type is in SUPPORTED_TYPES")
@@ -94,12 +95,14 @@ internal fun describeTerm(term: RdfTerm): String = when (term) {
 
 private fun datatypeOf(term: RdfTerm): String? = (term as? Literal)?.datatype?.value
 
-/** The value of an integer literal of any size, or `null` when [term] is no integer literal. */
-private fun integer(term: RdfTerm): BigInteger? {
+/**
+ * The value of an integer literal of any size, or `null` when [term] is no integer literal. Parsed by the shared
+ * linear-time XSD parser of `:rdf:core` (white space collapsed): a literal of millions of digits is never turned into
+ * a `BigInteger`, whose construction is quadratic in the digits.
+ */
+private fun integer(term: RdfTerm): XsdDecimal? {
     if (datatypeOf(term) !in INTEGER_DATATYPES) return null
-    // xsd:integer collapses white space; its lexical space is an optional sign and digits.
-    val lexical = (term as Literal).lexical.trim(' ', '\t', '\n', '\r')
-    return if (INTEGER_LEXICAL.matches(lexical)) BigInteger(lexical.removePrefix("+")) else null
+    return XsdNumbers.parseInteger(XsdNumbers.trimXmlWhitespace((term as Literal).lexical))
 }
 
 private const val XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema#"
@@ -111,7 +114,6 @@ private val INTEGER_DATATYPES: Set<String> = listOf(
 
 private val NUMERIC_DATATYPES: Set<String> = INTEGER_DATATYPES + listOf("decimal", "float", "double").map { XSD_NAMESPACE + it }
 
-private val INTEGER_LEXICAL = Regex("[+-]?[0-9]+")
 
 private val SUPPORTED_TYPES: List<KClass<*>> = listOf(
     Iri::class, BlankNode::class, Literal::class, TripleTerm::class, RdfTerm::class, RdfResource::class,

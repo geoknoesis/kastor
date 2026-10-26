@@ -71,12 +71,6 @@
       "lines": 1335,
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/LiteralComparison.kt": {
-      "functions": {
-        "literalLexicallyValid:54acc95ce110": 45
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "rdf/sparql/contract/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings.kt": {
       "lines": 797,
       "functions": {

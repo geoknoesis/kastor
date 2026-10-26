@@ -1,15 +1,14 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
-import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
-import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.XSD
-import java.math.BigDecimal
-import java.math.BigInteger
-import java.time.DateTimeException
-import java.time.LocalDate
+import com.geoknoesis.kastor.rdf.xsd.XsdLexical
+import com.geoknoesis.kastor.rdf.xsd.XsdNumeric
+import com.geoknoesis.kastor.rdf.xsd.XsdTemporal
+import com.geoknoesis.kastor.rdf.xsd.XsdTemporals
+import com.geoknoesis.kastor.rdf.xsd.XsdWork
 
 /*
  * Datatype-aware literal ordering for sh:minInclusive / sh:maxInclusive / sh:minExclusive / sh:maxExclusive /
@@ -23,289 +22,69 @@ import java.time.LocalDate
  * Anything else (language-tagged strings, ill-formed lexical forms, NaN, mixed families) is incomparable,
  * which the SHACL comparison components treat as a violation: the comparison cannot be made true.
  * sh:in and sh:hasValue do not use this order: SHACL defines them by RDF term equality.
- */
-
-private fun xsd(local: String) = Iri(XSD.namespace + local)
-
-private val integerRanges: Map<Iri, Pair<BigInteger?, BigInteger?>> = run {
-    fun r(min: String?, max: String?) = min?.let(::BigInteger) to max?.let(::BigInteger)
-    mapOf(
-        XSD.integer to r(null, null),
-        XSD.long to r("-9223372036854775808", "9223372036854775807"),
-        XSD.int to r("-2147483648", "2147483647"),
-        XSD.short to r("-32768", "32767"),
-        XSD.byte to r("-128", "127"),
-        XSD.nonNegativeInteger to r("0", null),
-        XSD.positiveInteger to r("1", null),
-        XSD.nonPositiveInteger to r(null, "0"),
-        XSD.negativeInteger to r(null, "-1"),
-        XSD.unsignedLong to r("0", "18446744073709551615"),
-        XSD.unsignedInt to r("0", "4294967295"),
-        XSD.unsignedShort to r("0", "65535"),
-        XSD.unsignedByte to r("0", "255"),
-    )
-}
-
-private val integerLexical = Regex("[+-]?\\d+")
-private val decimalLexical = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)")
-private val floatLexical = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([Ee][+-]?\\d+)?|[+-]?INF|NaN")
-
-/**
- * A numeric value in its XPath type class: xs:decimal (which includes the integer types), xs:float or xs:double.
- */
-private sealed interface NumericValue {
-    data class Exact(val value: ExactDecimal) : NumericValue
-    data class Single(val value: Float) : NumericValue
-    data class Approx(val value: Double) : NumericValue
-}
-
-/**
- * An xs:decimal value (the integer types included) kept as its normalized digits, so that parsing and comparing are
- * linear in the length of the lexical form: `BigInteger(String)` and `BigDecimal(String)` are quadratic, about 20 s
- * for a literal of a million digits, and a data graph can hold such a literal. [sign] is -1, 0 or 1; [integer] has no
- * leading zeros and [fraction] no trailing zeros (both empty for zero).
- */
-private class ExactDecimal(val sign: Int, val integer: String, val fraction: String) : Comparable<ExactDecimal> {
-    override fun compareTo(other: ExactDecimal): Int {
-        if (sign != other.sign) return sign.compareTo(other.sign)
-        return sign * compareMagnitude(other)
-    }
-
-    private fun compareMagnitude(other: ExactDecimal): Int {
-        if (integer.length != other.integer.length) return integer.length.compareTo(other.integer.length)
-        integer.compareTo(other.integer).let { if (it != 0) return it.coerceIn(-1, 1) }
-        // Without trailing zeros, the longer of two fractions that agree on the shorter one's digits is the larger.
-        for (i in 0 until minOf(fraction.length, other.fraction.length)) {
-            if (fraction[i] != other.fraction[i]) return fraction[i].compareTo(other.fraction[i]).coerceIn(-1, 1)
-        }
-        return fraction.length.compareTo(other.fraction.length)
-    }
-
-    /** The decimal text, which the JDK parses to the nearest float or double in linear time. */
-    override fun toString(): String =
-        (if (sign < 0) "-" else "") + integer.ifEmpty { "0" } + (if (fraction.isEmpty()) "" else ".$fraction")
-
-    override fun equals(other: Any?): Boolean = other is ExactDecimal && compareTo(other) == 0
-
-    override fun hashCode(): Int = 31 * (31 * sign + integer.hashCode()) + fraction.hashCode()
-
-    companion object {
-        /** The value of a lexical form that matches [decimalLexical] (or [integerLexical]). */
-        fun of(lex: String): ExactDecimal {
-            val negative = lex.startsWith("-")
-            val unsigned = if (lex.startsWith("-") || lex.startsWith("+")) lex.substring(1) else lex
-            val dot = unsigned.indexOf('.')
-            val integer = (if (dot < 0) unsigned else unsigned.substring(0, dot)).trimStart('0')
-            val fraction = if (dot < 0) "" else unsigned.substring(dot + 1).trimEnd('0')
-            val sign = if (integer.isEmpty() && fraction.isEmpty()) 0 else if (negative) -1 else 1
-            return ExactDecimal(sign, integer, fraction)
-        }
-    }
-}
-
-/** The most digits an integer bound of [integerRanges] has: a longer value is beyond every finite bound. */
-private const val MAX_BOUND_DIGITS = 20
-
-private fun parseInteger(lex: String, dt: Iri): ExactDecimal? {
-    val range = integerRanges[dt] ?: return null
-    if (!integerLexical.matches(lex)) return null
-    val value = ExactDecimal.of(lex)
-    if (value.integer.length > MAX_BOUND_DIGITS) {
-        // Far beyond every finite bound: only an unbounded side admits it.
-        return value.takeIf { if (value.sign > 0) range.second == null else range.first == null }
-    }
-    val v = BigInteger(value.toString())
-    if (range.first != null && v < range.first) return null
-    if (range.second != null && v > range.second) return null
-    return value
-}
-
-private fun parseApprox(lex: String): Double? {
-    if (!floatLexical.matches(lex)) return null
-    return when (lex) {
-        "INF", "+INF" -> Double.POSITIVE_INFINITY
-        "-INF" -> Double.NEGATIVE_INFINITY
-        "NaN" -> Double.NaN
-        else -> lex.toDouble()
-    }
-}
-
-/** The float nearest to the lexical form (not the double nearest to it, rounded again). */
-private fun parseSingle(lex: String): Float? {
-    if (!floatLexical.matches(lex)) return null
-    return when (lex) {
-        "INF", "+INF" -> Float.POSITIVE_INFINITY
-        "-INF" -> Float.NEGATIVE_INFINITY
-        "NaN" -> Float.NaN
-        else -> lex.toFloat()
-    }
-}
-
-private fun parseNumeric(lit: Literal): NumericValue? {
-    val dt = lit.datatype
-    val lex = lit.lexical
-    return when {
-        dt in integerRanges -> parseInteger(lex, dt)?.let { NumericValue.Exact(it) }
-        dt == XSD.decimal -> if (decimalLexical.matches(lex)) NumericValue.Exact(ExactDecimal.of(lex)) else null
-        dt == XSD.double -> parseApprox(lex)?.let { NumericValue.Approx(it) }
-        dt == XSD.float -> parseSingle(lex)?.let { NumericValue.Single(it) }
-        else -> null
-    }
-}
-
-// The casts xs:decimal -> xs:float / xs:double go through the decimal's text, which the JDK parses to the nearest
-// value (BigDecimal.toFloat / toDouble were not correctly rounded before JDK 21).
-private fun ExactDecimal.nearestFloat(): Float = toString().toFloat()
-
-private fun ExactDecimal.nearestDouble(): Double = toString().toDouble()
-
-private fun NumericValue.asDouble(): Double =
-    when (this) {
-        is NumericValue.Exact -> value.nearestDouble()
-        is NumericValue.Single -> value.toDouble()
-        is NumericValue.Approx -> value
-    }
-
-/**
- * Numeric comparison per the XPath / SPARQL operator mapping (`op:numeric-less-than`, `op:numeric-equal`) after
- * numeric type promotion (XPath 2.0 B.1): two decimals are compared exactly; when one operand is an xs:float and
- * the other a decimal or a float, the decimal is promoted to xs:float and they are compared as floats; when either
- * operand is an xs:double, the other is promoted to xs:double. So `"0.1"^^xsd:float` equals the decimal `0.1` (both
- * are the float nearest to 0.1) and is above `"0.1"^^xsd:double` (widening a float is exact).
  *
- * The comparison is the IEEE 754 one, not [Double.compareTo]: negative zero **equals** positive zero, and NaN is not
- * comparable to anything, itself included (`null`), so no range or order constraint holds for it.
+ * Values are parsed by the shared linear-time XSD parser of :rdf:core (com.geoknoesis.kastor.rdf.xsd): decimals are
+ * compared by their digits and fractional seconds as digit strings, so a literal of millions of digits costs time
+ * linear in its length (`BigDecimal(String)` takes 21 s for a million digits).
  */
-private fun compareNumeric(a: NumericValue, b: NumericValue): Int? {
-    if (a is NumericValue.Exact && b is NumericValue.Exact) return a.value.compareTo(b.value)
-    if (a !is NumericValue.Approx && b !is NumericValue.Approx) {
-        val x = if (a is NumericValue.Exact) a.value.nearestFloat() else (a as NumericValue.Single).value
-        val y = if (b is NumericValue.Exact) b.value.nearestFloat() else (b as NumericValue.Single).value
-        return if (x < y) -1 else if (x > y) 1 else if (x == y) 0 else null
-    }
-    val x = a.asDouble()
-    val y = b.asDouble()
-    return if (x < y) -1 else if (x > y) 1 else if (x == y) 0 else null
+
+/** A literal's value in a space that [compareKeys] orders, parsed once. */
+private sealed interface OrderKey {
+    class Numeric(val value: XsdNumeric) : OrderKey
+    class Text(val value: String) : OrderKey
+    class Bool(val value: Boolean) : OrderKey
+    class Temporal(val value: XsdTemporal) : OrderKey
 }
 
-// --- XSD date/time -------------------------------------------------------------------------------------------
-
-private const val TZ = "(Z|[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00))"
-private const val YEAR = "(-?(?:[1-9]\\d{3,}|0\\d{3}))"
-private const val MONTH = "(0[1-9]|1[0-2])"
-private const val DAY = "(0[1-9]|[12]\\d|3[01])"
-private const val TIME = "(?:([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d(?:\\.\\d+)?)|(24):00:(00(?:\\.0+)?))"
-
-private val dateTimeRx = Regex("$YEAR-$MONTH-${DAY}T$TIME$TZ?")
-private val dateRx = Regex("$YEAR-$MONTH-$DAY$TZ?")
-private val timeRx = Regex("$TIME$TZ?")
-
-/** Seconds on the XSD time line (local when [tzMinutes] is null, else normalized to UTC). */
-private data class XsdMoment(val seconds: BigDecimal, val tzMinutes: Int?)
-
-private enum class TemporalFamily { DATE_TIME, DATE, TIME }
-
-private val SECONDS_PER_DAY = BigDecimal(86_400)
-
-private fun tzMinutes(tz: String?): Int? =
-    when {
-        tz.isNullOrEmpty() -> null
-        tz == "Z" -> 0
-        else -> {
-            val sign = if (tz[0] == '-') -1 else 1
-            sign * (tz.substring(1, 3).toInt() * 60 + tz.substring(4, 6).toInt())
-        }
-    }
-
-private fun epochDay(year: String, month: String, day: String): Long? {
-    val y = year.toIntOrNull() ?: return null
-    return try { LocalDate.of(y, month.toInt(), day.toInt()).toEpochDay() } catch (_: DateTimeException) { null }
-}
-
-private fun timeSeconds(h: String?, m: String?, s: String?, h24: String?, s24: String?): BigDecimal =
-    if (h24 != null) SECONDS_PER_DAY
-    else BigDecimal(h!!.toInt() * 3600 + m!!.toInt() * 60).add(BigDecimal(s!!))
-
-private fun moment(local: BigDecimal, tz: String?): XsdMoment {
-    val offset = tzMinutes(tz)
-    return XsdMoment(if (offset == null) local else local.subtract(BigDecimal(offset * 60)), offset)
-}
-
-private fun groupOrNull(m: MatchResult, i: Int): String? = m.groups[i]?.value
-
-private fun parseTemporal(lit: Literal): Pair<TemporalFamily, XsdMoment>? {
-    val lex = lit.lexical
-    return when (lit.datatype) {
-        XSD.dateTime, XSD.dateTimeStamp -> {
-            val m = dateTimeRx.matchEntire(lex) ?: return null
-            val g = { i: Int -> groupOrNull(m, i) }
-            val tz = g(9)
-            if (lit.datatype == XSD.dateTimeStamp && tz == null) return null
-            val day = epochDay(g(1)!!, g(2)!!, g(3)!!) ?: return null
-            val local = BigDecimal(day).multiply(SECONDS_PER_DAY).add(timeSeconds(g(4), g(5), g(6), g(7), g(8)))
-            TemporalFamily.DATE_TIME to moment(local, tz)
-        }
-        XSD.date -> {
-            val m = dateRx.matchEntire(lex) ?: return null
-            val day = epochDay(m.groupValues[1], m.groupValues[2], m.groupValues[3]) ?: return null
-            TemporalFamily.DATE to moment(BigDecimal(day).multiply(SECONDS_PER_DAY), groupOrNull(m, 4))
-        }
-        XSD.time -> {
-            val m = timeRx.matchEntire(lex) ?: return null
-            val g = { i: Int -> groupOrNull(m, i) }
-            // XSD compares times as dateTimes on the reference date 1972-12-31; the value of 24:00:00 is 00:00:00.
-            val ref = BigDecimal(LocalDate.of(1972, 12, 31).toEpochDay()).multiply(SECONDS_PER_DAY)
-            val seconds = if (g(4) != null) BigDecimal.ZERO else timeSeconds(g(1), g(2), g(3), null, null)
-            TemporalFamily.TIME to moment(ref.add(seconds), g(6))
-        }
-        else -> null
-    }
-}
-
-private val FOURTEEN_HOURS = BigDecimal(14 * 3600)
-
-private fun compareMoments(a: XsdMoment, b: XsdMoment): Int? {
-    if ((a.tzMinutes == null) == (b.tzMinutes == null)) return a.seconds.compareTo(b.seconds)
-    // XSD 1.1 §E.3.3: a timezone-less value spans [value - 14:00, value + 14:00] on the UTC time line.
-    val (zoned, local, sign) = if (a.tzMinutes != null) Triple(a, b, 1) else Triple(b, a, -1)
+/** The order key of [term], or `null` when it is not a literal that SPARQL `<` compares (or is ill-formed). */
+private fun orderKey(term: RdfTerm): OrderKey? {
+    val lit = term as? Literal ?: return null
+    if (lit is LangString) return null
+    val dt = lit.datatype.value
     return when {
-        zoned.seconds < local.seconds.subtract(FOURTEEN_HOURS) -> -1 * sign
-        zoned.seconds > local.seconds.add(FOURTEEN_HOURS) -> 1 * sign
-        else -> null
+        lit.datatype == XSD.string -> OrderKey.Text(lit.lexical)
+        lit.datatype == XSD.boolean -> XsdLexical.parseBoolean(lit.lexical)?.let(OrderKey::Bool)
+        else -> XsdNumeric.parse(dt, lit.lexical)?.let(OrderKey::Numeric)
+            ?: XsdTemporals.parse(dt, lit.lexical)?.takeIf { XsdTemporals.family(it.kind) != null }?.let(OrderKey::Temporal)
     }
+}
+
+private fun compareKeys(a: OrderKey?, b: OrderKey?): Int? = when {
+    a is OrderKey.Numeric && b is OrderKey.Numeric -> XsdNumeric.compare(a.value, b.value)
+    a is OrderKey.Text && b is OrderKey.Text -> compareCodePoints(a.value, b.value)
+    a is OrderKey.Bool && b is OrderKey.Bool -> a.value.compareTo(b.value)
+    a is OrderKey.Temporal && b is OrderKey.Temporal -> XsdTemporals.compare(a.value, b.value)
+    else -> null
+}
+
+/**
+ * Code point order of two strings without copying them: UTF-16 order differs from it only where a surrogate meets a
+ * character in U+E000..U+FFFF, so those are swapped before comparing the first differing units.
+ */
+private fun compareCodePoints(a: String, b: String): Int {
+    val common = minOf(a.length, b.length)
+    XsdWork.charge(common)
+    for (i in 0 until common) {
+        val x = a[i]
+        val y = b[i]
+        if (x != y) return codePointRank(x).compareTo(codePointRank(y)).coerceIn(-1, 1)
+    }
+    return a.length.compareTo(b.length).coerceIn(-1, 1)
+}
+
+private fun codePointRank(c: Char): Int = when {
+    c.code >= 0xE000 -> c.code - 0x800
+    c.code >= 0xD800 -> c.code + 0x2000
+    else -> c.code
 }
 
 // --- public API ---------------------------------------------------------------------------------------------------
 
 /** Three-way comparison per the SPARQL `<` operator mapping, or `null` when the terms are incomparable. */
 internal fun tryCompareLiterals(a: RdfTerm, b: RdfTerm): Int? {
-    val la = a as? Literal ?: return null
-    val lb = b as? Literal ?: return null
-    if (la is LangString || lb is LangString) return null
-    parseNumeric(la)?.let { na -> return parseNumeric(lb)?.let { nb -> compareNumeric(na, nb) } }
-    if (la.datatype == XSD.string) {
-        return if (lb.datatype == XSD.string) la.lexical.codePoints().toArray().let { x ->
-            lb.lexical.codePoints().toArray().let { y -> java.util.Arrays.compare(x, y) }
-        } else null
-    }
-    if (la.datatype == XSD.boolean) {
-        if (lb.datatype != XSD.boolean) return null
-        val x = parseBoolean(la.lexical) ?: return null
-        val y = parseBoolean(lb.lexical) ?: return null
-        return x.compareTo(y)
-    }
-    val ta = parseTemporal(la) ?: return null
-    val tb = parseTemporal(lb) ?: return null
-    if (ta.first != tb.first) return null
-    return compareMoments(ta.second, tb.second)
+    val ka = orderKey(a) ?: return null
+    return compareKeys(ka, orderKey(b))
 }
-
-private fun parseBoolean(lex: String): Boolean? =
-    when (lex) {
-        "true", "1" -> true
-        "false", "0" -> false
-        else -> null
-    }
 
 internal fun literalLess(a: RdfTerm, b: RdfTerm): Boolean =
     tryCompareLiterals(a, b)?.let { it < 0 } ?: false
@@ -314,22 +93,14 @@ internal fun literalLessOrEqual(a: RdfTerm, b: RdfTerm): Boolean =
     tryCompareLiterals(a, b)?.let { it <= 0 } ?: false
 
 /** A value space in which [tryCompareLiterals] is a total order (and never null), or null for any other term. */
-private fun totalOrderClass(term: RdfTerm): Any? {
-    val lit = term as? Literal ?: return null
-    if (lit is LangString) return null
-    parseNumeric(lit)?.let { n ->
-        return when (n) {
-            is NumericValue.Exact -> "exact"
-            // Floats and doubles are one total order: widening a float is exact and keeps the order.
-            is NumericValue.Single -> if (n.value.isNaN()) null else "approximate"
-            is NumericValue.Approx -> if (n.value.isNaN()) null else "approximate"
-        }
-    }
-    if (lit.datatype == XSD.string) return "string"
-    if (lit.datatype == XSD.boolean) return if (parseBoolean(lit.lexical) != null) "boolean" else null
-    val (family, moment) = parseTemporal(lit) ?: return null
+private fun totalOrderClass(key: OrderKey?): Any? = when (key) {
+    null -> null
+    // Floats and doubles are one total order: widening a float is exact and keeps the order.
+    is OrderKey.Numeric -> if (key.value.isNaN) null else if (key.value is XsdNumeric.Exact) "exact" else "approximate"
+    is OrderKey.Text -> "string"
+    is OrderKey.Bool -> "boolean"
     // Values with and without a timezone are only partially ordered (XSD 1.1 §E.3.3).
-    return family to (moment.tzMinutes != null)
+    is OrderKey.Temporal -> XsdTemporals.family(key.value.kind) to (key.value.timezoneMinutes != null)
 }
 
 /**
@@ -341,7 +112,7 @@ private fun totalOrderClass(term: RdfTerm): Any? {
  * and each value is compared from the smallest other value upwards until it is below one, since the violating others
  * form a prefix: O((n + m) log m + results) comparisons instead of n × m. Otherwise every pair is compared.
  * At most [limit] pairs are returned (the first ones, in value order). [onCompare] observes the comparisons (the
- * budget, instrumentation).
+ * budget, instrumentation). Every term is parsed once, not once per comparison.
  */
 internal fun orderViolations(
     values: List<RdfTerm>,
@@ -351,27 +122,30 @@ internal fun orderViolations(
     onCompare: () -> Unit = {},
 ): List<Pair<RdfTerm, RdfTerm>> {
     if (values.isEmpty() || others.isEmpty()) return emptyList()
-    fun ordered(v: RdfTerm, w: RdfTerm): Boolean {
+    val valueKeys = values.map(::orderKey)
+    val otherKeys = others.map(::orderKey)
+    fun ordered(v: OrderKey?, w: OrderKey?): Boolean {
         onCompare()
-        return if (strict) literalLess(v, w) else literalLessOrEqual(v, w)
+        val c = compareKeys(v, w) ?: return false
+        return if (strict) c < 0 else c <= 0
     }
     val out = ArrayList<Pair<RdfTerm, RdfTerm>>()
-    val space = totalOrderClass(others[0])
-    if (space == null || others.any { totalOrderClass(it) != space } || values.any { totalOrderClass(it) != space }) {
-        for (v in values) for (w in others) {
-            if (!ordered(v, w)) out.add(v to w)
+    val space = totalOrderClass(otherKeys[0])
+    if (space == null || otherKeys.any { totalOrderClass(it) != space } || valueKeys.any { totalOrderClass(it) != space }) {
+        for (i in values.indices) for (j in others.indices) {
+            if (!ordered(valueKeys[i], otherKeys[j])) out.add(values[i] to others[j])
             if (out.size >= limit) return out
         }
         return out
     }
-    val sorted = others.sortedWith { a, b ->
+    val sorted = others.indices.sortedWith { x, y ->
         onCompare()
-        tryCompareLiterals(a, b) ?: 0
+        compareKeys(otherKeys[x], otherKeys[y]) ?: 0
     }
-    for (v in values) {
-        for (w in sorted) {
-            if (ordered(v, w)) break
-            out.add(v to w)
+    for (i in values.indices) {
+        for (j in sorted) {
+            if (ordered(valueKeys[i], otherKeys[j])) break
+            out.add(values[i] to others[j])
             if (out.size >= limit) return out
         }
     }
@@ -398,113 +172,3 @@ internal fun satisfiesMaxExclusive(value: RdfTerm, bound: RdfTerm): Boolean {
     return c < 0
 }
 
-// --- lexical validity -----------------------------------------------------------------------------------------------
-
-private val booleanLexical = Regex("true|false|1|0")
-private val gYearRx = Regex("$YEAR$TZ?")
-private val gYearMonthRx = Regex("$YEAR-$MONTH$TZ?")
-private val gMonthDayRx = Regex("--$MONTH-$DAY$TZ?")
-private val gDayRx = Regex("---$DAY$TZ?")
-private val gMonthRx = Regex("--$MONTH$TZ?")
-private val durationRx = Regex("-?P(?=\\d|T\\d)(\\d+Y)?(\\d+M)?(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?(\\d+(\\.\\d+)?S)?)?")
-private val dayTimeDurationRx = Regex("-?P(?=\\d|T\\d)(\\d+D)?(T(?=\\d)(\\d+H)?(\\d+M)?(\\d+(\\.\\d+)?S)?)?")
-private val yearMonthDurationRx = Regex("-?P(?=\\d)(\\d+Y)?(\\d+M)?")
-private val languageRx = Regex("[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*")
-private val hexBinaryRx = Regex("([0-9a-fA-F]{2})*")
-private val base64Rx = Regex(
-    "((([A-Za-z0-9+/] ?){4})*(([A-Za-z0-9+/] ?){3}[A-Za-z0-9+/]|([A-Za-z0-9+/] ?){2}[AEIMQUYcgkosw048] ?=|[A-Za-z0-9+/] ?[AQgw] ?= ?=))?",
-)
-private val normalizedStringForbidden = Regex("[\\r\\n\\t]")
-
-/**
- * XSD lexical validity for typed literals used by `sh:datatype`: an ill-formed literal fails even when the RDF
- * term carries the requested datatype IRI. Covers the commonly used XSD built-ins (string types, boolean,
- * decimal, integer and all derived integer types with range checks, float/double, date/time types, Gregorian
- * types, durations, language, hexBinary, base64Binary, the XML name and token types NCName / Name / NMTOKEN(S) /
- * QName / ID / IDREF(S) / ENTITY / ENTITIES, and xsd:anyURI). xsd:normalizedString, xsd:token and xsd:anyURI
- * additionally require every character to be a legal XML 1.0 character; plain xsd:string accepts any Unicode string
- * (W3C SHACL singleLine-001). Non-XSD datatypes are accepted.
- */
-internal fun typedLiteralLexicallyValidForShaclDatatype(lit: TypedLiteral): Boolean = literalLexicallyValid(lit)
-
-internal fun literalLexicallyValid(lit: Literal): Boolean {
-    val lex = lit.lexical
-    val dt = lit.datatype
-    return when {
-        // RDF literals may hold any Unicode string; W3C SHACL singleLine-001 expects xsd:string values with control
-        // characters such as U+000B to conform to sh:datatype xsd:string, so the XML Char restriction is not applied.
-        dt == XSD.string -> true
-        dt == XSD.boolean -> booleanLexical.matches(lex)
-        dt in integerRanges -> parseInteger(lex, dt) != null
-        dt == XSD.decimal -> decimalLexical.matches(lex)
-        dt == XSD.double || dt == XSD.float -> floatLexical.matches(lex)
-        dt == XSD.dateTime || dt == XSD.dateTimeStamp || dt == XSD.date || dt == XSD.time -> parseTemporal(lit) != null
-        dt == XSD.gYear -> gYearRx.matches(lex)
-        dt == XSD.gYearMonth -> gYearMonthRx.matches(lex)
-        dt == xsd("gMonthDay") -> gMonthDayRx.matchEntire(lex)?.let { m ->
-            epochDay("2000", m.groupValues[1], m.groupValues[2]) != null // leap year admits --02-29
-        } ?: false
-        dt == xsd("gDay") -> gDayRx.matches(lex)
-        dt == xsd("gMonth") -> gMonthRx.matches(lex)
-        dt == xsd("duration") -> durationRx.matches(lex)
-        dt == xsd("dayTimeDuration") -> dayTimeDurationRx.matches(lex)
-        dt == xsd("yearMonthDuration") -> yearMonthDurationRx.matches(lex)
-        dt == XSD.language -> languageRx.matches(lex)
-        dt == XSD.hexBinary -> hexBinaryRx.matches(lex)
-        dt == xsd("base64Binary") -> base64Rx.matches(lex)
-        dt == xsd("normalizedString") -> allXmlChars(lex) && !normalizedStringForbidden.containsMatchIn(lex)
-        dt == xsd("token") -> allXmlChars(lex) && !normalizedStringForbidden.containsMatchIn(lex) && !lex.startsWith(" ") && !lex.endsWith(" ") && !lex.contains("  ")
-        dt == xsd("Name") -> isXmlName(lex, allowColon = true)
-        dt == xsd("NCName") || dt == xsd("ID") || dt == xsd("IDREF") || dt == xsd("ENTITY") -> isXmlName(lex, allowColon = false)
-        dt == xsd("NMTOKEN") -> isNmtoken(lex)
-        dt == xsd("NMTOKENS") -> isXmlList(lex, ::isNmtoken)
-        dt == xsd("IDREFS") || dt == xsd("ENTITIES") -> isXmlList(lex) { isXmlName(it, allowColon = false) }
-        dt == xsd("QName") -> lex.split(':').let { parts -> parts.size in 1..2 && parts.all { isXmlName(it, allowColon = false) } }
-        dt == XSD.anyURI -> allXmlChars(lex) && hasValidPercentEscapes(lex)
-        else -> true
-    }
-}
-
-// --- XML 1.0 (fifth edition) character classes ---------------------------------------------------------------------
-
-private fun isXmlChar(cp: Int): Boolean =
-    cp == 0x9 || cp == 0xA || cp == 0xD || cp in 0x20..0xD7FF || cp in 0xE000..0xFFFD || cp in 0x10000..0x10FFFF
-
-private fun allXmlChars(s: String): Boolean = s.codePoints().allMatch(::isXmlChar)
-
-private fun isNameStartChar(cp: Int, allowColon: Boolean): Boolean =
-    (allowColon && cp == ':'.code) || cp == '_'.code || cp in 'A'.code..'Z'.code || cp in 'a'.code..'z'.code ||
-        cp in 0xC0..0xD6 || cp in 0xD8..0xF6 || cp in 0xF8..0x2FF || cp in 0x370..0x37D || cp in 0x37F..0x1FFF ||
-        cp in 0x200C..0x200D || cp in 0x2070..0x218F || cp in 0x2C00..0x2FEF || cp in 0x3001..0xD7FF ||
-        cp in 0xF900..0xFDCF || cp in 0xFDF0..0xFFFD || cp in 0x10000..0xEFFFF
-
-private fun isNameChar(cp: Int, allowColon: Boolean): Boolean =
-    isNameStartChar(cp, allowColon) || cp == '-'.code || cp == '.'.code || cp in '0'.code..'9'.code || cp == 0xB7 ||
-        cp in 0x300..0x36F || cp in 0x203F..0x2040
-
-private fun isXmlName(s: String, allowColon: Boolean): Boolean {
-    if (s.isEmpty()) return false
-    val cps = s.codePoints().toArray()
-    return isNameStartChar(cps[0], allowColon) && (1 until cps.size).all { isNameChar(cps[it], allowColon) }
-}
-
-private fun isNmtoken(s: String): Boolean = s.isNotEmpty() && s.codePoints().allMatch { isNameChar(it, allowColon = true) }
-
-private val xmlWhitespaceRun = Regex("[\\u0020\\u0009\\u000A\\u000D]+")
-
-/** XSD list types: one or more items separated by XML whitespace. */
-private fun isXmlList(s: String, item: (String) -> Boolean): Boolean {
-    val items = s.split(xmlWhitespaceRun).filter { it.isNotEmpty() }
-    return items.isNotEmpty() && items.all(item)
-}
-
-private fun hasValidPercentEscapes(s: String): Boolean {
-    var i = s.indexOf('%')
-    while (i >= 0) {
-        if (i + 2 >= s.length || !s[i + 1].isHexDigitChar() || !s[i + 2].isHexDigitChar()) return false
-        i = s.indexOf('%', i + 3)
-    }
-    return true
-}
-
-private fun Char.isHexDigitChar(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'

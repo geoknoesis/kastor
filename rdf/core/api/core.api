@@ -250,6 +250,9 @@ public final class com/geoknoesis/kastor/rdf/GraphRefKt {
 	public static synthetic fun asGraphRef-M5LFpjQ$default (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/GraphRef;
 }
 
+public abstract interface annotation class com/geoknoesis/kastor/rdf/InternalKastorApi : java/lang/annotation/Annotation {
+}
+
 public final class com/geoknoesis/kastor/rdf/Iri : com/geoknoesis/kastor/rdf/RdfResource {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/Iri$Companion;
 	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Iri;

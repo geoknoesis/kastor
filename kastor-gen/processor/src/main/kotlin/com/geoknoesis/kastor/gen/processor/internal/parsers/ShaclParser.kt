@@ -16,6 +16,9 @@ import org.apache.jena.vocabulary.RDF
 import org.apache.jena.vocabulary.RDFS
 import java.io.InputStream
 import java.math.BigDecimal
+import com.geoknoesis.kastor.rdf.xsd.XsdFloating
+import com.geoknoesis.kastor.rdf.xsd.XsdLexical
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 import java.io.StringReader
 
 /**
@@ -167,18 +170,25 @@ public class ShaclParser(private val logger: KSPLogger) {
             return value
         }
 
-        /** Exact decimal value of a numeric bound (integers beyond the `Double` range keep every digit). */
+        /**
+         * Exact decimal value of a numeric bound (integers beyond the `Double` range keep every digit), parsed by the
+         * shared linear-time XSD parser: decimal or exponent syntax, valid for the literal's own XSD datatype. `null`
+         * (with a warning) for anything else, for `INF`/`NaN`, and for a value whose decimal form is longer than
+         * `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH` characters (`"1e999999999"^^xsd:double` would need a
+         * billion digits).
+         */
         private fun number(node: RDFNode?, what: String, context: String): BigDecimal? {
             if (node == null) return null
-            val value = node.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm?.trim()?.let { lexical ->
-                try {
-                    BigDecimal(lexical)
-                } catch (_: NumberFormatException) {
-                    null
-                }
-            }
+            val value = node.takeIf { it.isLiteral }?.asLiteral()?.let { boundValue(it.lexicalForm, it.datatypeURI) }
             if (value == null) logger.warn("$context: $what value $node is not numeric; not generated (SHACL validation still applies)")
             return value
+        }
+
+        private fun boundValue(lexical: String, datatype: String?): BigDecimal? {
+            val trimmed = XsdNumbers.trimXmlWhitespace(lexical)
+            if (datatype != null && XsdLexical.isValid(datatype, trimmed) == false) return null
+            val finite = XsdNumbers.parseFloating(trimmed) as? XsdFloating.Finite ?: return null
+            return (if (finite.negative) finite.magnitude.negate() else finite.magnitude).toBigDecimalOrNull()
         }
 
         /** `sh:deactivated`: a literal `true` (or `1`). */

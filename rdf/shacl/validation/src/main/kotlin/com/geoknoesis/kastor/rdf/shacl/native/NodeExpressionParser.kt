@@ -9,7 +9,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
-import java.math.BigInteger
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 
 /** Maximum nesting of a node expression in the shapes graph; deeper (or cyclic) expressions are ill-formed. */
 internal const val MAX_NODE_EXPRESSION_NESTING = 128
@@ -192,10 +192,10 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
 
     private fun nonNegativeInteger(node: BlankNode, key: Iri, value: RdfTerm): Int {
         val n = integer(value)
-        if (n == null || n.signum() < 0) {
+        if (n == null || n < 0) {
             throw ShapeCompileException("The value of ${name(key)} at node expression $node must be an xsd:integer of at least 0")
         }
-        return clamp(n)
+        return n
     }
 
     private fun boolean(node: BlankNode, key: Iri, value: RdfTerm): Boolean {
@@ -210,7 +210,7 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
     private fun arg(node: BlankNode, value: RdfTerm): NodeExpression =
         when (value) {
             is Iri -> NodeExpression.NamedArg(value)
-            else -> integer(value)?.let { NodeExpression.Arg(clamp(it)) }
+            else -> integer(value)?.let { NodeExpression.Arg(it) }
                 ?: throw ShapeCompileException("shnex:arg of node expression $node must be an IRI or an xsd:integer")
         }
 
@@ -255,28 +255,16 @@ internal class NodeExpressionParser(private val index: ShapeGraphIndex, private 
     private companion object {
         val BOOLEAN_LEXICALS = setOf("true", "false", "1", "0")
 
-        /** The xsd:integer lexical space after whitespace collapsing: ASCII digits only. */
-        val INTEGER_LEXICAL = Regex("[+-]?[0-9]+")
-
-        /** XSD whitespace (`#x20 | #x9 | #xD | #xA`), which the `collapse` facet of xsd:integer removes at both ends. */
-        val XSD_WHITESPACE = charArrayOf(' ', '\t', '\r', '\n')
-
         /**
-         * The xsd:integer value of [term], or null when it is not a valid xsd:integer literal. Only its [clamp]ed value
-         * is used, so a value of more than 19 digits is read as one of 19 (a `BigInteger` parse is quadratic in the
-         * number of digits).
+         * The xsd:integer value of [term] (XSD white space collapsed), clamped to the `Int` range, or null when it is
+         * not a valid xsd:integer literal. Parsed by the shared linear-time parser: no `BigInteger` is built.
          */
-        fun integer(term: RdfTerm): BigInteger? {
+        fun integer(term: RdfTerm): Int? {
             val literal = term as? Literal ?: return null
             if (literal.datatype != XSD.integer) return null
-            val lexical = literal.lexical.trim(*XSD_WHITESPACE)
-            if (!INTEGER_LEXICAL.matches(lexical)) return null
-            val negative = lexical.startsWith("-")
-            val digits = lexical.trimStart('+', '-').trimStart('0').ifEmpty { "0" }
-            return (if (negative) "-" else "").plus(if (digits.length > 19) "9".repeat(19) else digits).toBigInteger()
+            val value = XsdNumbers.parseInteger(XsdNumbers.trimXmlWhitespace(literal.lexical)) ?: return null
+            return value.toIntOrNull() ?: if (value.signum > 0) Int.MAX_VALUE else Int.MIN_VALUE
         }
-
-        fun clamp(n: BigInteger): Int = n.max(BigInteger.valueOf(Int.MIN_VALUE.toLong())).min(BigInteger.valueOf(Int.MAX_VALUE.toLong())).toInt()
 
         fun name(p: Iri): String =
             when {

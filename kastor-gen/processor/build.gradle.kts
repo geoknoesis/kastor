@@ -16,6 +16,8 @@ tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin").co
 
 // The `internal` packages are implementation: public only across the module's own packages, not part of the ABI.
 kotlin {
+  // The shared XSD lexical parsers of :rdf:core (com.geoknoesis.kastor.rdf.xsd) are internal Kastor API.
+  compilerOptions { optIn.add("com.geoknoesis.kastor.rdf.InternalKastorApi") }
   @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
   abiValidation {
     filters {

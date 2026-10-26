@@ -14,6 +14,20 @@ dependencies {
   testRuntimeOnly(project(":rdf:jena"))
 }
 
+// Declarations shared with other Kastor modules only (@InternalKastorApi, opt-in at ERROR level, e.g. the XSD lexical
+// parsers of com.geoknoesis.kastor.rdf.xsd) are not part of the supported ABI and stay out of the dump.
+kotlin {
+  compilerOptions { optIn.add("com.geoknoesis.kastor.rdf.InternalKastorApi") }
+  @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+  abiValidation {
+    filters {
+      exclude {
+        annotatedWith.add("com.geoknoesis.kastor.rdf.InternalKastorApi")
+      }
+    }
+  }
+}
+
 tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
   systemProperty(
     "kastor.core.main.sources",

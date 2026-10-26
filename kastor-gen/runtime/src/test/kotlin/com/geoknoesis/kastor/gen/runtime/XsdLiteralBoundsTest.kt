@@ -64,11 +64,12 @@ class XsdLiteralBoundsTest {
 
     @Test
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
-    fun `huge numbers are not decoded into BigInteger or BigDecimal nor compared`() {
+    fun `huge numbers are not decoded into BigInteger or BigDecimal but are compared by their digits`() {
         val huge = "9".repeat(3_000_000)
         assertNull(XsdLiterals.bigInteger(lit(huge, "integer")))
         assertNull(XsdLiterals.bigDecimal(lit("$huge.5", "decimal")))
-        assertNull(XsdLiterals.compareNumeric(lit(huge, "integer"), "0"), "an undefined comparison is a violation")
+        assertEquals(1, XsdLiterals.compareNumeric(lit(huge, "integer"), "0"), "compared in linear time, not refused")
+        assertEquals(-1, XsdLiterals.compareNumeric(lit(huge, "integer"), "${huge}1", xsd("integer")))
         val limit = "9".repeat(10_000)
         assertEquals(BigInteger(limit), XsdLiterals.bigInteger(lit(limit, "integer")), "values up to the limit decode")
     }
@@ -80,5 +81,21 @@ class XsdLiteralBoundsTest {
         }
         assertTrue(e.message!!.length < 1_000, "message length ${e.message!!.length}")
         assertTrue("100000 characters" in e.message!!, e.message)
+    }
+
+    @Test
+    fun `fractional seconds are checked in linear work (round 13 P2-1)`() {
+        val n = 1_000_000
+        val fraction = "1".repeat(n)
+        for ((lexical, local) in listOf(
+            "2020-01-01T00:00:00.$fraction" to "dateTime", "23:59:59.${fraction}Z" to "time",
+            "2020-01-01T00:00:00.$fraction+01:00" to "dateTimeStamp",
+        )) {
+            val (ok, work) = com.geoknoesis.kastor.rdf.xsd.XsdWork.measure { XsdLiterals.isWellFormed(lit(lexical, local)) }
+            assertTrue(ok, local)
+            assertTrue(work in n.toLong()..8L * n, "the shared linear parser read the $local literal (work $work)")
+        }
+        assertFalse(XsdLiterals.isWellFormed(lit("24:00:00.$fraction", "time")))
+        assertEquals("23:59:59.${fraction}Z", XsdLiterals.lexical(lit("23:59:59.${fraction}Z", "time"), xsd("time")))
     }
 }
