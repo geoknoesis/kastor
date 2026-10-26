@@ -19,6 +19,20 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### JSON-LD parsing: relative IRIs
+
+- **Fixed (`rdf-jena`, `rdf-rdf4j`, `rdf-cli`), behaviour change:** a JSON-LD document parsed without a base IRI
+  that has a relative IRI reference (`"@id": "s"`, a relative `@type`, `@vocab`, datatype or graph name) now fails
+  with `RdfFormatException`, as Turtle and RDF/XML do. Before, the JSON-LD processor on both providers skipped every
+  statement that held one and only logged a warning. A document of relative `@id`s parsed to zero triples, and a
+  relative graph name dropped the whole named graph. So `kastor-rdf diff` called different files `ISOMORPHIC`,
+  `parse` printed `OK - triples: 0`, and `to-turtle` printed an empty document. With a base IRI (`--base`, or
+  `parseGraph`/`parseDataset` with a base), relative references resolve against it. This applies to every parse path
+  (`parseGraph`, `parseDataset`, `openTripleStream`, `parseStreaming`, `Rdf.parse`, `JenaBridge.fromString`).
+  `parseFromUrl` and `JenaBridge.fromUrl` resolve against the URL, as before.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
