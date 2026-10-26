@@ -40,4 +40,15 @@ class SparqlInitialBindingsDepthTest {
             assertEquals(query.replace("?s", "<urn:x>"), rewritten)
         }
     }
+    /** Round thirteen, core P2-1: leading unbalanced `}` drove the count negative, so 5,000 sub-selects overflowed the stack. */
+    @Test
+    fun `unbalanced closing braces cannot hide deeper nesting`() {
+        for (n in listOf(1000, 5000, 20_000)) {
+            val query = "}".repeat(n) + " SELECT ?x WHERE { " + "{ SELECT ?x WHERE ".repeat(n) + "{ ?x ?p ?o }" + " }".repeat(n) + " }"
+            assertTimeoutPreemptively(Duration.ofSeconds(20)) {
+                assertThrows(IllegalArgumentException::class.java) { SparqlInitialBindings.apply(query, mapOf("x" to "<urn:a>")) }
+                assertThrows(IllegalArgumentException::class.java) { SparqlInitialBindings.validate(query, setOf("x")) }
+            }
+        }
+    }
 }

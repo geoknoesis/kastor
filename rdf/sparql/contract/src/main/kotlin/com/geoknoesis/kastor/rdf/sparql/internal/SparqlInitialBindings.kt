@@ -141,7 +141,10 @@ object SparqlInitialBindings {
         for (token in tokens) {
             if (token.isPunct('{')) {
                 require(++depth <= MAX_NESTING) { "Initial bindings cannot be applied: the query nests groups deeper than $MAX_NESTING" }
-            } else if (token.isPunct('}')) depth--
+            } else if (token.isPunct('}')) {
+                // An unbalanced '}' must not lower the count: leading ones would let deeper nesting through.
+                require(--depth >= 0) { "Initial bindings cannot be applied: the query closes a group it never opened" }
+            }
         }
     }
 
