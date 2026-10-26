@@ -107,7 +107,8 @@ class JenaSandboxBoundsTest {
     @Test
     fun `regular expressions the linear-time engine lacks fail the query, invalid ones are SPARQL errors`() {
         // Fail closed: a valid pattern the engine cannot honour must not become a silent non-match in a FILTER.
-        for (pattern in listOf("(a)\\\\1", "a(?=b)", "a*+", "(?<!a)b", "a{1001}")) {
+        // "\p{L}" x 80 compiled for 8 s in RE2/J's parser, which no deadline reaches: refused by its structural cost.
+        for (pattern in listOf("(a)\\\\1", "a(?=b)", "a*+", "(?<!a)b", "a{1001}", "\\\\p{L}".repeat(80), "[\\\\p{L}-[\\\\p{Lu}]]".repeat(200))) {
             assertLimited("SELECT ?m { BIND (REGEX(\"ab\", \"$pattern\") AS ?m) }")
         }
         assertEquals(listOf(null), plain("SELECT ?m { BIND (REGEX(\"ab\", CONCAT(\"(\", \"a\")) AS ?m) }").map { it.get("m") })

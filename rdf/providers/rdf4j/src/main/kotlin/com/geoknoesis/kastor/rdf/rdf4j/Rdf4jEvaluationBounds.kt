@@ -152,7 +152,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         ) {
             throw ValueExprEvaluationException("REGEX: the text must be a string literal, the pattern and flags simple literals")
         }
-        val regex = compiled.get(pattern.stringValue(), flags?.stringValue())
+        val regex = compiled.get(pattern.stringValue(), flags?.stringValue(), Runnable { budget.check() })
         return valueFactory.createLiteral(SandboxRegex.find(regex, (text as Literal).label, Runnable { budget.check() }))
     }
 
@@ -163,7 +163,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         if (text !is Literal || !QueryEvaluationUtility.isStringLiteral(text) || args.drop(1).any { !QueryEvaluationUtility.isSimpleLiteral(it) }) {
             throw ValueExprEvaluationException("REPLACE: the text must be a string literal, the other arguments simple literals")
         }
-        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue())
+        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue(), Runnable { budget.check() })
         val result = try {
             SandboxRegex.replace(regex, text.label, args[2].stringValue(), skipEmptyAfterFirst = false, check = Runnable { budget.check() })
         } catch (e: XPathRegexException) {
@@ -178,21 +178,18 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     }
 
     /**
-     * The last compiled pattern of one call site and the text and flags it was compiled from. Patterns are XPath
-     * regular expressions with XPath flags (`s`, `m`, `i`, `x`, `q`), compiled for the linear-time engine
-     * ([SandboxRegex.compile]); an invalid or unsupported pattern or flag is an expression error.
+     * The compiled patterns of one call site, by text and flags ([SandboxRegex.PatternCache], bounded). Patterns are
+     * XPath regular expressions with XPath flags (`s`, `m`, `i`, `x`, `q`), compiled for the linear-time engine while
+     * [check] (the query's budget) runs; an invalid pattern or flag is an expression error, and one the engine cannot
+     * honour (a pattern too complex to compile, ...) fails the query.
      */
     class PatternCache {
-        @Volatile private var last: XPathPattern? = null
+        private val patterns = SandboxRegex.PatternCache()
 
-        fun get(text: String, flags: String?): XPathPattern {
-            last?.let { if (it.pattern == text && it.flags == flags) return it }
-            val pattern = try {
-                SandboxRegex.compile(text, flags)
-            } catch (e: XPathRegexException) {
-                throw ValueExprEvaluationException(e.message, e)
-            }
-            return pattern.also { last = it }
+        fun get(text: String, flags: String?, check: Runnable): XPathPattern = try {
+            patterns.get(text, flags, check)
+        } catch (e: XPathRegexException) {
+            throw ValueExprEvaluationException(e.message, e)
         }
     }
 
