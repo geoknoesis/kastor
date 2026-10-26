@@ -39,7 +39,9 @@ class CrossEngineShaclSmokeTest {
    * One `sh:pattern` (with optional `sh:flags`) applied to one value. [native] says whether the value conforms on the
    * Kastor native engine; [rdf4j] and [jena] say the same for the bridge engines and default to [native]. A case
    * where they differ documents a **known divergence** ([divergence] explains it): the native engine evaluates
-   * patterns as XPath / XML Schema regular expressions, the bridge engines hand them to `java.util.regex`.
+   * patterns as XPath / XML Schema regular expressions; so does the RDF4J bridge, whose `ShaclSail` runs them as
+   * SPARQL `REGEX` in Kastor's sandbox (the same linear-time XPath engine); Jena's SHACL hands them to
+   * `java.util.regex`. Back-references are in no case: the linear-time engine refuses them.
    * `java.util.regex` idioms the native engine translates with their intended meaning (a leading inline flag group,
    * script names) are among the agreed cases.
    */
@@ -85,8 +87,6 @@ class CrossEngineShaclSmokeTest {
           PatternCase("^a.c$", "s", "a\nc", native = true),
           PatternCase("^b$", "m", "a\nb", native = true),
           PatternCase("^b$", null, "a\nb", native = false),
-          PatternCase("^(a|b)\\1$", null, "aa", native = true),
-          PatternCase("^(a|b)\\1$", null, "ab", native = false),
           PatternCase("^<.+?>$", null, "<a>", native = true),
           PatternCase("^\\s+$", null, " \t", native = true),
           PatternCase("b", null, "abc", native = true),
@@ -113,27 +113,27 @@ class CrossEngineShaclSmokeTest {
    */
   private val divergentPatternCases =
       listOf(
-          PatternCase("^\\d+$", null, arabicIndicDigits, native = true, rdf4j = false, jena = false,
+          PatternCase("^\\d+$", null, arabicIndicDigits, native = true, jena = false,
               divergence = "\\d is any Unicode decimal digit (Nd) in XML Schema, ASCII [0-9] in java.util.regex"),
-          PatternCase("^\\w+$", null, jose, native = true, rdf4j = false, jena = false,
+          PatternCase("^\\w+$", null, jose, native = true, jena = false,
               divergence = "\\w covers Unicode letters, marks and digits in XML Schema, ASCII [A-Za-z0-9_] in java.util.regex"),
-          PatternCase("^\\w+$", null, "a+b", native = true, rdf4j = false, jena = false,
+          PatternCase("^\\w+$", null, "a+b", native = true, jena = false,
               divergence = "XML Schema \\w excludes only punctuation, separators and other: symbols such as + are word characters"),
-          PatternCase("^\\d+$", null, "123\n", native = false, rdf4j = true, jena = true,
+          PatternCase("^\\d+$", null, "123\n", native = false, jena = true,
               divergence = "$ matches only at the end of the value in XPath; java.util.regex also matches before a final line terminator"),
-          PatternCase("^a.b$", null, "a" + lineSeparator + "b", native = true, rdf4j = false, jena = false,
+          PatternCase("^a.b$", null, "a" + lineSeparator + "b", native = true, jena = false,
               divergence = ". excludes only line feed and carriage return in XPath; java.util.regex also excludes U+0085, U+2028, U+2029"),
-          PatternCase("^b", "m", "a\rb", native = false, rdf4j = true, jena = true,
+          PatternCase("^b", "m", "a\rb", native = false, jena = true,
               divergence = "with flag m, ^ matches after a line feed only in XPath; java.util.regex also after CR, U+0085, U+2028, U+2029"),
-          PatternCase("^\\s$", null, verticalTab, native = false, rdf4j = true, jena = true,
+          PatternCase("^\\s$", null, verticalTab, native = false, jena = true,
               divergence = "\\s is space, tab, line feed and carriage return in XML Schema; java.util.regex adds U+000B and U+000C"),
-          PatternCase("(?i)^" + eAcute + "$", null, eAcuteUpper, native = true, rdf4j = false, jena = false,
+          PatternCase("(?i)^" + eAcute + "$", null, eAcuteUpper, native = true, jena = false,
               divergence = "a leading (?i) is the XPath i flag, which is Unicode-aware; in java.util.regex (?i) alone is US-ASCII"),
-          PatternCase("^\\p{IsGreek}$", null, greekExtended, native = false, rdf4j = true, jena = true,
+          PatternCase("^\\p{IsGreek}$", null, greekExtended, native = false, jena = true,
               divergence = "\\p{IsGreek} is the block U+0370..U+03FF in XML Schema; java.util.regex reads it as the script, which has U+1F00"),
-          PatternCase("^\\p{Lu}$", "i", "a", native = false, rdf4j = true, jena = true,
+          PatternCase("^\\p{Lu}$", "i", "a", native = false, jena = true,
               divergence = "XPath: the i flag does not affect category escapes; java.util.regex makes \\p{Lu} match every cased letter"),
-          PatternCase("^[[:alpha:]]+$", null, "b", native = true, rdf4j = false, jena = false,
+          PatternCase("^[[:alpha:]]+$", null, "b", native = true, jena = false,
               divergence = "a POSIX bracket expression is translated; java.util.regex reads a nested class of the characters ':', a, l, p, h"),
       )
 

@@ -3,9 +3,9 @@ package com.geoknoesis.kastor.rdf.sparql.internal
 /**
  * **Not public API.** The bounds that the Jena and RDF4J providers hold the expressions of a sandboxed SELECT query
  * (`com.geoknoesis.kastor.rdf.SandboxedSelectQuery`) to, so that one small query text cannot hold a worker far past
- * its timeout or exhaust the heap with a single expression (`math:pow(2, 1000000000)`, a chain of `CONCAT(?x, ?x)`, a
- * catastrophic regular expression). It is public only because Kotlin `internal` cannot be shared across modules; it
- * may change without notice.
+ * its timeout or exhaust the heap with a single expression (`math:pow(2, 1000000000)`, a chain of `CONCAT(?x, ?x)`).
+ * Regular expressions run on a linear-time engine ([SandboxRegex]). It is public only because Kotlin `internal`
+ * cannot be shared across modules; it may change without notice.
  *
  * A value an expression **computes** is bounded; values read from the data are not (their size is the data's). An
  * expression whose evaluation would exceed a bound fails the whole query with [SandboxLimitException] (fail closed: a
@@ -32,16 +32,13 @@ object SandboxLimits {
      */
     const val MAX_NUMERIC_LEXICAL_LENGTH: Int = 32 * 1024
 
-    /**
-     * Most characters one regular-expression evaluation (`REGEX`, `REPLACE`, `fn:matches`, `fn:replace`) may read
-     * from its input, re-reads included: this bounds a catastrophic pattern (`((a+)+)+$`) whatever the timeout.
-     */
-    const val MAX_REGEX_STEPS: Long = 50_000_000L
-
     /** Most characters the `GROUP_CONCAT` aggregates of one query may accumulate, over all their groups. */
     const val MAX_GROUP_CONCAT_LENGTH: Long = MAX_STRING_LENGTH.toLong()
 
-    /** How many characters a bounded regular expression reads between two checks of the deadline. */
+    /**
+     * How many characters a regular expression ([SandboxRegex]) reads at most between two checks of the deadline (fewer
+     * for a large compiled pattern), and how much replacement work `REPLACE` does between two checks.
+     */
     const val CHECK_INTERVAL: Int = 4096
 
     /** Fails with [SandboxLimitException] when a computed string of [length] chars would exceed [MAX_STRING_LENGTH]. */

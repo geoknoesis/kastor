@@ -79,12 +79,12 @@ class KastorShaclVocabularyTest {
         val ex = "http://example.org/"
         val one = TypedLiteral("1", XSD.integer)
         // One run that produces every kind of Kastor-specific report content: an undefined recursive answer, a
-        // pattern that times out, a pattern that exhausts the stack, a failing reifier and a report-level warning.
+        // pattern that times out, a failing reifier and a report-level warning. (ksh:PatternTooComplex is no longer
+        // emitted: patterns run on a linear-time engine that does not recurse on its input.)
         val shapes = graph(
             """
             ex:Undef a sh:NodeShape ; sh:targetNode ex:x ; sh:property [ sh:path ex:self ; sh:not ex:Undef ] .
-            ex:Slow a sh:NodeShape ; sh:targetNode ex:slow ; sh:property [ sh:path ex:p ; sh:pattern "^(.*a){30}$" ] .
-            ex:Deep a sh:NodeShape ; sh:targetNode ex:deep ; sh:property [ sh:path ex:p ; sh:pattern "^(a|b)*$" ] .
+            ex:Slow a sh:NodeShape ; sh:targetNode ex:slow ; sh:property [ sh:path ex:p ; sh:pattern "^a+b$" ] .
             ex:Reified a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:reifierShape ex:Trusted ] .
             ex:Trusted sh:property [ sh:path ex:source ; sh:minCount 1 ] .
             ex:Skipped a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ sh:path ex:q ] ] .
@@ -92,18 +92,15 @@ class KastorShaclVocabularyTest {
         )
         val data = Rdf.graph {
             Iri(ex + "x") - Iri(ex + "self") - Iri(ex + "x")
-            Iri(ex + "slow") - Iri(ex + "p") - ("a".repeat(60) + "!")
-            Iri(ex + "deep") - Iri(ex + "p") - "ab".repeat(150_000)
+            Iri(ex + "slow") - Iri(ex + "p") - ("a".repeat(100_000) + "!")
             Iri(ex + "a") - Iri(ex + "p") - one
             Iri(ex + "r") - RDF.reifies - TripleTerm(RdfTriple(Iri(ex + "a"), Iri(ex + "p"), one))
         }
         val validator = NativeShaclValidator(
-            ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING, patternTimeout = java.time.Duration.ofMillis(50)),
+            ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING, patternTimeout = java.time.Duration.ofMillis(1)),
         )
-        // Deterministic: the pattern budget is counted in steps (the backstop clock stands still), and the pattern
-        // evaluation thread has a stack that the 300,000 repetitions of the ex:deep value cannot fit in.
+        // Deterministic: the pattern budget is counted in steps (the backstop clock stands still).
         validator.patternClock = { 0L }
-        validator.patternWorkerStackBytes = 512L * 1024
         val report = validator.validate(data, shapes)
         val rdf = report.toShaclValidationReportRdf().getTriples()
 
@@ -111,7 +108,7 @@ class KastorShaclVocabularyTest {
         val undeclared = emitted - declaredTerms()
         assertTrue(undeclared.isEmpty(), "ksh: terms emitted but not declared in the vocabulary document: $undeclared")
         // The run above really covers everything the report serialization can emit (all terms but the class).
-        assertEquals(KastorShaclVocabulary.terms.toSet() - KastorShaclVocabulary.ResultStatusClass, emitted)
+        assertEquals(KastorShaclVocabulary.terms.toSet() - KastorShaclVocabulary.ResultStatusClass - KastorShaclVocabulary.PatternTooComplex, emitted)
         // No term outside the sh: and ksh: vocabularies is used as a property of the report or of its results.
         val foreign = rdf.map { it.predicate }.filter { !isKsh(it) && !it.value.startsWith(com.geoknoesis.kastor.rdf.vocab.SHACL.namespace) && it != RDF.type }
         assertTrue(foreign.isEmpty(), foreign.toString())

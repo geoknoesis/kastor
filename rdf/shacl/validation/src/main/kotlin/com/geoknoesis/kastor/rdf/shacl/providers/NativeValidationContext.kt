@@ -35,8 +35,6 @@ internal class NativeValidationContext(
     // The seams are read once per run: the hot path reads no shared field.
     /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
     private val patternClock: () -> Long = instrumentation.patternClock
-    private val patternWorkerStackBytes: Long = instrumentation.patternWorkerStackBytes
-    val patternInlineMaxLength: Int = instrumentation.patternInlineMaxLength
     val dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = instrumentation.dropRecordedRead
     /**
      * Pattern evaluations of this run that used up their whole step budget. Past the full-budget exhaustion limit
@@ -53,13 +51,11 @@ internal class NativeValidationContext(
     val undefined = HashMap<AtomKey, UndefinedCause>()
     /**
      * Pattern evaluations of this run that are remembered, per (pattern constraint, lexical form): every
-     * undecided one, every one that ran on the pattern evaluation thread, and every one that took at least the
+     * undecided one and every one that took at least the
      * reduced budget of its value (see [NativePatternEvaluator]). The answer for a value is the same every
      * time it is asked, and an expensive budget is spent once per value rather than once per focus node or solver pass.
      */
     val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()
-    private var patternWorker: PatternWorker? = null
-    fun patternWorker(): PatternWorker = patternWorker ?: PatternWorker(patternWorkerStackBytes).also { patternWorker = it }
     /**
      * The outputs of `shnex:nodesMatching` per shape (Node Expressions §4.5.2), which do not depend on the focus node:
      * computed once per run, outside the recursion solver only, where every conformance answer it reads is final.
@@ -185,13 +181,9 @@ internal class NativeValidationContext(
     fun text(value: String, evaluation: PatternBudget): CharSequence = DeadlineCharSequence(value, budget, patternClock, evaluation)
     override fun close() {
         try {
-            patternWorker?.close()
+            if (session.isInitialized()) session.value.close()
         } finally {
-            try {
-                if (session.isInitialized()) session.value.close()
-            } finally {
-                instrumentation.absorb(counters)
-            }
+            instrumentation.absorb(counters)
         }
     }
 }

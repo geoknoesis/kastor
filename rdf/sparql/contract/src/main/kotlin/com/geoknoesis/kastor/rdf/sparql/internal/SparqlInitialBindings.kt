@@ -138,13 +138,10 @@ object SparqlInitialBindings {
 
     private fun requireBoundedNesting(tokens: List<Token>) {
         var depth = 0
+        // An unbalanced '}' is refused: leading ones would lower the count and let deeper nesting through.
         for (token in tokens) {
-            if (token.isPunct('{')) {
-                require(++depth <= MAX_NESTING) { "Initial bindings cannot be applied: the query nests groups deeper than $MAX_NESTING" }
-            } else if (token.isPunct('}')) {
-                // An unbalanced '}' must not lower the count: leading ones would let deeper nesting through.
-                require(--depth >= 0) { "Initial bindings cannot be applied: the query closes a group it never opened" }
-            }
+            if (token.isPunct('{')) require(++depth <= MAX_NESTING) { "Initial bindings cannot be applied: the query nests groups deeper than $MAX_NESTING" }
+            else if (token.isPunct('}')) require(--depth >= 0) { "Initial bindings cannot be applied: the query closes a group it never opened" }
         }
     }
 

@@ -97,11 +97,18 @@ class Rdf4jShaclSandboxTest {
     }
 
     @Test
-    fun `a catastrophic regular expression in a shapes query fails the validation instead of hanging`() {
-        val text = "a".repeat(40) + "!"
+    fun `a catastrophic regular expression in a shapes query runs in linear time`() {
+        // Exponential on java.util.regex; the linear-time engine decides it at once, and it does not match.
+        val text = "a".repeat(10_000) + "!"
         val shapes = constraint("SELECT \$this WHERE { \$this <http://example.org/p> ?v FILTER (REGEX('$text', '((a+)+)+$')) }")
+        assertTrue(validator().validate(data, shapes).isValid)
+    }
+
+    @Test
+    fun `a regular expression the linear-time engine cannot honour fails the validation`() {
+        val shapes = constraint("SELECT \$this WHERE { \$this <http://example.org/p> ?v FILTER (!REGEX('aa', '(a)\\\\\\\\1')) }")
         val error = assertFailsWith<ShaclValidationException> { validator().validate(data, shapes) }
-        assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it.message.orEmpty().contains("regular expression") }, error.toString())
+        assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it.message.orEmpty().contains("back-reference") }, error.toString())
     }
 
     @Test

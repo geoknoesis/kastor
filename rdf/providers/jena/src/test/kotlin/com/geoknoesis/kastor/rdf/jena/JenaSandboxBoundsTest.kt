@@ -96,11 +96,22 @@ class JenaSandboxBoundsTest {
     }
 
     @Test
-    fun `a catastrophic regular expression ends at its step budget, without a timeout`() {
-        val text = "\"${"a".repeat(40)}!\""
-        assertLimited("SELECT ?m { BIND (REGEX($text, \"((a+)+)+$\") AS ?m) }")
-        assertLimited("SELECT ?m { BIND (fn:matches($text, \"((a+)+)+$\") AS ?m) }")
-        assertLimited("SELECT ?m { BIND (REPLACE($text, \"((a+)+)+$\", \"x\") AS ?m) }")
+    fun `a catastrophic regular expression runs in linear time, without a timeout`() {
+        // Exponential on java.util.regex (round twelve stopped it at a step budget); linear on the RE2 engine.
+        val text = "\"${"a".repeat(10_000)}!\""
+        assertEquals(listOf(com.geoknoesis.kastor.rdf.FalseLiteral), plain("SELECT ?m { BIND (REGEX($text, \"((a+)+)+$\") AS ?m) }").map { it.get("m") })
+        assertEquals(listOf(com.geoknoesis.kastor.rdf.FalseLiteral), plain("SELECT ?m { BIND (fn:matches($text, \"((a+)+)+$\") AS ?m) }").map { it.get("m") })
+        assertEquals(1, plain("SELECT ?m { BIND (REPLACE($text, \"((a+)+)+$\", \"x\") AS ?m) }").size)
+    }
+
+    @Test
+    fun `regular expressions the linear-time engine lacks fail the query, invalid ones are SPARQL errors`() {
+        // Fail closed: a valid pattern the engine cannot honour must not become a silent non-match in a FILTER.
+        for (pattern in listOf("(a)\\\\1", "a(?=b)", "a*+", "(?<!a)b", "a{1001}")) {
+            assertLimited("SELECT ?m { BIND (REGEX(\"ab\", \"$pattern\") AS ?m) }")
+        }
+        assertEquals(listOf(null), plain("SELECT ?m { BIND (REGEX(\"ab\", CONCAT(\"(\", \"a\")) AS ?m) }").map { it.get("m") })
+        assertEquals(listOf(null), plain("SELECT ?m { BIND (REGEX(\"ab\", \"a\", CONCAT(\"u\")) AS ?m) }").map { it.get("m") })
     }
 
     @Test
@@ -213,7 +224,9 @@ class JenaSandboxBoundsTest {
     @Test
     fun `a malformed replacement is a SPARQL error, not a query failure`() {
         assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$\") AS ?r) }").map { it.get("r") })
-        assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$2\") AS ?r) }").map { it.get("r") })
+        assertEquals(listOf(null), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"\\\\x\") AS ?r) }").map { it.get("r") })
+        // fn:replace: a reference to a missing group up to 9 is empty.
+        assertEquals(listOf("ac"), plain("SELECT ?r { BIND (REPLACE(\"abc\", \"b\", \"$2\") AS ?r) }").map { it.get("r")?.let { t -> (t as com.geoknoesis.kastor.rdf.Literal).lexical } })
     }
 
     @Test

@@ -18,6 +18,7 @@ com.github.ben-manes.caffeine:caffeine:3.2.4=testRuntimeClasspath
 com.google.code.gson:gson:2.14.0=testRuntimeClasspath
 com.google.errorprone:error_prone_annotations:2.48.0=testRuntimeClasspath
 com.google.protobuf:protobuf-java:4.35.1=testRuntimeClasspath
+com.google.re2j:re2j:1.8=runtimeClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.22.0=testRuntimeClasspath
 commons-io:commons-io:2.22.0=testRuntimeClasspath
 io.netty:netty-bom:4.2.18.Final=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath

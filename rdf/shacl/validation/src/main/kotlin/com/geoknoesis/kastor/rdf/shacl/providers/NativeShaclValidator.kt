@@ -140,9 +140,6 @@ internal class NativeShaclValidator(
     /** Test instrumentation: regular expression engine steps used by `sh:pattern` evaluations. */
     internal val patternSteps: Long get() = instrumentation.patternSteps.sum()
 
-    /** Test instrumentation: `sh:pattern` evaluations run on the pattern evaluation thread. */
-    internal val patternWorkerEvaluations: Long get() = instrumentation.patternWorkerEvaluations.sum()
-
     /** Test instrumentation: failing or undefined recursive focus nodes whose results came from a recorded solver evaluation. */
     internal val recordedReports: Long get() = instrumentation.recordedReports.sum()
 
@@ -173,16 +170,6 @@ internal class NativeShaclValidator(
     internal var reportRecordingCapacity: Long
         get() = instrumentation.reportRecordingCapacity
         set(value) { instrumentation.reportRecordingCapacity = value }
-
-    /** Test seam: stack size of the pattern evaluation thread. Never set in production code. */
-    internal var patternWorkerStackBytes: Long
-        get() = instrumentation.patternWorkerStackBytes
-        set(value) { instrumentation.patternWorkerStackBytes = value }
-
-    /** Test seam: values shorter than this are first matched on the validating thread. Never set in production code. */
-    internal var patternInlineMaxLength: Int
-        get() = instrumentation.patternInlineMaxLength
-        set(value) { instrumentation.patternInlineMaxLength = value }
 
     /**
      * The snapshot is hashed and compared **outside** the memo lock (both are O(n)), so concurrent runs are not

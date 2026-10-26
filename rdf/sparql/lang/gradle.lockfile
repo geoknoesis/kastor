@@ -18,6 +18,7 @@ com.github.ben-manes.caffeine:caffeine:3.2.4=testCompileClasspath,testRuntimeCla
 com.google.code.gson:gson:2.14.0=testCompileClasspath,testRuntimeClasspath
 com.google.errorprone:error_prone_annotations:2.48.0=testCompileClasspath,testRuntimeClasspath
 com.google.protobuf:protobuf-java:4.35.1=testCompileClasspath,testRuntimeClasspath
+com.google.re2j:re2j:1.8=runtimeClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.22.0=testCompileClasspath,testRuntimeClasspath
 commons-io:commons-io:2.22.0=testCompileClasspath,testRuntimeClasspath
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation

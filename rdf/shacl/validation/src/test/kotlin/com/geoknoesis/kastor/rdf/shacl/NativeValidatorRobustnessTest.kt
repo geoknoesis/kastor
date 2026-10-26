@@ -32,8 +32,11 @@ class NativeValidatorRobustnessTest {
     private val frozenClock: () -> Long = { 0L }
     private val waitSeconds = 120L
 
-    private val catastrophic = "^(.*a){30}$"
-    private val hostile = "a".repeat(60) + "!"
+    // Patterns run on a linear-time engine: what uses up a budget is a long value, read once per character.
+    private val catastrophic = "^a+b$"
+
+    /** More characters than the 50,000 steps of a 1 ms patternTimeout. */
+    private val hostile = "a".repeat(60_000) + "!"
     private val patternShapes =
         graph("""ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:p ; sh:pattern "$catastrophic" ] .""")
     private val linearShapes =
@@ -53,22 +56,22 @@ class NativeValidatorRobustnessTest {
         assertEquals(40, undecided.size, "every hostile value is reported undecided")
         // The ordinary value is still decided (and does not match): the cap shrinks the budget, it does not give up.
         assertEquals(1, report.violations.count { !it.isUndecided && it.constraint.constraintType == ConstraintType.PATTERN })
-        // Without the cap, 40 values use 40 x ~50,000 steps (2,000,000); with it 16 do and 24 use ~1,000 each.
-        assertTrue(validator.patternSteps < 1_000_000L, "pattern steps: ${validator.patternSteps}")
+        // Each evaluation stops at its budget (50,000 steps), however long the value.
+        assertTrue(validator.patternSteps <= 40L * 51_000, "pattern steps: ${validator.patternSteps}")
     }
 
     @Test
     fun `a run without hostile values never reaches the pattern cap`() {
         val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(1)))
         validator.patternClock = frozenClock
-        // Each value reads about 20,000 characters: far more than the degraded budget, within the full one.
-        val values = (0 until 40).joinToString(" , ") { "\"" + "ab".repeat(10_000) + "a".repeat(it + 1) + "\"" }
+        // Each value is 10,000 characters (a few engine steps each): far more than the degraded budget, within the full one.
+        val values = (0 until 40).joinToString(" , ") { "\"" + "ab".repeat(5_000) + "a".repeat(it + 1) + "\"" }
         assertTrue(validator.validate(graph("""ex:a a ex:T ; ex:p $values ."""), linearShapes).isValid)
     }
 
     /** 20 distinct hostile values on ex:p of focus node [focus]: more than enough to reach the run-wide cap. */
-    private fun hostileFocus(focus: String) =
-        "$focus a ex:T ; ex:p " + (0 until 20).joinToString(" , ") { "\"$hostile$it\"" } + " .\n"
+    private fun hostileFocus(focus: String, value: String = hostile) =
+        "$focus a ex:T ; ex:p " + (0 until 20).joinToString(" , ") { "\"$value$it\"" } + " .\n"
 
     @Test
     fun `a value decided before the cap stays decided when it is asked again after it`() {
@@ -105,7 +108,8 @@ class NativeValidatorRobustnessTest {
               sh:property [ sh:path ex:q ; sh:pattern "^[A-Za-z0-9+/]*={0,2}${'$'}" ] .
             """,
         )
-        val data = graph(hostileFocus("ex:a") + "ex:z a ex:T ; ex:q \"$base64Like\" , \"$base64Like!\" .")
+        // 600,000 characters: more than the 500,000 steps of 10 ms.
+        val data = graph(hostileFocus("ex:a", "a".repeat(600_000) + "!") + "ex:z a ex:T ; ex:q \"$base64Like\" , \"$base64Like!\" .")
         val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(10)))
         validator.patternClock = frozenClock
         val report = validator.validate(data, shapes)

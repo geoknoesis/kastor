@@ -661,7 +661,7 @@ class DynamicShaclTest {
         // No target: no focus node is ever reached, so only the compiler can reject the constant half.
         val cases = listOf(
             "sh:pattern ex:iri ; sh:flags [ shnex:pathValues ex:f ]" to "sh:pattern must be a string literal",
-            "sh:pattern [ shnex:pathValues ex:p ] ; sh:flags \"z\"" to "Unsupported sh:flags character",
+            "sh:pattern [ shnex:pathValues ex:p ] ; sh:flags \"z\"" to "unsupported flag character",
         )
         for ((body, message) in cases) {
             val error = assertThrows(ShaclValidationException::class.java, { validate("jena", "ex:a ex:v 1 .", "ex:S a sh:NodeShape ; sh:property [ sh:path ex:v ; $body ] .") }, body)
@@ -695,12 +695,12 @@ class DynamicShaclTest {
 
     @Test
     fun `a pattern read from the data is bounded by the pattern budget`() {
-        // (.*a){30} needs astronomically many backtracking steps to reject sixty a's and a "!" (PatternBudgetTest). The
-        // JDK's regex engine rejects the brief's (a+)+$ on 40 a's and a "!" at once, so it would not reach the budget.
-        val hostile = "a".repeat(60) + "!"
-        val config = ValidationConfig(patternTimeout = java.time.Duration.ofMillis(50))
+        // Patterns run on a linear-time engine, so a budget is used up by a long value: 100,000 characters are more
+        // than the 50,000 steps of 1 ms.
+        val hostile = "a".repeat(100_000) + "!"
+        val config = ValidationConfig(patternTimeout = java.time.Duration.ofMillis(1))
         val started = System.nanoTime()
-        val report = validate("jena", "ex:a ex:pat \"^(.*a){30}$\" ; ex:v \"$hostile\" .", prop("sh:pattern [ shnex:pathValues ex:pat ]"), config)
+        val report = validate("jena", "ex:a ex:pat \"^a+b$\" ; ex:v \"$hostile\" .", prop("sh:pattern [ shnex:pathValues ex:pat ]"), config)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
         val v = report.violations.single()
         assertTrue(v.isPatternTimeout, v.toString())

@@ -77,12 +77,6 @@
       },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
-    "rdf/shacl/validation/src/main/kotlin/com/geoknoesis/kastor/rdf/shacl/native/ShaclPatternCompiler.kt": {
-      "functions": {
-        "charClass:0287547f58c1": 47
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "rdf/sparql/contract/src/main/kotlin/com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings.kt": {
       "lines": 797,
       "functions": {

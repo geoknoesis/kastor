@@ -3,12 +3,13 @@ package com.geoknoesis.kastor.rdf.jena
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxRegex
+import com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern
+import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegexException
 import org.apache.jena.graph.NodeFactory
 import org.apache.jena.sparql.expr.*
 import org.apache.jena.sparql.expr.nodevalue.NodeValueOps
 import java.math.BigInteger
 import kotlin.reflect.KClass
-import java.util.regex.Pattern
 
 /**
  * What an expression of a sandboxed query may cost on Jena (see [SandboxLimits]), by Jena expression class and by
@@ -151,14 +152,14 @@ internal enum class JenaCost {
 
 /**
  * The cost-specific evaluation of [JenaCost]s whose arguments are evaluated first: the checks before computing, and
- * `REGEX` / `REPLACE` on [SandboxRegex] with Jena's own semantics (its pattern flags, its argument checks, its result
- * datatype, and its rule that an empty match after the first is not replaced). The `check` of [regex] and [replace]
+ * `REGEX` / `REPLACE` on [SandboxRegex] (XPath regular expressions and flags, on a linear-time engine) with Jena's
+ * argument checks, its result datatype, and its rule that an empty match after the first is not replaced. The `check` of [regex] and [replace]
  * is the query's deadline and cancellation, run while the regular expression works.
  */
 internal class JenaCostEvaluation(private val cost: JenaCost, private val label: String) {
 
     /** The last compiled pattern and the text and flags it was compiled from (patterns are usually constant). */
-    @Volatile private var compiled: Triple<String, String?, Pattern>? = null
+    @Volatile private var compiled: XPathPattern? = null
 
     /** Fails with [SandboxLimitException] when computing on [args] would exceed a limit. */
     fun precheck(args: List<NodeValue>) {
@@ -222,20 +223,26 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
         val replacement = NodeValueOps.checkAndGetStringLiteral(label, args[2]).literalLexicalForm
         val flags = args.getOrNull(3)?.let { NodeValueOps.checkAndGetStringLiteral(label, it).literalLexicalForm }
         val text = node.literalLexicalForm
+        val compiledPattern = pattern(patternText, flags)
         val result = try {
-            SandboxRegex.replace(pattern(patternText, flags), text, replacement, skipEmptyAfterFirst = true, check = check)
-        } catch (e: IllegalArgumentException) {
-            throw ExprEvalException("$label: ${e.message}", e)
-        } catch (e: IndexOutOfBoundsException) {
+            SandboxRegex.replace(compiledPattern, text, replacement, skipEmptyAfterFirst = true, check = check)
+        } catch (e: XPathRegexException) {
             throw ExprEvalException("$label: ${e.message}", e)
         }
         if (result == null || result == text) return args[0]
         return NodeValue.makeNode(NodeFactory.createLiteral(result, node.literalLanguage, node.literalBaseDirection, node.literalDatatype))
     }
 
-    /** [text] compiled with [flags] as Jena compiles patterns (`RegexEngine.makePattern`), keeping the last one. */
-    private fun pattern(text: String, flags: String?): Pattern {
-        compiled?.let { (t, f, p) -> if (t == text && f == flags) return p }
-        return RegexEngine.makePattern(label, text, flags).also { compiled = Triple(text, flags, it) }
+    /**
+     * [text] compiled with the XPath [flags] for the linear-time engine ([SandboxRegex.compile]), keeping the last
+     * one. A pattern or flag that is invalid or not supported (a back-reference, a lookaround, ...) is a SPARQL error.
+     */
+    private fun pattern(text: String, flags: String?): XPathPattern {
+        compiled?.let { if (it.pattern == text && it.flags == flags) return it }
+        return try {
+            SandboxRegex.compile(text, flags).also { compiled = it }
+        } catch (e: XPathRegexException) {
+            throw ExprEvalException("$label: ${e.message}", e)
+        }
     }
 }

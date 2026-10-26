@@ -9,8 +9,9 @@ import org.junit.jupiter.api.Test
 
 /**
  * The one rule of the `sh:pattern` translation: a pattern is an XPath / XML Schema regular expression, evaluated by
- * `java.util.regex`. XML Schema syntax is translated; `java.util.regex` syntax with the same meaning is passed
- * through; `java.util.regex` syntax that would mean something else is **rejected** - never silently reinterpreted.
+ * the linear-time RE2/J engine. XML Schema syntax is translated; `java.util.regex` idioms with the same meaning are
+ * translated; syntax that would mean something else, or that RE2 cannot evaluate, is **rejected** - never silently
+ * reinterpreted.
  */
 class ShaclPatternTranslationTest {
     private fun matches(pattern: String, flags: String?, value: String) = compileShaclPattern(pattern, flags).containsMatchIn(value)
@@ -103,30 +104,25 @@ class ShaclPatternTranslationTest {
     }
 
     @Test
-    fun `groups that are not flag groups pass through`() {
+    fun `non-capturing and named groups pass through, lookarounds are rejected`() {
         assertTrue(matches("^(?:ab)+$", null, "abab"))
-        assertTrue(matches("^a(?=b)", null, "ab"))
-        assertFalse(matches("^a(?=b)", null, "ac"))
-        assertTrue(matches("^a(?!b)", null, "ac"))
-        assertTrue(matches("(?<=a)b$", null, "ab"))
-        assertTrue(matches("(?<!a)b$", null, "cb"))
-        assertTrue(matches("^(?<x>a)\\k<x>$", null, "aa"))
-        // `$` inside a lookahead keeps its XPath meaning: the end of the value, not before a final line feed.
-        assertTrue(matches("^a(?=$)", null, "a"))
-        assertFalse(matches("^a(?=$)", null, "a\n"))
+        assertTrue(matches("^(?<x>a)b$", null, "ab"))
+        // The linear-time engine (RE2) has no lookaround: rejected, never reinterpreted.
+        for (pattern in listOf("^a(?=b)", "^a(?!b)", "(?<=a)b$", "(?<!a)b$", "(?>a)", "a*+")) assertRejected(pattern, null)
     }
 
     // --- quantifiers and back-references ---------------------------------------------------------------------------
 
+    private fun first(pattern: String, value: String): String? =
+        compileShaclPattern(pattern, null).firstMatch(value)?.let { value.substring(it.first, it.last + 1) }
+
     @Test
     fun `lazy quantifiers are reluctant`() {
-        val greedy = compileShaclPattern("<.+>", null)
-        val lazy = compileShaclPattern("<.+?>", null)
-        assertEquals("<a><b>", greedy.find("<a><b>")!!.value)
-        assertEquals("<a>", lazy.find("<a><b>")!!.value)
-        assertEquals("a", compileShaclPattern("a*?a", null).find("aaa")!!.value)
-        assertEquals("", compileShaclPattern("a??", null).find("aaa")!!.value)
-        assertEquals("aa", compileShaclPattern("a{2,3}?", null).find("aaaa")!!.value)
+        assertEquals("<a><b>", first("<.+>", "<a><b>"))
+        assertEquals("<a>", first("<.+?>", "<a><b>"))
+        assertEquals("a", first("a*?a", "aaa"))
+        assertEquals("", first("a??", "aaa"))
+        assertEquals("aa", first("a{2,3}?", "aaaa"))
         assertTrue(matches("^a+?b$", null, "aaab"))
         assertFalse(matches("^a+?b$", null, "b"))
         // The translated `.` under a lazy quantifier still stops at a line feed.
@@ -135,15 +131,10 @@ class ShaclPatternTranslationTest {
     }
 
     @Test
-    fun `back-references match the captured text`() {
-        assertTrue(matches("^(a|b)\\1$", null, "aa"))
-        assertFalse(matches("^(a|b)\\1$", null, "ab"))
-        assertTrue(matches("^(\\w+)-\\1$", null, "foo_1-foo_1"))
-        assertFalse(matches("^(\\w+)-\\1$", null, "foo-bar"))
-        assertTrue(matches("^(a)(b)\\2\\1$", null, "abba"))
-        assertTrue(matches("^(a)\\1$", "i", "aA"))
-        assertTrue(matches("^(['\"]).*\\1$", null, "'quoted'"))
-        assertFalse(matches("^(['\"]).*\\1$", null, "'quoted\""))
+    fun `back-references are rejected because the linear-time engine has none`() {
+        for (pattern in listOf("^(a|b)\\1$", "^(\\w+)-\\1$", "^(a)(b)\\2\\1$", "^(['\"]).*\\1$")) {
+            assertRejected(pattern, null, "back-reference")
+        }
     }
 
     // --- XML name escapes ------------------------------------------------------------------------------------------
@@ -278,7 +269,7 @@ class ShaclPatternTranslationTest {
     @Test
     fun `deeply nested groups and class subtractions are rejected instead of overflowing the stack`() {
         val depth = 100_000
-        // java.util.regex reports its own stack overflow on nested groups as a syntax error.
+        // Groups nested past the limit are rejected before the engine compiles them.
         assertThrows(ShapeCompileException::class.java) { compileShaclPattern("(".repeat(depth) + "a" + ")".repeat(depth), null) }
         // The translator recursed once per nested class subtraction.
         val error = assertThrows(ShapeCompileException::class.java) { compileShaclPattern("[a-".repeat(depth) + "[b]" + "]".repeat(depth), null) }

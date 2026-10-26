@@ -62,7 +62,9 @@ object KastorShaclVocabulary {
     /**
      * `ksh:PatternTooComplex`: the constraint could not be decided because the regular expression engine ran out of
      * stack while matching a `sh:pattern` against a value ([ValidationViolation.isPatternTooComplex]), typically an
-     * alternation under a quantifier (`(a|b)*`) on a very long value. The value is not accepted as conforming.
+     * alternation under a quantifier (`(a|b)*`) on a very long value. The value is not accepted as conforming. Kept
+     * for compatibility (terms are never removed); the native engine no longer reports it, since patterns run on a
+     * linear-time engine that does not recurse on its input.
      */
     val PatternTooComplex: Iri = Iri(NAMESPACE + "PatternTooComplex")
 
