@@ -148,9 +148,9 @@ class JenaSandboxBoundsTest {
 
     @Test
     fun `a property path is bounded in size and depth`() {
-        val wide = (1..40).joinToString("/") { "(<urn:p>|<urn:q>)" }
+        val wide = (1..100).joinToString("/") { "(<urn:p>|<urn:q>)" }
         assertThrows(IllegalArgumentException::class.java) { plain("SELECT * { <urn:a> $wide ?o }") }
-        val deep = "(".repeat(20) + "<urn:p>" + ")*".repeat(20)
+        val deep = "(".repeat(40) + "<urn:p>" + ")*".repeat(40)
         assertThrows(IllegalArgumentException::class.java) { plain("SELECT * { <urn:a> $deep ?o }") }
         assertEquals(2, plain("SELECT * { <urn:a> (<urn:p>|<urn:q>)/^<urn:p> ?o }").size)
         // Jena lists the hidden variable of a path sequence (??P0) unbound under SELECT *: it is not a column.
