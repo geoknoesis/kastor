@@ -190,7 +190,10 @@ object XsdLiterals {
   /**
    * Encodes [value] as a literal of [datatype]. Literals (e.g. [LangString]) are returned unchanged.
    *
-   * A `BigDecimal` is written without an exponent, keeping a positive scale: `1E+3` as `"1000"`, `10.50` as `"10.50"`.
+   * A `BigDecimal` is never written in an exponent form. As an `xsd:decimal` it is written in the canonical form the
+   * core factories (`decimal(BigDecimal)`) write, whatever its scale: `1E+3` as `"1000"`, `10.50` as `"10.5"`. Readers
+   * and [mergeRecord] compare decimals by value, so a graph's `"10.50"` matches `10.5` and is kept as it is. For any
+   * other datatype the plain form keeps a positive scale (`10.0` is `"10.0"`, which `xsd:integer` refuses).
    *
    * @throws IllegalArgumentException if the encoded literal is not [well formed][isWellFormed] for [datatype]:
    *   `300` as `xsd:unsignedByte`, `BigInteger.ZERO` as `xsd:positiveInteger`, `"yesterday"` as `xsd:dateTime`;
@@ -211,8 +214,11 @@ object XsdLiterals {
         value == Double.NEGATIVE_INFINITY -> "-INF"
         else -> value.toString()
       }
-      // Never an exponent form, which xsd:decimal does not allow: 1E+3 is "1000"; a positive scale is kept ("10.50").
-      is BigDecimal -> XsdDecimal.canonicalLexical(value).let { if (value.scale() > 0) value.toPlainString() else it }
+      // Never an exponent form, which xsd:decimal does not allow: 1E+3 is "1000". An xsd:decimal is canonical, as in
+      // core ("10.50" is "10.5"); another datatype keeps a positive scale, so 10.0 is not silently an xsd:integer.
+      is BigDecimal -> XsdDecimal.canonicalLexical(value).let {
+        if (value.scale() > 0 && datatype.value != XsdNumbers.DECIMAL) value.toPlainString() else it
+      }
       is LocalDate -> dateLexical(value)
       else -> value.toString()
     }

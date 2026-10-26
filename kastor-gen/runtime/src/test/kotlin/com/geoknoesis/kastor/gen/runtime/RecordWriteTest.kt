@@ -144,4 +144,21 @@ class RecordWriteTest {
         graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(BigDecimal("1E+3")), single = false)))
         assertEquals(setOf<RdfTerm>(TypedLiteral("1000", XSD.decimal)), objects(graph, amount))
     }
+
+    @Test
+    fun `a non-canonical decimal in the graph is kept, while new values are written canonically (round 14)`() {
+        // encode writes "10.5" for 10.50, as the core factories do; the graph's "10.50" is the same value, no diff.
+        for (single in listOf(true, false)) {
+            for (value in listOf(BigDecimal("10.50"), BigDecimal("10.5"), BigDecimal("1.05E+1"))) {
+                val graph = MemoryGraph(listOf(RdfTriple(s, amount, TypedLiteral("10.50", XSD.decimal))))
+                graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(value), single)))
+                assertEquals(setOf<RdfTerm>(TypedLiteral("10.50", XSD.decimal)), objects(graph, amount), "single=$single value=$value")
+            }
+        }
+        val graph = MemoryGraph(listOf(RdfTriple(s, amount, TypedLiteral("10.50", XSD.decimal))))
+        graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(BigDecimal("10.50"), BigDecimal("2.50")), single = false)))
+        assertEquals(
+            setOf<RdfTerm>(TypedLiteral("10.50", XSD.decimal), TypedLiteral("2.5", XSD.decimal)), objects(graph, amount),
+        )
+    }
 }

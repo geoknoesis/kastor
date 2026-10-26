@@ -111,6 +111,16 @@ entries are regrouped under those kind headings.
   digits>` passed the 10,000-digit check (round 13 providers P3-5).
 - **Changed (reasoning):** the memory reasoner's ill-typed-literal check also covers the Gregorian and duration types.
 
+#### Integration (round fourteen)
+
+- **Changed (Kastor Gen), behaviour change:** `XsdLiterals.encode` writes a `BigDecimal` as an `xsd:decimal` in the
+  canonical form the core factories write (`decimal(BigDecimal)`): `10.50` is now `"10.5"`, not `"10.50"`. Other
+  datatypes keep the plain form (`BigDecimal("10.0")` is still refused as `xsd:integer`). `mergeRecord` /
+  `replaceInGraph` compare decimals by value, so a graph that already holds `"10.50"` keeps it unchanged; only new
+  values are written canonically.
+- **Docs (providers):** the Jena and RDF4J provider pages now state that the 10,000-character limit covers the
+  date/time, Gregorian and duration types as well as the numeric ones, on both providers.
+
 ### Round twelve
 
 #### Build, CI and docs (round twelve)
