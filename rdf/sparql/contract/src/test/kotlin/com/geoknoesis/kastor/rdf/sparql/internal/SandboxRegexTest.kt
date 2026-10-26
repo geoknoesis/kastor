@@ -42,6 +42,19 @@ class SandboxRegexTest {
         assertNull(replaceAll("z", "abc", "x"))
     }
 
+    /** The expressions of the W3C SPARQL 1.1 function tests on `REGEX` / `REPLACE` (functions/replace0x, regex/). */
+    @Test
+    fun `the W3C SPARQL regex and replace cases give their expected results`() {
+        assertEquals("[1=ab][2=]cd", replaceAll("(ab)|(a)", "abcd", "[1=$1][2=$2]"))
+        assertEquals("aZcd", replaceAll("b", "abcd", "Z"))
+        assertEquals("abc-def", replaceAll("[^a-z0-9]", "abc DEF".lowercase(), "-"))
+        assertEquals("bbb", replaceAll("a", "aaa", "b"))
+        assertTrue(SandboxRegex.find(compile("^mailto:example\\.com$"), "mailto:example.com", none))
+        assertTrue(SandboxRegex.find(compile("example\\.COM", "i"), "mailto:Example.com", none))
+        assertFalse(SandboxRegex.find(compile("^example"), "mailto:example.com", none))
+        assertTrue(SandboxRegex.find(compile("^\\w+$"), "abc_1", none))
+    }
+
     @Test
     fun `replacement references follow fn replace`() {
         // A missing group up to 9 is empty (Java would throw); beyond 9, trailing digits are literal.
