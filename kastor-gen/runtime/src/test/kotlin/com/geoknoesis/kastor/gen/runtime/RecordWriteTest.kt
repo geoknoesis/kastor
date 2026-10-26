@@ -13,6 +13,7 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.math.BigDecimal
 import java.math.BigInteger
 
 /** [mergeRecord] keeps every term a record could not have changed and edits nothing when it fails. */
@@ -107,5 +108,40 @@ class RecordWriteTest {
         val graph = object : MutableRdfGraph by backing {}
         assertThrows<UnsupportedOperationException> { graph.mergeRecord(s, listOf(type), listOf(strings(listOf("new"), true))) }
         assertEquals(setOf<RdfTerm>(Literal("old")), objects(backing, title))
+    }
+
+    private val amount = Iri("urn:amount")
+
+    private fun decimals(values: List<BigDecimal>, single: Boolean) = RecordField(
+        amount, values, single, { (it as? Literal)?.let(XsdLiterals::bigDecimal) }, { XsdLiterals.encode(it, XSD.decimal) },
+    )
+
+    @Test
+    fun `a decimal held with a negative scale is kept, not deleted (round 13 P1)`() {
+        // BigDecimal("1000").stripTrailingZeros() is 1E+3: equal in value to the graph's "1000", not in scale.
+        for (single in listOf(true, false)) {
+            val graph = MemoryGraph(listOf(RdfTriple(s, amount, TypedLiteral("1000", XSD.decimal))))
+            graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(BigDecimal("1000").stripTrailingZeros()), single)))
+            assertEquals(setOf<RdfTerm>(TypedLiteral("1000", XSD.decimal)), objects(graph, amount), "single=$single")
+        }
+    }
+
+    @Test
+    fun `a decimal equal in value keeps its original term, whatever the scale`() {
+        val graph = MemoryGraph(listOf(RdfTriple(s, amount, TypedLiteral("1.00", XSD.decimal)), RdfTriple(s, amount, TypedLiteral("2", XSD.decimal))))
+        graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(BigDecimal("1.0"), BigDecimal("2E+0"), BigDecimal("3E+1")), single = false)))
+        assertEquals(
+            setOf<RdfTerm>(TypedLiteral("1.00", XSD.decimal), TypedLiteral("2", XSD.decimal), TypedLiteral("30", XSD.decimal)),
+            objects(graph, amount),
+            "unchanged values keep their lexical form; a new value is written in the xsd:decimal syntax, never 3E+1",
+        )
+    }
+
+    @Test
+    fun `a value whose encoded term the graph holds but must drop is re-added`() {
+        // The record keeps 1E+3 and drops 7: the add of "1000" must be checked against the terms that remain.
+        val graph = MemoryGraph(listOf(RdfTriple(s, amount, TypedLiteral("1000", XSD.decimal)), RdfTriple(s, amount, TypedLiteral("7", XSD.decimal))))
+        graph.mergeRecord(s, emptyList(), listOf(decimals(listOf(BigDecimal("1E+3")), single = false)))
+        assertEquals(setOf<RdfTerm>(TypedLiteral("1000", XSD.decimal)), objects(graph, amount))
     }
 }

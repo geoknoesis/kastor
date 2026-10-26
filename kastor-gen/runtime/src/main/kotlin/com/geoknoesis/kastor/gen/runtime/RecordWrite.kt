@@ -6,13 +6,16 @@ import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.xsd.XsdDecimal
+import java.math.BigDecimal
 
 /**
  * One modelled predicate of a record written by [mergeRecord]: the record's [values] for [predicate] and how its
  * reader sees the graph's terms.
  *
- * @param T the record's value type, compared with `equals` (e.g. `String`, `BigInteger`, `LocalDate`, an enum,
- *   or the node of a nested resource)
+ * @param T the record's value type, compared by value: with `equals` after a round trip through [encode] and
+ *   [decode] (e.g. `String`, `BigInteger`, `LocalDate`, an enum, or the node of a nested resource), and numerically
+ *   for `BigDecimal` (`1E+3` equals `1000`)
  * @property singleValued the record holds at most one value although the graph may hold several
  * @property decode the value the record's reader takes from a graph term, or `null` when the record cannot
  *   represent that term (ill-typed literal, other datatype, wrong term kind)
@@ -29,21 +32,40 @@ class RecordField<T : Any>(
     require(!singleValued || values.size <= 1) { "A single-valued field holds at most one value: <${predicate.value}>" }
   }
 
-  /** The terms of [terms] to remove and the terms to add so that the predicate holds this field's values. */
+  /**
+   * The terms of [terms] to remove and the terms to add so that the predicate holds this field's values.
+   *
+   * Graph terms and record values are matched by [valueKey]: by value, not by `equals` of the record's objects, so
+   * a `BigDecimal` of another scale (`1E+3` for a graph `"1000"`) is the same value and its term is kept. Adds are
+   * checked against the terms that remain, not against every term: a value whose encoded term is about to be
+   * removed is written again rather than lost.
+   */
   internal fun diff(terms: List<RdfTerm>): Pair<List<RdfTerm>, List<RdfTerm>> {
-    val representable = terms.mapNotNull { term -> decode(term)?.let { term to it } }
+    val representable = terms.mapNotNull { term -> decode(term)?.let { term to valueKey(it) } }
+    val wanted = values.map(::valueKey)
     // Unchanged only when the value is the one the reader returns (the first representable term in `find` order).
     // A value equal to another term beyond sh:maxCount is an update: the other representable terms are removed so
     // that the next read returns it.
-    if (singleValued && values.isNotEmpty() && representable.firstOrNull()?.second == values.single()) {
+    if (singleValued && wanted.isNotEmpty() && representable.firstOrNull()?.second == wanted.single()) {
       return emptyList<RdfTerm>() to emptyList()
     }
-    val pending = values.toMutableList()
+    val pending = values.indices.toMutableList()
     val remove = mutableListOf<RdfTerm>()
-    for ((term, value) in representable) {
-      if (!pending.remove(value)) remove += term
+    for ((term, key) in representable) {
+      val match = pending.indexOfFirst { wanted[it] == key }
+      if (match >= 0) pending.removeAt(match) else remove += term
     }
-    return remove to pending.map(encode).filter { it !in terms }
+    val kept = terms.toMutableList().apply { removeAll(remove.toSet()) }.toSet()
+    return remove to pending.map { encode(values[it]) }.filter { it !in kept }.distinct()
+  }
+
+  /**
+   * The value [value] stands for: the value its encoded term reads back as (so a value the codec normalises matches
+   * the term it writes), with decimals compared by value, independent of scale.
+   */
+  private fun valueKey(value: T): Any {
+    val read = runCatching { decode(encode(value)) }.getOrNull() ?: value
+    return if (read is BigDecimal) XsdDecimal.of(read) else read
   }
 }
 

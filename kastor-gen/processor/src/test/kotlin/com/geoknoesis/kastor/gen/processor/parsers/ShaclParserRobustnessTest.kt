@@ -96,4 +96,27 @@ class ShaclParserRobustnessTest {
         assertEquals(listOf("https://example.test/Agent"), parents["Org"])
         assertEquals(emptyList(), parents["Agent"])
     }
+
+    @Test
+    fun `numeric bounds are parsed by their datatype and bounded in length`() {
+        val logger = RecordingLogger()
+        val shapes = ShaclParser(logger).parseShaclContent(
+            """
+            $prefixes
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+               sh:property [ sh:path ex:a ; sh:datatype xsd:double ; sh:minInclusive "1e999999999"^^xsd:double ] ;
+               sh:property [ sh:path ex:b ; sh:datatype xsd:integer ; sh:minInclusive "1.5"^^xsd:integer ] ;
+               sh:property [ sh:path ex:c ; sh:datatype xsd:double ; sh:maxInclusive "-2.5E2"^^xsd:double ] ;
+               sh:property [ sh:path ex:d ; sh:datatype xsd:decimal ; sh:maxExclusive " 1000.00 "^^xsd:decimal ] ;
+               sh:property [ sh:path ex:e ; sh:datatype xsd:double ; sh:maxExclusive "INF"^^xsd:double ] .
+            """.trimIndent()
+        )
+        val byPath = shapes.single().properties.associateBy { it.path.removePrefix("https://example.test/") }
+        assertNull(byPath.getValue("a").minInclusive, "a billion-digit bound is not built")
+        assertNull(byPath.getValue("b").minInclusive, "ill-formed for its datatype")
+        assertEquals("-250", byPath.getValue("c").maxInclusive?.toPlainString())
+        assertEquals(0, java.math.BigDecimal("1000").compareTo(byPath.getValue("d").maxExclusive))
+        assertNull(byPath.getValue("e").maxExclusive)
+        assertEquals(3, logger.warnings.count { it.contains("is not numeric") }, logger.warnings.toString())
+    }
 }
