@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
@@ -173,7 +174,8 @@ internal object ConstraintInstantiation {
         if (lit.datatype != XSD.integer && lit.datatype != XSD.nonNegativeInteger && lit.datatype != XSD.long) {
             throw ShapeCompileException("$role expects integer datatype, got ${lit.datatype}")
         }
-        val v = lit.lexical.toIntOrNull() ?: throw ShapeCompileException("$role invalid lexical ${lit.lexical}")
+        val v = XsdNumbers.parseIntegerOf(lit.datatype.value, lit.lexical)?.toIntOrNull()
+            ?: throw ShapeCompileException("$role invalid lexical ${lit.lexical}")
         if (v < 0) throw ShapeCompileException("$role must be non-negative")
         return v
     }

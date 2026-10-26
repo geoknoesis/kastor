@@ -23,6 +23,9 @@ dependencies {
     testImplementation(libs.jena.shacl)
 }
 
+// The shared XSD lexical parsers of :rdf:core (com.geoknoesis.kastor.rdf.xsd) are internal Kastor API.
+kotlin { compilerOptions { optIn.add("com.geoknoesis.kastor.rdf.InternalKastorApi") } }
+
 tasks.withType<Test>().configureEach {
     // CLI system properties are not automatically forwarded to forked test JVMs.
     listOf("shacl.w3c.useNative", "shacl.w3c.manifest", "shacl.w3c.includeNonApproved").forEach { name ->
