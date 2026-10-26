@@ -33,6 +33,22 @@ entries are regrouped under those kind headings.
   (`parseGraph`, `parseDataset`, `openTripleStream`, `parseStreaming`, `Rdf.parse`, `JenaBridge.fromString`).
   `parseFromUrl` and `JenaBridge.fromUrl` resolve against the URL, as before.
 
+#### Kastor Gen: validation of untrusted data
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** `JenaValidation()`
+  and `Rdf4jValidation()`, which validate against the shapes embedded in the data graph, no longer run what their
+  engines cannot bound. `jena-shacl` and `ShaclSail` run SHACL-SPARQL without a sandbox: a `SERVICE` clause in a
+  shape of an uploaded graph made the validator send a request to any host (SSRF), and a slow endpoint held the
+  validating thread for ever. They also run `sh:pattern` on `java.util.regex`. Embedded shapes are now admitted only
+  when every SHACL term they use is a SHACL Core target, path, constraint or non-validating property, or a term of a
+  validation report. Anything else (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...) fails `validate` with
+  the new `EmbeddedShapesRefusedException` (`kastor-gen-runtime`, an `IllegalArgumentException`) before the engine
+  runs. A generated `EXTERNAL` validator that names one of these classes follows the same rule.
+- **Added (API):** `JenaValidation.trustingEmbeddedShapes()` and `Rdf4jValidation.trustingEmbeddedShapes()` restore
+  the previous behaviour for data graphs from a trusted source. Shapes passed to the constructors or to `fromTurtle`
+  are trusted, as before. The ABI dumps of `kastor-gen-runtime`, `kastor-gen-validation-jena` and
+  `kastor-gen-validation-rdf4j` gain these additions only.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards

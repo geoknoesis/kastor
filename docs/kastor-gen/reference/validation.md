@@ -128,8 +128,28 @@ Both adapters offer the same two ways of supplying shapes:
 | `JenaValidation.fromTurtle(ttl)` / `Rdf4jValidation.fromTurtle(ttl)` | Turtle text | same as above |
 | `JenaValidation()` / `Rdf4jValidation()` | shapes **embedded in the data graph** | shapes are read from `data` (Jena: on every call; RDF4J: again only when the graph instance or its content changes); if the data graph declares no shapes the result is `Ok` |
 
+| `JenaValidation.trustingEmbeddedShapes()` / `Rdf4jValidation.trustingEmbeddedShapes()` | shapes embedded in a **trusted** data graph | as the no-arg constructor, but every embedded shape runs (see below) |
+
 With the no-arg constructors, a data graph that contains no SHACL shapes always validates as `Ok`. Supply
 the shapes explicitly unless your data really carries them.
+
+**Embedded shapes are untrusted input.** They come with the data, and both engines (`jena-shacl` and RDF4J
+`ShaclSail`) run SHACL-SPARQL without a sandbox: a `SERVICE` clause sends a request to any host the data names, and
+a query has no deadline. They also run `sh:pattern` on `java.util.regex`, which a hostile pattern can make backtrack
+without bound. So the no-arg validators admit only SHACL Core shapes without `sh:pattern`. If the embedded shapes
+use any other term of the SHACL namespace, `validate` throws `EmbeddedShapesRefusedException` (an
+`IllegalArgumentException`) before the engine runs. Such terms include `sh:sparql`, `sh:select`, `sh:ask`,
+`sh:target`, `sh:validator`, `sh:pattern`, `sh:flags`, `sh:expression`, `sh:rule` and terms of later SHACL versions.
+The terms that are admitted are the targets, paths and constraints of SHACL Core, their non-validating properties,
+prefix declarations and the terms of a validation report. Only for a data graph from a trusted source, use
+`trustingEmbeddedShapes()`, which runs every embedded shape with no sandbox and no deadline. Shapes passed to the
+constructor or to `fromTurtle` are your own and are trusted. Never pass shapes from an untrusted source there. To
+validate against untrusted shapes, use the Kastor SHACL validator (`rdf-shacl-validation`): it runs SHACL-SPARQL
+in a sandbox with a deadline and patterns on a linear-time engine.
+
+A generated `EXTERNAL` validator (`SharedValidators`, the class's no-arg constructor) follows the same rule. To
+trust the data, name a class of your own whose no-arg constructor delegates, for example
+`class TrustedValidation : ValidationContext by Rdf4jValidation.trustingEmbeddedShapes()`.
 
 Engine failures (malformed shapes, a literal passed as focus, …) are thrown, never reported as `Ok` or
 as a violation.

@@ -100,6 +100,10 @@ public final class com/geoknoesis/kastor/gen/runtime/DefaultRdfHandleKt {
 	public static final fun withKnownPredicates (Lcom/geoknoesis/kastor/gen/runtime/RdfHandle;Ljava/util/Set;)Lcom/geoknoesis/kastor/gen/runtime/RdfHandle;
 }
 
+public final class com/geoknoesis/kastor/gen/runtime/EmbeddedShapesRefusedException : java/lang/IllegalArgumentException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
 public abstract interface class com/geoknoesis/kastor/gen/runtime/GraphAccess {
 	public abstract fun getEditor ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public abstract fun getGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;

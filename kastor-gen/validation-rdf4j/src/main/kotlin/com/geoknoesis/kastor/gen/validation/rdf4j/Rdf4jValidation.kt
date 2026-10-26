@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
+import com.geoknoesis.kastor.gen.runtime.EmbeddedShapes
+import com.geoknoesis.kastor.gen.runtime.EmbeddedShapesRefusedException
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
@@ -50,6 +52,16 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): the shapes are extracted from
  *   the data graph (once per graph version). If the data graph declares no shapes the result is
  *   [ValidationResult.Ok].
+ *
+ * **Embedded shapes are untrusted**: they come with the data. `ShaclSail` runs SHACL-SPARQL without a sandbox (a
+ * `SERVICE` clause sends a request to any host, and a query has no deadline) and `sh:pattern` with
+ * `java.util.regex` (which a hostile pattern makes backtrack without bound). So the no-arg validator admits only
+ * SHACL Core shapes without `sh:pattern`: when the embedded shapes use any other term of the SHACL namespace
+ * (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...; the list is `EmbeddedShapes.ALLOWED` of
+ * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before anything is run. Only when the
+ * data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes passed to the
+ * constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an untrusted
+ * source there; the RDF4J SHACL validator of `rdf-rdf4j` and the Kastor SHACL validator sandbox them.
  *
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
@@ -125,6 +137,8 @@ class Rdf4jValidation private constructor(
   val maxCachedGraphs: Int,
   /** Whether graphs without a modification stamp are assumed not to change while this validator lives. */
   val assumeImmutable: Boolean,
+  /** Whether shapes embedded in the data graph run unchecked ([trustingEmbeddedShapes]). */
+  private val trustEmbeddedShapes: Boolean = false,
 ) : ValidationContext, AutoCloseable {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
@@ -226,6 +240,18 @@ class Rdf4jValidation private constructor(
     /** Creates a validator from SHACL shapes written in Turtle. */
     @JvmStatic
     fun fromTurtle(shapesTurtle: String): Rdf4jValidation = Rdf4jValidation(Rdf.parse(shapesTurtle, "TURTLE"))
+
+    /**
+     * A validator of the shapes embedded in the data graph that runs **every** shape, SHACL-SPARQL and `sh:pattern`
+     * included, without a sandbox or a deadline (see the class documentation). Use it only for data graphs from a
+     * trusted source: a data graph can then make the validator send requests to any host and run for ever.
+     *
+     * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun trustingEmbeddedShapes(maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean = false): Rdf4jValidation =
+      Rdf4jValidation(null, maxCachedGraphs, assumeImmutable, trustEmbeddedShapes = true)
 
     private fun toStatements(triples: List<RdfTriple>): List<Statement> =
       triples.map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
@@ -363,7 +389,7 @@ class Rdf4jValidation private constructor(
    */
   private fun load(triples: List<RdfTriple>, previous: Store?): Store {
     val statements = toStatements(triples)
-    val newShapes = if (fixedShapes == null) ShapeIndex(admitShapes(extractEmbeddedShapes(statements))) else null
+    val newShapes = if (fixedShapes == null) ShapeIndex(admitShapes(admitEmbedded(extractEmbeddedShapes(statements)))) else null
     val repo = previous?.repository ?: repositoryFactory()
     try {
       repo.connection.use { connection ->
@@ -390,6 +416,12 @@ class Rdf4jValidation private constructor(
     }
     // Only after the commit: the embedded shapes change together with the data.
     return previous?.also { it.embeddedShapes = newShapes } ?: Store(repo, newShapes)
+  }
+
+  /** [shapes] embedded in a data graph, refused when they use a term this validator does not run for untrusted data. */
+  private fun admitEmbedded(shapes: List<Statement>): List<Statement> {
+    if (!trustEmbeddedShapes) EmbeddedShapes.requireNone(EmbeddedShapes.refused(shapes.asSequence().map { it.predicate.stringValue() }.iterator()), "Rdf4jValidation")
+    return shapes
   }
 
   /** Validates [focusValue] against the data loaded in [store]; runs under the store's cache entry lock. */
