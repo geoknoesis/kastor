@@ -96,4 +96,45 @@ class JenaNumericLiteralBoundTest {
             assertEquals(0, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p \"$split\" }")).toList().size)
         }
     }
+
+    @Test
+    fun `temporal literals longer than the limit are refused, as Jena compares their seconds in quadratic time`() {
+        // Measured: a SPARQL comparison of a dateTime with 400,000 fraction digits took 2.5 s, with 200,000 0.6 s.
+        val fraction = "1".repeat(limit)
+        for ((lexical, type) in listOf(
+            "2020-01-01T00:00:00.$fraction" to "dateTime", "00:00:00.$fraction" to "time",
+            "PT1.${fraction}S" to "duration", "1$fraction" to "gYear", "1$fraction-01-01" to "date",
+        )) {
+            // A parse error: the limit, or (for fractional seconds) Jena's own checker, which cannot read them.
+            assertThrows(RdfFormatException::class.java) { JenaProvider().parseGraph(turtle("\"$lexical\"^^<$xsd$type>").byteInputStream(), "TURTLE") }
+            JenaRepository.MemoryRepository().use { repo ->
+                val error = assertThrows(IllegalArgumentException::class.java) {
+                    repo.editDefaultGraph().addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), TypedLiteral(lexical, Iri(xsd + type))))
+                }
+                assertTrue(error.message!!.contains("$limit"), error.message)
+            }
+        }
+    }
+
+    @Test
+    fun `a dateTime whose fraction Jena cannot read fails as a parse error, not a NumberFormatException`() {
+        // Jena's literal checker reads the fractional seconds as an int: 18 digits overflow it.
+        val doc = turtle("\"2020-01-01T00:00:00.${"1".repeat(18)}\"^^<${xsd}dateTime>")
+        val error = assertThrows(RdfFormatException::class.java) { JenaProvider().parseGraph(doc.byteInputStream(), "TURTLE") }
+        assertTrue(error.message!!.contains("dateTime") || error.message!!.contains("format"), error.message)
+        assertThrows(RdfFormatException::class.java) { JenaProvider().openTripleStream(doc.byteInputStream(), "TURTLE").use { it.toList() } }
+    }
+
+    @Test
+    fun `a decimal's digits count across its point and exponent in SPARQL text`() {
+        val half = "7".repeat(limit / 2 + 1)
+        JenaRepository.MemoryRepository().use { repo ->
+            for (number in listOf("$half.$half", "\"$half.$half\"^^<${xsd}decimal>", "${half}e$half", "$half.${half}E+1")) {
+                val refused = assertThrows(RdfQueryException::class.java, { repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $number }")) }, number.take(40))
+                assertTrue(refused.message!!.contains("$limit"), refused.message)
+            }
+            val short = "7".repeat(limit / 2 - 1)
+            assertEquals(0, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $short.$short }")).toList().size)
+        }
+    }
 }

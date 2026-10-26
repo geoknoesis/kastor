@@ -28,7 +28,7 @@ internal object JenaGraphParsing {
         element.isException -> throw element.exception().let { e ->
             // The parser thread's stack overflowed on deep nesting (Jena wraps the error): a parse error.
             if (e is StackOverflowError || e.cause is StackOverflowError) RiotException("the document is nested too deeply for the parser", e)
-            else e as? RuntimeException ?: RiotException(e)
+            else JenaLiteralBounds.formatErrorOf(e) ?: e as? RuntimeException ?: RiotException(e)
         }
         else -> null
     }

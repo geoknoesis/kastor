@@ -559,6 +559,9 @@ internal object JenaParsing {
             throw RdfFormatException.Generic("Failed to parse $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
         } catch (e: org.apache.jena.atlas.RuntimeIOException) {
             throw RdfFormatException.Generic("Failed to read $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+        } catch (e: NumberFormatException) {
+            val error = JenaLiteralBounds.formatErrorOf(e)!!
+            throw RdfFormatException.Generic("Failed to parse $format data: ${error.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
         } catch (e: StackOverflowError) {
             // Jena's parsers recurse once per level of nesting (triple terms, `[ ]`, collections): the stack has unwound.
             throw RdfFormatException.Generic("Failed to parse $format data: it is nested too deeply for the parser", RdfErrorCode.FORMAT_PARSE_ERROR, e)
