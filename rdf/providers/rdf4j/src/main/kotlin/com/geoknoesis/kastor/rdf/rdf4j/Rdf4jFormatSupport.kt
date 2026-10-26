@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
  *   receives the statements (a repository write, for example) propagate unchanged.
  * - Literals whose lexical form holds an unpaired UTF-16 surrogate (which Rio produces from numeric escapes of
  *   surrogate code points) are rejected with [RdfFormatException], as the Jena provider and the SPARQL JSON reader
- *   reject them; so are numeric literals longer than [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH], as on Jena.
+ *   reject them; so are numeric and temporal literals longer than [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH], as on Jena.
  * - JSON-LD contexts must be inline: a context (or `@import`) named by URL is never loaded, whatever its scheme -
  *   also not one on RDF4J's own whitelist of well-known contexts - and fails the parse with [RdfFormatException]
  *   (the same rule as the Jena provider's).
