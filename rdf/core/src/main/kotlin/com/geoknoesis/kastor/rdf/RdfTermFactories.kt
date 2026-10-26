@@ -4,6 +4,7 @@
 package com.geoknoesis.kastor.rdf
 
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import com.geoknoesis.kastor.rdf.xsd.XsdDecimal
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.*
@@ -89,10 +90,15 @@ fun int(value: Int): Literal = Literal(value.toString(), XSD.integer)
  * val amount = decimal(BigDecimal("123.45"))
  * ```
  *
+ * The lexical form is the canonical one, whatever the scale: `decimal(BigDecimal("1E+3"))` is `"1000"^^xsd:decimal`
+ * (an exponent form is not valid for xsd:decimal).
+ *
  * @param value The decimal value
  * @return A new [Literal] with `xsd:decimal` datatype
+ * @throws IllegalArgumentException when the lexical form would be longer than
+ *   [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH] characters (both providers refuse such a literal)
  */
-fun decimal(value: BigDecimal): Literal = Literal(value.stripTrailingZeros().toPlainString(), XSD.decimal)
+fun decimal(value: BigDecimal): Literal = Literal(XsdDecimal.canonicalLexical(value), XSD.decimal)
 
 /**
  * Creates a decimal literal (xsd:decimal) from a double value.
@@ -205,7 +211,7 @@ fun Float.toLiteral(): Literal = Literal(
     },
     XSD.float,
 )
-fun BigDecimal.toLiteral(): Literal = Literal(this.stripTrailingZeros().toPlainString(), XSD.decimal)
+fun BigDecimal.toLiteral(): Literal = Literal(XsdDecimal.canonicalLexical(this), XSD.decimal)
 fun BigInteger.toLiteral(): Literal = Literal(this.toString(), XSD.integer)
 
 // Essential date/time extensions. java.time's toString() omits zero seconds ("10:15"), pads years

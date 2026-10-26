@@ -153,4 +153,15 @@ class XsdNumbersTest {
         assertNull(XsdNumeric.parse(xsd + "unsignedByte", "256"))
         assertNull(XsdNumeric.parse(xsd + "string", "1"))
     }
+
+    @Test
+    fun `BigDecimal values get the canonical decimal form and an over-long one is refused before it is built`() {
+        assertEquals("1000", XsdDecimal.canonicalLexical(BigDecimal("1E+3")))
+        assertEquals("1.5", XsdDecimal.canonicalLexical(BigDecimal("1.50")))
+        assertEquals("0", XsdDecimal.canonicalLexical(BigDecimal("0E-9")))
+        assertEquals("-0.001", XsdDecimal.canonicalLexical(BigDecimal("-1E-3")))
+        assertEquals("1000", com.geoknoesis.kastor.rdf.decimal(BigDecimal("1E+3")).lexical)
+        kotlin.test.assertFailsWith<IllegalArgumentException> { XsdDecimal.canonicalLexical(BigDecimal("1E+1000000000")) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> { com.geoknoesis.kastor.rdf.decimal(BigDecimal("1E-1000000000")) }
+    }
 }

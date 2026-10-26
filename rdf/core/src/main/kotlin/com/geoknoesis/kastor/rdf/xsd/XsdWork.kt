@@ -29,7 +29,7 @@ object XsdWork {
     }
 
     /** Charges [units] of work (characters read) to the running [measure] of this thread, if any. */
-    internal fun charge(units: Int) {
+    fun charge(units: Int) {
         if (active.get() == 0) return
         counter.get()?.let { it[0] += units }
     }

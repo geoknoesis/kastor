@@ -199,6 +199,26 @@ class XsdDecimal private constructor(
             return of(text, negative, start, text.length, text.length, text.length, 0)
         }
 
+        /**
+         * The canonical `xsd:decimal` lexical form of [value] ([toPlainString]: `1E+3` is `"1000"`, `1.50` is `"1.5"`),
+         * never an exponent form, which `xsd:decimal` does not allow.
+         * @throws IllegalArgumentException when the form would be longer than [maxLength] characters (it is refused
+         *   before it is built: `1E+1000000000` would need a billion)
+         */
+        @JvmStatic
+        fun canonicalLexical(value: BigDecimal, maxLength: Int = LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH): String {
+            val precision = value.precision().toLong()
+            val scale = value.scale().toLong()
+            // An upper bound of the plain length: sign, integer digits (or "0"), point and fraction digits.
+            val bound = 2 + maxOf(precision - scale, 1) + maxOf(scale, 0)
+            val plain = if (bound <= 2L * maxLength + 2) of(value).takeIf { it.plainLength <= maxLength } else null
+            requireNotNull(plain) {
+                "the decimal ${value.unscaledValue().bitLength()}-bit value with scale $scale needs a lexical form of " +
+                    "more than $maxLength characters, the most Kastor accepts for xsd:decimal"
+            }
+            return plain.toPlainString()
+        }
+
         /** The value of [value] (any scale, e.g. `1E+3` or `1000.00`). Linear in its number of digits. */
         @JvmStatic
         fun of(value: BigDecimal): XsdDecimal {
