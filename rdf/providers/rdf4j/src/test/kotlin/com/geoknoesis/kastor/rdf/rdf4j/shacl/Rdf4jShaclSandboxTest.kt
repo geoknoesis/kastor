@@ -96,6 +96,43 @@ class Rdf4jShaclSandboxTest {
         assertEquals(0, calls.get(), "the global function ran inside a shapes query")
     }
 
+    /**
+     * `ShaclSail` evaluates `sh:pattern` either as SPARQL `REGEX` (through Kastor's sandbox, on the linear-time engine)
+     * or, in its transactional plans, with its own `PatternFilter` on java.util.regex. A back-reference, which the
+     * linear-time engine refuses, tells the two apart: every structure must either reach the sandbox or be refused
+     * before ShaclSail runs (`sh:or`, `sh:not`, `sh:qualifiedValueShape` took the java.util.regex plan when probed).
+     */
+    @Test
+    fun `sh pattern reaches the linear-time engine or is refused, in every shape structure`() {
+        val pattern = "sh:pattern '^(a)\\\\1$'"
+        val sandboxed = listOf(
+            "sh:property [ sh:path ex:p ; $pattern ]",
+            "sh:property [ sh:path ex:p ; $pattern ; sh:maxCount 3 ; sh:datatype xsd:string ]",
+            "sh:property [ sh:path ex:p ; sh:node [ $pattern ] ]",
+            "sh:property [ sh:path ex:p ; $pattern ; sh:uniqueLang true ]",
+            "sh:closed true ; sh:ignoredProperties ( ex:p ) ; sh:property [ sh:path ex:p ; $pattern ]",
+        )
+        val refused = listOf(
+            "sh:property [ sh:path ex:p ; sh:or ( [ $pattern ] [ sh:minLength 9 ] ) ]",
+            "sh:property [ sh:path ex:p ; sh:and ( [ $pattern ] [ sh:minLength 1 ] ) ]",
+            "sh:property [ sh:path ex:p ; sh:not [ $pattern ] ]",
+            "sh:property [ sh:path ex:p ; sh:qualifiedValueShape [ $pattern ] ; sh:qualifiedMinCount 1 ]",
+            "sh:or ( [ sh:node ex:Inner ] [ sh:minLength 9 ] ) . ex:Inner sh:property [ sh:path ex:p ; $pattern ]",
+        )
+        val textData = Rdf.parse("$prefixes\nex:a ex:p 'aa' , 'ab' .", "TURTLE")
+        for ((structures, expected) in listOf(sandboxed to "back-reference", refused to "java.util.regex")) {
+            for (structure in structures) {
+                val shapes = graph("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\nex:S a sh:NodeShape ; sh:targetNode ex:a ; $structure .")
+                val outcome = runCatching { validator().validate(textData, shapes) }
+                val error = outcome.exceptionOrNull()
+                assertTrue(
+                    error is ShaclValidationException && generateSequence<Throwable>(error) { it.cause }.any { expected in it.message.orEmpty() },
+                    "$structure: expected \"$expected\", got ${error ?: outcome.getOrNull()?.violations}",
+                )
+            }
+        }
+    }
+
     @Test
     fun `a catastrophic regular expression in a shapes query runs in linear time`() {
         // Exponential on java.util.regex; the linear-time engine decides it at once, and it does not match.
