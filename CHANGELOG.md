@@ -101,7 +101,9 @@ entries are regrouped under those kind headings.
   deliberate deviation from JSON-LD 1.1, whose expansion ignores such keys: a document with unmapped keys used to
   parse with that data silently dropped, which is worse than an error. The sentinel base
   is gone. The RDF4J provider now also depends on Titanium (for the undefined-term check) and makes the JSON-LD
-  processor's warnings errors.
+  processor's warnings errors. Both providers now declare the jakarta.json jars that the shared check reads
+  (`org.glassfish:jakarta.json`, and `jakarta.json:jakarta.json-api` on RDF4J), which they already brought
+  transitively.
 - **Fixed (`rdf-jena`):** Jena's JSON-LD reader dropped triples with a malformed IRI (`http://ex/a b`, `a:`,
   `http://`) or an ill-formed language tag; they are refused by the check above. A test matrix covers malformed IRIs
   and language tags in Turtle, N-Triples, RDF/XML, JSON-LD, TriG and N-Quads on both providers.
