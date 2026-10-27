@@ -172,6 +172,7 @@ class JenaNumericLiteralBoundTest {
         val tdb = kotlin.io.path.createTempDirectory("kastor-tdb2").toFile()
         for ((store, repository) in listOf("memory" to { JenaRepository.MemoryRepository() }, "tdb2" to { JenaRepository.Tdb2Repository(tdb.path) })) {
             repository().use { repo ->
+                repo.updateLoadOptions = com.geoknoesis.kastor.rdf.UrlLoadOptions.ALLOW_ALL_ADDRESSES.withAllowedSchemes(setOf("http", "https", "file")) // trusted local files
                 for (update in listOf(
                     "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(CONCAT(\"$half\", \"$half\"), <${xsd}integer>) AS ?o) }",
                     "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(REPLACE(\"$half\", \"7\", \"77\"), <${xsd}long>) AS ?o) }",

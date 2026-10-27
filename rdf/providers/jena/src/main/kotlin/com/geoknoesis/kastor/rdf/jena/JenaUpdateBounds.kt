@@ -34,19 +34,21 @@ import org.apache.jena.update.UpdateRequest
  *   updates), within the sandbox's memory budget; property functions are off and `SERVICE` has no executor. The
  *   request fails with `SandboxLimitException`'s message (reported as `RdfQueryException`) and its transaction rolls
  *   back. The `WHERE` clause has no deadline (an update has no timeout).
- * - **`LOAD`** reads its document as `parseDataset` does ([JenaParsing.parser]: the bounded node factory, strict
+ * - **`LOAD`** opens its source under the repository's [com.geoknoesis.kastor.rdf.UrlLoadOptions] (no `file:`, no
+ *   private address by default) and reads it as `parseDataset` does ([JenaParsing.parser]: the bounded node factory, strict
  *   syntax, Kastor's term checks, the JSON-LD check, no remote JSON-LD context), resolving against the source IRI.
  * - Every quad any operation writes is checked again by [JenaLiteralBounds.boundedWrites].
  */
+@OptIn(com.geoknoesis.kastor.rdf.InternalKastorApi::class)
 internal object JenaUpdateBounds {
     /** False only when [text] certainly has no `WHERE` clause, so nothing to evaluate (a cheap look at the text). */
     fun mayCompute(text: String): Boolean = text.contains("WHERE", ignoreCase = true)
 
-    /** Executes the operations of [request] on [dataset], in order, with the bounds above. */
-    fun execute(request: UpdateRequest, dataset: Dataset) {
+    /** Executes the operations of [request] on [dataset], in order, with the bounds above; `LOAD` under [load]. */
+    fun execute(request: UpdateRequest, dataset: Dataset, load: com.geoknoesis.kastor.rdf.UrlLoadOptions) {
         val target = JenaLiteralBounds.boundedWrites(dataset).asDatasetGraph()
         for (operation in request.operations) {
-            if (operation is UpdateLoad) load(operation, target) else evaluate(operation, target)
+            if (operation is UpdateLoad) load(operation, target, load) else evaluate(operation, target)
         }
     }
 
@@ -84,23 +86,34 @@ internal object JenaUpdateBounds {
         override fun set(symbol: Symbol, value: Boolean): QueryExecutionDatasetBuilder = also { context.set(symbol, value) }
     }
 
-    /** `LOAD <source> [INTO GRAPH <g>]` through Kastor's bounded parser; `SILENT` ignores any failure, as in Jena. */
-    private fun load(operation: UpdateLoad, target: DatasetGraph) {
+    /**
+     * `LOAD <source> [INTO GRAPH <g>]`: the source is opened as `Rdf.parseFromUrl` opens a URL, under [options] (by
+     * default only `http`/`https`, to public addresses, also after redirects, with size and time caps), and read
+     * through Kastor's bounded parser. A source that cannot be loaded fails with a message that does not say why (not
+     * whether a file exists or a host answered), except a refusal by [options]. `SILENT` ignores any failure, as Jena
+     * does.
+     */
+    private fun load(operation: UpdateLoad, target: DatasetGraph, options: com.geoknoesis.kastor.rdf.UrlLoadOptions) {
+        val source = operation.source
         try {
-            val input = org.apache.jena.riot.system.streammgr.StreamManager.get().open(operation.source)
-                ?: throw UpdateException("LOAD <${operation.source}>: the document cannot be opened")
-            input.use {
-                val lang = RDFDataMgr.determineLang(operation.source, it.contentType, null)
-                    ?: throw UpdateException("LOAD <${operation.source}>: the syntax of the document is not known")
+            com.geoknoesis.kastor.rdf.UrlLoadSupport.read(source, options) { body, finalUrl, contentType ->
+                // A file: URL's content type is a guess from its name; Jena then decides by the extension.
+                val declared = contentType?.substringBefore(';')?.trim()?.takeUnless { finalUrl.startsWith("file:", ignoreCase = true) }
+                val lang = RDFDataMgr.determineLang(finalUrl, declared, null)
+                    ?: throw UpdateException("LOAD <$source>: the syntax of the document is not known")
                 val dest = operation.dest
                 val sink = if (dest == null) {
                     StreamRDFLib.dataset(target)
                 } else {
-                    if (!RDFLanguages.isTriples(lang)) throw UpdateException("LOAD <${operation.source}>: cannot load quads into a graph")
+                    if (!RDFLanguages.isTriples(lang)) throw UpdateException("LOAD <$source>: cannot load quads into a graph")
                     StreamRDFLib.graph(target.getGraph(dest))
                 }
-                JenaParsing.parser(it, lang, operation.source).parse(JenaParsing.validating(sink))
+                JenaParsing.parser(body, lang, finalUrl).parse(JenaParsing.validating(sink))
             }
+        } catch (e: com.geoknoesis.kastor.rdf.RdfAddressRefusedException) {
+            if (!operation.isSilent) throw UpdateException(e.message)
+        } catch (e: java.io.IOException) {
+            if (!operation.isSilent) throw UpdateException("LOAD <$source>: the document could not be loaded")
         } catch (e: Exception) {
             if (!operation.isSilent) throw e
         }

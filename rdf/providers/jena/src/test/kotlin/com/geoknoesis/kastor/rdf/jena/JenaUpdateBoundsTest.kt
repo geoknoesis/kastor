@@ -50,6 +50,7 @@ class JenaUpdateBoundsTest {
             deleteOnExit()
         }
         JenaRepository.MemoryRepository().use { repo ->
+            repo.updateLoadOptions = JenaUpdateBoundsProbe.TRUSTED_FILES
             repo.update(UpdateQuery("INSERT DATA { <http://e/s> <http://e/n> 2 }"))
             repo.update(UpdateQuery("""
                 PREFIX xsd: <$xsd>
@@ -81,6 +82,7 @@ object JenaUpdateBoundsProbe {
     class Case(val name: String, val update: String, val mustRefuse: Boolean = true, val parse: Pair<String, java.io.File>? = null)
 
     private const val XSD = "http://www.w3.org/2001/XMLSchema#"
+    val TRUSTED_FILES: UrlLoadOptions = UrlLoadOptions.ALLOW_ALL_ADDRESSES.withAllowedSchemes(setOf("http", "https", "file"))
     private const val MATH = "http://www.w3.org/2005/xpath-functions/math#"
 
     /** `?a17`: 1,310,720 characters `1`, by 17 doublings of ten (2.6 MB of computed text in all). */
@@ -183,6 +185,7 @@ object JenaUpdateBoundsProbe {
         }
         for (case in CASES) {
             JenaRepository.MemoryRepository().use { repo ->
+                repo.updateLoadOptions = TRUSTED_FILES
                 // One statement in <http://e/g>, so that the patterns over that graph have something to match.
                 repo.update(UpdateQuery("INSERT DATA { GRAPH <http://e/g> { <http://e/x> <http://e/y> 1 } }"))
                 val started = System.nanoTime()

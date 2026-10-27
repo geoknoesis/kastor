@@ -29,6 +29,7 @@ import jakarta.json.JsonValue
 @InternalKastorApi
 object JsonLdExpandedCheck {
     /** What the JSON-LD processor that converts the document accepts; its toRdf step drops anything else. */
+    @InternalKastorApi
     interface Processor {
         fun isAbsoluteIri(iri: String): Boolean
         fun isWellFormedLanguageTag(tag: String): Boolean

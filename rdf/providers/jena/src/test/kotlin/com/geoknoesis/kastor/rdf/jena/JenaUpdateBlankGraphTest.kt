@@ -84,6 +84,7 @@ class JenaUpdateBlankGraphTest {
         Files.writeString(document, "${nt(1)} _:g .\n${nt(2)} _:g .\n${nt(3)} _:h .\n${nt(4)} <${ex}named> .\n${nt(5)} .\n")
         for ((variant, open) in repositories()) {
             open().use { repo ->
+                repo.updateLoadOptions = com.geoknoesis.kastor.rdf.UrlLoadOptions.ALLOW_ALL_ADDRESSES.withAllowedSchemes(setOf("http", "https", "file")) // trusted local files
                 repo.update(UpdateQuery("LOAD <${document.toUri()}>"))
                 val graphs = graphs(repo)
                 assertEquals(
