@@ -53,10 +53,24 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
  * `java.util.regex` (which a hostile pattern makes backtrack without bound). So the no-arg validator admits only
  * SHACL Core shapes without `sh:pattern`: when the data graph declares shapes and uses any other term of the SHACL
  * namespace (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...; the list is `EmbeddedShapes.ALLOWED` of
- * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before the engine runs. Only when the
- * data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes passed to the
- * constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an untrusted
- * source there; the Kastor SHACL validator (`rdf-shacl-validation`) sandboxes SHACL-SPARQL and patterns.
+ * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before the engine runs. SHACL Core
+ * alone can still cost exponential time (`jena-shacl` evaluates a shape again for every reference to it, so a chain
+ * of shapes that each reference the next twice through `sh:or` costs `2^n`), so admitted shapes are also bounded:
+ * - **before the engine runs**, their structure is measured as the engine unfolds it (`EmbeddedShapesBounds` of
+ *   `kastor-gen-runtime`: at most 5,000 unfolded constraints, 32 levels of nesting, 64 operands per `sh:or`, `sh:and`
+ *   or `sh:xone`, lists of 1,000 well-formed members, 20,000 SHACL statements);
+ * - **while it validates** a focus node, the work the data makes the shapes do (a nested shape is evaluated once per
+ *   value node, so `d` nested property shapes over nodes with `k` values each cost `k^d`) is charged to a
+ *   deterministic budget of 500,000 steps: one per engine validation event, per data lookup and per statement a lookup
+ *   returns. Past either bound, [validate] fails with [EmbeddedShapesRefusedException].
+ *
+ * Only when the data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes
+ * passed to the constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an
+ * untrusted source there; the Kastor SHACL validator (`rdf-shacl-validation`) sandboxes SHACL-SPARQL and patterns.
+ * **Neither of these two modes has a deadline or a budget**: the cost of a validation is whatever the shapes and the
+ * data make the engine do, also when the shapes are trusted and only the data is not (nested property shapes over
+ * data with many values per node). `jena-shacl` has no cancellation API, so a deadline on another thread could
+ * only abandon the validation, not stop it; validate untrusted data with the Kastor SHACL validator, which has one.
  *
  * [validate] evaluates only the shapes that target the given focus node and returns the results
  * whose `sh:focusNode` is that node.
@@ -144,6 +158,8 @@ class JenaValidation private constructor(
     val declaresShapes: Boolean by lazy { declaresShapes(graph) }
     /** The SHACL terms of the graph that untrusted embedded shapes may not use ([EmbeddedShapes]). */
     val refusedTerms: List<String> by lazy { refusedTerms(graph) }
+    /** Whether the embedded shapes are within the structural caps ([JenaEmbeddedBudget.requireBoundedShapes]). */
+    val bounded: Unit by lazy { JenaEmbeddedBudget.requireBoundedShapes(graph) }
     val embeddedShapes: Shapes? by lazy { if (declaresShapes) parseShapes(graph) else null }
   }
 
@@ -334,18 +350,33 @@ class JenaValidation private constructor(
   private fun <R> withData(data: RdfGraph, block: (Shapes?, Graph) -> R): R {
     val direct = standaloneJenaGraph(data)
     if (direct != null) {
-      return block(fixedShapes ?: if (declaresShapes(direct)) admitted({ refusedTerms(direct) }) { parseShapes(direct) } else null, direct)
+      val shapes = fixedShapes ?: if (declaresShapes(direct)) {
+        admitted({ refusedTerms(direct) }, { JenaEmbeddedBudget.requireBoundedShapes(direct) }) { parseShapes(direct) }
+      } else {
+        null
+      }
+      return block(shapes, direct)
     }
     // The cache reads the data graph (stamp or triples) before it takes any lock.
     return cache.use(data) { converted ->
-      val shapes = fixedShapes ?: if (converted.declaresShapes) admitted({ converted.refusedTerms }) { converted.embeddedShapes } else null
+      val shapes = fixedShapes ?: if (converted.declaresShapes) {
+        admitted({ converted.refusedTerms }, { converted.bounded }) { converted.embeddedShapes }
+      } else {
+        null
+      }
       block(shapes, converted.graph)
     }
   }
 
-  /** [shapes] of embedded shapes that use [refused] terms: refused unless this validator trusts the data. */
-  private inline fun admitted(refused: () -> List<String>, shapes: () -> Shapes?): Shapes? {
-    if (!trustEmbeddedShapes) EmbeddedShapes.requireNone(refused(), "JenaValidation")
+  /**
+   * [shapes] embedded in the data, unless this validator trusts the data: refused when they use [refused] terms or
+   * exceed the structural caps that [bounded] checks.
+   */
+  private inline fun admitted(refused: () -> List<String>, bounded: () -> Unit, shapes: () -> Shapes?): Shapes? {
+    if (!trustEmbeddedShapes) {
+      EmbeddedShapes.requireNone(refused(), "JenaValidation")
+      bounded()
+    }
     return shapes()
   }
 
@@ -367,7 +398,12 @@ class JenaValidation private constructor(
 
   private fun validate(shapes: Shapes, dataGraph: Graph, focusNode: Node): ValidationResult {
 
-    val report = ShaclValidator.get().validate(shapes, dataGraph, focusNode)
+    // Untrusted embedded shapes run on a step budget; the application's own shapes and trusted data run unbounded.
+    val report = if (fixedShapes == null && !trustEmbeddedShapes) {
+      JenaEmbeddedBudget.validate(shapes, dataGraph, focusNode)
+    } else {
+      ShaclValidator.get().validate(shapes, dataGraph, focusNode)
+    }
     if (report.conforms()) return ValidationResult.Ok
 
     val items = report.entries

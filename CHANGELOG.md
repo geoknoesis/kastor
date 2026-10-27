@@ -19,6 +19,23 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round seventeen
+
+#### Kastor Gen (round seventeen)
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** round sixteen limited
+  the shapes embedded in the data graph to SHACL Core, but SHACL Core alone could still cost exponential time: a chain
+  of `n` shapes that each reference the next twice through `sh:or` took 12.7 s on Jena for a 789-byte data graph and
+  ran ShaclSail out of a 256 MiB heap at 591 bytes; a cyclic `sh:or` list hung ShaclSail and a `sh:in` list of 10,000
+  members overflowed its stack. `JenaValidation()` and `Rdf4jValidation()` now also measure embedded shapes as the
+  engines unfold them (`EmbeddedShapesBounds` of `kastor-gen-runtime`, checked before the engine runs) and throw
+  `EmbeddedShapesRefusedException` past 5,000 unfolded constraints, 32 levels of nesting, 64 operands per logical
+  constraint, lists of 1,000 members, malformed or cyclic lists, or 20,000 SHACL statements. `JenaValidation()` also
+  charges each validation of a focus node against embedded shapes to a deterministic budget of 500,000 steps (engine
+  events, data lookups and returned statements), which bounds the cost the data adds (`k^d` for `d` nested property
+  shapes over nodes with `k` values). `Rdf4jValidation()` has no hook for such a budget; that residual, and the absence
+  of any deadline when the shapes are trusted or passed to the constructor, are documented.
+
 ### Round sixteen
 
 #### Build and docs (round sixteen)

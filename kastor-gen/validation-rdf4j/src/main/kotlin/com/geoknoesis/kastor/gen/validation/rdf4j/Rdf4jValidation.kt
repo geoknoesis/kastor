@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.EmbeddedShapes
 import com.geoknoesis.kastor.gen.runtime.EmbeddedShapesRefusedException
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
@@ -58,10 +57,19 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * `java.util.regex` (which a hostile pattern makes backtrack without bound). So the no-arg validator admits only
  * SHACL Core shapes without `sh:pattern`: when the embedded shapes use any other term of the SHACL namespace
  * (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...; the list is `EmbeddedShapes.ALLOWED` of
- * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before anything is run. Only when the
+ * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before anything is run. It fails the
+ * same way when admitted shapes exceed the structural caps of `EmbeddedShapesBounds` (at most 5,000 constraints once
+ * shared shapes are unfolded, 32 levels of nesting, 64 operands per logical constraint, lists of 1,000 well-formed
+ * members, 20,000 SHACL statements): ShaclSail builds a plan of the unfolded size before reading any data, ran out of
+ * memory on a 591-byte `sh:or` chain, hangs on a cyclic list and overflows its stack on long ones. **The cost that
+ * depends on the data is not bounded**: nested property shapes over nodes with many values each cost about the
+ * number of value paths (4 levels over a 20,000-statement graph in which each node has 100 values: about 50 s).
+ * ShaclSail evaluates inside its own query engine, which offers no hook for a budget; validate large untrusted data
+ * with the Kastor SHACL validator, which has a deadline. Only when the
  * data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes passed to the
  * constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an untrusted
- * source there; the RDF4J SHACL validator of `rdf-rdf4j` and the Kastor SHACL validator sandbox them.
+ * source there; the RDF4J SHACL validator of `rdf-rdf4j` and the Kastor SHACL validator sandbox them. Neither of
+ * these two modes has a deadline or a budget (ShaclSail has no cancellation API).
  *
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
@@ -418,9 +426,9 @@ class Rdf4jValidation private constructor(
     return previous?.also { it.embeddedShapes = newShapes } ?: Store(repo, newShapes)
   }
 
-  /** [shapes] embedded in a data graph, refused when they use a term this validator does not run for untrusted data. */
+  /** [shapes] embedded in a data graph, refused unless this validator trusts the data ([Rdf4jEmbeddedShapes]). */
   private fun admitEmbedded(shapes: List<Statement>): List<Statement> {
-    if (!trustEmbeddedShapes) EmbeddedShapes.requireNone(EmbeddedShapes.refused(shapes.asSequence().map { it.predicate.stringValue() }.iterator()), "Rdf4jValidation")
+    if (!trustEmbeddedShapes) Rdf4jEmbeddedShapes.requireAdmissible(shapes)
     return shapes
   }
 
