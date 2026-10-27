@@ -230,13 +230,17 @@ fun main() {
 
 ## Step 8: Complete Example
 
-Here's the complete working example:
+Here's the complete working example. In one file, the annotation `com.geoknoesis.kastor.gen.annotations.Rdf` and
+the entry point `com.geoknoesis.kastor.rdf.Rdf` have the same simple name: import the annotation by name (an explicit
+import wins over the `com.geoknoesis.kastor.rdf.*` star import) and the entry point under an alias.
 
 ```kotlin
 package com.example
 
+import com.geoknoesis.kastor.gen.annotations.Rdf
 import com.geoknoesis.kastor.gen.runtime.*
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.Rdf as RdfApi
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 @Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
@@ -253,7 +257,7 @@ interface Person {
 
 fun main() {
     // Create RDF repository and data
-    val repo = Rdf.memory()
+    val repo = RdfApi.memory()
     repo.add {
         val alice = iri("http://example.org/alice")
         alice - FOAF.name - "Alice Johnson"

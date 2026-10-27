@@ -41,6 +41,10 @@ entries are regrouped under those kind headings.
   (200,000,000) steps with the weights of the Kastor SHACL validator (each character read costs the size of the
   compiled program; the budget is the validator's default `patternTimeout`), and fails with the new
   `ShaclPatternBudgetException` (an `IllegalArgumentException`) past it.
+- **Fixed (docs):** the complete example of the Kastor Gen getting-started tutorial did not compile: with the
+  `com.geoknoesis.kastor.rdf.*` star import, `@Rdf` resolved to the object `com.geoknoesis.kastor.rdf.Rdf`. It now
+  imports the annotation by name and the entry point as `RdfApi`. `TutorialExamplesTest` (processor) runs every
+  Kotlin block under a "complete example" heading of the tutorials through KSP, compiles it and runs its `main`.
 
 ### Round sixteen
 
