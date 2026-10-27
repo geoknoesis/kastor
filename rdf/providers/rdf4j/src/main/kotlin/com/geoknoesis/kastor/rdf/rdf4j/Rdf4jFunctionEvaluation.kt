@@ -136,13 +136,13 @@ internal fun interface Rdf4jNestedQueries {
     fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, caller: Dataset?): Rdf4jNestedQuery
 }
 
-/** A [MemoryStore] whose queries use [KastorEvaluationStrategyFactory]. */
-internal fun kastorMemoryStore(): MemoryStore = MemoryStore().apply {
+/** A [MemoryStore] whose queries use [KastorEvaluationStrategyFactory] and whose writes are bounded ([Rdf4jBoundedWrites]). */
+internal fun kastorMemoryStore(): MemoryStore = BoundedMemoryStore().apply {
     evaluationStrategyFactory = KastorEvaluationStrategyFactory(federatedServiceResolver, QueryEvaluationMode.STANDARD)
 }
 
-/** A [NativeStore] whose queries use [KastorEvaluationStrategyFactory] (strict, as its default factory is). */
-internal fun kastorNativeStore(location: String): NativeStore = NativeStore(java.io.File(location)).apply {
+/** A [NativeStore] whose queries use [KastorEvaluationStrategyFactory] (strict, as its default factory is), writes bounded. */
+internal fun kastorNativeStore(location: String): NativeStore = BoundedNativeStore(java.io.File(location)).apply {
     evaluationStrategyFactory = KastorEvaluationStrategyFactory(federatedServiceResolver, QueryEvaluationMode.STRICT)
 }
 
@@ -151,7 +151,7 @@ internal fun kastorNativeStore(location: String): NativeStore = NativeStore(java
  * by [deadline] (a [System.nanoTime] value; [Long.MAX_VALUE] for none): the base store of the RDF4J SHACL validator,
  * whose `ShaclSail` runs the SPARQL of an untrusted shapes graph (`sh:sparql`, `sh:SPARQLTarget`).
  */
-internal fun sandboxedMemoryStore(deadline: Long): MemoryStore = MemoryStore().apply {
+internal fun sandboxedMemoryStore(deadline: Long): MemoryStore = BoundedMemoryStore().apply {
     val scope = Rdf4jFunctionScope.Scope(
         SparqlFunctionLibrary.EMPTY, 0, deadline, System::nanoTime,
         { _, _, _ -> throw IllegalStateException("A store-wide sandbox has no custom functions") }, null,
