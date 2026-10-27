@@ -32,6 +32,8 @@ dependencies {
   implementation(libs.jena.core)
   testRuntimeOnly(libs.slf4j.api)
   api(project(":rdf:core"))
+  // XPathRegex / SandboxRegex: generated sh:pattern checks use the validator's linear-time regex engine.
+  implementation(project(":rdf:sparql-contract"))
 
   api(project(":kastor-gen:runtime"))
   

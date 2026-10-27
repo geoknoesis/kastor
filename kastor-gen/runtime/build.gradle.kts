@@ -6,6 +6,8 @@ plugins {
 
 dependencies {
   api(project(":rdf:core"))
+  // XPathRegex / SandboxRegex: generated sh:pattern checks use the validator's linear-time regex engine.
+  implementation(project(":rdf:sparql-contract"))
   implementation(libs.slf4j.api)
   // Generated code carries jakarta.validation constraint annotations by default (@Rdf(validationAnnotations =
   // JAKARTA)). Consumers compile against the API through this module; it stays off every runtime classpath, where
