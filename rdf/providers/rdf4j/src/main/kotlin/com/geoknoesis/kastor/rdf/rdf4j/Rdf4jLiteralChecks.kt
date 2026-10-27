@@ -44,11 +44,11 @@ internal object Rdf4jLiteralChecks {
     }
 
     /**
-     * Rejects SPARQL UPDATE text holding a number of more than [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH] digits
+     * [sparql], after rejecting SPARQL UPDATE text holding a number of more than [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH] digits
      * ([SparqlNumberText]), before RDF4J parses it, as the Jena provider does.
      * @throws MalformedQueryException when it does
      */
-    fun requireBoundedUpdate(sparql: String) {
+    fun requireBoundedUpdate(sparql: String): String {
         val limit = LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH
         val at = SparqlNumberText.numberLongerThan(sparql, limit)
         if (at >= 0) {
@@ -57,6 +57,7 @@ internal object Rdf4jLiteralChecks {
                     "its value takes time quadratic in its length",
             )
         }
+        return sparql
     }
 
     private fun hasPairedSurrogates(value: String): Boolean {

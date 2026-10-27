@@ -19,6 +19,23 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### Sandbox: a memory budget per query; RDF4J write paths bound long numeric literals
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`), behaviour change:** a sandboxed query
+  (`SandboxedSelectQuery`, so also every SHACL-SPARQL query) now has a memory budget across all its rows: its
+  expressions may compute at most 64 Mi characters in total (`SandboxLimits.MAX_COMPUTED_CHARACTERS`, counted by the
+  new `SandboxMemoryBudget`), including what `ORDER BY`, `DISTINCT`, `GROUP BY`, `GROUP_CONCAT` and subqueries keep.
+  Past it the query fails with `SandboxLimitException`. Before, only each value was bounded (16 Mi characters), and a
+  1 KB chain of `CONCAT(?x, ?x)` over 50 triples ran out of a 256 MiB heap in under a second on both providers. The
+  count is cumulative (a value counts when it is computed), so it is deterministic; values read from the data or only
+  copied (`STR`, `SUBSTR`, `IF`) do not count, nor do numbers of 64 bits or less.
+- **Fixed (`rdf-rdf4j`), behaviour change:** the RDF4J graph API now refuses a numeric or temporal literal longer than
+  10,000 characters (`LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`) with `IllegalArgumentException`, and SPARQL UPDATE
+  text holding a number of more than 10,000 digits fails with `RdfQueryException` before RDF4J parses it, as on Jena.
+  RDF4J's MemoryStore stored such a literal in quadratic time (two 1,000,000-digit integers: 33 s).
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
