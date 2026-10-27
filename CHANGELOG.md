@@ -150,6 +150,28 @@ entries are regrouped under those kind headings.
   detectors) on a generated ontology of 500 and 2,000 classes; it is not part of the regression gate, which has no
   baseline for it.
 
+#### Sandbox: a memory budget per query; RDF4J write paths bound long numeric literals
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`), behaviour change:** a sandboxed query
+  (`SandboxedSelectQuery`, so also every SHACL-SPARQL query) now has a memory budget across all its rows: its
+  expressions may compute at most 64 Mi characters in total (`SandboxLimits.MAX_COMPUTED_CHARACTERS`, counted by the
+  new `SandboxMemoryBudget`), including what `ORDER BY`, `DISTINCT`, `GROUP BY`, `GROUP_CONCAT` and subqueries keep.
+  Past it the query fails with `SandboxLimitException`. Before, only each value was bounded (16 Mi characters), and a
+  1 KB chain of `CONCAT(?x, ?x)` over 50 triples ran out of a 256 MiB heap in under a second on both providers. The
+  count is cumulative (a value counts when it is computed), so it is deterministic; values read from the data or
+  returned unchanged (`STR`, `IF`, `COALESCE`, `LANG`, `DATATYPE`) do not count, nor do numbers of 64 bits or less.
+  What copying functions such as `SUBSTR`, `STRBEFORE` and `STRAFTER` allocate counts, without the per-value limit,
+  and the nested queries of custom functions charge the budget of the query that calls them. On Jena, large literals
+  (over 1,024 characters) a sandboxed query reads or computes are removed from Jena's process-wide `NodeValue` cache,
+  which kept them after the query ended (200 MB of a 256 MiB heap after the probes).
+- **Fixed (`rdf-rdf4j`), behaviour change:** the RDF4J graph API now refuses a numeric or temporal literal longer than
+  10,000 characters (`LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`) with `IllegalArgumentException`, and SPARQL UPDATE
+  text holding a number of more than 10,000 digits fails with `RdfQueryException` before RDF4J parses it, as on Jena.
+  The stores Kastor creates (memory and native) also check every literal they write, so a literal an update computes
+  (`STRDT(CONCAT(...), xsd:integer)`), copies or reads with `LOAD` is refused too. RDF4J's MemoryStore stored such a
+  literal in quadratic time (two 1,000,000-digit integers: 33 s). The digit scan of SPARQL text on both providers now
+  counts every Unicode decimal digit, not only ASCII ones, as `BigInteger` reads them all.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards

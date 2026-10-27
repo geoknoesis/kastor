@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryCancelledException
@@ -45,6 +46,8 @@ internal class JenaLibraryFunction(
     private val depth: Int,
     private val deadline: Long,
     private val clock: () -> Long,
+    /** The memory budget of the top-level execution, which every nested query charges too. */
+    private val memory: SandboxMemoryBudget = SandboxMemoryBudget(),
 ) : Function {
 
     override fun build(uri: String, args: ExprList, context: Context) = Unit
@@ -128,7 +131,7 @@ internal class JenaLibraryFunction(
             val parsed = prepare(query, bindings)
             val dataset = env.dataset ?: throw ExprEvalException("No dataset for a nested query")
             val builder = JenaQuerySandbox.restrict(
-                QueryExecution.dataset(DatasetFactory.wrap(dataset)).query(parsed), query.functions, depth + 1, deadline, clock,
+                QueryExecution.dataset(DatasetFactory.wrap(dataset)).query(parsed), query.functions, depth + 1, deadline, clock, memory,
             )
             if (bindings.isNotEmpty()) {
                 val initial = QuerySolutionMap()

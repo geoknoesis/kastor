@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.jena
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.SparqlSelect
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import org.apache.jena.graph.Node
 import org.apache.jena.query.Dataset
 import org.apache.jena.query.Query
@@ -118,10 +119,11 @@ internal object JenaQuerySandbox {
         depth: Int,
         deadline: Long,
         clock: () -> Long,
+        memory: SandboxMemoryBudget = SandboxMemoryBudget(),
     ): QueryExecutionDatasetBuilder {
-        val budget = JenaSandboxBudget(deadline, clock)
+        val budget = JenaSandboxBudget(deadline, clock, memory)
         return builder
-            .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock))
+            .set(ARQConstants.registryFunctions, SandboxFunctions(FunctionRegistry.get(), functions, depth, deadline, clock, memory))
             .set(ARQConstants.registryPropertyFunctions, NoPropertyFunctions())
             .set(ARQConstants.registryServiceExecutors, ServiceExecutorRegistry())
             .set(ARQConstants.sysOptimizerFactory, JenaSandboxRewrite(budget))
@@ -143,12 +145,13 @@ internal object JenaQuerySandbox {
         private val depth: Int,
         private val deadline: Long,
         private val clock: () -> Long,
+        private val memory: SandboxMemoryBudget,
     ) : FunctionRegistry() {
         override fun get(uri: String): FunctionFactory? = getFunctionFactory(uri)
         override fun getFunctionFactory(uri: String): FunctionFactory? {
             if (JenaCost.ofFunction(uri) != null && base.isRegistered(uri)) base.getFunctionFactory(uri)?.let { return it }
             val function = functions.function(uri) ?: return null
-            return FunctionFactory { JenaLibraryFunction(function, depth, deadline, clock) }
+            return FunctionFactory { JenaLibraryFunction(function, depth, deadline, clock, memory) }
         }
         override fun getFunction(uri: String): Function? = getFunctionFactory(uri)?.create(uri)
         override fun isRegistered(uri: String): Boolean = getFunctionFactory(uri) != null

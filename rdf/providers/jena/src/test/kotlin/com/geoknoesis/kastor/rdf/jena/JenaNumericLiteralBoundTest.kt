@@ -137,4 +137,21 @@ class JenaNumericLiteralBoundTest {
             assertEquals(0, repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $short.$short }")).toList().size)
         }
     }
+
+    /** Round sixteen, security review: `BigInteger` reads every Unicode decimal digit, so they all count. */
+    @Test
+    fun `numbers of non-ASCII decimal digits count as numbers in SPARQL text`() {
+        JenaRepository.MemoryRepository().use { repo ->
+            for (digit in listOf("١", "１")) {
+                val number = "\"${digit.repeat(1_000_000)}\"^^<${xsd}integer>"
+                for (run in listOf(
+                    { repo.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p $number }")) },
+                    { repo.update(UpdateQuery("INSERT DATA { <http://example.org/s> <http://example.org/p> $number }")) },
+                )) {
+                    val refused = assertThrows(RdfQueryException::class.java) { run() }
+                    assertTrue(refused.message!!.contains("$limit"), refused.message)
+                }
+            }
+        }
+    }
 }

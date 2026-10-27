@@ -97,7 +97,11 @@ internal object Rdf4jTerms {
                 val tag = if (direction == null) term.lang else "${term.lang}--${direction.token}"
                 valueFactory.createLiteral(term.lexical, tag)
             }
-            is Literal -> valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
+            // RDF4J's MemoryStore values an integer or decimal in time quadratic in its digits: such a literal is bounded.
+            is Literal -> {
+                Rdf4jLiteralChecks.requireBoundedLength(term.datatype.value, term.lexical)
+                valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
+            }
             is TripleTerm -> valueFactory.createTriple(
                 toRdf4jResource(term.triple.subject),
                 toRdf4jIri(term.triple.predicate),
