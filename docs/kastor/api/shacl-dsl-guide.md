@@ -342,7 +342,7 @@ Write `[A-Za-z0-9_]`, `[0-9]` or an explicit class when a pattern must mean the 
 | A script name: `\p{IsLatin}`, `\p{IsHan}` | the Unicode script, when the name is not a Unicode block name. A name that is both (`Greek`, `Cyrillic`, `Arabic`, …) is the block, as in XML Schema. |
 | A POSIX bracket expression inside a class: `[[:alpha:]_-]`, `[^[:space:]]` | the US-ASCII class of that name. The twelve standard names are supported: `alpha`, `digit`, `alnum`, `upper`, `lower`, `space`, `punct`, `xdigit`, `blank`, `cntrl`, `graph`, `print`. |
 
-Patterns run on RE2/J, a linear-time engine, so no pattern can backtrack catastrophically. What it cannot evaluate is rejected when the shapes are compiled: back-references (`\1`), lookarounds, atomic groups, possessive quantifiers, word boundaries (`\b`), repetition counts above 1000.
+Patterns run on RE2/J, a linear-time engine, so no pattern can backtrack catastrophically. What it cannot evaluate is rejected when the shapes are compiled: back-references (`\1`), lookarounds, atomic groups, possessive quantifiers, word boundaries (`\b`), repetition counts above 1000, and patterns too complex to compile (longer than 65,536 characters, or past a structural parse cost of about eight `\p{L}`-sized classes or 16,000 literal characters).
 
 Syntax that would otherwise change meaning is rejected when the shapes are compiled (`ShapeCompileException`), never reinterpreted:
 

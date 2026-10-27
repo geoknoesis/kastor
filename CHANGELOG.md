@@ -19,6 +19,45 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### Sandbox: regular expressions
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`, `rdf-shacl`), behaviour change:** compiling an untrusted
+  regular expression is bounded before RE2/J sees it. RE2/J's parser takes time quadratic in the pattern's text and no
+  deadline reaches it: `"\p{L}" x 80` (400 characters) compiled for 8 s under a 1 s timeout on both providers, and
+  200 classes with flag `i` for 114 s. The translator now counts the syntax elements it writes and refuses a pattern
+  whose elements x text length passes 2^28 (about eight `\p{L}`-sized classes, or 16,000 literal characters; at most
+  tens of milliseconds to compile) or that is longer than 65,536 characters, as an unsupported pattern
+  (`SandboxLimitException` in a sandboxed query, `ShapeCompileException` for `sh:pattern`). The bounds are counts, so
+  whether a pattern is accepted does not depend on the machine. Translation runs the query's deadline check, and the
+  bound is checked as the text grows, so `\Q` with 4 million characters no longer allocates 190 MB before it is
+  refused. Visible non-ASCII characters are written to RE2 as they are, which keeps large classes short.
+- **Changed (`rdf-jena`, `rdf-rdf4j`):** each `REGEX` / `REPLACE` of a sandboxed query keeps its compiled patterns in a
+  bounded cache (16 per call site, least recently used dropped), so a pattern is compiled once per query, not once per
+  row, also when patterns computed from the data alternate. `SandboxRegex.PatternCache` and the
+  `XPathRegex.compile` / `SandboxRegex.compile` overloads that take a check are new (not public API).
+- **Fixed (`rdf-sparql-contract`):** a repetition count with a leading zero (`a{01}`, `{2,03}`, `[0-9]{04}`) was
+  passed to RE2 as written, and RE2 read it as literal text, so the answer was silently wrong. Counts are now
+  written in canonical form, and compared by their significant digits in one linear scan (a 400 KB count took 41 s).
+- **Fixed (`rdf-sparql-contract`):** `\uHHHH\uHHHH` of a surrogate pair is the one character it encodes, alone, in a
+  class or as a range endpoint, as in java.util.regex (`\uD83D\uDE00` never matched the emoji). A lone surrogate
+  escape still matches only a lone surrogate.
+- **Security (`rdf-rdf4j`):** the RDF4J SHACL validator refused `sh:pattern` under `sh:or` / `sh:and` / `sh:xone` only
+  when the list nodes were blank nodes; with IRI list nodes the pattern ran on ShaclSail's java.util.regex plan (a
+  back-reference matched, a nested quantifier took 36 s on 29 characters). The search now follows the shapes graph
+  from every nesting operand, through any list node, nested list and shape reference, so how the lists are written
+  does not matter. The unsupported-feature scan reads IRI list nodes too.
+- **Fixed (`rdf-rdf4j`):** a violated `sh:or` whose list nodes are IRIs failed with "Illegal blank node ID character":
+  RDF4J 5.3's report writer (`ShaclAstLists.listToRdf`) turns list node identifiers into blank node identifiers. List
+  nodes that are IRIs and carry only `rdf:first` / `rdf:rest` are now renamed to blank nodes before ShaclSail runs.
+- **Changed (`rdf-shacl`), behaviour change:** the `sh:pattern` step budget charges each character read as many steps
+  as the compiled pattern has instructions (the most work RE2/J does per read), at 200,000 steps per millisecond of
+  `patternTimeout` (was one step per read at 50,000 per millisecond). Counting reads did not measure work:
+  `.{0,1000}x` on a 300,000-character value made 900,000 reads of a 50 million budget and took 6.9 s, and the
+  run-wide cap never engaged. Outcomes stay deterministic; the KDoc of `ValidationConfig.patternTimeout` and the
+  SHACL guide are corrected.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
