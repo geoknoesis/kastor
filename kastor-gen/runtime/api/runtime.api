@@ -102,6 +102,7 @@ public final class com/geoknoesis/kastor/gen/runtime/DefaultRdfHandleKt {
 
 public final class com/geoknoesis/kastor/gen/runtime/EmbeddedShapesRefusedException : java/lang/IllegalArgumentException {
 	public fun <init> (Ljava/lang/String;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 }
 
 public abstract interface class com/geoknoesis/kastor/gen/runtime/GraphAccess {

@@ -33,8 +33,17 @@ entries are regrouped under those kind headings.
   constraint, lists of 1,000 members, malformed or cyclic lists, or 20,000 SHACL statements. `JenaValidation()` also
   charges each validation of a focus node against embedded shapes to a deterministic budget of 500,000 steps (engine
   events, data lookups and returned statements), which bounds the cost the data adds (`k^d` for `d` nested property
-  shapes over nodes with `k` values). `Rdf4jValidation()` has no hook for such a budget; that residual, and the absence
-  of any deadline when the shapes are trusted or passed to the constructor, are documented.
+  shapes over nodes with `k` values). Neither mode has a deadline when the shapes are trusted or passed to the
+  constructor (documented).
+- **Security (`kastor-gen-validation-rdf4j`), behaviour change:** ShaclSail's cost from the data has no bound (4
+  nested property shapes over nodes with 100 values each: 51 s) and offers no hook for a budget, so
+  `Rdf4jValidation()` now validates untrusted embedded shapes on the Kastor SHACL validator (`rdf-shacl-validation`,
+  now a dependency), with a deadline of 5 s per focus node and its work limits; reaching them throws
+  `EmbeddedShapesRefusedException` (which gains a `(message, cause)` constructor). The shapes are extracted and
+  admitted as before and the report is mapped as ShaclSail's was. A differential test over a corpus of SHACL Core
+  shapes gives the same results on both engines except `sh:xone` and `sh:zeroOrMorePath`, which ShaclSail skips and the
+  Kastor validator evaluates; a blank-node `sh:hasValue`, which ShaclSail cannot compile, is now evaluated.
+  `trustingEmbeddedShapes()` and constructor shapes still run on ShaclSail.
 - **Security (`kastor-gen-runtime`), behaviour change, API addition:** generated `sh:pattern` checks
   (`ShaclPattern.containsMatchIn`) were linear but unbounded: `.{0,1000}x` took 36 s on a 1 MB value and the accepted
   `(a{0,100}){0,100}x` 12 s on 30 KB. A match is now charged to a deterministic budget of `ShaclPattern.MAX_STEPS`

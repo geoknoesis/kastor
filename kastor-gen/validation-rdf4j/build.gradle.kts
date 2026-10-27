@@ -12,6 +12,8 @@ dependencies {
   implementation(libs.rdf4j.repository.sail)
   implementation(libs.rdf4j.sail.api)
   implementation(libs.rdf4j.sail.memory)
+  // Untrusted embedded shapes are validated by the Kastor SHACL validator (deadline, work limits), not ShaclSail.
+  implementation(project(":rdf:shacl-validation"))
   api(project(":rdf:core"))
   testImplementation(project(":rdf:rdf4j"))
 

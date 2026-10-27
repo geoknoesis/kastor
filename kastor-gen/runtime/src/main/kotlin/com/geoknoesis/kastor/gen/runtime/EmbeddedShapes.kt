@@ -5,7 +5,9 @@ package com.geoknoesis.kastor.gen.runtime
  * the adapter's engine would run without a bound (see [EmbeddedShapes]). An [IllegalArgumentException], like every
  * other shapes graph the adapters cannot admit.
  */
-class EmbeddedShapesRefusedException(message: String) : IllegalArgumentException(message)
+class EmbeddedShapesRefusedException(message: String, cause: Throwable?) : IllegalArgumentException(message, cause) {
+    constructor(message: String) : this(message, null)
+}
 
 /**
  * **Not public API.** The admission rule of the validation adapters (`JenaValidation`, `Rdf4jValidation`) for shapes

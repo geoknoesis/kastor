@@ -66,7 +66,8 @@ class Rdf4jReloadTest {
             ex:p a ex:Person ; ex:name "n" .
             """.trimIndent(),
         )
-        Rdf4jValidation().use { v ->
+        // The ShaclSail store path: untrusted embedded shapes do not use a store (they run on the Kastor validator).
+        Rdf4jValidation.trustingEmbeddedShapes().use { v ->
             assertEquals(listOf("MinCountConstraintComponent"), components(v.validate(a, ex("p"))))
 
             v.beforeLoadCommit = { throw IllegalStateException("simulated store failure") }
