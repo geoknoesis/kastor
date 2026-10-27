@@ -299,7 +299,11 @@ initialisation.
 - **`sh:pattern` means the same as in the Kastor SHACL validator.** Patterns are XPath / XML Schema regular
   expressions, and generated code runs them with `ShaclPattern` (`kastor-gen-runtime`): the validator's own
   translation, on its linear-time engine (RE2/J), so no value can make a pattern backtrack (see the
-  [SHACL validation guide](../../kastor/guides/how-to-validate-shacl.md)). `$` matches at the very end only, `\d`
+  [SHACL validation guide](../../kastor/guides/how-to-validate-shacl.md)). A match is charged to a budget of
+  `ShaclPattern.MAX_STEPS` (200,000,000) steps, each character read costing the size of the compiled pattern, as
+  in the validator; past it (`.{0,1000}x` on a value of a million characters) the check throws
+  `ShaclPatternBudgetException` instead of accepting or rejecting the value: bound long values with
+  `sh:maxLength`. `$` matches at the very end only, `\d`
   is any Unicode digit, `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`, `[a-z-[aeiou]]` is a class subtraction, the `i`
   flag leaves `\p{Lu}` case-sensitive. A leading `(?i)`, `(?s)`, `(?m)` or `(?x)` is read as `sh:flags`; POSIX
   classes inside a class (`[[:alpha:]_]`) and script names (`\p{IsLatin}`) are understood. What the engine

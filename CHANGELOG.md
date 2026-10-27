@@ -44,6 +44,50 @@ entries are regrouped under those kind headings.
   `..` segment, is no longer written into the query text, where Jena resolved it to another IRI
   (`<http://ex/a/../b>` read as `http://ex/b`); it is passed as a provider binding, as RDF4J already read it.
 
+#### Kastor Gen (round seventeen)
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** round sixteen limited
+  the shapes embedded in the data graph to SHACL Core, but SHACL Core alone could still cost exponential time: a chain
+  of `n` shapes that each reference the next twice through `sh:or` took 12.7 s on Jena for a 789-byte data graph and
+  ran ShaclSail out of a 256 MiB heap at 591 bytes; a cyclic `sh:or` list hung ShaclSail and a `sh:in` list of 10,000
+  members overflowed its stack. `JenaValidation()` and `Rdf4jValidation()` now also measure embedded shapes as the
+  engines unfold them (`EmbeddedShapesBounds` of `kastor-gen-runtime`, checked before the engine runs) and throw
+  `EmbeddedShapesRefusedException` past 5,000 unfolded constraints, 32 levels of nesting, 64 operands per logical
+  constraint, lists of 1,000 members, malformed or cyclic lists, or 20,000 SHACL statements. `JenaValidation()` also
+  charges each validation of a focus node against embedded shapes to a deterministic budget of 500,000 steps (engine
+  events, data lookups and returned statements), which bounds the cost the data adds (`k^d` for `d` nested property
+  shapes over nodes with `k` values). Neither mode has a deadline when the shapes are trusted or passed to the
+  constructor (documented).
+- **Security (`kastor-gen-validation-rdf4j`), behaviour change:** ShaclSail's cost from the data has no bound (4
+  nested property shapes over nodes with 100 values each: 51 s) and offers no hook for a budget, so
+  `Rdf4jValidation()` now validates untrusted embedded shapes on the Kastor SHACL validator (`rdf-shacl-validation`,
+  now a dependency), with a deadline of 5 s per focus node and its work limits; reaching them throws
+  `EmbeddedShapesRefusedException` (which gains a `(message, cause)` constructor). The shapes are extracted and
+  admitted as before and the report is mapped as ShaclSail's was. A differential test over a corpus of SHACL Core
+  shapes gives the same results on both engines except `sh:xone` and `sh:zeroOrMorePath`, which ShaclSail skips and the
+  Kastor validator evaluates; a blank-node `sh:hasValue`, which ShaclSail cannot compile, is now evaluated.
+  `trustingEmbeddedShapes()` and constructor shapes still run on ShaclSail.
+- **Security (`kastor-gen-runtime`), behaviour change, API addition:** generated `sh:pattern` checks
+  (`ShaclPattern.containsMatchIn`) were linear but unbounded: `.{0,1000}x` took 36 s on a 1 MB value and the accepted
+  `(a{0,100}){0,100}x` 12 s on 30 KB. A match is now charged to a deterministic budget of `ShaclPattern.MAX_STEPS`
+  (200,000,000) steps with the weights of the Kastor SHACL validator (each character read costs the size of the
+  compiled program; the budget is the validator's default `patternTimeout`), and fails with the new
+  `ShaclPatternBudgetException` (an `IllegalArgumentException`) past it.
+- **Fixed (docs):** the complete example of the Kastor Gen getting-started tutorial did not compile: with the
+  `com.geoknoesis.kastor.rdf.*` star import, `@Rdf` resolved to the object `com.geoknoesis.kastor.rdf.Rdf`. It now
+  imports the annotation by name and the entry point as `RdfApi`. `TutorialExamplesTest` (processor) runs every
+  Kotlin block under a "complete example" heading of the tutorials through KSP, compiles it and runs its `main`.
+- **Fixed (`kastor-gen-processor`), behaviour change, API addition:** the instance DSL's `validate()` never checked
+  `sh:maxCount` and read `sh:minCount` as "at least one", and the setter of a single-valued property added a second
+  value, so instances that violate their shapes were written. `validate()` now checks both bounds (the model's
+  `PropertyConstraints` carries `minCount` and `maxCount`), and a single-valued setter replaces the value, also one
+  written by an earlier block for the same resource (a block now replaces the resource's description in the DSL's
+  graph instead of adding to it).
+- **Fixed (`kastor-gen-runtime`), API addition:** eager (`NestedMode.DATA_CLASS`) materialization recursed once per
+  link of the data with no depth bound, so a long acyclic chain (`ex:n1 ex:next ex:n2 ...`, 100,000 links) ended in
+  `StackOverflowError`. More than `OntoMapper.MAX_EAGER_DEPTH` (128) nested objects now fail with a
+  `MaterializationException` that points to `NestedMode.INTERFACE` / `IRI_ONLY`, also on a thread with a 512 KiB stack.
+
 ### Round sixteen
 
 #### Build and docs (round sixteen)

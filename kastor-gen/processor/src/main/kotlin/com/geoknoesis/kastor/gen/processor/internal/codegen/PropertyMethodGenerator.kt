@@ -70,6 +70,7 @@ public sealed class PropertyTypeStrategy {
                 .addParameter("value", String::class)
             if (langTags) addLanguageParameters(functionBuilder)
             addImmediateValidation(functionBuilder, property, "value", STRING)
+            replaceIfSingle(functionBuilder, property, propertyIri)
             addStringWrite(functionBuilder, property, propertyIri, langTags)
             methods.add(functionBuilder.build())
 
@@ -152,6 +153,7 @@ public sealed class PropertyTypeStrategy {
             methods += FunSpec.builder(property.propertyName)
                 .addKdoc("%L", buildKdoc(property))
                 .addParameter("value", String::class)
+                .also { replaceIfSingle(it, property, propertyIri) }
                 .addStatement("graph.addTriple(resource, %L, %T(value))", propertyIri, IRI)
                 .build()
             if (property.isList) {
@@ -204,6 +206,7 @@ public sealed class PropertyTypeStrategy {
                 FunSpec.builder(property.propertyName)
                     .addKdoc("%L", buildKdoc(property))
                     .addParameter("value", enumType)
+                    .also { replaceIfSingle(it, property, propertyIri) }
                     .addStatement("graph.addTriple(resource, %L, %L)", propertyIri, term("value"))
                     .build()
             )
@@ -272,15 +275,24 @@ private fun valueMethods(
             .addKdoc("%L", buildKdoc(property))
             .addParameter("value", valueType)
         addImmediateValidation(builder, property, "value", valueType)
+        replaceIfSingle(builder, property, propertyIri)
         builder.addStatement("graph.addTriple(resource, %L, %L)", propertyIri, write)
         listOf(builder.build())
     }
 }
 
+/**
+ * The setter of a single-valued property (`sh:maxCount` 0 or 1) replaces its value: it removes the values the
+ * resource already has before it writes the new one. A multi-valued property's setters add values.
+ */
+private fun replaceIfSingle(builder: FunSpec.Builder, property: PropertyBuilderModel, propertyIri: CodeBlock) {
+    if (!property.isList) builder.addStatement("graph.removeTriples(graph.find(resource, %L))", propertyIri)
+}
+
 // Shared helper functions
 private fun buildKdoc(property: PropertyBuilderModel): String {
     return kdocText(buildString {
-        append("Set ${property.propertyName}.")
+        append(if (property.isList) "Add values to ${property.propertyName}." else "Set ${property.propertyName}, replacing its value.")
         if (property.isRequired) {
             append("\nRequired property.")
         }
