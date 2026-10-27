@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.rdf.rdf4j.shacl
 
-import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfResource
@@ -99,7 +98,8 @@ internal object ShaclSailFeatures {
     val rejected = LinkedHashSet<RdfTriple>()
 
     fun unsupportedPath(path: RdfTerm, seen: MutableSet<RdfTerm> = HashSet()): String? {
-      if (path !is BlankNode || !seen.add(path)) return null
+      // A sequence or alternative path is a list whose cells may be IRIs as well as blank nodes.
+      if (path !is RdfResource || !seen.add(path)) return null
       for (triple in bySubject[path].orEmpty()) {
         val predicate = triple.predicate.value
         when {

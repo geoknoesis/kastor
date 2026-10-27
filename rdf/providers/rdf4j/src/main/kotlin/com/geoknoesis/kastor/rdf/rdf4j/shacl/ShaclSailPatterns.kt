@@ -14,7 +14,8 @@ import com.geoknoesis.kastor.rdf.RdfTriple
  * deadline. Probed against `rdf4j-shacl` 5.3.2 (`Rdf4jShaclSandboxTest`): a pattern under `sh:or`, `sh:not` or
  * `sh:qualifiedValueShape` takes the transactional plan; a pattern directly on a shape, or reached through
  * `sh:node`, takes the SPARQL one. `sh:and` and `sh:xone` are treated like `sh:or`. A SHACL list may have IRI or
- * blank nodes; the search follows the graph, not the syntax, so neither hides a pattern.
+ * blank nodes; the search follows the graph, not the syntax, so neither hides a pattern, and a malformed list (a
+ * missing `rdf:rest`, a cycle) cannot hide one either: every `rdf:first` reachable from the operand is searched.
  *
  * [Rdf4jShaclValidator] refuses (fails closed) a shapes graph with such a pattern; the native engine evaluates it.
  */
@@ -44,7 +45,8 @@ internal object ShaclSailPatterns {
    * `sh:qualifiedValueShape`: every node reachable from such an operand (through list nodes, `sh:node`,
    * `sh:property`, nested operators and any other link but [NOT_SHAPES]), whatever the kind of its nodes.
    */
-  fun javaEvaluated(shapes: List<RdfTriple>): List<RdfTerm> {
+  fun javaEvaluated(shapes: List<RdfTriple>, check: () -> Unit = {}): List<RdfTerm> {
+    check()
     val bySubject = shapes.groupBy { it.subject }
     val nested = ArrayDeque<RdfTerm>()
     for (t in shapes) if (t.predicate.value in NESTING) nested.add(t.obj)
@@ -53,6 +55,7 @@ internal object ShaclSailPatterns {
     while (nested.isNotEmpty()) {
       val node = nested.removeFirst()
       if (node !is RdfResource || !seen.add(node)) continue
+      if (seen.size % ShaclLists.CHECK_INTERVAL == 0) check()
       val own = bySubject[node].orEmpty()
       if (own.any { it.predicate.value == SH + "pattern" }) found.add(node)
       for (t in own) if (t.predicate.value !in NOT_SHAPES) nested.add(t.obj)

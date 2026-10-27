@@ -16,6 +16,10 @@ internal object ShaclLists {
   private const val FIRST = RDF + "first"
   private const val REST = RDF + "rest"
   private const val NIL = RDF + "nil"
+  private const val PREFIX = "kastorList"
+
+  /** The preprocessing of a shapes graph runs the validation deadline check every this many triples or nodes. */
+  const val CHECK_INTERVAL = 1024
 
   /**
    * The members of the list at [head], following `rdf:rest` through any node (IRI or blank) up to `rdf:nil`, a node
@@ -40,21 +44,37 @@ internal object ShaclLists {
    * list nodes' identifiers into blank node identifiers (`ShaclAstLists.listToRdf`), which fails with "Illegal blank
    * node ID character" for an IRI: a legal shapes graph with IRI list nodes could not be validated when it was
    * violated. The list nodes have no meaning of their own, so naming them with blank nodes changes nothing else.
+   *
+   * Linear in [triples]; [check] (the validation deadline) runs every [CHECK_INTERVAL] triples.
    */
-  fun withBlankListNodes(triples: List<RdfTriple>): List<RdfTriple> {
+  fun withBlankListNodes(triples: List<RdfTriple>, check: () -> Unit = {}): List<RdfTriple> {
     val bySubject = triples.groupBy { it.subject }
     val listNodes = bySubject.filter { (subject, own) ->
       subject is Iri && subject.value != NIL && own.all { it.predicate.value == FIRST || it.predicate.value == REST } &&
           own.any { it.predicate.value == REST }
     }.keys
     if (listNodes.isEmpty()) return triples
-    val taken = triples.flatMap { listOf(it.subject, it.obj) }.filterIsInstance<BlankNode>().mapTo(HashSet()) { it.id }
-    var prefix = "kastorList"
-    while (taken.any { it.startsWith(prefix) }) prefix += "x"
+    val prefix = freshPrefix(triples, check)
     val renamed = HashMap<RdfTerm, BlankNode>()
     listNodes.forEachIndexed { k, node -> renamed[node] = BlankNode("$prefix$k") }
-    return triples.map { t ->
+    return triples.mapIndexed { k, t ->
+      if (k % CHECK_INTERVAL == 0) check()
       if (t.subject !in renamed && t.obj !in renamed) t else RdfTriple(renamed[t.subject] ?: t.subject, t.predicate, renamed[t.obj] ?: t.obj)
     }
+  }
+
+  /**
+   * A blank node identifier prefix that no blank node of [triples] starts with, chosen in one pass: [PREFIX] followed
+   * by enough `x` to be longer than every identifier that starts with [PREFIX].
+   */
+  internal fun freshPrefix(triples: List<RdfTriple>, check: () -> Unit = {}): String {
+    var longest = -1
+    triples.forEachIndexed { k, t ->
+      if (k % CHECK_INTERVAL == 0) check()
+      for (term in arrayOf<RdfTerm>(t.subject, t.obj)) {
+        if (term is BlankNode && term.id.startsWith(PREFIX)) longest = maxOf(longest, term.id.length)
+      }
+    }
+    return if (longest < 0) PREFIX else PREFIX + "x".repeat(longest - PREFIX.length + 1)
   }
 }
