@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
+import com.geoknoesis.kastor.gen.runtime.EmbeddedShapes
+import com.geoknoesis.kastor.gen.runtime.EmbeddedShapesRefusedException
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
@@ -45,6 +47,16 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
  * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): shapes are
  *   parsed from the data graph on each call. If the data graph declares no shapes the result is
  *   [ValidationResult.Ok].
+ *
+ * **Embedded shapes are untrusted**: they come with the data. `jena-shacl` runs SHACL-SPARQL without a sandbox (a
+ * `SERVICE` clause sends a request to any host, and a query has no deadline) and `sh:pattern` with
+ * `java.util.regex` (which a hostile pattern makes backtrack without bound). So the no-arg validator admits only
+ * SHACL Core shapes without `sh:pattern`: when the data graph declares shapes and uses any other term of the SHACL
+ * namespace (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...; the list is `EmbeddedShapes.ALLOWED` of
+ * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before the engine runs. Only when the
+ * data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes passed to the
+ * constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an untrusted
+ * source there; the Kastor SHACL validator (`rdf-shacl-validation`) sandboxes SHACL-SPARQL and patterns.
  *
  * [validate] evaluates only the shapes that target the given focus node and returns the results
  * whose `sh:focusNode` is that node.
@@ -94,6 +106,8 @@ class JenaValidation private constructor(
   val maxCachedGraphs: Int,
   /** Whether graphs without a modification stamp are assumed not to change while this validator lives. */
   val assumeImmutable: Boolean,
+  /** Whether shapes embedded in the data graph run unchecked ([trustingEmbeddedShapes]). */
+  private val trustEmbeddedShapes: Boolean = false,
 ) : ValidationContext {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
@@ -127,7 +141,10 @@ class JenaValidation private constructor(
 
   /** The Jena copy of a data graph, with the shapes embedded in it (parsed on first use). */
   private class Converted(val graph: Graph) {
-    val embeddedShapes: Shapes? by lazy { if (declaresShapes(graph)) parseShapes(graph) else null }
+    val declaresShapes: Boolean by lazy { declaresShapes(graph) }
+    /** The SHACL terms of the graph that untrusted embedded shapes may not use ([EmbeddedShapes]). */
+    val refusedTerms: List<String> by lazy { refusedTerms(graph) }
+    val embeddedShapes: Shapes? by lazy { if (declaresShapes) parseShapes(graph) else null }
   }
 
   /** A fixed list of triples as a graph, for the provider's converter. */
@@ -272,6 +289,27 @@ class JenaValidation private constructor(
 
     private fun copyOf(graph: Graph): Graph =
       GraphFactory.createDefaultGraph().also { GraphUtil.addInto(it, graph) }
+
+    /**
+     * A validator of the shapes embedded in the data graph that runs **every** shape, SHACL-SPARQL and `sh:pattern`
+     * included, without a sandbox or a deadline (see the class documentation). Use it only for data graphs from a
+     * trusted source: a data graph can then make the validator send requests to any host and run for ever.
+     *
+     * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun trustingEmbeddedShapes(maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean = false): JenaValidation =
+      JenaValidation(null, maxCachedGraphs, assumeImmutable, trustEmbeddedShapes = true)
+
+    private fun refusedTerms(graph: Graph): List<String> {
+      val it = graph.find()
+      try {
+        return EmbeddedShapes.refused(it.asSequence().mapNotNull { triple -> triple.predicate.takeIf { p -> p.isURI }?.uri }.iterator())
+      } finally {
+        it.close()
+      }
+    }
   }
 
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
@@ -296,10 +334,19 @@ class JenaValidation private constructor(
   private fun <R> withData(data: RdfGraph, block: (Shapes?, Graph) -> R): R {
     val direct = standaloneJenaGraph(data)
     if (direct != null) {
-      return block(fixedShapes ?: if (declaresShapes(direct)) parseShapes(direct) else null, direct)
+      return block(fixedShapes ?: if (declaresShapes(direct)) admitted({ refusedTerms(direct) }) { parseShapes(direct) } else null, direct)
     }
     // The cache reads the data graph (stamp or triples) before it takes any lock.
-    return cache.use(data) { converted -> block(fixedShapes ?: converted.embeddedShapes, converted.graph) }
+    return cache.use(data) { converted ->
+      val shapes = fixedShapes ?: if (converted.declaresShapes) admitted({ converted.refusedTerms }) { converted.embeddedShapes } else null
+      block(shapes, converted.graph)
+    }
+  }
+
+  /** [shapes] of embedded shapes that use [refused] terms: refused unless this validator trusts the data. */
+  private inline fun admitted(refused: () -> List<String>, shapes: () -> Shapes?): Shapes? {
+    if (!trustEmbeddedShapes) EmbeddedShapes.requireNone(refused(), "JenaValidation")
+    return shapes()
   }
 
   /**

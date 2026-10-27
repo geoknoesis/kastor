@@ -55,6 +55,38 @@ class CliBaseIriAndParseErrorTest {
     }
 
     @Test
+    fun `relative IRIs in JSON-LD are an error without --base, not dropped statements`() {
+        // JSON-LD's toRdf algorithm skips statements with a relative IRI: these used to parse to nothing (or lose
+        // the one statement), so diff called different files ISOMORPHIC, parse said OK - triples: 0, and to-turtle
+        // printed an empty document for a named graph it should have refused.
+        val a = file("a.jsonld", """{"@id": "s", "http://e/p": {"@id": "o"}}""")
+        val b = file("b.jsonld", """{"@id": "x", "http://e/p": {"@id": "y"}}""")
+        val partly = file("partly.jsonld", """{"@id": "http://e/s", "http://e/p": {"@id": "o"}, "http://e/q": "v"}""")
+        val withoutRelative = file("q.jsonld", """{"@id": "http://e/s", "http://e/q": "v"}""")
+        val namedGraph = file("g.jsonld", """{"@id": "g", "@graph": [{"@id": "http://e/s", "http://e/p": "v"}]}""")
+        val runs = listOf(
+            arrayOf("diff", a, b) to a,
+            arrayOf("parse", a) to a,
+            arrayOf("diff", partly, withoutRelative) to partly,
+            arrayOf("to-turtle", namedGraph) to namedGraph,
+        )
+        for ((args, culprit) in runs) {
+            val result = run(*args)
+            assertEquals(EXIT_USAGE, result.code, "${args.toList()}: ${result.out} ${result.err}")
+            assertTrue(result.err.startsWith("Parse error in $culprit: ") && result.err.contains("relative IRI"), result.err)
+            assertEquals(1, result.err.trim().lines().size, result.err)
+        }
+
+        assertEquals(EXIT_NOT_ISOMORPHIC, run("diff", "--base", "http://e/", a, b).code)
+        val parsed = run("parse", "--base", "http://e/", a)
+        assertEquals(EXIT_OK, parsed.code, parsed.err)
+        assertTrue(parsed.out.contains("triples: 1"), parsed.out)
+        val turtle = run("to-turtle", "--base=http://e/data/", a)
+        assertEquals(EXIT_OK, turtle.code, turtle.err)
+        assertTrue(turtle.out.contains("http://e/data/s") && turtle.out.contains("http://e/data/o"), turtle.out)
+    }
+
+    @Test
     fun `--base must be an absolute IRI and must have a value`() {
         val path = file("data.nt", "<http://e/s> <http://e/p> <http://e/o> .\n")
         for (base in listOf("relative/path", "", "http://e/ space")) {

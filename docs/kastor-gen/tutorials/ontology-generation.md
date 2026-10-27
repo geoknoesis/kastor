@@ -297,15 +297,16 @@ initialisation.
   kinds with nothing in common (`sh:IRI` and `sh:Literal`) reject every value, and generation logs a warning
   naming the shape and the path. Nothing is silently dropped.
 - **`sh:pattern` means the same as in the Kastor SHACL validator.** Patterns are XPath / XML Schema regular
-  expressions, translated to `java.util.regex` with the validator's rules (see the
-  [SHACL validation guide](../../kastor/guides/how-to-validate-shacl.md)): `$` matches at the very end only, `\d`
+  expressions, and generated code runs them with `ShaclPattern` (`kastor-gen-runtime`): the validator's own
+  translation, on its linear-time engine (RE2/J), so no value can make a pattern backtrack (see the
+  [SHACL validation guide](../../kastor/guides/how-to-validate-shacl.md)). `$` matches at the very end only, `\d`
   is any Unicode digit, `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`, `[a-z-[aeiou]]` is a class subtraction, the `i`
   flag leaves `\p{Lu}` case-sensitive. A leading `(?i)`, `(?s)`, `(?m)` or `(?x)` is read as `sh:flags`; POSIX
-  classes inside a class (`[[:alpha:]_]`) and script names (`\p{IsLatin}`) are translated. `java.util.regex`
-  syntax that would not mean the same is **rejected when the code is generated**, with an error that names
-  the shape, the path and the construct: `&&` and a nested `[` inside a class, a class that starts with `]`,
-  an unescaped `-` as a range endpoint, inline flag groups that are not leading (`a(?i)b`, `(?i:...)`),
-  `\p{IsAlphabetic}`, unknown `sh:flags`.
+  classes inside a class (`[[:alpha:]_]`) and script names (`\p{IsLatin}`) are understood. What the engine
+  refuses is **rejected when the code is generated**, with an error that names the shape, the path and the
+  pattern: back-references, lookarounds, atomic groups, possessive quantifiers, word boundaries (`\b`),
+  repetition counts above 1000, `&&` and a nested `[` inside a class, inline flag groups that are not leading
+  (`a(?i)b`, `(?i:...)`), unknown `sh:flags`. The Kastor SHACL validator refuses the same shapes.
 - **`sh:hasValue` is checked when an instance is validated.** It requires the value to be **among** the
   values of the property, so the instance DSL's setters accept any value (`tag("y")` on a property with
   `sh:hasValue "x"`); the DSL's `validate()` - run when an instance block ends - reports
@@ -453,25 +454,21 @@ always compiles:
 - When one node shape lists **the same path in several property shapes**, one member is generated, named
   after the alphabetically first `sh:name`, with the constraints of all declarations combined (highest
   `sh:minCount`, lowest `sh:maxCount`, …); a warning names the shape and path.
-- `sh:pattern` values are XPath regular expressions and are translated for `java.util.regex`, following
-  XPath semantics:
+- `sh:pattern` values are XPath regular expressions, run on the Kastor SHACL validator's linear-time engine
+  with XPath semantics (see "`sh:pattern` means the same as in the Kastor SHACL validator" above):
   - `\d`/`\D` are Unicode decimal digits (`\p{Nd}`); `\w` is XPath's definition (every character except
     punctuation, separators and "other" characters, so symbols such as `$` are word characters) **plus the
-    underscore `_`**, as in the Kastor SHACL validator and every mainstream regex dialect, and `\W` is its
-    complement (it does not match `_`); `\s`/`\S` are exactly space, tab, newline and carriage return.
-    Java's defaults are ASCII-only or wider.
-  - `\i`/`\I` and `\c`/`\C` (XML name characters) are approximated with Unicode letter/digit classes plus
-    `_ : . -` and U+00B7.
-  - Character-class subtraction `[base-[excluded]]` is translated with XPath precedence, including inside
-    negated classes: `[^a-z-[0-9]]` means "not a-z, minus digits".
-  - Unicode block escapes `\p{IsBlock}` become `\p{InBlock}`.
-  - The `x` flag strips whitespace outside character classes during translation itself; it is not mapped
-    to Java's `COMMENTS` mode, which would also treat `#` as a comment and drop whitespace inside classes.
-  - The `q` flag (literal pattern) disables translation; with `q` the `m`, `s` and `x` flags are ignored and
-    only `i` still applies.
+    underscore `_`**, and `\W` is its complement (it does not match `_`); `\s`/`\S` are exactly space, tab,
+    newline and carriage return.
+  - `\i`/`\I` and `\c`/`\C` are the XML name characters.
+  - Character-class subtraction `[base-[excluded]]` follows XPath precedence, including inside negated
+    classes: `[^a-z-[0-9]]` means "not a-z, minus digits".
+  - Unicode block escapes `\p{IsBlock}` are blocks.
+  - The `x` flag removes whitespace outside character classes; `#` is not a comment.
+  - The `q` flag makes the pattern literal; with `q` only `i` still applies.
 
-  A pattern that is still not a valid regular expression **fails generation**, naming the shape, path and
-  pattern.
+  A pattern that is not a valid regular expression, or that the engine refuses, **fails generation**, naming
+  the shape, path and pattern.
 - Blank-node node shapes are supported, as are implicit class targets (a shape that is also an
   `rdfs:Class`/`owl:Class`).
 - Constructs that cannot be represented are **skipped with a warning** naming the shape and property:

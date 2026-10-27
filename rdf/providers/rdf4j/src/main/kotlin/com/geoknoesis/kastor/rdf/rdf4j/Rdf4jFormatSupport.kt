@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  *
  * **Parsing contract** (shared with the Jena provider):
  * - Streams are handed to Rio directly; statements are converted as they are parsed.
- * - Without a base IRI, relative IRI references are a parse error.
+ * - Without a base IRI, relative IRI references are a parse error, in JSON-LD too (see [Rdf4jJsonLdBase]).
  * - [parseGraph] rejects quad formats (TriG, N-Quads) instead of merging their named graphs, and the graph parses
  *   ([parseGraph], [openTripleStream]) fail with [RdfFormatException] on a document of a graph format that names a
  *   graph (JSON-LD `@graph` under an `@id`) instead of merging it into the one graph.
@@ -118,7 +118,7 @@ internal object Rdf4jFormatSupport {
         parser.setRDFHandler(object : AbstractRDFHandler() {
             override fun handleStatement(statement: Statement) {
                 try {
-                    handle(nodes.statement(statement))
+                    handle(nodes.statement(Rdf4jJsonLdBase.checked(format, statement)))
                 } catch (e: RDFParseException) {
                     throw e // a term Kastor rejects (checkedTriples): an error of the input
                 } catch (e: RuntimeException) {
@@ -277,7 +277,7 @@ internal object Rdf4jFormatSupport {
         val triples = mutableListOf<RdfTriple>()
         val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
-            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(rdf12Input(rdf4jFormat, inputStream), baseIri)
+            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(rdf12Input(rdf4jFormat, inputStream), Rdf4jJsonLdBase.baseFor(rdf4jFormat, baseIri))
         }
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
@@ -449,7 +449,7 @@ internal object Rdf4jFormatSupport {
                 var terminal: Any = PRODUCER_DIED
                 try {
                     val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(rdf12Input(format, state.input), baseIri)
+                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(rdf12Input(format, state.input), Rdf4jJsonLdBase.baseFor(format, baseIri))
                     terminal = END
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
@@ -622,7 +622,7 @@ internal object Rdf4jFormatSupport {
                     } else {
                         connection.add(statement.subject, statement.predicate, statement.`object`)
                     }
-                }.parse(rdf12Input(rdf4jFormat, inputStream), baseIri)
+                }.parse(rdf12Input(rdf4jFormat, inputStream), Rdf4jJsonLdBase.baseFor(rdf4jFormat, baseIri))
             }
         }
     }

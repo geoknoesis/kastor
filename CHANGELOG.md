@@ -73,6 +73,49 @@ entries are regrouped under those kind headings.
   run-wide cap never engaged. Outcomes stay deterministic; the KDoc of `ValidationConfig.patternTimeout` and the
   SHACL guide are corrected.
 
+#### JSON-LD parsing: relative IRIs
+
+- **Fixed (`rdf-jena`, `rdf-rdf4j`, `rdf-cli`), behaviour change:** a JSON-LD document parsed without a base IRI
+  that has a relative IRI reference (`"@id": "s"`, a relative `@type`, `@vocab`, datatype or graph name) now fails
+  with `RdfFormatException`, as Turtle and RDF/XML do. Before, the JSON-LD processor on both providers skipped every
+  statement that held one and only logged a warning. A document of relative `@id`s parsed to zero triples, and a
+  relative graph name dropped the whole named graph. So `kastor-rdf diff` called different files `ISOMORPHIC`,
+  `parse` printed `OK - triples: 0`, and `to-turtle` printed an empty document. With a base IRI (`--base`, or
+  `parseGraph`/`parseDataset` with a base), relative references resolve against it. This applies to every parse path
+  (`parseGraph`, `parseDataset`, `openTripleStream`, `parseStreaming`, `Rdf.parse`, `JenaBridge.fromString`).
+  `parseFromUrl` and `JenaBridge.fromUrl` resolve against the URL, as before.
+
+#### Kastor Gen: validation of untrusted data
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** `JenaValidation()`
+  and `Rdf4jValidation()`, which validate against the shapes embedded in the data graph, no longer run what their
+  engines cannot bound. `jena-shacl` and `ShaclSail` run SHACL-SPARQL without a sandbox: a `SERVICE` clause in a
+  shape of an uploaded graph made the validator send a request to any host (SSRF), and a slow endpoint held the
+  validating thread for ever. They also run `sh:pattern` on `java.util.regex`. Embedded shapes are now admitted only
+  when every SHACL term they use is a SHACL Core target, path, constraint or non-validating property, or a term of a
+  validation report. Anything else (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...) fails `validate` with
+  the new `EmbeddedShapesRefusedException` (`kastor-gen-runtime`, an `IllegalArgumentException`) before the engine
+  runs. A generated `EXTERNAL` validator that names one of these classes follows the same rule.
+- **Added (API):** `JenaValidation.trustingEmbeddedShapes()` and `Rdf4jValidation.trustingEmbeddedShapes()` restore
+  the previous behaviour for data graphs from a trusted source. Shapes passed to the constructors or to `fromTurtle`
+  are trusted, as before. The ABI dumps of `kastor-gen-runtime`, `kastor-gen-validation-jena` and
+  `kastor-gen-validation-rdf4j` gain these additions only.
+- **Security (`kastor-gen-processor`, `kastor-gen-runtime`), behaviour change:** generated `sh:pattern` checks (the
+  wrapper's `validate()`, the instance DSL's setters and `validate()`) now run on the Kastor SHACL validator's
+  linear-time engine (RE2/J) through the new `ShaclPattern` class of `kastor-gen-runtime`. Before, they ran on
+  `java.util.regex`, where a hostile value made an ordinary pattern such as `^(.*a){20}$` backtrack for seconds or
+  for ever. Generation now refuses what the validator refuses (back-references, lookarounds, atomic groups,
+  possessive quantifiers, word boundaries, repetition counts above 1000, ...), naming the shape, path and pattern,
+  so a shapes graph that generates also validates. The generator's own `java.util.regex` translation is removed.
+  The ABI dump of `kastor-gen-runtime` gains `ShaclPattern`.
+- **Fixed (`kastor-gen-runtime`, `rdf-core`), behaviour change:** generated `sh:datatype` checks
+  (`XsdLiterals.isWellFormed` and `hasDatatype`) reject ill-formed `xsd:hexBinary`, `xsd:base64Binary`,
+  `xsd:language`, `xsd:normalizedString`, `xsd:token`, XML name and token types (`xsd:NCName`, `xsd:NMTOKEN`,
+  `xsd:QName`, ...) and `xsd:anyURI` literals, as the native SHACL engine does. Before, `"zz"^^xsd:hexBinary`
+  passed. Both now use the scanners moved from the native engine into the shared XSD parser of `rdf-core`
+  (`com.geoknoesis.kastor.rdf.xsd.XsdStrings`, internal API). The decoders and `encode` apply the same check, so
+  `encode("zz", xsd:hexBinary)` now fails.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards

@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.LiteralValidation
 import com.geoknoesis.kastor.rdf.xsd.XsdDecimal
 import com.geoknoesis.kastor.rdf.xsd.XsdLexical
+import com.geoknoesis.kastor.rdf.xsd.XsdStrings
 import com.geoknoesis.kastor.rdf.xsd.XsdNumbers
 import com.geoknoesis.kastor.rdf.xsd.XsdNumeric
 import com.geoknoesis.kastor.rdf.xsd.XsdTemporalKind
@@ -153,10 +154,13 @@ object XsdLiterals {
   /**
    * Whether [literal]'s lexical form is valid for its own datatype. The XSD numeric types (including the value
    * ranges of the derived integer types), `xsd:boolean`, `xsd:date`, `xsd:dateTime`, `xsd:dateTimeStamp`,
-   * `xsd:time`, the Gregorian types and the duration types are checked; other datatypes are accepted. Every
-   * decoder of this object, and [encode], apply this check.
+   * `xsd:time`, the Gregorian types and the duration types are checked (after collapsing white space), and so are
+   * `xsd:language`, `xsd:hexBinary`, `xsd:base64Binary`, `xsd:normalizedString`, `xsd:token`, the XML name and token
+   * types (`xsd:NCName`, `xsd:NMTOKEN`, `xsd:QName`, ...) and `xsd:anyURI` (as written), with the parser the Kastor
+   * SHACL validator uses; other datatypes are accepted. Every decoder of this object, and [encode], apply this check.
    */
-  fun isWellFormed(literal: Literal): Boolean = XsdLexical.isValid(literal.datatype.value, literal.collapsed) ?: true
+  fun isWellFormed(literal: Literal): Boolean =
+    XsdLexical.isValid(literal.datatype.value, literal.collapsed) ?: XsdStrings.isValid(literal.datatype.value, literal.lexical) ?: true
 
   /** SHACL `sh:datatype`: [term] is a literal of exactly [datatype] whose lexical form is well formed. */
   fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean =

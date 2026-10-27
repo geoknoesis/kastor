@@ -7,7 +7,6 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.asTypeName
-import com.squareup.kotlinpoet.joinToCode
 
 /**
  * How a literal datatype is represented in generated Kotlin.
@@ -78,25 +77,6 @@ internal enum class ValueKind {
     IRI,
     /** Literal value (see [TypeMapper.literalMapping]). */
     LITERAL,
-}
-
-/**
- * `Regex("pattern")` / `Regex("pattern", setOf(RegexOption.X))` for an `sh:pattern` (XPath syntax, translated by
- * [ShaclPatterns.translate]) honouring SHACL `sh:flags` (i, m, s, x, q).
- */
-internal fun regexCode(pattern: String, flags: String?): CodeBlock {
-    // The options of the pattern: those of sh:flags and those of a leading inline flag group.
-    val translated = ShaclPatterns.translate(pattern, flags)
-    val options = translated.options
-    val source = translated.source
-    return if (options.isEmpty()) {
-        CodeBlock.of("%T(%S)", Regex::class, source)
-    } else {
-        CodeBlock.of(
-            "%T(%S, setOf(%L))", Regex::class, source,
-            options.map { CodeBlock.of("%T.%L", RegexOption::class, it) }.joinToCode(", "),
-        )
-    }
 }
 
 /**
