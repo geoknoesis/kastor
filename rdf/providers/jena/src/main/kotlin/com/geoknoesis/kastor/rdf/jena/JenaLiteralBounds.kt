@@ -3,11 +3,16 @@ package com.geoknoesis.kastor.rdf.jena
 import com.geoknoesis.kastor.rdf.LiteralValidation
 import com.geoknoesis.kastor.rdf.sparql.internal.SparqlNumberText
 import org.apache.jena.datatypes.RDFDatatype
+import org.apache.jena.graph.Graph
 import org.apache.jena.graph.Node
 import org.apache.jena.query.QueryParseException
 import org.apache.jena.riot.RDFParserBuilder
 import org.apache.jena.riot.RiotException
 import org.apache.jena.riot.system.FactoryRDFCaching
+import org.apache.jena.sparql.core.DatasetGraph
+import org.apache.jena.sparql.core.DatasetGraphWrapper
+import org.apache.jena.sparql.core.GraphView
+import org.apache.jena.sparql.core.Quad
 
 /**
  * Bounds what a literal may cost Jena. Jena computes the value of every `xsd:decimal` literal, and of every literal
@@ -19,6 +24,9 @@ import org.apache.jena.riot.system.FactoryRDFCaching
  *   refuses such a literal before Jena computes its value: a parse error ([RiotException], reported as
  *   `RdfFormatException`);
  * - the graph API refuses it with [IllegalArgumentException] (`JenaTerms.toJenaNode`);
+ * - a SPARQL UPDATE writes through [boundedWrites], which refuses it before the store values it: the literals the
+ *   update computes (`STRDT(CONCAT(...), xsd:integer)`, a cast), copies (`INSERT ... WHERE`, `ADD`, `COPY`, `MOVE`)
+ *   or reads with `LOAD`, which its text does not hold (as the RDF4J stores do; reported as `RdfQueryException`);
  * - SPARQL text is refused before Jena parses it when it holds a number of more digits than the limit, counted across
  *   its point and exponent ([requireBoundedQuery]): a numeric literal of the query is turned into a value as it is
  *   parsed. (So is a string literal of the query that holds such a run of digits; no realistic query does.)
@@ -65,6 +73,51 @@ internal object JenaLiteralBounds {
             )
         }
         return sparql
+    }
+
+    /**
+     * [dataset] as a SPARQL UPDATE sees it: every quad written through it, by any update operation, is refused with
+     * [org.apache.jena.update.UpdateException] when its subject or object (or a term of a triple term) is a literal
+     * that [LiteralValidation.numericLengthProblem] refuses. The check runs before the quad reaches the store, which
+     * computes the literal's value when it indexes it (Jena 6.2: 7 s for 330,000 digits, 105 s for 1,300,000).
+     */
+    fun boundedWrites(dataset: org.apache.jena.query.Dataset): org.apache.jena.query.Dataset =
+        org.apache.jena.query.DatasetFactory.wrap(BoundedWrites(dataset.asDatasetGraph()))
+
+    private class BoundedWrites(base: DatasetGraph) : DatasetGraphWrapper(base) {
+        override fun add(quad: Quad) {
+            requireBounded(quad.subject)
+            requireBounded(quad.`object`)
+            super.add(quad)
+        }
+
+        override fun add(g: Node, s: Node, p: Node, o: Node) {
+            requireBounded(s)
+            requireBounded(o)
+            super.add(g, s, p, o)
+        }
+
+        override fun addGraph(graphName: Node, graph: Graph) {
+            graph.find().forEachRemaining { requireBounded(it.subject); requireBounded(it.`object`) }
+            super.addGraph(graphName, graph)
+        }
+
+        // Graph views over this wrapper, so that writes through a graph (LOAD INTO GRAPH, ADD, COPY) are checked too.
+        override fun getDefaultGraph(): Graph = GraphView.createDefaultGraph(this)
+
+        override fun getGraph(graphNode: Node): Graph = when {
+            Quad.isUnionGraph(graphNode) -> super.getGraph(graphNode)
+            Quad.isDefaultGraph(graphNode) -> GraphView.createDefaultGraph(this)
+            else -> GraphView.createNamedGraph(this, graphNode)
+        }
+    }
+
+    private fun requireBounded(node: Node) {
+        when {
+            node.isLiteral -> LiteralValidation.numericLengthProblem(node.literalDatatypeURI, node.literalLexicalForm)
+                ?.let { throw org.apache.jena.update.UpdateException(it) }
+            node.isTripleTerm -> node.triple.let { requireBounded(it.subject); requireBounded(it.`object`) }
+        }
     }
 
     /**

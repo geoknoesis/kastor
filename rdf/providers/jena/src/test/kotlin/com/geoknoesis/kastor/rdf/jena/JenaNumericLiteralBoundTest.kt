@@ -154,4 +154,70 @@ class JenaNumericLiteralBoundTest {
             }
         }
     }
+
+    /**
+     * Round seventeen: the text of an update holds no long number when the update computes it (`STRDT(CONCAT(...))`)
+     * or reads it with `LOAD`; Jena values the computed literal when it writes it, in time superlinear in its digits
+     * (3 s for 164,000 digits, more than 200 s for 1,300,000). Every literal a Jena update writes is checked first,
+     * as on the RDF4J stores, so each of these is refused.
+     */
+    @Test
+    fun `SPARQL UPDATE refuses long numeric and temporal literals it computes or loads`() {
+        val half = "7".repeat(limit / 2 + 1)
+        val fraction = "1".repeat(limit / 2 + 1)
+        val doc = kotlin.io.path.createTempFile("kastor-long", ".ttl").toFile().apply {
+            writeText(turtle(tooLong))
+            deleteOnExit()
+        }
+        val tdb = kotlin.io.path.createTempDirectory("kastor-tdb2").toFile()
+        for ((store, repository) in listOf("memory" to { JenaRepository.MemoryRepository() }, "tdb2" to { JenaRepository.Tdb2Repository(tdb.path) })) {
+            repository().use { repo ->
+                for (update in listOf(
+                    "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(CONCAT(\"$half\", \"$half\"), <${xsd}integer>) AS ?o) }",
+                    "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(REPLACE(\"$half\", \"7\", \"77\"), <${xsd}long>) AS ?o) }",
+                    "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(CONCAT(\"$half\", \".\", \"$half\"), <${xsd}decimal>) AS ?o) }",
+                    "INSERT { GRAPH <http://e/g> { <http://e/s> <http://e/p> ?o } } WHERE { BIND(STRDT(CONCAT(\"$half\", \"$half\"), <${xsd}integer>) AS ?o) }",
+                    "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(CONCAT(\"2020-01-01T00:00:00.\", \"$fraction\", \"$fraction\"), <${xsd}dateTime>) AS ?o) }",
+                    "INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(<${xsd}integer>(CONCAT(\"$half\", \"$half\")) AS ?o) }",
+                    "LOAD <${doc.toURI()}>",
+                    "LOAD <${doc.toURI()}> INTO GRAPH <http://e/g>",
+                )) {
+                    val refused = assertThrows(RdfQueryException::class.java, { repo.update(UpdateQuery(update)) }, "$store: ${update.take(80)}")
+                    assertTrue(generateSequence<Throwable>(refused) { it.cause }.any { it.message.orEmpty().contains("$limit") }, "$store: ${refused.message}")
+                }
+                assertEquals(0, repo.editDefaultGraph().size(), store)
+                assertEquals(emptyList<Iri>(), repo.listGraphs(), store)
+                // What fits is written.
+                repo.update(UpdateQuery("INSERT { <http://e/s> <http://e/p> ?o } WHERE { BIND(STRDT(CONCAT(\"7\", \"7\"), <${xsd}integer>) AS ?o) }"))
+                assertEquals(1, repo.editDefaultGraph().size(), store)
+            }
+        }
+        tdb.deleteRecursively()
+    }
+
+    @Test
+    fun `a computed literal of a million digits is refused before Jena values it`() {
+        // 2^17 doublings of ten digits: 1,310,720 digits, which Jena took more than 200 s to store.
+        val digits = "BIND(\"1111111111\" AS ?a0) " + (1..17).joinToString(" ") { "BIND(CONCAT(?a${it - 1}, ?a${it - 1}) AS ?a$it)" }
+        val forms = listOf(
+            "INSERT { <http://e/s> <http://e/q> ?v } WHERE { $digits BIND(STRDT(?a17, <${xsd}integer>) AS ?v) }",
+            "INSERT { <http://e/s> <http://e/q> ?v } WHERE { $digits BIND(<${xsd}integer> AS ?dt) BIND(STRDT(?a17, ?dt) AS ?v) }",
+            "INSERT { <http://e/s> <http://e/q> ?v } WHERE { $digits BIND(<${xsd}integer>(?a17) AS ?v) }",
+            "INSERT { <http://e/s> <http://e/q> ?v } WHERE { $digits BIND(<${xsd}decimal>(CONCAT(?a17, \".5\")) AS ?v) }",
+            "INSERT { <http://e/s> <http://e/q> \"x\" } WHERE { $digits FILTER(STRDT(?a17, <${xsd}integer>) > 0) }",
+            "INSERT { <http://e/s> <http://e/q> ?v } WHERE { { SELECT ?v WHERE { $digits BIND(STRDT(?a17, <${xsd}integer>) AS ?v) } } }",
+            "DELETE { <http://e/s> <http://e/q> ?v } INSERT { <http://e/s> <http://e/r> ?v } WHERE { $digits BIND(STRDT(?a17, <${xsd}long>) AS ?v) OPTIONAL { <http://e/s> <http://e/q> ?w } }",
+            "INSERT { GRAPH <http://e/g> { <http://e/s> <http://e/q> ?v } } WHERE { $digits BIND(STRDT(CONCAT(\"2020-01-01T00:00:00.\", ?a17), <${xsd}dateTime>) AS ?v) }",
+        )
+        JenaRepository.MemoryRepository().use { repo ->
+            for (update in forms) {
+                val refused = assertTimeoutPreemptively(java.time.Duration.ofSeconds(30), org.junit.jupiter.api.function.ThrowingSupplier {
+                    assertThrows(RdfQueryException::class.java, { repo.update(UpdateQuery(update)) }, update.takeLast(100))
+                }, update.takeLast(100))
+                assertTrue(generateSequence<Throwable>(refused) { it.cause }.any { it.message.orEmpty().contains("$limit") }, refused.message)
+            }
+            assertEquals(0, repo.editDefaultGraph().size())
+            assertEquals(emptyList<Iri>(), repo.listGraphs())
+        }
+    }
 }
