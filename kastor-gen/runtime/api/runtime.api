@@ -376,6 +376,15 @@ public final class com/geoknoesis/kastor/gen/runtime/ResourceViewsKt {
 	public static synthetic fun resource$default (Lcom/geoknoesis/kastor/rdf/RdfRepository;Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/runtime/Resource;
 }
 
+public final class com/geoknoesis/kastor/gen/runtime/ShaclPattern {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun containsMatchIn (Ljava/lang/CharSequence;)Z
+	public final fun getFlags ()Ljava/lang/String;
+	public final fun getPattern ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/gen/runtime/ShaclSeverity : java/lang/Enum {
 	public static final field Info Lcom/geoknoesis/kastor/gen/runtime/ShaclSeverity;
 	public static final field Violation Lcom/geoknoesis/kastor/gen/runtime/ShaclSeverity;
