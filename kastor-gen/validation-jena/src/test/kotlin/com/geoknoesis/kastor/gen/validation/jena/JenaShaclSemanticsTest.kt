@@ -156,9 +156,9 @@ class JenaShaclSemanticsTest {
   }
 
   @Test
-  fun `shapes embedded in the data graph are still honoured by the no-arg constructor`() {
+  fun `shapes embedded in a trusted data graph are honoured`() {
     val g = Rdf.parse(shapesTtl + "\n" + validEmployee.replace("ex:id \"A1\" ;", ""))
-    val v = violationsOf(JenaValidation().validate(g, alice)).single()
+    val v = violationsOf(JenaValidation.trustingEmbeddedShapes().validate(g, alice)).single()
     assertEquals(component("MinCount"), v.constraintIri)
   }
 

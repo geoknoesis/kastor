@@ -693,7 +693,10 @@ object XsdLiterals {
     years above 9999 round-trip.
 - `isWellFormed` checks the XSD numeric types (including the ranges of the derived integer types),
   `xsd:boolean`, `xsd:date`, `xsd:dateTime`, `xsd:dateTimeStamp`, `xsd:time`, the Gregorian types (`xsd:gYear`,
-  `xsd:gYearMonth`, …) and the duration types; other datatypes are accepted. Every decoder applies it, and
+  `xsd:gYearMonth`, …) and the duration types. It also checks `xsd:language`, `xsd:hexBinary`,
+  `xsd:base64Binary`, `xsd:normalizedString`, `xsd:token`, the XML name and token types (`xsd:NCName`,
+  `xsd:NMTOKEN`, `xsd:QName`, …) and `xsd:anyURI`, with the same parser as the Kastor SHACL validator. Other
+  datatypes are accepted. Every decoder applies it, and
   `encode` throws `IllegalArgumentException` instead of producing a literal it rejects (`300` as
   `xsd:unsignedByte`, `"yesterday"` as `xsd:dateTime`), so generated writers and DSL setters never write an
   ill-typed literal. `hasDatatype` requires a literal of exactly that datatype with a

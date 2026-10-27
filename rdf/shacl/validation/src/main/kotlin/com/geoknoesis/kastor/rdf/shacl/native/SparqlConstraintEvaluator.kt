@@ -12,6 +12,7 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SparqlQueryable
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
+import com.geoknoesis.kastor.rdf.SparqlIriSubstitution
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import java.time.Duration
@@ -132,7 +133,16 @@ internal object SparqlConstraintEvaluator {
             bindings: Map<String, RdfTerm>,
             timeout: Duration,
             consume: (Sequence<BindingSet>) -> T,
-        ): T = select(query, bindings, timeout, functions, consume)
+        ): T = select(query, bindings, timeout, functions, null, consume)
+
+        /** As [select], with the [substitution] the text was written by, which lets a provider parse its template once. */
+        fun <T> select(
+            query: String,
+            bindings: Map<String, RdfTerm>,
+            timeout: Duration,
+            substitution: SparqlIriSubstitution?,
+            consume: (Sequence<BindingSet>) -> T,
+        ): T = select(query, bindings, timeout, functions, substitution, consume)
 
         /** As [select], with the function library [library] instead of the shapes graph's (e.g. empty for built-ins only). */
         fun <T> select(
@@ -141,10 +151,19 @@ internal object SparqlConstraintEvaluator {
             timeout: Duration,
             library: SparqlFunctionLibrary,
             consume: (Sequence<BindingSet>) -> T,
+        ): T = select(query, bindings, timeout, library, null, consume)
+
+        private fun <T> select(
+            query: String,
+            bindings: Map<String, RdfTerm>,
+            timeout: Duration,
+            library: SparqlFunctionLibrary,
+            substitution: SparqlIriSubstitution?,
+            consume: (Sequence<BindingSet>) -> T,
         ): T {
             inPlace?.let { dataset ->
                 try {
-                    return run(dataset, query, bindings, timeout, library, consume)
+                    return run(dataset, query, bindings, timeout, library, substitution, consume)
                 } catch (_: UnsupportedOperationException) {
                     logOnce("unsupported-bound-queries", dataset, warn = true) {
                         "${dataset.javaClass.simpleName} does not support bound, timed, sandboxed SPARQL queries: SHACL-SPARQL " +
@@ -153,7 +172,7 @@ internal object SparqlConstraintEvaluator {
                     inPlace = null
                 }
             }
-            return run(copied(), query, bindings, timeout, library, consume)
+            return run(copied(), query, bindings, timeout, library, substitution, consume)
         }
 
         private fun <T> run(
@@ -162,11 +181,12 @@ internal object SparqlConstraintEvaluator {
             bindings: Map<String, RdfTerm>,
             timeout: Duration,
             library: SparqlFunctionLibrary,
+            substitution: SparqlIriSubstitution?,
             consume: (Sequence<BindingSet>) -> T,
         ): T =
             try {
                 // Queries come from the shapes graph: the provider refuses SERVICE and code loading on its own parse of them.
-                target.withSelectRows(SandboxedSelectQuery(query, library), bindings, timeout, consume)
+                target.withSelectRows(SandboxedSelectQuery(query, library, substitution), bindings, timeout, consume)
             } catch (e: ShaclValidationException) {
                 throw e
             } catch (e: UnsupportedOperationException) {

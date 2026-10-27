@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.rdf4j
 
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxRegex
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegexException
@@ -77,9 +78,14 @@ internal enum class Rdf4jCost {
 /**
  * The deadline and interruption that the expressions and statement reads of one sandboxed query check: [deadline] on
  * [clock] ([Long.MAX_VALUE] for none) and the thread's interrupt flag (kept); each fails with
- * [QueryInterruptedException], as RDF4J's own time limit does.
+ * [QueryInterruptedException], as RDF4J's own time limit does. [memory] is the query's budget of computed characters.
  */
-internal class Rdf4jSandboxBudget(private val deadline: Long, private val clock: () -> Long) {
+internal class Rdf4jSandboxBudget(
+    private val deadline: Long,
+    private val clock: () -> Long,
+    /** The characters the expressions of this query and its nested queries computed ([SandboxMemoryBudget]). */
+    val memory: SandboxMemoryBudget = SandboxMemoryBudget(),
+) {
     fun check() {
         if (Thread.currentThread().isInterrupted) throw QueryInterruptedException("The sandboxed query was interrupted")
         if (deadline != Long.MAX_VALUE && clock() - deadline >= 0) throw QueryInterruptedException("The sandboxed query ran out of time")
@@ -96,8 +102,9 @@ internal class Rdf4jSandboxLimitExceeded(cause: SandboxLimitException) : Runtime
 /**
  * The bounds of the value expressions of one sandboxed query on RDF4J ([KastorEvaluationStrategy] applies them to
  * every step it precompiles): [budget] before each expression runs, the operands of a multiplication or division,
- * the results against [SandboxLimits] (unless an expression only copies an argument), the characters of
- * `GROUP_CONCAT`, and the arguments of the costly built-ins ([Rdf4jCost]) before they compute.
+ * the results against [SandboxLimits] (unless an expression only copies an argument) and against the query's memory
+ * budget ([SandboxMemoryBudget]), the characters of `GROUP_CONCAT`, and the arguments of the costly built-ins
+ * ([Rdf4jCost]) before they compute.
  */
 internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val valueFactory: ValueFactory) {
 
@@ -112,11 +119,15 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         val leaf = expr is Var || expr is ValueConstant
         if (leaf && !operand && !counted) return step
         val checked = !leaf && !copying(expr)
+        // A copying expression (SUBSTR of a large literal of the data) is not held to the per-value limits, but what
+        // it allocates still counts; only one that returns an existing value unchanged is not charged.
+        val charged = !leaf && !returnsArgument(expr)
         return QueryValueEvaluationStep { bindings ->
             failing {
                 budget.check()
                 val value = step.evaluate(bindings)
                 if (checked) checkResult(value, describe(expr))
+                if (charged) budget.memory.charge(size(value), describe(expr))
                 if (operand) checkOperand(value)
                 if (counted) count(value)
                 value
@@ -127,7 +138,10 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     /** Fails with [SandboxLimitException] when calling the built-in [iri] of [cost] on [args] would exceed a limit. */
     fun precheck(cost: Rdf4jCost, iri: String, args: List<Value>) {
         when (cost) {
-            Rdf4jCost.CONCAT -> SandboxLimits.checkStringLength(args.sumOf { text(it) }, iri)
+            Rdf4jCost.CONCAT -> args.sumOf { text(it) }.let {
+                SandboxLimits.checkStringLength(it, iri)
+                budget.memory.require(it, iri)
+            }
             Rdf4jCost.CASE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 3L, iri)
             Rdf4jCost.ENCODE -> SandboxLimits.checkStringLength((args.firstOrNull()?.let(::label) ?: 0) * 9L, iri)
             Rdf4jCost.XSD_CAST -> args.firstOrNull()?.let { SandboxLimits.checkNumericLexical(label(it), iri) }
@@ -152,7 +166,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         ) {
             throw ValueExprEvaluationException("REGEX: the text must be a string literal, the pattern and flags simple literals")
         }
-        val regex = compiled.get(pattern.stringValue(), flags?.stringValue())
+        val regex = compiled.get(pattern.stringValue(), flags?.stringValue(), Runnable { budget.check() })
         return valueFactory.createLiteral(SandboxRegex.find(regex, (text as Literal).label, Runnable { budget.check() }))
     }
 
@@ -163,7 +177,7 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         if (text !is Literal || !QueryEvaluationUtility.isStringLiteral(text) || args.drop(1).any { !QueryEvaluationUtility.isSimpleLiteral(it) }) {
             throw ValueExprEvaluationException("REPLACE: the text must be a string literal, the other arguments simple literals")
         }
-        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue())
+        val regex = compiled.get(args[1].stringValue(), args.getOrNull(3)?.stringValue(), Runnable { budget.check() })
         val result = try {
             SandboxRegex.replace(regex, text.label, args[2].stringValue(), skipEmptyAfterFirst = false, check = Runnable { budget.check() })
         } catch (e: XPathRegexException) {
@@ -178,21 +192,18 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     }
 
     /**
-     * The last compiled pattern of one call site and the text and flags it was compiled from. Patterns are XPath
-     * regular expressions with XPath flags (`s`, `m`, `i`, `x`, `q`), compiled for the linear-time engine
-     * ([SandboxRegex.compile]); an invalid or unsupported pattern or flag is an expression error.
+     * The compiled patterns of one call site, by text and flags ([SandboxRegex.PatternCache], bounded). Patterns are
+     * XPath regular expressions with XPath flags (`s`, `m`, `i`, `x`, `q`), compiled for the linear-time engine while
+     * [check] (the query's budget) runs; an invalid pattern or flag is an expression error, and one the engine cannot
+     * honour (a pattern too complex to compile, ...) fails the query.
      */
     class PatternCache {
-        @Volatile private var last: XPathPattern? = null
+        private val patterns = SandboxRegex.PatternCache()
 
-        fun get(text: String, flags: String?): XPathPattern {
-            last?.let { if (it.pattern == text && it.flags == flags) return it }
-            val pattern = try {
-                SandboxRegex.compile(text, flags)
-            } catch (e: XPathRegexException) {
-                throw ValueExprEvaluationException(e.message, e)
-            }
-            return pattern.also { last = it }
+        fun get(text: String, flags: String?, check: Runnable): XPathPattern = try {
+            patterns.get(text, flags, check)
+        } catch (e: XPathRegexException) {
+            throw ValueExprEvaluationException(e.message, e)
         }
     }
 
@@ -222,10 +233,24 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
     }
 
     private fun count(value: Value) {
-        val total = groupConcat.addAndGet(text(value) + 1L)
+        val length = text(value) + 1L
+        val total = groupConcat.addAndGet(length)
         if (total > SandboxLimits.MAX_GROUP_CONCAT_LENGTH) {
             throw SandboxLimitException("GROUP_CONCAT would accumulate more than ${SandboxLimits.MAX_GROUP_CONCAT_LENGTH} characters")
         }
+        budget.memory.charge(length, "GROUP_CONCAT")
+    }
+
+    /** The characters [value], computed, is charged to the memory budget (see [SandboxMemoryBudget]). */
+    private fun size(value: Value): Long = when (value) {
+        is Literal -> when {
+            value.isIntegerValued() -> SandboxMemoryBudget.numberSize(value.integerValue().bitLength().toLong())
+            value.isDecimalValued() -> SandboxMemoryBudget.numberSize(value.decimalValue().unscaledValue().bitLength().toLong())
+            value.coreDatatype in FIXED_SIZE -> 0L
+            else -> value.label.length.toLong()
+        }
+        is Triple -> terms(value, MAX_TRIPLE_TERM_NODES + 1).toLong()
+        else -> value.stringValue().length.toLong()
     }
 
     private fun label(value: Value): Int = if (value is Literal) value.label.length else 0
@@ -252,10 +277,25 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         /** Most terms a computed triple term may hold (a chain of `TRIPLE(?t, :p, ?t)` doubles them at every step). */
         const val MAX_TRIPLE_TERM_NODES = 4096
 
+        /** Datatypes of fixed-size values, which cost the memory budget nothing. */
+        val FIXED_SIZE = setOf(CoreDatatype.XSD.BOOLEAN, CoreDatatype.XSD.DOUBLE, CoreDatatype.XSD.FLOAT)
+
         fun copying(expr: ValueExpr): Boolean = when (expr) {
             // IRI() resolves against a base, so it is checked like any computation.
             is Str, is Label, is Lang, is Datatype, is Namespace, is LocalName, is If, is Coalesce -> true
             is FunctionCall -> Rdf4jCost.ofFunction(expr.uri) == Rdf4jCost.COPYING
+            else -> false
+        }
+
+        /** RDF4J built-ins (of [copying]) that return an existing value as it is: STR, LANG, DATATYPE, IF, COALESCE. */
+        private val RETURNING_FUNCTIONS = setOf(
+            "http://www.w3.org/2001/XMLSchema#string", "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject",
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate", "http://www.w3.org/1999/02/22-rdf-syntax-ns#object",
+        )
+
+        fun returnsArgument(expr: ValueExpr): Boolean = when (expr) {
+            is Str, is Label, is Lang, is Datatype, is If, is Coalesce -> true
+            is FunctionCall -> expr.uri in RETURNING_FUNCTIONS
             else -> false
         }
 

@@ -159,8 +159,13 @@ internal class NativeValidationContext(
      * body that ran out of time is only a SPARQL error of its call (`FILTER (!ex:f(...))` drops the row, say), so the
      * query's answer may be wrong, and no later check might come (the last focus node).
      */
-    fun <T> select(query: String, bindings: Map<String, RdfTerm>, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
-        timed { provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), consume) } }
+    fun <T> select(
+        query: String,
+        bindings: Map<String, RdfTerm>,
+        substitution: com.geoknoesis.kastor.rdf.SparqlIriSubstitution? = null,
+        consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T,
+    ): T =
+        timed { provisionalInQuery.scoped { session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()), substitution, consume) } }
             .also { checkDeadline() }
     /** As [select], with the function library [library] instead of the shapes graph's. */
     fun <T> select(query: String, bindings: Map<String, RdfTerm>, library: SparqlFunctionLibrary, consume: (Sequence<com.geoknoesis.kastor.rdf.BindingSet>) -> T): T =
@@ -176,7 +181,7 @@ internal class NativeValidationContext(
         throw budget.failure("validation", e) ?: e
     }
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
-    fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
+    fun patternBudget(steps: Long, weight: Long, backstopNanos: Long) = PatternBudget(steps, weight, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */
     fun text(value: String, evaluation: PatternBudget): CharSequence = DeadlineCharSequence(value, budget, patternClock, evaluation)
     override fun close() {

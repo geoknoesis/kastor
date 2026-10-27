@@ -13,6 +13,10 @@ dependencies {
     exclude(group = "ai.djl.huggingface")
     exclude(group = "ai.djl")
   }
+  implementation(project(":tools:onto-quality")) {
+    // The check runs without a reasoner: HermiT and the OWL API stay off the benchmark class path.
+    exclude(group = "net.sourceforge.owlapi")
+  }
   implementation(project(":rdf:core"))
   implementation(project(":rdf:shacl-validation"))
   implementation(project(":rdf:rdf4j"))

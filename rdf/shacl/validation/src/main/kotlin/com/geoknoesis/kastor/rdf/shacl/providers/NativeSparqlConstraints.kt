@@ -120,7 +120,7 @@ internal fun evaluateSparql(
 ): List<ValidationViolation> {
     val preBound = LinkedHashMap<String, RdfTerm>()
     preBound["this"] = focus
-    val (query, providerBindings) = c.template.bind(preBound)
+    val (query, providerBindings, substitution) = c.template.bind(preBound)
     val source = SparqlResultSource(
         constraintNode = c.constraintNode,
         component = null,
@@ -133,7 +133,7 @@ internal fun evaluateSparql(
     // The solutions are streamed, never collected. When only the answer is needed, the first solution gives it;
     // a query that can bind ?failure is still read to the end (a ?failure solution anywhere makes the check a
     // failure, nested or not), without building results; one that cannot stops at the first solution.
-    ctx.select(query, providerBindings) { rows ->
+    ctx.select(query, providerBindings, substitution) { rows ->
         for (row in rows) {
             ctx.budget.tick("SPARQL results")
             val failure = row.get("failure")

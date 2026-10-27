@@ -6,7 +6,9 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
+import com.geoknoesis.kastor.rdf.shacl.providers.NativePatternEvaluator
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.shacl.providers.PATTERN_CHECK_STEPS
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -35,7 +37,7 @@ class NativeValidatorRobustnessTest {
     // Patterns run on a linear-time engine: what uses up a budget is a long value, read once per character.
     private val catastrophic = "^a+b$"
 
-    /** More characters than the 50,000 steps of a 1 ms patternTimeout. */
+    /** More work than the 200,000 steps of a 1 ms patternTimeout (three reads per character, seven steps per read). */
     private val hostile = "a".repeat(60_000) + "!"
     private val patternShapes =
         graph("""ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:p ; sh:pattern "$catastrophic" ] .""")
@@ -46,8 +48,9 @@ class NativeValidatorRobustnessTest {
 
     @Test
     fun `many distinct hostile values cost a bounded number of pattern steps per run`() {
-        // 1 ms of patternTimeout is 50,000 engine steps per value; the clock is frozen, so only steps decide.
-        val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(1)))
+        // 1 ms of patternTimeout is 200,000 engine steps per value; the clock is frozen, so only steps decide.
+        val config = ValidationConfig(patternTimeout = Duration.ofMillis(1))
+        val validator = NativeShaclValidator(config)
         validator.patternClock = frozenClock
         val values = (0 until 40).joinToString(" , ") { "\"$hostile$it\"" }
         val report = validator.validate(graph("""ex:a a ex:T ; ex:p $values , "b" ."""), patternShapes)
@@ -56,8 +59,9 @@ class NativeValidatorRobustnessTest {
         assertEquals(40, undecided.size, "every hostile value is reported undecided")
         // The ordinary value is still decided (and does not match): the cap shrinks the budget, it does not give up.
         assertEquals(1, report.violations.count { !it.isUndecided && it.constraint.constraintType == ConstraintType.PATTERN })
-        // Each evaluation stops at its budget (50,000 steps), however long the value.
-        assertTrue(validator.patternSteps <= 40L * 51_000, "pattern steps: ${validator.patternSteps}")
+        // Each evaluation stops at its budget (200,000 steps), however long the value.
+        val perValue = NativePatternEvaluator.stepBudget(config) + 2 * PATTERN_CHECK_STEPS
+        assertTrue(validator.patternSteps <= 40L * perValue + 1_000, "pattern steps: ${validator.patternSteps}")
     }
 
     @Test
@@ -98,8 +102,9 @@ class NativeValidatorRobustnessTest {
 
     @Test
     fun `a long ordinary value is still decided after many hostile values`() {
-        // 10 ms of patternTimeout is 500,000 steps; the reduced budget is a thousandth of that, far less than this
-        // 100,000-character value needs (one read per character). The reduced budget must grow with the value.
+        // 50 ms of patternTimeout is 10 million steps; the reduced budget is a thousandth of that, far less than this
+        // 100,000-character value needs (three reads per character, ten steps per read). The reduced budget must
+        // grow with the value.
         val base64Like = "QUJD".repeat(25_000)
         val shapes = graph(
             """
@@ -108,9 +113,9 @@ class NativeValidatorRobustnessTest {
               sh:property [ sh:path ex:q ; sh:pattern "^[A-Za-z0-9+/]*={0,2}${'$'}" ] .
             """,
         )
-        // 600,000 characters: more than the 500,000 steps of 10 ms.
+        // 600,000 characters: more than the 10 million steps of 50 ms.
         val data = graph(hostileFocus("ex:a", "a".repeat(600_000) + "!") + "ex:z a ex:T ; ex:q \"$base64Like\" , \"$base64Like!\" .")
-        val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(10)))
+        val validator = NativeShaclValidator(ValidationConfig(patternTimeout = Duration.ofMillis(50)))
         validator.patternClock = frozenClock
         val report = validator.validate(data, shapes)
 

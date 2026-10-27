@@ -16,7 +16,7 @@ class SparqlQueryTemplateTest {
     @Test
     fun `parameter names are pre-bound like this`() {
         val template = SparqlQueryTemplate.compile("SELECT ?x WHERE { ?x <p> ${d}lang }", setOf("this", "lang"))
-        val text = template.bind(mapOf("lang" to string("de"))).first
+        val text = template.bind(mapOf("lang" to string("de"))).text
         assertTrue(text.contains("\"de\"^^<http://www.w3.org/2001/XMLSchema#string>"), text)
         assertFalse(text.contains("${d}lang"), text)
     }
@@ -88,5 +88,46 @@ class SparqlQueryTemplateTest {
         assertFalse(SparqlQueryTemplate.isVarName("0a-"))
         assertFalse(SparqlQueryTemplate.isVarName(""))
         assertFalse(SparqlQueryTemplate.isVarName("\u00B7a"))
+    }
+
+    private fun restricted(body: String, preBound: Set<String> = setOf("this")) =
+        SparqlQueryTemplate.compileRestricted("PREFIX ex: <http://example.org/> ", body, preBound, "the test query")
+
+    @Test
+    fun `an IRI focus node is offered as a template the text was written from`() {
+        val template = restricted("SELECT ${d}this ?o WHERE { ${d}this ex:p ?o FILTER (?o != ?this) FILTER bound(${d}this) }")
+        for (focus in listOf("http://example.org/a", "urn:b")) {
+            val bound = template.bind(mapOf("this" to Iri(focus)))
+            val substitution = bound.substitution!!
+            assertEquals(mapOf("__kastor_iri_this" to Iri(focus)), substitution.iris)
+            assertFalse(substitution.template.contains(focus), substitution.template)
+            // The text is the template with the IRI written where the placeholder stands, whichever sigil it has.
+            val written = substitution.template.replace("${d}__kastor_iri_this", "<$focus>").replace("?__kastor_iri_this", "<$focus>")
+            assertEquals(bound.text, written)
+        }
+        assertEquals(
+            template.bind(mapOf("this" to Iri("urn:x"))).substitution!!.template,
+            template.bind(mapOf("this" to Iri("urn:y"))).substitution!!.template,
+        )
+    }
+
+    @Test
+    fun `no template for a literal, an unrestricted query, a GROUP BY slot or a query without an IRI written in`() {
+        val template = restricted("SELECT ?o WHERE { ${d}this ex:p ?o }")
+        assertNull(template.bind(mapOf("this" to string("a"))).substitution)
+        assertNull(template.bind(emptyMap()).substitution)
+        assertNull(SparqlQueryTemplate.compile("SELECT ?o WHERE { ${d}this <urn:p> ?o }", setOf("this")).bind(mapOf("this" to Iri("urn:a"))).substitution)
+        assertNull(restricted("SELECT (COUNT(?o) AS ?c) WHERE { ?o ex:p ?x } GROUP BY ${d}this").bind(mapOf("this" to Iri("urn:a"))).substitution)
+        // An IRI and a literal: the literal would make every template distinct.
+        val two = restricted("SELECT ?o WHERE { ${d}this ex:p ${d}value }", setOf("this", "value"))
+        assertNull(two.bind(mapOf("this" to Iri("urn:a"), "value" to string("v"))).substitution)
+        assertNotNull(two.bind(mapOf("this" to Iri("urn:a"), "value" to Iri("urn:v"))).substitution)
+    }
+
+    @Test
+    fun `the placeholder is a variable the query does not use`() {
+        val template = restricted("SELECT ?__kastor_iri_this WHERE { ${d}this ex:p ?__kastor_iri_this }")
+        val substitution = template.bind(mapOf("this" to Iri("urn:a"))).substitution!!
+        assertEquals(setOf("__kastor_iri1_this"), substitution.iris.keys)
     }
 }

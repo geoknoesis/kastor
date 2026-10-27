@@ -25,10 +25,52 @@ object SandboxRegex {
      */
     @JvmStatic
     @Throws(XPathRegexException::class, SandboxLimitException::class)
-    fun compile(pattern: String, flags: String?): XPathPattern = try {
-        XPathRegex.compile(pattern, flags)
+    fun compile(pattern: String, flags: String?): XPathPattern = compile(pattern, flags, XPathRegex.NO_CHECK)
+
+    /**
+     * [pattern] with [flags], compiled for [find] and [replace] while [check] (the query's deadline and
+     * cancellation) runs; a pattern too complex to compile is refused before the engine sees it (see [XPathRegex]).
+     *
+     * @throws XPathRegexException when the pattern or the flags are invalid: an error of the expression.
+     * @throws SandboxLimitException when the pattern is valid but cannot be evaluated as meant on the linear-time engine.
+     */
+    @JvmStatic
+    @Throws(XPathRegexException::class, SandboxLimitException::class)
+    fun compile(pattern: String, flags: String?, check: Runnable): XPathPattern = try {
+        XPathRegex.compile(pattern, flags, check)
     } catch (e: XPathRegexException) {
         if (e.unsupported) throw SandboxLimitException(e.message.orEmpty()) else throw e
+    }
+
+    /**
+     * The compiled patterns of one call site of a query (one `REGEX` or `REPLACE`), by pattern and flags: a constant
+     * pattern is compiled once per query, not once per row, and a pattern computed from the data once per distinct
+     * value among the last [CAPACITY]. Least recently used patterns are dropped, so a query whose patterns are all
+     * distinct holds at most [CAPACITY] of them. Thread-safe. An invalid or unsupported pattern is not kept: it fails
+     * again each time, as [compile] does.
+     */
+    class PatternCache {
+        private val patterns = object : LinkedHashMap<Pair<String, String?>, XPathPattern>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, String?>, XPathPattern>): Boolean = size > CAPACITY
+        }
+
+        /** How many compiled patterns are kept now (at most [CAPACITY]). */
+        val size: Int get() = synchronized(patterns) { patterns.size }
+
+        /** [pattern] with [flags], compiled ([compile], running [check]) or taken from the cache. */
+        @Throws(XPathRegexException::class, SandboxLimitException::class)
+        fun get(pattern: String, flags: String?, check: Runnable): XPathPattern {
+            val key = pattern to flags
+            synchronized(patterns) { patterns[key] }?.let { return it }
+            val compiled = compile(pattern, flags, check)
+            synchronized(patterns) { patterns[key] = compiled }
+            return compiled
+        }
+
+        companion object {
+            /** The most compiled patterns one call site keeps. */
+            const val CAPACITY = 16
+        }
     }
 
     /** Whether [pattern] matches somewhere in [text] (SPARQL `REGEX`, XPath `fn:matches`). */

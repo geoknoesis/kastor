@@ -6,7 +6,7 @@
     "examples/dcat-catalog-workshop": 2,
     "examples/dcat-us": 2,
     "kastor-gen/gradle-plugin": 23,
-    "kastor-gen/processor": 386,
+    "kastor-gen/processor": 344,
     "kastor-gen/runtime": 186,
     "kastor-gen/validation-jena": 44,
     "kastor-gen/validation-rdf4j": 58,

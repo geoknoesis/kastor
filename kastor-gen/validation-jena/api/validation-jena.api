@@ -11,11 +11,18 @@ public final class com/geoknoesis/kastor/gen/validation/jena/JenaValidation : co
 	public static final fun fromTurtle (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
 	public final fun getAssumeImmutable ()Z
 	public final fun getMaxCachedGraphs ()I
+	public static final fun trustingEmbeddedShapes ()Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public static final fun trustingEmbeddedShapes (I)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public static final fun trustingEmbeddedShapes (IZ)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
 	public fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;
 	public fun validateAll (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/Collection;)Ljava/util/Map;
 }
 
 public final class com/geoknoesis/kastor/gen/validation/jena/JenaValidation$Companion {
 	public final fun fromTurtle (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public final fun trustingEmbeddedShapes ()Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public final fun trustingEmbeddedShapes (I)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public final fun trustingEmbeddedShapes (IZ)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public static synthetic fun trustingEmbeddedShapes$default (Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation$Companion;IZILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
 }
 

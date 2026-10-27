@@ -19,6 +19,178 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### Build and docs (round sixteen)
+
+- **Fixed (release tooling):** `scripts/configure-github-release.sh` required `macos` only with `--require-macos`, so
+  re-running the documented command would have removed `macos` from the live `main-required-checks` ruleset. `macos` is
+  now required by default (`--no-macos` opts out), the script reads the ruleset's current checks first, keeps every
+  check it does not manage (and an already-required `dependency-review`), and the dry run prints a WARNING naming any
+  check an apply would remove. Covered by `scripts/test_configure_github_release.py` (fake `gh`, read-only).
+- **Fixed (docs):** the release checklist's settings table and step-2 test floors were stale. The table now matches the
+  live repository, the floors match `release-readiness.yml`, and `scripts/check-release-checklist.py` (run by the
+  gate-script tests) fails when they diverge again. `pages.yml`'s header and CONTRIBUTING no longer describe the legacy
+  Pages source or claim that macOS runs `buildHealth`.
+- **Fixed (docs):** the changelog's repeated `### Round twelve` headings are merged into one.
+
+#### Sandbox: regular expressions
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`, `rdf-shacl`), behaviour change:** compiling an untrusted
+  regular expression is bounded before RE2/J sees it. RE2/J's parser takes time quadratic in the pattern's text and no
+  deadline reaches it: `"\p{L}" x 80` (400 characters) compiled for 8 s under a 1 s timeout on both providers, and
+  200 classes with flag `i` for 114 s. The translator now counts the syntax elements it writes and refuses a pattern
+  whose elements x text length passes 2^28 (about eight `\p{L}`-sized classes, or 16,000 literal characters; at most
+  tens of milliseconds to compile) or that is longer than 65,536 characters, as an unsupported pattern
+  (`SandboxLimitException` in a sandboxed query, `ShapeCompileException` for `sh:pattern`). The bounds are counts, so
+  whether a pattern is accepted does not depend on the machine. Translation runs the query's deadline check, and the
+  bound is checked as the text grows, so `\Q` with 4 million characters no longer allocates 190 MB before it is
+  refused. Visible non-ASCII characters are written to RE2 as they are, which keeps large classes short.
+- **Changed (`rdf-jena`, `rdf-rdf4j`):** each `REGEX` / `REPLACE` of a sandboxed query keeps its compiled patterns in a
+  bounded cache (16 per call site, least recently used dropped), so a pattern is compiled once per query, not once per
+  row, also when patterns computed from the data alternate. `SandboxRegex.PatternCache` and the
+  `XPathRegex.compile` / `SandboxRegex.compile` overloads that take a check are new (not public API).
+- **Fixed (`rdf-sparql-contract`):** a repetition count with a leading zero (`a{01}`, `{2,03}`, `[0-9]{04}`) was
+  passed to RE2 as written, and RE2 read it as literal text, so the answer was silently wrong. Counts are now
+  written in canonical form, and compared by their significant digits in one linear scan (a 400 KB count took 41 s).
+- **Fixed (`rdf-sparql-contract`):** `\uHHHH\uHHHH` of a surrogate pair is the one character it encodes, alone, in a
+  class or as a range endpoint, as in java.util.regex (`\uD83D\uDE00` never matched the emoji). A lone surrogate
+  escape still matches only a lone surrogate.
+- **Security (`rdf-rdf4j`):** the RDF4J SHACL validator refused `sh:pattern` under `sh:or` / `sh:and` / `sh:xone` only
+  when the list nodes were blank nodes; with IRI list nodes the pattern ran on ShaclSail's java.util.regex plan (a
+  back-reference matched, a nested quantifier took 36 s on 29 characters). The search now follows the shapes graph
+  from every nesting operand, through any list node, nested list and shape reference, so how the lists are written
+  does not matter. The unsupported-feature scan reads IRI list nodes too.
+- **Fixed (`rdf-rdf4j`):** a violated `sh:or` whose list nodes are IRIs failed with "Illegal blank node ID character":
+  RDF4J 5.3's report writer (`ShaclAstLists.listToRdf`) turns list node identifiers into blank node identifiers. List
+  nodes that are IRIs and carry only `rdf:first` / `rdf:rest` are now renamed to blank nodes before ShaclSail runs.
+  The renaming picks its blank-node prefix in one pass, and this preprocessing checks the validation deadline as it
+  goes through a large shapes graph; the feature scan also follows sequence and alternative paths with IRI cells.
+- **Changed (`rdf-shacl`), behaviour change:** the `sh:pattern` step budget charges each character read as many steps
+  as the compiled pattern has instructions (the most work RE2/J does per read), at 200,000 steps per millisecond of
+  `patternTimeout` (was one step per read at 50,000 per millisecond). Counting reads did not measure work:
+  `.{0,1000}x` on a 300,000-character value made 900,000 reads of a 50 million budget and took 6.9 s, and the
+  run-wide cap never engaged. Outcomes stay deterministic; the KDoc of `ValidationConfig.patternTimeout` and the
+  SHACL guide are corrected.
+
+#### JSON-LD parsing: relative IRIs
+
+- **Fixed (`rdf-jena`, `rdf-rdf4j`, `rdf-cli`), behaviour change:** a JSON-LD document parsed without a base IRI
+  that has a relative IRI reference (`"@id": "s"`, a relative `@type`, `@vocab`, datatype or graph name) now fails
+  with `RdfFormatException`, as Turtle and RDF/XML do. Before, the JSON-LD processor on both providers skipped every
+  statement that held one and only logged a warning. A document of relative `@id`s parsed to zero triples, and a
+  relative graph name dropped the whole named graph. So `kastor-rdf diff` called different files `ISOMORPHIC`,
+  `parse` printed `OK - triples: 0`, and `to-turtle` printed an empty document. With a base IRI (`--base`, or
+  `parseGraph`/`parseDataset` with a base), relative references resolve against it. This applies to every parse path
+  (`parseGraph`, `parseDataset`, `openTripleStream`, `parseStreaming`, `Rdf.parse`, `JenaBridge.fromString`).
+  `parseFromUrl` and `JenaBridge.fromUrl` resolve against the URL, as before.
+
+#### Kastor Gen: validation of untrusted data
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** `JenaValidation()`
+  and `Rdf4jValidation()`, which validate against the shapes embedded in the data graph, no longer run what their
+  engines cannot bound. `jena-shacl` and `ShaclSail` run SHACL-SPARQL without a sandbox: a `SERVICE` clause in a
+  shape of an uploaded graph made the validator send a request to any host (SSRF), and a slow endpoint held the
+  validating thread for ever. They also run `sh:pattern` on `java.util.regex`. Embedded shapes are now admitted only
+  when every SHACL term they use is a SHACL Core target, path, constraint or non-validating property, or a term of a
+  validation report. Anything else (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...) fails `validate` with
+  the new `EmbeddedShapesRefusedException` (`kastor-gen-runtime`, an `IllegalArgumentException`) before the engine
+  runs. A generated `EXTERNAL` validator that names one of these classes follows the same rule.
+- **Added (API):** `JenaValidation.trustingEmbeddedShapes()` and `Rdf4jValidation.trustingEmbeddedShapes()` restore
+  the previous behaviour for data graphs from a trusted source. Shapes passed to the constructors or to `fromTurtle`
+  are trusted, as before. The ABI dumps of `kastor-gen-runtime`, `kastor-gen-validation-jena` and
+  `kastor-gen-validation-rdf4j` gain these additions only.
+- **Security (`kastor-gen-processor`, `kastor-gen-runtime`), behaviour change:** generated `sh:pattern` checks (the
+  wrapper's `validate()`, the instance DSL's setters and `validate()`) now run on the Kastor SHACL validator's
+  linear-time engine (RE2/J) through the new `ShaclPattern` class of `kastor-gen-runtime`. Before, they ran on
+  `java.util.regex`, where a hostile value made an ordinary pattern such as `^(.*a){20}$` backtrack for seconds or
+  for ever. Generation now refuses what the validator refuses (back-references, lookarounds, atomic groups,
+  possessive quantifiers, word boundaries, repetition counts above 1000, ...), naming the shape, path and pattern,
+  so a shapes graph that generates also validates. The generator's own `java.util.regex` translation is removed.
+  The ABI dump of `kastor-gen-runtime` gains `ShaclPattern`.
+- **Fixed (`kastor-gen-runtime`, `rdf-core`), behaviour change:** generated `sh:datatype` checks
+  (`XsdLiterals.isWellFormed` and `hasDatatype`) reject ill-formed `xsd:hexBinary`, `xsd:base64Binary`,
+  `xsd:language`, `xsd:normalizedString`, `xsd:token`, XML name and token types (`xsd:NCName`, `xsd:NMTOKEN`,
+  `xsd:QName`, ...) and `xsd:anyURI` literals, as the native SHACL engine does. Before, `"zz"^^xsd:hexBinary`
+  passed. Both now use the scanners moved from the native engine into the shared XSD parser of `rdf-core`
+  (`com.geoknoesis.kastor.rdf.xsd.XsdStrings`, internal API). The decoders and `encode` apply the same check, so
+  `encode("zz", xsd:hexBinary)` now fails.
+
+#### Onto-quality: speed of the default check, enrichment vocabulary, RDFS classes; SHACL pre-binding
+
+- **Fixed (`rdf-jena`), performance:** a constant `REGEX` / `REPLACE` pattern of a sandboxed query is compiled once,
+  not once per execution. A SHACL engine runs a constraint query once per focus node, each a new parse, so the
+  "last pattern" cache held by the expression never hit, and compiling a pattern with Unicode classes on RE2/J costs
+  milliseconds. Compiled patterns are now shared by every sandboxed execution in a bounded cache keyed by the pattern
+  text and flags (at most 256 patterns and 250,000 compiled instructions, least recently used evicted first; a pattern
+  longer than 4,096 characters or one that fails to compile is never kept).
+- **Fixed (`onto-quality`), performance:** `oqsh:RecursiveClassExpressionShape` (P24) binds `$this` in its triple
+  patterns instead of filtering on it after scanning every class expression. With the pattern cache, the default
+  `onto-qa check` takes 36 s instead of 113 s on 2,500 classes, 63 s instead of 161 s on 5,000, and 217 s instead of
+  934 s on 20,000 classes, which now finishes within the default 300 s validation timeout (the findings are
+  identical). Most of the remaining time is Jena parsing each constraint query again for each focus node.
+- **Fixed (`onto-quality`):** the terms that `onto-qa enrich` and `pipeline` add (`oqsh:Enrichment`,
+  `oqsh:semanticallyCloseTo` and the provenance properties, in `http://example.org/owl-quality-shacl#`) are exempt
+  from P34 and P35 and from the other standard-vocabulary exemptions (`oqsh:StandardVocabularyTerm`): a clean
+  ontology no longer gets 11 Warnings once enriched, and `pipeline --severity warning` exits 0 on it.
+- **Fixed (`onto-quality`):** the class-level detectors check `rdfs:Class` classes as they check `owl:Class` ones
+  (owl-quality, modern-engineering and embedding-quality catalogues, and the `oqsh:NamedClass` target membership), and
+  the subclass-cycle detector (P06) checks every subject of `rdfs:subClassOf`, declared or not. An RDFS vocabulary
+  with a subclass cycle, a duplicate label language, an empty label or a lower-case class name was reported clean.
+- **Fixed (`rdf-shacl`, `rdf-sparql-contract`):** a data literal with a very long language tag (about 10,000 subtags)
+  no longer aborts the whole validation with a stack overflow when it is pre-bound (`$this`, `$value`): the tag is
+  checked by a linear scan, not by a regular expression with a repeated group, both when the engine writes it into the
+  query (up to 256 characters; a longer one is passed as an initial binding) and when the RDF4J provider renders an
+  initial binding (`SparqlLexical.langTag`).
+- **Fixed (`rdf-shacl`), behaviour change:** a pre-bound variable of the outermost `SELECT` projection keeps its name
+  (`(term AS ?this)`, no longer `?__kastor_prebound_N`), so a SPARQL node expression such as `SELECT $this WHERE { ... }`
+  outputs the focus node for IRI and literal focus nodes, as it already did for blank nodes (SHACL 1.2 SPARQL
+  Appendix A). A sub-select's projection still uses a fresh name.
+- **Added (benchmarks):** `OntoQualityCheckBenchmark` runs the default `QualityChecker` (SHACL-SPARQL and `REGEX`
+  detectors) on a generated ontology of 500 and 2,000 classes; it is not part of the regression gate, which has no
+  baseline for it.
+
+#### Sandbox: a memory budget per query; RDF4J write paths bound long numeric literals
+
+- **Security (`rdf-sparql-contract`, `rdf-jena`, `rdf-rdf4j`), behaviour change:** a sandboxed query
+  (`SandboxedSelectQuery`, so also every SHACL-SPARQL query) now has a memory budget across all its rows: its
+  expressions may compute at most 64 Mi characters in total (`SandboxLimits.MAX_COMPUTED_CHARACTERS`, counted by the
+  new `SandboxMemoryBudget`), including what `ORDER BY`, `DISTINCT`, `GROUP BY`, `GROUP_CONCAT` and subqueries keep.
+  Past it the query fails with `SandboxLimitException`. Before, only each value was bounded (16 Mi characters), and a
+  1 KB chain of `CONCAT(?x, ?x)` over 50 triples ran out of a 256 MiB heap in under a second on both providers. The
+  count is cumulative (a value counts when it is computed), so it is deterministic; values read from the data or
+  returned unchanged (`STR`, `IF`, `COALESCE`, `LANG`, `DATATYPE`) do not count, nor do numbers of 64 bits or less.
+  What copying functions such as `SUBSTR`, `STRBEFORE` and `STRAFTER` allocate counts, without the per-value limit,
+  and the nested queries of custom functions charge the budget of the query that calls them. On Jena, large literals
+  (over 1,024 characters) a sandboxed query reads or computes are removed from Jena's process-wide `NodeValue` cache,
+  which kept them after the query ended (200 MB of a 256 MiB heap after the probes).
+- **Fixed (`rdf-rdf4j`), behaviour change:** the RDF4J graph API now refuses a numeric or temporal literal longer than
+  10,000 characters (`LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`) with `IllegalArgumentException`, and SPARQL UPDATE
+  text holding a number of more than 10,000 digits fails with `RdfQueryException` before RDF4J parses it, as on Jena.
+  The stores Kastor creates (memory and native) also check every literal they write, so a literal an update computes
+  (`STRDT(CONCAT(...), xsd:integer)`), copies or reads with `LOAD` is refused too. RDF4J's MemoryStore stored such a
+  literal in quadratic time (two 1,000,000-digit integers: 33 s). The digit scan of SPARQL text on both providers now
+  counts every Unicode decimal digit, not only ASCII ones, as `BigInteger` reads them all.
+
+#### Integration (round sixteen)
+
+- **Fixed (`rdf-jena`, `rdf-shacl`, `rdf-core`), performance:** on Jena, a SHACL-SPARQL constraint query is parsed once
+  per validation, not once per focus node. When the engine writes only IRIs into a query (an IRI focus node as
+  `$this`, say), it also passes the template it wrote them into (the new `SparqlIriSubstitution`, carried by
+  `SandboxedSelectQuery.substitution`); the Jena provider parses the template once, in a bounded process-wide cache
+  (at most 512 templates and 4 Mi characters of text; a template over 64 Ki characters is not kept), and builds each
+  query by substituting the IRIs into the parsed template (Jena's syntactic substitution, which leaves the template
+  unchanged). Every built query goes through the same sandbox checks as a parsed text. The provider parses the text as
+  before when the IRI would not be read as written (one with dot segments, say), when a value is a literal, or for a
+  pre-bound variable in `GROUP BY` / `ORDER BY`; other providers ignore the template. The default `onto-qa check` of a
+  20,000-class ontology now takes 56 s instead of 169 s on the same machine, with identical findings.
+- **Fixed (`rdf-jena`):** the merge of the REGEX pattern caches left `JenaCostEvaluation` unclosed; the shared
+  `JenaPatternCache` now compiles through the capped, deadline-checked `SandboxRegex.compile`, and a pattern beyond
+  the compile-cost cap is refused on every call and never kept.
+- **Changed (`rdf-jena`):** when Jena's `NodeValue` cache cannot be reached (a Jena version without the private
+  field the large-literal clean-up reads), one WARN is logged instead of skipping the clean-up silently; a test fails
+  if the field cannot be read with the pinned Jena version.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards
@@ -122,7 +294,6 @@ entries are regrouped under those kind headings.
   date/time, Gregorian and duration types as well as the numeric ones, on both providers.
 
 ### Round twelve
-
 #### Build, CI and docs (round twelve)
 
 - **Fixed (build):** the complexity ratchet (`scripts/check-code-complexity.py`) counts branches inside string
@@ -163,8 +334,6 @@ entries are regrouped under those kind headings.
 - **Changed (docs):** the changelog entries of round eleven carry their Keep a Changelog kind; CONTRIBUTING and the
   release checklist describe the timeouts, the baseline comparison, the stricter allowlist and floor gates, macOS on
   pull requests and the split rulesets.
-
-### Round twelve
 
 #### Providers (Jena, RDF4J, HermiT)
 
@@ -238,8 +407,6 @@ entries are regrouped under those kind headings.
 - **Internal:** the Jena `DESCRIBE` evaluation moved to `JenaDescribe` and the RDF4J graph-result and update-syntax
   helpers to `Rdf4jQuerySyntax`, out of the repository classes (whose complexity ceilings are lowered).
 
-### Round twelve
-
 #### Core (`rdf-core`, `rdf-holon`, `rdf-testkit`)
 
 - **Breaking: `RdfException` is unchecked.** It extends `RuntimeException` instead of `Exception`, and so do all its
@@ -300,8 +467,6 @@ entries are regrouped under those kind headings.
   deadline test no longer asserts that the request reached the server; the interrupt test of URL loading runs in
   well under a second and now fails if a socket timeout, rather than the interrupt, ends the load.
 
-### Round twelve
-
 #### SPARQL endpoint, CLI and examples
 
 - **Fixed (`rdf-cli`):** `diff`, `parse` and `to-turtle` no longer drop the named graphs of a JSON-LD input. Only TriG
@@ -354,8 +519,6 @@ entries are regrouped under those kind headings.
   and `redirectAddressPolicy` (with `@JvmOverloads` overloads); its `copy` and `componentN` signatures changed
   accordingly (binary change for compiled callers of `copy`; nothing has been published).
 
-### Round twelve
-
 #### Code generation (kastor-gen)
 
 - **Fixed (`replaceInGraph` lost update):** a single-valued member counted as unchanged when its value equalled
@@ -392,8 +555,6 @@ entries are regrouped under those kind headings.
   JAKARTA compilation test uses the real API jar.
 - **Docs:** the annotation reference lists the ontology generation fields (including `validationAnnotations` and
   its dependency) and `replaceInGraph`; the `GraphStateCache` `DETACHED` KDoc describes the wait it can do.
-
-### Round twelve
 
 #### onto-quality (onto-qa, benchmarks)
 
@@ -466,8 +627,6 @@ entries are regrouped under those kind headings.
   blank nodes, OWL 2 constructs, imports, punning, SKOS in both directions, multilingual names and 3,000 classes: no
   warning or violation), `DetectorRegressionTest`, `DeepHierarchyTest`, `CliTruncationTest`, `QualityReportTextTest`.
 
-### Round twelve
-
 #### Integration follow-ups (providers, core, SPARQL endpoint)
 
 - **Fixed (data integrity):** a graph parse of a document that names a graph (JSON-LD `@graph` under an `@id`) fails
@@ -520,8 +679,6 @@ entries are regrouped under those kind headings.
   streaming thread) is reported as a parse error.
 - **API (core):** `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH`, `BOUNDED_NUMERIC_DATATYPES` and
   `numericLengthProblem(datatypeIri, lexical)`: the limit both providers share.
-
-### Round twelve
 
 #### SHACL (`rdf-shacl-validation`, `rdf-shacl-dsl`)
 

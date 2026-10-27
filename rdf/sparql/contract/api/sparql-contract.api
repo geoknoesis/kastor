@@ -91,6 +91,7 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimitExcepti
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits {
 	public static final field CHECK_INTERVAL I
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits;
+	public static final field MAX_COMPUTED_CHARACTERS J
 	public static final field MAX_DECIMAL_SCALE I
 	public static final field MAX_GROUP_CONCAT_LENGTH J
 	public static final field MAX_INTEGER_BITS I
@@ -103,11 +104,38 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxLimits {
 	public static final fun powerBits (Ljava/math/BigInteger;J)J
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxMemoryBudget {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxMemoryBudget$Companion;
+	public fun <init> ()V
+	public fun <init> (J)V
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun charge (JLjava/lang/String;)V
+	public final fun getCharged ()J
+	public static final fun numberSize (J)J
+	public final fun require (JLjava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxMemoryBudget$Companion {
+	public final fun numberSize (J)J
+}
+
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex;
 	public static final fun compile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
+	public static final fun compile (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Runnable;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
 	public static final fun find (Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;Ljava/lang/String;Ljava/lang/Runnable;)Z
 	public static final fun replace (Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Runnable;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex$PatternCache {
+	public static final field CAPACITY I
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex$PatternCache$Companion;
+	public fun <init> ()V
+	public final fun get (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Runnable;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
+	public final fun getSize ()I
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SandboxRegex$PatternCache$Companion {
 }
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings {
@@ -136,6 +164,11 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical {
 	public final fun xsdLexical (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlNumberText {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlNumberText;
+	public static final fun numberLongerThan (Ljava/lang/String;I)I
+}
+
 public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathPattern {
 	public final fun containsMatchIn (Ljava/lang/CharSequence;)Z
 	public final fun firstMatch (Ljava/lang/CharSequence;)Lkotlin/ranges/IntRange;
@@ -148,7 +181,10 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathPattern {
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathRegex {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathRegex;
+	public static final field MAX_PATTERN_LENGTH I
+	public static final field NO_CHECK Ljava/lang/Runnable;
 	public static final fun compile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
+	public static final fun compile (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Runnable;)Lcom/geoknoesis/kastor/rdf/sparql/internal/XPathPattern;
 }
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathRegexException : java/lang/IllegalArgumentException {

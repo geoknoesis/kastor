@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.LiteralValidation
+import com.geoknoesis.kastor.rdf.sparql.internal.SparqlNumberText
 import org.apache.jena.datatypes.RDFDatatype
 import org.apache.jena.graph.Node
 import org.apache.jena.query.QueryParseException
@@ -54,60 +55,16 @@ internal object JenaLiteralBounds {
      * @throws QueryParseException when it does
      */
     fun requireBoundedQuery(sparql: String): String {
-        val number = DigitRun()
-        var i = 0
-        while (i < sparql.length) {
-            val start = i
-            val c = escapeAt(sparql, i)?.also { (_, end) -> i = end }?.first ?: sparql[i++].code
-            if (number.next(c) > LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH) {
-                throw QueryParseException(
-                    "the query holds a number of more than ${LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH} digits (near " +
-                        "character $start); Kastor refuses it: computing its value takes time quadratic in its length",
-                    -1, -1,
-                )
-            }
+        val limit = LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH
+        val start = SparqlNumberText.numberLongerThan(sparql, limit)
+        if (start >= 0) {
+            throw QueryParseException(
+                "the query holds a number of more than $limit digits (near character $start); Kastor refuses it: " +
+                    "computing its value takes time quadratic in its length",
+                -1, -1,
+            )
         }
         return sparql
-    }
-
-    /**
-     * The digits of the number being read: a run of digits continues across one `.` and one exponent marker (`e`/`E`,
-     * with its sign), so `"<5,001 digits>.<5,001 digits>"^^xsd:decimal` counts 10,002 digits, as its lexical form does.
-     */
-    private class DigitRun {
-        private var digits = 0
-        private var point = false
-        private var exponent = false
-        private var previous = -1
-
-        /** The digit count after the character [c]. */
-        fun next(c: Int): Int {
-            when {
-                c in '0'.code..'9'.code -> digits++
-                c == '.'.code && digits > 0 && !point && !exponent -> point = true
-                (c == 'e'.code || c == 'E'.code) && digits > 0 && !exponent -> exponent = true
-                (c == '+'.code || c == '-'.code) && (previous == 'e'.code || previous == 'E'.code) && exponent -> Unit
-                else -> { digits = 0; point = false; exponent = false }
-            }
-            previous = c
-            return digits
-        }
-    }
-
-    /** The code point of the `\u` / `\U` escape at [index] of [text] and the index after it, or null for none. */
-    private fun escapeAt(text: String, index: Int): Pair<Int, Int>? {
-        if (text[index] != '\\' || index + 1 >= text.length) return null
-        var i = index + 1
-        val hexDigits = when (text[i]) {
-            'u' -> { while (i < text.length && text[i] == 'u') i++; 4 }
-            'U' -> { i++; 8 }
-            else -> return null
-        }
-        if (i + hexDigits > text.length) return null
-        val hex = text.substring(i, i + hexDigits)
-        if (!hex.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }) return null
-        val code = hex.toLongOrNull(16)?.takeIf { it <= Int.MAX_VALUE }?.toInt() ?: return null
-        return code to i + hexDigits
     }
 
     /**

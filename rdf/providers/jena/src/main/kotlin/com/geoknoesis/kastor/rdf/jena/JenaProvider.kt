@@ -14,7 +14,9 @@ import org.apache.jena.riot.RiotException
  * **Parsing contract** (shared with the RDF4J provider):
  * - Input streams are handed to the Jena parser directly (no intermediate String copy), so the
  *   document's declared encoding (e.g. RDF/XML `encoding="ISO-8859-1"`) is honoured.
- * - Without a base IRI, relative IRI references are a parse error (no implicit `file:` base).
+ * - Without a base IRI, relative IRI references are a parse error (no implicit `file:` base), in every format:
+ *   also in JSON-LD, whose toRdf algorithm would otherwise skip the statements that hold one, with only a logged
+ *   warning ([JenaParsing.relativeIriProblem]). With a base IRI they resolve against it.
  * - [parseGraph] rejects quad formats (TriG, N-Quads) with [RdfFormatException]: parsing them as a
  *   single graph would silently drop or merge named graphs. Use [parseDataset] instead. A graph format whose
  *   document names a graph (JSON-LD `@graph` under an `@id`) fails the graph parses ([parseGraph],
@@ -427,9 +429,31 @@ internal object JenaParsing {
          * JSON-LD never loads a remote or local document ([noRemoteDocuments]).
          */
         fun parser(inputStream: java.io.InputStream, lang: Lang, baseIri: String?): RDFParserBuilder {
-            val builder = JenaLiteralBounds.bounded(noRemoteDocuments(RDFParser.source(inputStream).lang(lang).strict(true)))
+            val noBase = baseIri == null && lang == Lang.JSONLD
+            val builder = JenaLiteralBounds.bounded(noRemoteDocuments(RDFParser.source(inputStream).lang(lang).strict(true), noBase))
             return if (baseIri != null) builder.base(baseIri)
             else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
+        }
+
+        /**
+         * The base IRI a JSON-LD parse without a base IRI resolves against, so that a relative IRI reference fails
+         * the parse. The resolver above governs only the IRIs that RIOT resolves itself: JSON-LD is expanded by
+         * Titanium, whose toRdf step (as the JSON-LD 1.1 algorithm says) **skips** every statement with an IRI that
+         * is not absolute, logging a warning only, so `{"@id": "s", ...}` parsed to nothing. Resolved against this
+         * base instead, every relative reference (`s`, `/s`, `//host/s`, `#s`, `?s`, `""`, a relative `@base`,
+         * `@vocab`, `@type` or datatype) becomes an IRI of the scheme [NO_BASE_SCHEME], which [validateIri] refuses.
+         * The scheme holds 128 random bits drawn once per JVM, so no IRI of a document has it by chance.
+         */
+        private val NO_BASE_SCHEME = "x-kastor-no-base-" + java.util.UUID.randomUUID().toString().replace("-", "")
+        private val NO_BASE = java.net.URI.create("$NO_BASE_SCHEME:/")
+
+        /** The parse error for [iri], or null when it is not an unresolved relative reference (see [NO_BASE_SCHEME]). */
+        fun relativeIriProblem(iri: String): String? {
+            if (!iri.startsWith(NO_BASE_SCHEME) || iri.getOrNull(NO_BASE_SCHEME.length) != ':') return null
+            val rest = iri.substring(NO_BASE_SCHEME.length + 1)
+            val reference = if (rest.startsWith("/") && !rest.startsWith("//")) rest.substring(1) else rest
+            return "the JSON-LD document uses the relative IRI reference '$reference' and no base IRI was given; " +
+                "relative IRIs are an error unless a base IRI is set (kastor-rdf: --base <iri>)"
         }
 
         /**
@@ -440,10 +464,10 @@ internal object JenaParsing {
          * [UrlLoadOptions]. A document that names a context by URL fails with [RdfFormatException]; contexts must be
          * inline. The RDF4J provider applies the same rule.
          */
-        fun noRemoteDocuments(builder: RDFParserBuilder): RDFParserBuilder = builder.set(
+        fun noRemoteDocuments(builder: RDFParserBuilder, refuseRelative: Boolean = false): RDFParserBuilder = builder.set(
             org.apache.jena.riot.system.jsonld.TitaniumJsonLdOptions.JSONLD_OPTIONS,
-            // A new options object per parse: Jena sets the base IRI on it.
-            com.apicatalog.jsonld.JsonLdOptions(REFUSING_DOCUMENT_LOADER),
+            // A new options object per parse: Jena sets the base IRI on it (when the parse has one).
+            com.apicatalog.jsonld.JsonLdOptions(REFUSING_DOCUMENT_LOADER).also { if (refuseRelative) it.base = NO_BASE },
         )
 
         private val REFUSING_DOCUMENT_LOADER = com.apicatalog.jsonld.loader.DocumentLoader { url, _ ->
@@ -485,6 +509,7 @@ internal object JenaParsing {
 
         private fun validateIri(iri: String, knownIris: MutableSet<String>) {
             if (iri in knownIris) return
+            relativeIriProblem(iri)?.let { throw RiotException(it) }
             try {
                 Iri(iri)
             } catch (e: IllegalArgumentException) {

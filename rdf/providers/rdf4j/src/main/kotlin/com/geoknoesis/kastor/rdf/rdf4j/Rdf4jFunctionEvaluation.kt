@@ -8,6 +8,7 @@ import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionCall
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxMemoryBudget
 import org.eclipse.rdf4j.common.iteration.CloseableIteration
 import org.eclipse.rdf4j.common.order.StatementOrder
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode
@@ -62,6 +63,8 @@ internal object Rdf4jFunctionScope {
      * The custom [functions] of a query at nesting [depth] (0 for the query the caller runs), whose nested queries end
      * by [deadline] (a [clock] value; [Long.MAX_VALUE] for none), are prepared by [nested] and run on [dataset]: the
      * dataset that the query's own dataset clauses (or those of a calling query) select, null for Kastor's dataset.
+     * [memory] is the budget of computed characters the query shares with its nested queries; null for a fresh one
+     * per strategy (the store-wide sandbox, whose queries are unrelated).
      */
     class Scope(
         val functions: SparqlFunctionLibrary,
@@ -70,6 +73,7 @@ internal object Rdf4jFunctionScope {
         val clock: () -> Long,
         val nested: Rdf4jNestedQueries,
         val dataset: Dataset?,
+        val memory: SandboxMemoryBudget? = null,
     )
 
     private val pending = ThreadLocal<Scope?>()
@@ -90,7 +94,7 @@ internal object Rdf4jFunctionScope {
         block: () -> T,
     ): T {
         val previous = pending.get()
-        val scope = Scope(functions, depth, deadline, clock, nested, dataset)
+        val scope = Scope(functions, depth, deadline, clock, nested, dataset, SandboxMemoryBudget())
         pending.set(scope)
         try {
             val result = block()
@@ -132,13 +136,13 @@ internal fun interface Rdf4jNestedQueries {
     fun prepare(query: SandboxedSelectQuery, bindings: Map<String, RdfTerm>, caller: Dataset?): Rdf4jNestedQuery
 }
 
-/** A [MemoryStore] whose queries use [KastorEvaluationStrategyFactory]. */
-internal fun kastorMemoryStore(): MemoryStore = MemoryStore().apply {
+/** A [MemoryStore] whose queries use [KastorEvaluationStrategyFactory] and whose writes are bounded ([Rdf4jBoundedWrites]). */
+internal fun kastorMemoryStore(): MemoryStore = BoundedMemoryStore().apply {
     evaluationStrategyFactory = KastorEvaluationStrategyFactory(federatedServiceResolver, QueryEvaluationMode.STANDARD)
 }
 
-/** A [NativeStore] whose queries use [KastorEvaluationStrategyFactory] (strict, as its default factory is). */
-internal fun kastorNativeStore(location: String): NativeStore = NativeStore(java.io.File(location)).apply {
+/** A [NativeStore] whose queries use [KastorEvaluationStrategyFactory] (strict, as its default factory is), writes bounded. */
+internal fun kastorNativeStore(location: String): NativeStore = BoundedNativeStore(java.io.File(location)).apply {
     evaluationStrategyFactory = KastorEvaluationStrategyFactory(federatedServiceResolver, QueryEvaluationMode.STRICT)
 }
 
@@ -147,7 +151,7 @@ internal fun kastorNativeStore(location: String): NativeStore = NativeStore(java
  * by [deadline] (a [System.nanoTime] value; [Long.MAX_VALUE] for none): the base store of the RDF4J SHACL validator,
  * whose `ShaclSail` runs the SPARQL of an untrusted shapes graph (`sh:sparql`, `sh:SPARQLTarget`).
  */
-internal fun sandboxedMemoryStore(deadline: Long): MemoryStore = MemoryStore().apply {
+internal fun sandboxedMemoryStore(deadline: Long): MemoryStore = BoundedMemoryStore().apply {
     val scope = Rdf4jFunctionScope.Scope(
         SparqlFunctionLibrary.EMPTY, 0, deadline, System::nanoTime,
         { _, _, _ -> throw IllegalStateException("A store-wide sandbox has no custom functions") }, null,
@@ -215,7 +219,7 @@ internal class KastorEvaluationStrategy(
 
     /** The bounds of a sandboxed query's expressions ([Rdf4jEvaluationBounds]); null for an ordinary query. */
     private val bounds: Rdf4jEvaluationBounds? =
-        scope?.let { Rdf4jEvaluationBounds(Rdf4jSandboxBudget(it.deadline, it.clock), tripleSource.valueFactory) }
+        scope?.let { Rdf4jEvaluationBounds(Rdf4jSandboxBudget(it.deadline, it.clock, it.memory ?: SandboxMemoryBudget()), tripleSource.valueFactory) }
 
     override fun optimize(expr: TupleExpr, evaluationStatistics: EvaluationStatistics, bindings: org.eclipse.rdf4j.query.BindingSet): TupleExpr {
         if (scope != null) {
@@ -361,7 +365,9 @@ internal class KastorEvaluationStrategy(
             val source = if (deadline == Long.MAX_VALUE) tripleSource else DeadlineTripleSource.of(tripleSource, ::checkDeadline)
             val strategy = KastorEvaluationStrategy(
                 source, nested.dataset, serviceResolver, cacheThreshold, statistics, trackResults, queryEvaluationMode,
-                Rdf4jFunctionScope.Scope(query.functions, scope.depth + 1, deadline, scope.clock, scope.nested, nested.confinedTo),
+                Rdf4jFunctionScope.Scope(
+                    query.functions, scope.depth + 1, deadline, scope.clock, scope.nested, nested.confinedTo, bounds?.budget?.memory,
+                ),
             )
             strategy.setCollectionFactory(collectionFactory)
             val optimized = strategy.optimize(QueryRoot(nested.parsed.tupleExpr.clone()), statistics, nested.bindings)

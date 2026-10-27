@@ -50,18 +50,18 @@ internal fun evaluateSparqlComponent(
         for (v in values) {
             val bound = LinkedHashMap(preBound)
             bound["value"] = v
-            val (query, providerBindings) = c.template.bind(bound)
+            val (query, providerBindings, substitution) = c.template.bind(bound)
             // The query was rewritten to a SELECT: the ASK answer is whether any solution exists.
-            if (ctx.select(query, providerBindings) { it.any() }) continue
+            if (ctx.select(query, providerBindings, substitution) { it.any() }) continue
             val row = mapOf<String, RdfTerm>("this" to focus, "value" to v)
             out.add(solutionViolation(focus, row::get, bound, tpl, source, hasPath))
             if (firstOnly) break
         }
         return out
     }
-    val (query, providerBindings) = c.template.bind(preBound)
+    val (query, providerBindings, substitution) = c.template.bind(preBound)
     // The solutions are streamed, never collected (see evaluateSparql for the ?failure and firstOnly rules).
-    ctx.select(query, providerBindings) { rows ->
+    ctx.select(query, providerBindings, substitution) { rows ->
         for (row in rows) {
             ctx.budget.tick("SPARQL results")
             val failure = row.get("failure")

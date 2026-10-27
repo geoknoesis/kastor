@@ -1020,9 +1020,9 @@ class JenaRepository private constructor(
         exec.use { consumeRows(it, query.sparql, consume) }
     }
 
-    /** [JenaQuerySandbox.parseSelect], with the engine's parse errors wrapped as query errors. */
+    /** [JenaQuerySandbox.parseSelect] of [JenaQueryTemplates.parse], with the engine's parse errors wrapped as query errors. */
     private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query =
-        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { QueryFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql)) } }
+        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { JenaQueryTemplates.parse(query) } }
 
     /** [JenaQuerySandbox.execution] over the query dataset, with the nested-query deadline [deadline] on the [hooks] clock. */
     private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder =

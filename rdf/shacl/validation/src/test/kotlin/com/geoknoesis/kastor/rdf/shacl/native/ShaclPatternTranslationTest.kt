@@ -258,7 +258,7 @@ class ShaclPatternTranslationTest {
     @Test
     fun `an unterminated hexadecimal escape is rejected in linear time`() {
         // Each `\x{` used to search the rest of the pattern for its '}' and, finding none, go on: quadratic.
-        val pattern = "\\x{".repeat(200_000)
+        val pattern = "\\x{".repeat(20_000)
         org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(60)) {
             val error = assertThrows(ShapeCompileException::class.java) { compileShaclPattern(pattern, null) }
             assertTrue("not terminated" in error.message.orEmpty(), error.message?.take(300))
@@ -268,7 +268,8 @@ class ShaclPatternTranslationTest {
 
     @Test
     fun `deeply nested groups and class subtractions are rejected instead of overflowing the stack`() {
-        val depth = 100_000
+        // Within XPathRegex.MAX_PATTERN_LENGTH, so that the nesting bound is what refuses them.
+        val depth = 15_000
         // Groups nested past the limit are rejected before the engine compiles them.
         assertThrows(ShapeCompileException::class.java) { compileShaclPattern("(".repeat(depth) + "a" + ")".repeat(depth), null) }
         // The translator recursed once per nested class subtraction.

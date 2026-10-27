@@ -250,7 +250,7 @@ oqsh:ReadableLocalNameShape
     oqsh:pitfall    "N16" ;
     rdfs:label      "Class local names should be readable, not opaque identifiers" ;
     rdfs:comment    "LLM consumability. A class named ex:Cls_001 or ex:C_42 with rdfs:label 'Mitochondrion' is unreadable to humans inspecting URIs and to LLMs consuming the ontology as context. The local name should derive from at least one of the labels (case-insensitive, ignoring spaces and underscores)." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class {$this} has an opaque local name unrelated to any of its labels." ;
                       sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
@@ -258,7 +258,7 @@ oqsh:ReadableLocalNameShape
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                         SELECT ?v WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           FILTER ( isIRI($this) )
                           BIND (
                             lcase(
@@ -305,7 +305,7 @@ oqsh:LabelNotSentenceShape
     oqsh:pitfall    "N17" ;
     rdfs:label      "Labels should be noun phrases, not full sentences" ;
     rdfs:comment    "LLM consumability. A label like 'A type of mammal that lives in water' is a definition pretending to be a label. Labels are nouns or short noun phrases used for display, lookup, and LLM tokenization. Definitions go in rdfs:comment or skos:definition. Heuristic: flag labels longer than 50 characters OR containing sentence-terminating punctuation OR starting with an article ('A ', 'An ', 'The ')." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:property     [ sh:path rdfs:label ;
                       sh:severity sh:Info ;
                       sh:maxLength 80 ;
@@ -317,7 +317,7 @@ oqsh:LabelNotSentenceShape
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                         SELECT ?label WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           $this rdfs:label ?label .
                           FILTER (
                             regex(str(?label), '^(A|An|The) ', 'i')
@@ -339,7 +339,7 @@ oqsh:HasExampleShape
     oqsh:pitfall    "N20" ;
     rdfs:label      "Classes should provide at least one example" ;
     rdfs:comment    "LLM consumability and human onboarding. Examples (skos:example, vann:example, or instance assertions) ground abstract classes for both LLMs and human readers. Convention, not a hard requirement." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class {$this} has no examples (skos:example, vann:example) and no asserted instances. Consider providing one for LLM and human onboarding." ;
                       sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
@@ -349,7 +349,7 @@ oqsh:HasExampleShape
                         PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
                         PREFIX vann: <http://purl.org/vocab/vann/>
                         SELECT ?v WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           FILTER ( isIRI($this) )
                           FILTER ( $this != owl:Thing && $this != owl:Nothing )
                           FILTER NOT EXISTS { $this skos:example ?e }
@@ -376,7 +376,7 @@ oqsh:NoClassAsInstanceShape
     oqsh:pitfall    "N23" ;
     rdfs:label      "A resource should not be both a class and an instance of a user-defined class" ;
     rdfs:comment    "OWL anti-pattern. A resource declared both 'a owl:Class' and 'a ex:UserClass' is a punning case — legal in OWL 2 DL (punning) and often intended (metamodelling), problematic in OWL 1 DL and confusing for many consumers, hence informational. The classic example is ex:Lion both being a class (subclasses are Lion species) and an instance of ex:Species." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Resource {$this} is declared both owl:Class and an instance of user-defined class {?otherType} — metamodelling smell." ;
                       sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
@@ -385,7 +385,7 @@ oqsh:NoClassAsInstanceShape
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         SELECT ?otherType WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           $this a ?otherType .
                           FILTER ( ?otherType != owl:Class )
                           FILTER ( ?otherType != rdfs:Class )
@@ -453,7 +453,7 @@ oqsh:LanguageTagConsistencyShape
     oqsh:pitfall    "N32" ;
     rdfs:label      "Untagged literals should not coexist with language-tagged literals on the same property of the same entity" ;
     rdfs:comment    "Multilingual hygiene. If a class has both 'Person' (no lang tag) and 'Personne'@fr, the untagged form will not be retrieved by FILTER(LANG(?l)='en') queries. Either tag the original as @en or drop the duplicate. One finding per untagged label, whatever the number of tagged ones." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class {$this} mixes untagged label '{?untagged}' with language-tagged label '{?tagged}' on rdfs:label." ;
                       sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
@@ -461,7 +461,7 @@ oqsh:LanguageTagConsistencyShape
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                         SELECT ?untagged (SAMPLE(?anyTagged) AS ?tagged) WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           $this rdfs:label ?untagged .
                           $this rdfs:label ?anyTagged .
                           FILTER ( lang(?untagged) = '' )
@@ -484,7 +484,7 @@ oqsh:NamedEntityNotBnodeShape
     oqsh:pitfall    "N34" ;
     rdfs:label      "Entities with labels should have IRIs, not be blank nodes" ;
     rdfs:comment    "Maintainability. Blank nodes are appropriate for anonymous structures (owl:Restriction, owl:intersectionOf members). A blank node that has rdfs:label, skos:prefLabel, or similar 'identity' metadata is a named entity that should have a stable IRI for citation, debugging, and external reference." ;
-    sh:targetClass  owl:Class ;
+    sh:targetClass  owl:Class , rdfs:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Blank-node class with label '{?label}' should have a stable IRI for citation and debugging." ;
                       sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
@@ -492,7 +492,7 @@ oqsh:NamedEntityNotBnodeShape
                         PREFIX owl: <http://www.w3.org/2002/07/owl#>
                         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                         SELECT ?label WHERE {
-                          $this a owl:Class .
+                          FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) }
                           FILTER ( isBLANK($this) ) .
                           $this rdfs:label ?label .
                         }

@@ -8,24 +8,32 @@ import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 
 /** Bounded regular expression evaluation; all mutable per-run state belongs to the validation context. */
 internal class NativePatternEvaluator(private val config: ValidationConfig) {
-    private companion object {
-        // One engine step represents 20 ns (50,000 steps/ms); wall time is a generous backstop only.
-        const val PATTERN_NANOS_PER_STEP = 20L
+    internal companion object {
+        // One engine step (a character read, per instruction of the compiled program) represents 5 ns (200,000
+        // steps/ms; RE2/J takes 2.5 to 5 ns per step on 2026 hardware); wall time is a generous backstop only.
+        const val PATTERN_NANOS_PER_STEP = 5L
         const val PATTERN_WALL_CLOCK_FACTOR = 10L
+
+        private fun timeoutNanos(config: ValidationConfig): Long =
+            try { config.patternTimeout.toNanos() } catch (e: ArithmeticException) { Long.MAX_VALUE }
+
+        /** The step budget of one evaluation under [config] (the full one, before the run-wide cap). */
+        fun stepBudget(config: ValidationConfig): Long = (timeoutNanos(config) / PATTERN_NANOS_PER_STEP).coerceAtLeast(1)
     }
-    private val patternTimeoutNanos =
-        try { config.patternTimeout.toNanos() } catch (e: ArithmeticException) { Long.MAX_VALUE }
-    private val patternStepBudget = (patternTimeoutNanos / PATTERN_NANOS_PER_STEP).coerceAtLeast(1)
+    private val patternTimeoutNanos = timeoutNanos(config)
+    private val patternStepBudget = stepBudget(config)
     private val patternBackstopNanos =
         if (patternTimeoutNanos > Long.MAX_VALUE / PATTERN_WALL_CLOCK_FACTOR) Long.MAX_VALUE else patternTimeoutNanos * PATTERN_WALL_CLOCK_FACTOR
 
     /**
      * One `sh:pattern` evaluation, bounded by [ValidationConfig.patternTimeout].
      *
-     * **Budget.** The evaluation may take [patternStepBudget] steps of the regular expression engine (character
-     * reads, [DeadlineCharSequence]): the configured duration at 50,000 steps per millisecond. Steps are counted, not
-     * time, so whether a value is decided does not depend on the machine, its load or a garbage collection pause.
-     * The wall clock is only a backstop, at [PATTERN_WALL_CLOCK_FACTOR] times the configured duration.
+     * **Budget.** The evaluation may take [patternStepBudget] steps of the regular expression engine
+     * ([DeadlineCharSequence]): each character read costs as many steps as the compiled pattern has instructions
+     * ([com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern.programSize]), the most work the engine can do per
+     * read, at 200,000 steps per millisecond of the configured duration. Steps are counted, not time, so whether a
+     * value is decided does not depend on the machine, its load or a garbage collection pause. The wall clock is
+     * only a backstop, at [PATTERN_WALL_CLOCK_FACTOR] times the configured duration.
      *
      * **Engine.** Patterns run on the linear-time RE2/J engine ([compileShaclPattern]): no pattern backtracks, and a
      * match does not recurse on its input, so it cannot exhaust the stack; the budget bounds the cost of a long value.
@@ -44,9 +52,10 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
      * [PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS] evaluations of a run have used up their whole budget, every value that has
      * not been matched yet gets a reduced budget ([reducedPatternSteps]): 1/[PATTERN_DEGRADED_STEP_DIVISOR] of the full
      * one, but at least [PATTERN_MIN_DEGRADED_STEPS] steps and at least [PATTERN_DEGRADED_STEPS_PER_CHAR] steps per
-     * character of the value, and never more than the full budget. A pattern that does not backtrack reads each
-     * character a few times, so an ordinary value of any length is still decided; a hostile one is undecided at a cost
-     * linear in its length. Data without hostile values never reaches the cap, so it is evaluated as before.
+     * character of the value, and never more than the full budget. The engine reads each character about three
+     * times, so a value of any length is still decided for a pattern of up to about 20 instructions; a value of a
+     * larger pattern may be undecided, at a cost linear in its length. Data that never uses up a budget never reaches
+     * the cap, so it is evaluated as before.
      *
      * **One answer per value.** Within a run, a (pattern, value) has one answer, whoever asks and whenever (a
      * conformance check through `sh:node` or `sh:not`, the report of a focus node, another solver pass): every
@@ -77,7 +86,8 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
                     Undecided(
                         ValidationViolation.PATTERN_TIMEOUT_CODE,
                         "${describe(c, shape)} used up its evaluation budget (ValidationConfig.patternTimeout = " +
-                            "${config.patternTimeout}: $patternStepBudget regular expression engine steps, or " +
+                            "${config.patternTimeout}: $patternStepBudget regular expression engine steps, a character read costing " +
+                            "${c.regex.programSize} steps for this pattern, or " +
                             "$PATTERN_WALL_CLOCK_FACTOR times that duration; $reduced steps for this value once " +
                             "${PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS} evaluations of the run have used up the whole budget; " +
                             "this evaluation had $steps) on a value of ${lexical.length} characters, so " +
@@ -105,7 +115,7 @@ internal class NativePatternEvaluator(private val config: ValidationConfig) {
 
     /** Matches [c] against [lexical], within [steps] steps of the engine. */
     private fun runPattern(c: PropertyConstraint.Pattern, lexical: String, ctx: NativeValidationContext, steps: Long): PatternRun {
-        val evaluation = ctx.patternBudget(steps, patternBackstopNanos)
+        val evaluation = ctx.patternBudget(steps, c.regex.programSize.toLong().coerceAtLeast(1), patternBackstopNanos)
         try {
             return if (c.regex.containsMatchIn(ctx.text(lexical, evaluation))) PatternRun.MATCH else PatternRun.NO_MATCH
         } catch (e: PatternBudgetExceeded) {

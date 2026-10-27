@@ -17,27 +17,37 @@ internal const val PATTERN_DEGRADED_STEP_DIVISOR = 1024L
 internal const val PATTERN_MIN_DEGRADED_STEPS = 1024L
 
 /**
- * ... and at least this many steps per character of the value (never more than the full budget). A pattern that
- * does not backtrack reads each character a few times, so an ordinary value of any length stays decidable, while
- * catastrophic backtracking (exponential in the length) is still stopped at a cost linear in the value.
+ * ... and at least this many steps per character of the value (never more than the full budget). The engine reads
+ * each character about three times, at a cost of up to one step per instruction of the compiled pattern, so an
+ * ordinary value of any length stays decidable for a pattern of up to about 20 instructions, while a value of a
+ * pattern with a large program is undecided at a cost linear in its length.
  */
 internal const val PATTERN_DEGRADED_STEPS_PER_CHAR = 64L
 
+/** The run deadline and the wall-clock backstop are consulted every this many steps. */
+internal const val PATTERN_CHECK_STEPS = 1024L
+
 /**
- * The budget of one pattern evaluation: [limit] steps of the regular expression engine, and a wall-clock backstop
- * of [backstopNanos] nanoseconds from [startNanos] (an instant of the pattern clock). The elapsed time is compared,
- * never an instant: instants of `System.nanoTime` may be negative and are only meaningful as differences.
+ * The budget of one pattern evaluation: [limit] steps of the regular expression engine, each character read costing
+ * [weight] steps (the size of the compiled program), and a wall-clock backstop of [backstopNanos] nanoseconds from
+ * [startNanos] (an instant of the pattern clock). The elapsed time is compared, never an instant: instants of
+ * `System.nanoTime` may be negative and are only meaningful as differences.
  */
-internal class PatternBudget(val limit: Long, val startNanos: Long, val backstopNanos: Long) {
+internal class PatternBudget(val limit: Long, val weight: Long, val startNanos: Long, val backstopNanos: Long) {
     var steps = 0L
+
+    /** The step count at which the budget, the run deadline and the backstop are consulted next. */
+    var nextCheck = PATTERN_CHECK_STEPS
 }
 
 /**
- * A CharSequence for regex matching that counts the character reads of the regular expression engine (its
- * **steps**: a backtracking match reads characters all the time) and stops the match with
- * [PatternBudgetExceeded] when the evaluation has used up its [PatternBudget]. The steps are what is counted, so
- * whether an evaluation is stopped does not depend on the speed or the load of the machine. Every 1024 steps it
- * also consults the run deadline and the wall-clock backstop of the evaluation (an instant of [clock]).
+ * A CharSequence for regex matching that counts the work of the regular expression engine in **steps** and stops
+ * the match with [PatternBudgetExceeded] when the evaluation has used up its [PatternBudget]. Each character read
+ * costs [PatternBudget.weight] steps: RE2/J, a linear-time engine, advances up to one thread per instruction of the
+ * compiled program for each character it reads, so reads alone would not measure its work. The steps are what is
+ * counted, so whether an evaluation is stopped does not depend on the speed or the load of the machine. Every
+ * [PATTERN_CHECK_STEPS] steps it also consults the run deadline and the wall-clock backstop of the evaluation (an
+ * instant of [clock]).
  */
 internal class DeadlineCharSequence(
     private val value: String,
@@ -47,8 +57,10 @@ internal class DeadlineCharSequence(
 ) : CharSequence {
     override val length: Int get() = value.length
     override fun get(index: Int): Char {
-        val steps = ++evaluation.steps
-        if ((steps and 1023L) == 0L) {
+        val steps = evaluation.steps + evaluation.weight
+        evaluation.steps = steps
+        if (steps >= evaluation.nextCheck) {
+            evaluation.nextCheck = steps + PATTERN_CHECK_STEPS
             if (steps >= evaluation.limit) throw PatternBudgetExceeded()
             budget.check("pattern matching")
             if (clock() - evaluation.startNanos >= evaluation.backstopNanos) throw PatternBudgetExceeded()

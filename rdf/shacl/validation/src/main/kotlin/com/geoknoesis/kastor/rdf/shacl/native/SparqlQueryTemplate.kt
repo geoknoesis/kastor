@@ -4,8 +4,10 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.SparqlIriSubstitution
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$value` or a component's
@@ -13,7 +15,8 @@ import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
  * identically on every SPARQL provider, including inside sub-queries.
  *
  * [bind] substitutes IRIs and literals syntactically: in a triple pattern or expression the term replaces the
- * variable; in a SELECT projection it becomes `(term AS ?fresh)`, in `GROUP BY` / `ORDER BY` `(term)`, and
+ * variable; in the outermost SELECT projection it becomes `(term AS ?var)`, so solutions still bind the variable, in
+ * a sub-select's projection `(term AS ?fresh)`, in `GROUP BY` / `ORDER BY` `(term)`, and
  * `BOUND(?var)` of a substituted variable becomes `true` (BOUND only accepts a variable). Values
  * without a standard SPARQL syntax that denotes the same RDF term (blank nodes, triple terms, directional language
  * strings, IRIs with characters that are illegal in an IRIREF) keep the variable and are returned as provider
@@ -26,13 +29,25 @@ internal class SparqlQueryTemplate private constructor(
      * string, IRI or comment). A variable the query never mentions is never bound, not even by `SELECT *`.
      */
     val mayBindFailure: Boolean,
+    /**
+     * For a query whose pre-binding restrictions were checked ([compileRestricted]), the variable that stands for
+     * each pre-bound variable in the template [bind] offers the provider ([SparqlIriSubstitution]); null otherwise.
+     * Names no variable of the query mentions.
+     */
+    private val placeholders: Map<String, String>?,
 ) {
 
     private enum class Context { PLAIN, PROJECTION, GROUP_OR_ORDER }
 
     private sealed interface Part
     private class Text(val text: String) : Part
-    private class Slot(val token: String, val name: String, val context: Context, val ordinal: Int) : Part
+    /**
+     * A pre-bound variable token. [projectedAs] is the name a substituted value takes in a projection: the variable's
+     * own name in the outermost `SELECT` (its first mention there), so a solution binds it as SHACL 1.2 SPARQL
+     * Appendix A requires (pre-binding is a join with the solution that binds it), a fresh name elsewhere (a sub-select
+     * projecting it, whose enclosing query may project it too).
+     */
+    private class Slot(val token: String, val name: String, val context: Context, val projectedAs: String) : Part
     /** `BOUND(?name)` on a pre-bound variable, kept verbatim in [text] when the value is not substituted. */
     private class BoundCheck(val text: String, val name: String) : Part
 
@@ -45,20 +60,34 @@ internal class SparqlQueryTemplate private constructor(
         }
     }
 
+    /**
+     * A bound query: its [text], the values it could not write as [providerBindings], and, when every value written
+     * into it is an IRI, the [substitution] it was written by, so that a provider can parse the template once for
+     * every focus node.
+     */
+    data class Bound(val text: String, val providerBindings: Map<String, RdfTerm>, val substitution: SparqlIriSubstitution?)
+
     /** Query text with renderable [values] substituted, plus the remaining values as provider initial bindings. */
-    fun bind(values: Map<String, RdfTerm>): Pair<String, Map<String, RdfTerm>> {
+    fun bind(values: Map<String, RdfTerm>): Bound {
         val text = StringBuilder()
+        // The same text with a placeholder variable where an IRI is written, while only IRIs are (see [placeholders]).
+        var template: StringBuilder? = if (placeholders != null) StringBuilder() else null
+        val iris = LinkedHashMap<String, Iri>()
         val providerBindings = LinkedHashMap<String, RdfTerm>()
+        fun append(s: CharSequence) {
+            text.append(s)
+            template?.append(s)
+        }
         for (part in parts) {
             when (part) {
-                is Text -> text.append(part.text)
+                is Text -> append(part.text)
                 is BoundCheck -> {
                     val value = values[part.name]
                     if (value != null && renderTerm(value) != null) {
                         // Bracketed so it stays valid where SPARQL requires a Constraint (e.g. `FILTER bound($this)`).
-                        text.append("(true)")
+                        append("(true)")
                     } else {
-                        text.append(part.text)
+                        append(part.text)
                         if (value != null) providerBindings[part.name] = value
                     }
                 }
@@ -66,33 +95,69 @@ internal class SparqlQueryTemplate private constructor(
                     val value = values[part.name]
                     val rendered = value?.let { renderTerm(it) }
                     if (rendered == null) {
-                        text.append(part.token)
+                        append(part.token)
                         if (value != null) providerBindings[part.name] = value
                     } else {
-                        when (part.context) {
-                            // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
-                            Context.PLAIN -> text.append(rendered).append(if (value is LangString) " " else "")
-                            Context.PROJECTION -> text.append('(').append(rendered).append(" AS ?__kastor_prebound_").append(part.ordinal).append(')')
-                            Context.GROUP_OR_ORDER -> text.append('(').append(rendered).append(')')
+                        writeSlot(text, part, rendered, value is LangString)
+                        // Not in GROUP BY / ORDER BY: Jena reads `GROUP BY (?v)` as grouping by the variable, and
+                        // substituting it there binds the variable to the IRI (`GROUP BY (<iri> AS ?v)`).
+                        val placeholder = placeholders?.get(part.name)?.takeIf { part.context != Context.GROUP_OR_ORDER }
+                        if (value is Iri && placeholder != null) {
+                            iris[placeholder] = value
+                            // The token's own sigil, so the text around it lexes as it does around the variable.
+                            template?.let { writeSlot(it, part, part.token.first() + placeholder, false) }
+                        } else {
+                            template = null
                         }
                     }
                 }
             }
         }
-        return text.toString() to providerBindings
+        val substitution = template?.takeIf { iris.isNotEmpty() }?.let { SparqlIriSubstitution(it.toString(), iris) }
+        return Bound(text.toString(), providerBindings, substitution)
+    }
+
+    private fun writeSlot(out: StringBuilder, slot: Slot, term: String, langString: Boolean) {
+        when (slot.context) {
+            // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
+            Context.PLAIN -> out.append(term).append(if (langString) " " else "")
+            Context.PROJECTION -> out.append('(').append(term).append(" AS ?").append(slot.projectedAs).append(')')
+            Context.GROUP_OR_ORDER -> out.append('(').append(term).append(')')
+        }
     }
 
     companion object {
         /** Pre-bound variables of a `sh:sparql` constraint: only `$this` (SHACL 1.2 no longer pre-binds `$shapesGraph` / `$currentShape`). */
         val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this")
 
-        fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate {
+        /**
+         * How many queries were compiled, and how many of them after the pre-binding restriction checks
+         * ([compileRestricted]): a test seam, so a test can show that a constraint's query is compiled and checked
+         * once per validation run, not once per focus node.
+         */
+        internal val compilations = AtomicLong()
+        internal val restrictedCompilations = AtomicLong()
+
+        fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate =
+            compile(query, preBound, budget, restricted = false)
+
+        /**
+         * [restricted]: the pre-binding restrictions hold ([compileRestricted]), so no pre-bound variable is assigned
+         * (`AS`, `VALUES`) and a variable can stand wherever an IRI is written: [bind] then offers a template.
+         */
+        private fun compile(query: String, preBound: Set<String>, budget: ValidationBudget, restricted: Boolean): SparqlQueryTemplate {
+            compilations.incrementAndGet()
             val parts = ArrayList<Part>()
             val text = StringBuilder()
             var context = Context.PLAIN
             var depth = 0
             var previousWord: String? = null
             var ordinal = 0
+            // Braces open around the current token, whether the current SELECT is the outermost one, and the
+            // pre-bound variables the outermost projection already names.
+            var braces = 0
+            var outermost = false
+            val projectedOuter = HashSet<String>()
             val tokens = SparqlLexer.tokenize(query)
             var index = 0
             while (index < tokens.size) {
@@ -111,7 +176,7 @@ internal class SparqlQueryTemplate private constructor(
                     token.kind == SparqlToken.Kind.WORD -> {
                         val word = token.text.uppercase()
                         when {
-                            word == "SELECT" -> { context = Context.PROJECTION; depth = 0 }
+                            word == "SELECT" -> { context = Context.PROJECTION; depth = 0; outermost = braces == 0 }
                             (word == "WHERE" || word == "FROM") && context == Context.PROJECTION -> context = Context.PLAIN
                             word == "BY" && (previousWord == "GROUP" || previousWord == "ORDER") -> { context = Context.GROUP_OR_ORDER; depth = 0 }
                             word in setOf("HAVING", "LIMIT", "OFFSET", "VALUES", "ORDER", "GROUP") && context == Context.GROUP_OR_ORDER -> context = Context.PLAIN
@@ -121,13 +186,17 @@ internal class SparqlQueryTemplate private constructor(
                     token.kind == SparqlToken.Kind.PUNCT -> when (token.text) {
                         "(" -> depth++
                         ")" -> depth--
-                        "{", "}" -> context = Context.PLAIN
+                        "{" -> { context = Context.PLAIN; braces++ }
+                        "}" -> { context = Context.PLAIN; braces-- }
                     }
                 }
                 if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
                     if (text.isNotEmpty()) { parts.add(Text(text.toString())); text.setLength(0) }
                     val slotContext = if (context != Context.PLAIN && depth == 0) context else Context.PLAIN
-                    parts.add(Slot(token.text, token.variableName, slotContext, ordinal++))
+                    val name = token.variableName
+                    val keepsName = slotContext == Context.PROJECTION && outermost && projectedOuter.add(name)
+                    parts.add(Slot(token.text, name, slotContext, if (keepsName) name else "__kastor_prebound_$ordinal"))
+                    ordinal++
                 } else {
                     text.append(token.text)
                 }
@@ -135,7 +204,7 @@ internal class SparqlQueryTemplate private constructor(
             }
             if (text.isNotEmpty()) parts.add(Text(text.toString()))
             val mayBindFailure = tokens.any { it.kind == SparqlToken.Kind.VARIABLE && it.variableName == "failure" }
-            return SparqlQueryTemplate(parts, mayBindFailure)
+            return SparqlQueryTemplate(parts, mayBindFailure, if (restricted) placeholders(preBound, tokens) else null)
         }
 
         /** For `BOUND ( ?preBound )` starting at [start]: (index of the closing parenthesis, variable name), else null. */
@@ -168,7 +237,7 @@ internal class SparqlQueryTemplate private constructor(
                 // SPARQL splits a run like `trueSERVICE` or `1SERVICE` into a literal and a keyword, so the forbidden
                 // keywords are searched in every part of the word that is not a prefixed name or blank node label.
                 // No SPARQL keyword or built-in contains one of them, so a valid query gives no false positive.
-                val bare = bareParts(token.text)
+                val bare = SparqlWordParts.bareParts(token.text)
                 for (part in bare) {
                     val upper = part.uppercase()
                     FORBIDDEN_KEYWORDS.firstOrNull { it in upper }?.let { return it }
@@ -220,97 +289,6 @@ internal class SparqlQueryTemplate private constructor(
                 val variable = nextPreBound[index + 1]
                 return if (variable < nextBrace[index + 1]) names[variable] else null
             }
-        }
-
-        /**
-         * The parts of a WORD token that SPARQL does not read as a prefixed name (PNAME_NS / PNAME_LN) or a blank node
-         * label: keywords, booleans, numbers and anything ill-formed, in order.
-         *
-         * Linear in the length of [word]: one backward pass records where each run of PN_CHARS and `.` ends, so the
-         * prefixed-name test at a position is constant time (a run that does not end in `:` holds no PN_PREFIX), and
-         * every prefixed name or label found is skipped as a whole.
-         */
-        private fun bareParts(word: String): List<String> {
-            val runEnd = IntArray(word.length + 1)
-            runEnd[word.length] = word.length
-            for (i in word.indices.reversed()) {
-                runEnd[i] = if (isPnChars(word[i].code) || word[i] == '.') runEnd[i + 1] else i
-            }
-            val parts = ArrayList<String>()
-            val bare = StringBuilder()
-            var i = 0
-            while (i < word.length) {
-                val end = prefixedNameEnd(word, i, runEnd) ?: blankNodeLabelEnd(word, i)
-                if (end != null && end > i) {
-                    if (bare.isNotEmpty()) { parts.add(bare.toString()); bare.setLength(0) }
-                    i = end
-                } else {
-                    bare.append(word[i])
-                    i++
-                }
-            }
-            if (bare.isNotEmpty()) parts.add(bare.toString())
-            return parts
-        }
-
-        /**
-         * End of a prefixed name (`PN_PREFIX? ':' PN_LOCAL?`) starting at [start] in [w], or null. [runEnd] gives,
-         * for each position, the end of the run of PN_CHARS and `.` that starts there ([bareParts]).
-         */
-        private fun prefixedNameEnd(w: String, start: Int, runEnd: IntArray): Int? {
-            var i = start
-            if (i < w.length && isPnCharsBase(w[i].code)) {
-                i = runEnd[i]
-                // PN_PREFIX does not end in '.': the run would stop at a '.', never at the ':'.
-                if (w[i - 1] == '.') return null
-            }
-            if (i >= w.length || w[i] != ':') return null
-            return localNameEnd(w, i + 1)
-        }
-
-        /** End of the PN_LOCAL starting at [start] in [w] ([start] itself when there is none). */
-        private fun localNameEnd(w: String, start: Int): Int {
-            fun escapeLength(i: Int): Int = when {
-                w[i] == '%' && i + 2 < w.length && isHex(w[i + 1]) && isHex(w[i + 2]) -> 3
-                w[i] == '\\' && i + 1 < w.length && w[i + 1] in SparqlLexer.LOCAL_NAME_ESCAPES -> 2
-                else -> 0
-            }
-            var i = start
-            if (i >= w.length) return start
-            val first = escapeLength(i)
-            when {
-                first > 0 -> i += first
-                isPnCharsU(w[i].code) || w[i] == ':' || w[i] in '0'..'9' -> i++
-                else -> return start
-            }
-            var end = i
-            while (i < w.length) {
-                val escape = escapeLength(i)
-                when {
-                    escape > 0 -> { i += escape; end = i }
-                    isPnChars(w[i].code) || w[i] == ':' -> { i++; end = i }
-                    w[i] == '.' -> i++ // allowed inside, not at the end
-                    else -> break
-                }
-            }
-            return end
-        }
-
-        /** End of a blank node label (`_:` then PN_CHARS_U or a digit, then PN_CHARS or '.', not ending in '.'), or null. */
-        private fun blankNodeLabelEnd(w: String, start: Int): Int? {
-            if (!w.startsWith("_:", start) || start + 2 >= w.length) return null
-            var i = start + 2
-            if (!(isPnCharsU(w[i].code) || w[i] in '0'..'9')) return null
-            i++
-            var end = i
-            while (i < w.length) {
-                when {
-                    isPnChars(w[i].code) -> { i++; end = i }
-                    w[i] == '.' -> i++
-                    else -> break
-                }
-            }
-            return end
         }
 
         private fun isHex(c: Char) = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
@@ -367,6 +345,7 @@ internal class SparqlQueryTemplate private constructor(
             budget: ValidationBudget = ValidationBudget.NONE,
         ): SparqlQueryTemplate {
             budget.check(PHASE)
+            restrictedCompilations.incrementAndGet()
             val query = prologue + body
             for (text in listOf(body, query)) {
                 // RDF4J decodes codepoint escapes in the whole query before parsing, Jena does not: check every view.
@@ -393,7 +372,15 @@ internal class SparqlQueryTemplate private constructor(
                 }
             }
             budget.check(PHASE)
-            return compile(query, preBound, budget)
+            return compile(query, preBound, budget, restricted = true)
+        }
+
+        /** A placeholder variable name for each of [preBound], one that no variable token of the query uses. */
+        private fun placeholders(preBound: Set<String>, tokens: List<SparqlToken>): Map<String, String> {
+            val used = tokens.mapNotNullTo(HashSet()) { t -> t.variableName.takeIf { t.kind == SparqlToken.Kind.VARIABLE } }
+            return preBound.associateWith { name ->
+                generateSequence(0) { it + 1 }.map { "__kastor_iri${if (it == 0) "" else it.toString()}_$name" }.first { it !in used }
+            }
         }
 
         /** The pre-bound variables [query] mentions as variable tokens, in order. */
@@ -501,13 +488,40 @@ internal class SparqlQueryTemplate private constructor(
         fun renderIri(iri: String): String? =
             if (iri.any { it in "<>\"{}|^`\\" || it.code <= 0x20 }) null else "<$iri>"
 
-        private val languageTag = Regex("[A-Za-z]+(-[A-Za-z0-9]+)*")
+        /**
+         * The longest language tag written into a query; a longer one stays a provider binding. Tags in use are a few
+         * dozen characters (BCP 47 recommends implementations support 35 at least).
+         */
+        internal const val MAX_RENDERED_LANGUAGE_TAG = 256
+
+        /**
+         * Whether [tag] is a SPARQL LANGTAG without its `@` (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`) of at most
+         * [MAX_RENDERED_LANGUAGE_TAG] characters. A linear scan: a regular expression with a repeated group recurses
+         * once per subtag on java.util.regex and overflows the stack on a data literal with a very long tag.
+         */
+        internal fun isRenderableLanguageTag(tag: String): Boolean {
+            if (tag.isEmpty() || tag.length > MAX_RENDERED_LANGUAGE_TAG) return false
+            var subtag = 0
+            var first = true
+            for (c in tag) {
+                when {
+                    c == '-' -> {
+                        if (subtag == 0) return false
+                        subtag = 0
+                        first = false
+                    }
+                    c in 'A'..'Z' || c in 'a'..'z' || (!first && c in '0'..'9') -> subtag++
+                    else -> return false
+                }
+            }
+            return subtag > 0
+        }
 
         fun renderTerm(term: RdfTerm): String? =
             when (term) {
                 is Iri -> renderIri(term.value)
                 is LangString ->
-                    if (term.direction != null || !languageTag.matches(term.lang)) null else "\"${escape(term.lexical)}\"@${term.lang}"
+                    if (term.direction != null || !isRenderableLanguageTag(term.lang)) null else "\"${escape(term.lexical)}\"@${term.lang}"
                 is Literal -> renderIri(term.datatype.value)?.let { "\"${escape(term.lexical)}\"^^$it" }
                 else -> null
             }
