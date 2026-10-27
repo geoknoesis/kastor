@@ -133,7 +133,8 @@ internal class Rdf4jShaclValidator(
       )
     }
     val dataTriples = graph.getTriples()
-    val shapeTriples = shapes.getTriples()
+    // ShaclSail cannot report a violated sh:or / sh:and whose list nodes are IRIs (see ShaclLists.withBlankListNodes).
+    val shapeTriples = ShaclLists.withBlankListNodes(shapes.getTriples())
 
     // Fail closed, whatever unsupportedFeatures says: ShaclSail would run these patterns with java.util.regex.
     val unbounded = ShaclSailPatterns.javaEvaluated(shapeTriples)

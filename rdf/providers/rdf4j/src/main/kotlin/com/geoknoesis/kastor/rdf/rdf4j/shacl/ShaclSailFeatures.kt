@@ -70,16 +70,8 @@ internal object ShaclSailFeatures {
     fun values(node: RdfTerm, predicate: String): List<RdfTerm> =
         (node as? RdfResource)?.let { bySubject[it] }.orEmpty().filter { it.predicate.value == predicate }.map { it.obj }
 
-    fun list(head: RdfTerm): List<RdfTerm> {
-      val members = ArrayList<RdfTerm>()
-      val seen = HashSet<RdfTerm>()
-      var node = head
-      while (node is BlankNode && seen.add(node)) {
-        members.addAll(values(node, RDF + "first"))
-        node = values(node, RDF + "rest").firstOrNull() ?: break
-      }
-      return members
-    }
+    // List nodes may be IRIs as well as blank nodes.
+    fun list(head: RdfTerm): List<RdfTerm> = ShaclLists.members(head, ::values)
 
     // The shapes: declared ones, the ones with a target, and every shape those refer to.
     val shapeNodes = LinkedHashSet<RdfResource>()
