@@ -40,15 +40,19 @@ import org.apache.jena.sparql.core.Quad
 internal object JenaLiteralBounds {
 
     /** The node factory of Kastor's parses: the one Jena's parser uses by default, refusing over-long numeric literals. */
-    private class BoundedFactory : FactoryRDFCaching() {
+    internal class BoundedFactory : FactoryRDFCaching() {
         override fun createTypedLiteral(lexical: String, datatype: RDFDatatype): Node {
             LiteralValidation.numericLengthProblem(datatype.uri, lexical)?.let { throw RiotException(it) }
             return super.createTypedLiteral(lexical, datatype)
         }
     }
 
-    /** [builder] creating its nodes with a [BoundedFactory] (a new one per parse: the factory holds blank-node labels). */
-    fun bounded(builder: RDFParserBuilder): RDFParserBuilder = builder.factory(BoundedFactory())
+    /**
+     * [builder] creating its nodes with a [BoundedFactory] (a new one per parse: the factory holds blank-node labels).
+     * Jena's term checker, which strict mode turns on, values every typed literal **before** the factory sees it
+     * (19.5 s for a 1,000,000-digit integer), so the readers of a bounded parse check first ([JenaBoundedReaders]).
+     */
+    fun bounded(builder: RDFParserBuilder): RDFParserBuilder = builder.factory(BoundedFactory()).also { JenaBoundedReaders.install() }
 
     /**
      * [sparql], after checking that it holds no run of more than [LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH] digits

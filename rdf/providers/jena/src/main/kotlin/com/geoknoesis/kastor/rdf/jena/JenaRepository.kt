@@ -1119,10 +1119,8 @@ class JenaRepository private constructor(
      * whose text rules it out and has no `WHERE` clause is executed while it is parsed, as before (so a large
      * `INSERT DATA` is never held in memory as a parsed request).
      *
-     * **Long literals.** A numeric or temporal literal longer than `LiteralValidation.MAX_NUMERIC_LEXICAL_LENGTH` is
-     * refused, as on the RDF4J stores: in the text ([JenaLiteralBounds.requireBoundedQuery]), when the `WHERE` clause
-     * computes it ([JenaUpdateBounds]), and when the request writes it, from any operation (`LOAD` too;
-     * [JenaLiteralBounds.boundedWrites]).
+     * **Bounds.** A request with a `WHERE` clause or a `LOAD` runs with the sandbox's expression bounds and Kastor's
+     * bounded parser ([JenaUpdateBounds]); every write is checked for long literals ([JenaLiteralBounds.boundedWrites]).
      */
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
@@ -1130,24 +1128,8 @@ class JenaRepository private constructor(
             if (!JenaBlankGraphs.textMayCreateBlankGraph(text) && !JenaUpdateBounds.mayCompute(text)) {
                 org.apache.jena.update.UpdateAction.parseExecute(text, JenaLiteralBounds.boundedWrites(dataset))
             } else {
-                val request = JenaUpdateBounds.bounded(org.apache.jena.update.UpdateFactory.create(text))
-                val foreign = if (JenaBlankGraphs.mayCreateBlankGraph(request)) JenaBlankGraphs.blankGraphNames(dataset) else null
-                var failure: Throwable? = null
-                try {
-                    org.apache.jena.update.UpdateAction.execute(request, JenaLiteralBounds.boundedWrites(dataset))
-                } catch (e: Throwable) {
-                    failure = e
-                    throw e
-                } finally {
-                    // An outer transaction may catch the error and retain earlier successful operations.
-                    if (foreign != null) {
-                        try {
-                            JenaBlankGraphs.skolemizeBlankGraphs(dataset, foreign)
-                        } catch (e: Exception) {
-                            failure?.addSuppressed(e) ?: throw e
-                        }
-                    }
-                }
+                val request = org.apache.jena.update.UpdateFactory.create(text)
+                JenaBlankGraphs.executeSkolemizing(request, dataset) { JenaUpdateBounds.execute(request, dataset) }
             }
         }
     }

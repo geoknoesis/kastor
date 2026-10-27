@@ -214,7 +214,8 @@ class JenaNumericLiteralBoundTest {
                 val refused = assertTimeoutPreemptively(java.time.Duration.ofSeconds(30), org.junit.jupiter.api.function.ThrowingSupplier {
                     assertThrows(RdfQueryException::class.java, { repo.update(UpdateQuery(update)) }, update.takeLast(100))
                 }, update.takeLast(100))
-                assertTrue(generateSequence<Throwable>(refused) { it.cause }.any { it.message.orEmpty().contains("$limit") }, refused.message)
+                // Refused by the sandbox's bound on what STRDT and a cast convert, before the literal is built.
+                assertTrue(refused.message.orEmpty().contains("would convert a numeric lexical form of 13107"), refused.message)
             }
             assertEquals(0, repo.editDefaultGraph().size())
             assertEquals(emptyList<Iri>(), repo.listGraphs())
