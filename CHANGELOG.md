@@ -19,6 +19,31 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round seventeen
+
+#### SHACL-SPARQL query templates (Jena)
+
+- **Fixed (`rdf-jena`), correctness regression of round sixteen:** the parsed-template cache gave wrong SHACL results
+  when `$this` stood inside a triple term (`<<( $this :p ?o )>>`) or a reifier pattern (`<< $this :p ?o >>`): Jena's
+  syntactic substitution does not rewrite variables there, so the focus node stayed a free variable. A `FILTER NOT
+  EXISTS` constraint conformed where it had violations, positive patterns matched every focus node, and a triple-term
+  expression aborted the run. Each execution now gets a deep copy of the parsed template (`JenaQueryCopy`) that
+  rewrites variables inside triple terms too and shares no pattern element or expression with the template or with any
+  other execution. A template is used only after a one-time check: substituting fresh canary IRIs into it must give
+  the parse of its text with those IRIs written in (equal as a query and as serialized), and the copy must share
+  nothing with the template; otherwise, and for any IRI that the parser would not read as written (checked by the
+  parser itself, and remembered for up to 65,536 IRIs), the text is parsed as before. A template that substitutes a
+  `GROUP BY` term is now refused rather than built.
+- **Fixed (`rdf-shacl`), performance:** a query whose focus node is a blank node (bound by the provider, so its text is
+  the same for every focus node) now offers its text as a template without IRIs, so Jena parses it once per
+  validation instead of once per focus node. With the default `onto-qa check`, the 2,000-class restriction-heavy
+  ontology of the round-17 report takes 30 s instead of 60 s, and the 20,000-class one, which timed out at the default
+  300 s limit, finishes in 241 s, both with the findings of an unbounded run of the round-sixteen code. The copy costs
+  the 5,000-class IRI-only ontology 26 s to 31 s (one run each, same machine).
+- **Fixed (`rdf-shacl`):** an IRI focus node (or a literal's datatype IRI) that is relative, or whose path has a `.` or
+  `..` segment, is no longer written into the query text, where Jena resolved it to another IRI
+  (`<http://ex/a/../b>` read as `http://ex/b`); it is passed as a provider binding, as RDF4J already read it.
+
 ### Round sixteen
 
 #### Build and docs (round sixteen)
