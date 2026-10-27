@@ -6,8 +6,10 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  * in its digits. The digits are counted on the text as a SPARQL parser reads it: a `\u` escape (four hex digits) or
  * a `\U` escape (eight) counts as the character it stands for, wherever it is, and a run of digits continues across
  * one `.` and one exponent marker (`e`/`E`, with its sign), so `"<5,001 digits>.<5,001 digits>"^^xsd:decimal` counts
- * 10,002 digits, as its lexical form does. A string literal that holds such a run is caught too; no realistic query
- * or update does.
+ * 10,002 digits, as its lexical form does. Every Unicode decimal digit counts (`Character.digit(c, 10)`), not only
+ * ASCII ones: `BigInteger` and `BigDecimal` accept them all, so a lexical form of Arabic-Indic or fullwidth digits
+ * reaches the same conversion. A string literal that holds such a run is caught too; no realistic query or update
+ * does.
  */
 object SparqlNumberText {
 
@@ -19,7 +21,8 @@ object SparqlNumberText {
         var runStart = 0
         while (i < sparql.length) {
             val start = i
-            val c = escapeAt(sparql, i)?.also { (_, end) -> i = end }?.first ?: sparql[i++].code
+            val c = escapeAt(sparql, i)?.also { (_, end) -> i = end }?.first
+                ?: sparql.codePointAt(i).also { i += Character.charCount(it) }
             val digits = number.next(c)
             if (digits == 1) runStart = start
             if (digits > limit) return runStart
@@ -36,7 +39,7 @@ object SparqlNumberText {
         /** The digit count after the character [c]. */
         fun next(c: Int): Int {
             when {
-                c in '0'.code..'9'.code -> digits++
+                Character.digit(c, 10) >= 0 -> digits++
                 c == '.'.code && digits > 0 && !point && !exponent -> point = true
                 (c == 'e'.code || c == 'E'.code) && digits > 0 && !exponent -> exponent = true
                 (c == '+'.code || c == '-'.code) && (previous == 'e'.code || previous == 'E'.code) && exponent -> Unit
