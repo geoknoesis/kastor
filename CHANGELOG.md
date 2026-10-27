@@ -65,7 +65,8 @@ entries are regrouped under those kind headings.
   `EmbeddedShapesRefusedException` (which gains a `(message, cause)` constructor). The shapes are extracted and
   admitted as before and the report is mapped as ShaclSail's was. A differential test over a corpus of SHACL Core
   shapes gives the same results on both engines except `sh:xone` and `sh:zeroOrMorePath`, which ShaclSail skips and the
-  Kastor validator evaluates; a blank-node `sh:hasValue`, which ShaclSail cannot compile, is now evaluated.
+  Kastor validator evaluates: data graphs whose `sh:xone` or `sh:zeroOrMorePath` violations used to pass the no-argument
+  `Rdf4jValidation()` now fail it. A blank-node `sh:hasValue`, which ShaclSail cannot compile, is now evaluated.
   `trustingEmbeddedShapes()` and constructor shapes still run on ShaclSail.
 - **Security (`kastor-gen-runtime`), behaviour change, API addition:** generated `sh:pattern` checks
   (`ShaclPattern.containsMatchIn`) were linear but unbounded: `.{0,1000}x` took 36 s on a 1 MB value and the accepted
@@ -96,7 +97,9 @@ entries are regrouped under those kind headings.
   Both providers now expand the document first, with the options of their own conversion, and refuse it with
   `RdfFormatException` when the expanded form holds a term JSON-LD's toRdf would skip: a relative or malformed IRI
   (subject, object, type, property, datatype or graph name), a blank-node property, or an ill-formed language tag.
-  A key that its context maps to no IRI (an undefined term with no usable `@vocab`) is refused too. The sentinel base
+  A key that its context maps to no IRI (an undefined term with no usable `@vocab`) is refused too. This is a
+  deliberate deviation from JSON-LD 1.1, whose expansion ignores such keys: a document with unmapped keys used to
+  parse with that data silently dropped, which is worse than an error. The sentinel base
   is gone. The RDF4J provider now also depends on Titanium (for the undefined-term check) and makes the JSON-LD
   processor's warnings errors.
 - **Fixed (`rdf-jena`):** Jena's JSON-LD reader dropped triples with a malformed IRI (`http://ex/a b`, `a:`,
@@ -113,8 +116,22 @@ entries are regrouped under those kind headings.
   used to take more than 100 s to store.
 - **Security (`rdf-jena`), API addition, behaviour change:** `LOAD` opens its source as `Rdf.parseFromUrl` does,
   under the new `JenaRepository.updateLoadOptions` (default: `http`/`https` to public addresses only; no `file:`,
-  `jar:`, loopback or internal network), and reads it through Kastor's bounded parser. Failures to load have one
+  `jar:`, loopback or internal network), and reads it through Kastor's bounded parser. `LOAD` of a `file:` or `jar:`
+  IRI or of a loopback or private host now needs the opt-in through `updateLoadOptions`. Failures to load have one
   generic message.
+
+#### Known limitations (round seventeen)
+
+- RDF4J's SPARQL `LOAD` and `SERVICE` in updates are not under Kastor's URL-loading policy; only the Jena provider's
+  `LOAD` is.
+- RDF4J reads `<< s p o >>` in SPARQL as an RDF-star quoted triple, not an RDF 1.2 reifier, and does not parse
+  `<<( … )>>`, so reifier and triple-term SHACL-SPARQL constraints differ between the providers.
+- `STR()` of a blank node or a triple term differs between the providers: Jena returns a string, RDF4J raises an
+  error.
+- RDF4J ignores a triple-term `$this` bound as a provider binding inside a `UNION` branch
+  (`{ $this :q ?x } UNION { ?x :p $this }` returns every `?x :p ?y` row); Jena returns none.
+- Embedded shapes of Kastor Gen in trusted mode (`trustingEmbeddedShapes()`) and shapes passed to the constructor have
+  no deadline, no work budget and no size caps on either engine.
 
 ### Round sixteen
 
