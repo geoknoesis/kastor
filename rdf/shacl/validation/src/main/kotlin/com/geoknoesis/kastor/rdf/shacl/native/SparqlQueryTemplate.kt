@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A SHACL-SPARQL query with its pre-bound variables (`$this` and, per query form, `$value` or a component's
@@ -13,7 +14,8 @@ import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
  * identically on every SPARQL provider, including inside sub-queries.
  *
  * [bind] substitutes IRIs and literals syntactically: in a triple pattern or expression the term replaces the
- * variable; in a SELECT projection it becomes `(term AS ?fresh)`, in `GROUP BY` / `ORDER BY` `(term)`, and
+ * variable; in the outermost SELECT projection it becomes `(term AS ?var)`, so solutions still bind the variable, in
+ * a sub-select's projection `(term AS ?fresh)`, in `GROUP BY` / `ORDER BY` `(term)`, and
  * `BOUND(?var)` of a substituted variable becomes `true` (BOUND only accepts a variable). Values
  * without a standard SPARQL syntax that denotes the same RDF term (blank nodes, triple terms, directional language
  * strings, IRIs with characters that are illegal in an IRIREF) keep the variable and are returned as provider
@@ -32,7 +34,13 @@ internal class SparqlQueryTemplate private constructor(
 
     private sealed interface Part
     private class Text(val text: String) : Part
-    private class Slot(val token: String, val name: String, val context: Context, val ordinal: Int) : Part
+    /**
+     * A pre-bound variable token. [projectedAs] is the name a substituted value takes in a projection: the variable's
+     * own name in the outermost `SELECT` (its first mention there), so a solution binds it as SHACL 1.2 SPARQL
+     * Appendix A requires (pre-binding is a join with the solution that binds it), a fresh name elsewhere (a sub-select
+     * projecting it, whose enclosing query may project it too).
+     */
+    private class Slot(val token: String, val name: String, val context: Context, val projectedAs: String) : Part
     /** `BOUND(?name)` on a pre-bound variable, kept verbatim in [text] when the value is not substituted. */
     private class BoundCheck(val text: String, val name: String) : Part
 
@@ -72,7 +80,7 @@ internal class SparqlQueryTemplate private constructor(
                         when (part.context) {
                             // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
                             Context.PLAIN -> text.append(rendered).append(if (value is LangString) " " else "")
-                            Context.PROJECTION -> text.append('(').append(rendered).append(" AS ?__kastor_prebound_").append(part.ordinal).append(')')
+                            Context.PROJECTION -> text.append('(').append(rendered).append(" AS ?").append(part.projectedAs).append(')')
                             Context.GROUP_OR_ORDER -> text.append('(').append(rendered).append(')')
                         }
                     }
@@ -86,13 +94,27 @@ internal class SparqlQueryTemplate private constructor(
         /** Pre-bound variables of a `sh:sparql` constraint: only `$this` (SHACL 1.2 no longer pre-binds `$shapesGraph` / `$currentShape`). */
         val SPARQL_CONSTRAINT_PRE_BOUND: Set<String> = setOf("this")
 
+        /**
+         * How many queries were compiled, and how many of them after the pre-binding restriction checks
+         * ([compileRestricted]): a test seam, so a test can show that a constraint's query is compiled and checked
+         * once per validation run, not once per focus node.
+         */
+        internal val compilations = AtomicLong()
+        internal val restrictedCompilations = AtomicLong()
+
         fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate {
+            compilations.incrementAndGet()
             val parts = ArrayList<Part>()
             val text = StringBuilder()
             var context = Context.PLAIN
             var depth = 0
             var previousWord: String? = null
             var ordinal = 0
+            // Braces open around the current token, whether the current SELECT is the outermost one, and the
+            // pre-bound variables the outermost projection already names.
+            var braces = 0
+            var outermost = false
+            val projectedOuter = HashSet<String>()
             val tokens = SparqlLexer.tokenize(query)
             var index = 0
             while (index < tokens.size) {
@@ -111,7 +133,7 @@ internal class SparqlQueryTemplate private constructor(
                     token.kind == SparqlToken.Kind.WORD -> {
                         val word = token.text.uppercase()
                         when {
-                            word == "SELECT" -> { context = Context.PROJECTION; depth = 0 }
+                            word == "SELECT" -> { context = Context.PROJECTION; depth = 0; outermost = braces == 0 }
                             (word == "WHERE" || word == "FROM") && context == Context.PROJECTION -> context = Context.PLAIN
                             word == "BY" && (previousWord == "GROUP" || previousWord == "ORDER") -> { context = Context.GROUP_OR_ORDER; depth = 0 }
                             word in setOf("HAVING", "LIMIT", "OFFSET", "VALUES", "ORDER", "GROUP") && context == Context.GROUP_OR_ORDER -> context = Context.PLAIN
@@ -121,13 +143,17 @@ internal class SparqlQueryTemplate private constructor(
                     token.kind == SparqlToken.Kind.PUNCT -> when (token.text) {
                         "(" -> depth++
                         ")" -> depth--
-                        "{", "}" -> context = Context.PLAIN
+                        "{" -> { context = Context.PLAIN; braces++ }
+                        "}" -> { context = Context.PLAIN; braces-- }
                     }
                 }
                 if (token.kind == SparqlToken.Kind.VARIABLE && token.variableName in preBound) {
                     if (text.isNotEmpty()) { parts.add(Text(text.toString())); text.setLength(0) }
                     val slotContext = if (context != Context.PLAIN && depth == 0) context else Context.PLAIN
-                    parts.add(Slot(token.text, token.variableName, slotContext, ordinal++))
+                    val name = token.variableName
+                    val keepsName = slotContext == Context.PROJECTION && outermost && projectedOuter.add(name)
+                    parts.add(Slot(token.text, name, slotContext, if (keepsName) name else "__kastor_prebound_$ordinal"))
+                    ordinal++
                 } else {
                     text.append(token.text)
                 }
@@ -367,6 +393,7 @@ internal class SparqlQueryTemplate private constructor(
             budget: ValidationBudget = ValidationBudget.NONE,
         ): SparqlQueryTemplate {
             budget.check(PHASE)
+            restrictedCompilations.incrementAndGet()
             val query = prologue + body
             for (text in listOf(body, query)) {
                 // RDF4J decodes codepoint escapes in the whole query before parsing, Jena does not: check every view.
@@ -501,13 +528,40 @@ internal class SparqlQueryTemplate private constructor(
         fun renderIri(iri: String): String? =
             if (iri.any { it in "<>\"{}|^`\\" || it.code <= 0x20 }) null else "<$iri>"
 
-        private val languageTag = Regex("[A-Za-z]+(-[A-Za-z0-9]+)*")
+        /**
+         * The longest language tag written into a query; a longer one stays a provider binding. Tags in use are a few
+         * dozen characters (BCP 47 recommends implementations support 35 at least).
+         */
+        internal const val MAX_RENDERED_LANGUAGE_TAG = 256
+
+        /**
+         * Whether [tag] is a SPARQL LANGTAG without its `@` (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`) of at most
+         * [MAX_RENDERED_LANGUAGE_TAG] characters. A linear scan: a regular expression with a repeated group recurses
+         * once per subtag on java.util.regex and overflows the stack on a data literal with a very long tag.
+         */
+        internal fun isRenderableLanguageTag(tag: String): Boolean {
+            if (tag.isEmpty() || tag.length > MAX_RENDERED_LANGUAGE_TAG) return false
+            var subtag = 0
+            var first = true
+            for (c in tag) {
+                when {
+                    c == '-' -> {
+                        if (subtag == 0) return false
+                        subtag = 0
+                        first = false
+                    }
+                    c in 'A'..'Z' || c in 'a'..'z' || (!first && c in '0'..'9') -> subtag++
+                    else -> return false
+                }
+            }
+            return subtag > 0
+        }
 
         fun renderTerm(term: RdfTerm): String? =
             when (term) {
                 is Iri -> renderIri(term.value)
                 is LangString ->
-                    if (term.direction != null || !languageTag.matches(term.lang)) null else "\"${escape(term.lexical)}\"@${term.lang}"
+                    if (term.direction != null || !isRenderableLanguageTag(term.lang)) null else "\"${escape(term.lexical)}\"@${term.lang}"
                 is Literal -> renderIri(term.datatype.value)?.let { "\"${escape(term.lexical)}\"^^$it" }
                 else -> null
             }
