@@ -51,6 +51,8 @@ entries are regrouped under those kind headings.
 - **Fixed (`rdf-rdf4j`):** a violated `sh:or` whose list nodes are IRIs failed with "Illegal blank node ID character":
   RDF4J 5.3's report writer (`ShaclAstLists.listToRdf`) turns list node identifiers into blank node identifiers. List
   nodes that are IRIs and carry only `rdf:first` / `rdf:rest` are now renamed to blank nodes before ShaclSail runs.
+  The renaming picks its blank-node prefix in one pass, and this preprocessing checks the validation deadline as it
+  goes through a large shapes graph; the feature scan also follows sequence and alternative paths with IRI cells.
 - **Changed (`rdf-shacl`), behaviour change:** the `sh:pattern` step budget charges each character read as many steps
   as the compiled pattern has instructions (the most work RE2/J does per read), at 200,000 steps per millisecond of
   `patternTimeout` (was one step per read at 50,000 per millisecond). Counting reads did not measure work:
