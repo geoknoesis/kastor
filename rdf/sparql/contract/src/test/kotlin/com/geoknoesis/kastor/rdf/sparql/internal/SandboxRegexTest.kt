@@ -166,6 +166,23 @@ class SandboxRegexTest {
         assertTrue(error.message!!.contains("REPLACE"), error.message)
     }
 
+    /** A call site compiles a constant pattern once, and a few alternating ones once each; the cache is bounded. */
+    @Test
+    fun `the pattern cache compiles each pattern once and is bounded`() {
+        val cache = SandboxRegex.PatternCache()
+        val first = cache.get("^a+$", null, none)
+        assertTrue(first === cache.get("^a+$", null, none))
+        assertFalse(first === cache.get("^a+$", "i", none))
+        val alternating = listOf("x", "y", "z").map { cache.get(it, null, none) }
+        repeat(10) { listOf("x", "y", "z").forEachIndexed { k, p -> assertTrue(alternating[k] === cache.get(p, null, none)) } }
+        repeat(10 * SandboxRegex.PatternCache.CAPACITY) { cache.get("p$it", null, none) }
+        assertTrue(cache.size <= SandboxRegex.PatternCache.CAPACITY, "the cache holds ${cache.size} patterns")
+        // Errors are not cached as patterns, and keep their kind.
+        assertThrows(XPathRegexException::class.java) { cache.get("(", null, none) }
+        assertThrows(SandboxLimitException::class.java) { cache.get("(a)\\1", null, none) }
+        assertThrows(SandboxLimitException::class.java) { cache.get("\\p{L}".repeat(80), null, none) }
+    }
+
     /** Many empty matches of a long replacement cost its length each time, so the check runs while they expand. */
     @Test
     fun `the check runs while replacements expand`() {

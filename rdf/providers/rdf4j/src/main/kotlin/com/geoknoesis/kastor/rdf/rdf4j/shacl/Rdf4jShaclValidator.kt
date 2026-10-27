@@ -133,10 +133,18 @@ internal class Rdf4jShaclValidator(
       )
     }
     val dataTriples = graph.getTriples()
-    val shapeTriples = shapes.getTriples()
+    // The preprocessing below is linear in the shapes graph, and checks the deadline as it goes through a large one
+    // (a small one goes on to the worker, which reports an expired deadline as usual).
+    val check = {
+      if (System.nanoTime() - deadline >= 0) {
+        throw ShaclValidationException("SHACL validation timed out while reading the shapes graph (ValidationConfig.timeout = ${config.timeout})")
+      }
+    }
+    // ShaclSail cannot report a violated sh:or / sh:and whose list nodes are IRIs (see ShaclLists.withBlankListNodes).
+    val shapeTriples = ShaclLists.withBlankListNodes(shapes.getTriples(), check)
 
     // Fail closed, whatever unsupportedFeatures says: ShaclSail would run these patterns with java.util.regex.
-    val unbounded = ShaclSailPatterns.javaEvaluated(shapeTriples)
+    val unbounded = ShaclSailPatterns.javaEvaluated(shapeTriples, check)
     if (unbounded.isNotEmpty()) {
       throw ShaclValidationException(
           "RDF4J ShaclSail evaluates sh:pattern inside sh:or, sh:and, sh:xone, sh:not or sh:qualifiedValueShape with " +

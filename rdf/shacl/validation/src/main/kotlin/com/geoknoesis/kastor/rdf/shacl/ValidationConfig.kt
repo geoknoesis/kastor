@@ -112,13 +112,16 @@ data class ValidationConfig(
     /**
      * Budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native engine).
      * Patterns run on a linear-time engine (RE2/J; no pattern backtracks), so the cost of a match grows with the
-     * length of the value: this budget bounds what one very long value can cost.
+     * length of the value times the size of the compiled pattern: this budget bounds what one very long value can
+     * cost.
      *
-     * The budget is **counted in steps** of the regular expression engine (character reads), at 50,000 steps per
-     * millisecond of this duration: the default of one second is fifty million steps, which current hardware performs
-     * in a fraction of a second. Counting steps instead of measuring time makes the outcome deterministic: the same
-     * pattern and value are decided, or not, on every machine, under any load and across garbage collection pauses.
-     * The wall clock is only a backstop: an evaluation is also stopped when ten times this duration has passed.
+     * The budget is **counted in steps** of the regular expression engine, at 200,000 steps per millisecond of this
+     * duration (the default of one second is two hundred million steps). Each character the engine reads costs as
+     * many steps as the compiled pattern has instructions, which is the most work the engine can do for one read
+     * (about 2.5 to 5 ns per step on current hardware), so a step count measures work, not just length. Counting steps
+     * instead of measuring time makes the outcome deterministic: the same pattern and value are decided, or not, on
+     * every machine, under any load and across garbage collection pauses. The wall clock is only a backstop: an
+     * evaluation is also stopped when ten times this duration has passed.
      *
      * A value on which a pattern exceeds the budget is **reported**: the constraint is undecided for that value,
      * which yields a result naming the pattern, marked [ValidationViolation.isPatternTimeout] (`ksh:resultStatus

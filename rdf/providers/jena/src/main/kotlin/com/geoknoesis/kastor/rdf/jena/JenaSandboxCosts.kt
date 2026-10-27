@@ -158,8 +158,8 @@ internal enum class JenaCost {
  */
 internal class JenaCostEvaluation(private val cost: JenaCost, private val label: String) {
 
-    /** The last compiled pattern and the text and flags it was compiled from (patterns are usually constant). */
-    @Volatile private var compiled: XPathPattern? = null
+    /** The patterns this call site compiled, by text and flags (patterns are usually constant); bounded. */
+    private val compiled = SandboxRegex.PatternCache()
 
     /** Fails with [SandboxLimitException] when computing on [args] would exceed a limit. */
     fun precheck(args: List<NodeValue>) {
@@ -207,7 +207,7 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
         if (args.size !in 2..3) throw ExprEvalException("$label: wrong number of arguments")
         val text = NodeValueOps.checkAndGetStringLiteral(label, args[0]).literalLexicalForm
         if (!args[1].isString || (args.size == 3 && !args[2].isString)) throw ExprEvalException("$label: the pattern and flags must be strings")
-        val pattern = pattern(args[1].string, args.getOrNull(2)?.string)
+        val pattern = pattern(args[1].string, args.getOrNull(2)?.string, check)
         return NodeValue.makeBoolean(SandboxRegex.find(pattern, text, check))
     }
 
@@ -223,7 +223,7 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
         val replacement = NodeValueOps.checkAndGetStringLiteral(label, args[2]).literalLexicalForm
         val flags = args.getOrNull(3)?.let { NodeValueOps.checkAndGetStringLiteral(label, it).literalLexicalForm }
         val text = node.literalLexicalForm
-        val compiledPattern = pattern(patternText, flags)
+        val compiledPattern = pattern(patternText, flags, check)
         val result = try {
             SandboxRegex.replace(compiledPattern, text, replacement, skipEmptyAfterFirst = true, check = check)
         } catch (e: XPathRegexException) {
@@ -234,13 +234,13 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
     }
 
     /**
-     * [text] compiled with the XPath [flags] for the linear-time engine ([SandboxRegex.compile]), keeping the last
-     * one. A pattern or flag that is invalid or not supported (a back-reference, a lookaround, ...) is a SPARQL error.
+     * [text] compiled with the XPath [flags] for the linear-time engine ([SandboxRegex.compile], running [check]),
+     * from the call site's cache. An invalid pattern or flag is a SPARQL error; one the engine cannot honour (a
+     * back-reference, a lookaround, a pattern too complex to compile, ...) fails the query.
      */
-    private fun pattern(text: String, flags: String?): XPathPattern {
-        compiled?.let { if (it.pattern == text && it.flags == flags) return it }
+    private fun pattern(text: String, flags: String?, check: Runnable): XPathPattern {
         return try {
-            SandboxRegex.compile(text, flags).also { compiled = it }
+            compiled.get(text, flags, check)
         } catch (e: XPathRegexException) {
             throw ExprEvalException("$label: ${e.message}", e)
         }

@@ -133,6 +133,76 @@ class Rdf4jShaclSandboxTest {
         }
     }
 
+    /**
+     * A SHACL list may be written with IRI nodes. Round fifteen's walk followed blank nodes only, so with IRI list nodes
+     * a pattern under `sh:or` reached ShaclSail's java.util.regex plan (a back-reference matched; a nested quantifier
+     * took 36 s on 29 characters). Whatever the list nodes, nesting and references, the pattern is refused.
+     */
+    @Test
+    fun `sh pattern is refused under every logical constraint whatever the list nodes are`() {
+        val pattern = "sh:pattern '^(a)\\\\1$'"
+        val lists = mapOf(
+            "blank" to { members: List<String>, name: String -> "( ${members.joinToString(" ")} )" to "" },
+            "iri" to { members: List<String>, name: String ->
+                val nodes = members.indices.map { "ex:$name$it" }
+                val triples = members.indices.joinToString(" ") { k ->
+                    "${nodes[k]} rdf:first ${members[k]} ; rdf:rest ${if (k + 1 < nodes.size) nodes[k + 1] else "rdf:nil"} ."
+                }
+                nodes[0] to triples
+            },
+            // IRI list nodes that say more than rdf:first and rdf:rest are not renamed: the search itself must follow them.
+            "typed iri" to { members: List<String>, name: String ->
+                val nodes = members.indices.map { "ex:$name$it" }
+                val triples = members.indices.joinToString(" ") { k ->
+                    "${nodes[k]} a rdf:List ; rdf:first ${members[k]} ; rdf:rest ${if (k + 1 < nodes.size) nodes[k + 1] else "rdf:nil"} ."
+                }
+                nodes[0] to triples
+            },
+        )
+        val textData = Rdf.parse("$prefixes\nex:a ex:p 'aa' , 'ab' .", "TURTLE")
+        for ((kind, list) in lists) {
+            for (operator in listOf("sh:or", "sh:and", "sh:xone")) {
+                val (direct, directTriples) = list(listOf("[ $pattern ]", "[ sh:minLength 9 ]"), "D")
+                // Nested: the pattern is inside an sh:and list inside the operator's list, reached through a named shape.
+                val (inner, innerTriples) = list(listOf("ex:Named", "[ sh:minLength 1 ]"), "I")
+                val (outer, outerTriples) = list(listOf("[ sh:and $inner ]", "[ sh:minLength 9 ]"), "O")
+                for ((structure, extra) in listOf(
+                    "sh:property [ sh:path ex:p ; $operator $direct ]" to directTriples,
+                    "sh:property [ sh:path ex:p ; $operator $outer ] . ex:Named $pattern" to "$outerTriples $innerTriples",
+                    "$operator $outer . ex:Named sh:property [ sh:path ex:p ; $pattern ]" to "$outerTriples $innerTriples",
+                )) {
+                    val shapes = graph(
+                        "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +
+                            "ex:S a sh:NodeShape ; sh:targetNode ex:a ; $structure .\n$extra",
+                    )
+                    val error = runCatching { validator().validate(textData, shapes) }.exceptionOrNull()
+                    assertTrue(
+                        error is ShaclValidationException && "java.util.regex" in error.message.orEmpty(),
+                        "$kind $operator: $structure $extra: expected a refusal, got ${error ?: "a report"}",
+                    )
+                }
+            }
+        }
+    }
+
+    /** RDF4J's report of an `sh:or` whose list nodes are IRIs failed with "Illegal blank node ID character". */
+    @Test
+    fun `a violated sh or whose list nodes are IRIs gives a report`() {
+        val shapes = graph(
+            """
+            @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:or ex:L1 ] .
+            ex:L1 rdf:first [ sh:minLength 99 ] ; rdf:rest ex:L2 .
+            ex:L2 rdf:first [ sh:maxLength 1 ] ; rdf:rest rdf:nil .
+            """.trimIndent(),
+        )
+        val textData = Rdf.parse("$prefixes\nex:a ex:p 'abc' .", "TURTLE")
+        val report = validator().validate(textData, shapes)
+        assertFalse(report.isValid)
+        assertEquals(1, report.violations.size, report.violations.toString())
+        assertTrue(validator().validate(Rdf.parse("$prefixes\nex:a ex:p 'a' .", "TURTLE"), shapes).isValid)
+    }
+
     @Test
     fun `a catastrophic regular expression in a shapes query runs in linear time`() {
         // Exponential on java.util.regex; the linear-time engine decides it at once, and it does not match.

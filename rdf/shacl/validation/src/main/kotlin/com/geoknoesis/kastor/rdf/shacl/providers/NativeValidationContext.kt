@@ -176,7 +176,7 @@ internal class NativeValidationContext(
         throw budget.failure("validation", e) ?: e
     }
     /** The budget of one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
-    fun patternBudget(steps: Long, backstopNanos: Long) = PatternBudget(steps, patternClock(), backstopNanos)
+    fun patternBudget(steps: Long, weight: Long, backstopNanos: Long) = PatternBudget(steps, weight, patternClock(), backstopNanos)
     /** [value] for the pattern evaluation [evaluation]. */
     fun text(value: String, evaluation: PatternBudget): CharSequence = DeadlineCharSequence(value, budget, patternClock, evaluation)
     override fun close() {

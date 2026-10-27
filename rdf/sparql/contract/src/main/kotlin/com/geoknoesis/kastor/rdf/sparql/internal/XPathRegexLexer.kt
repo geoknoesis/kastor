@@ -6,13 +6,15 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  *
  * [p] is the pattern, read from index [i]; [ignoreCase] is the `i` flag (characters and ranges are closed under case,
  * every other construct is not); [javaComments] says the `x` flag came from a leading `(?x)`, whose `java.util.regex`
- * readings that differ from XPath are refused.
+ * readings that differ from XPath are refused; [check] runs every [CHECK_MEMBERS] members of a character class.
  */
 internal abstract class XPathRegexLexer(
     protected val p: String,
     start: Int,
     protected val ignoreCase: Boolean,
     protected val javaComments: Boolean,
+    /** A deadline or cancellation check, run now and then while a pattern is read. */
+    protected val check: Runnable,
 ) {
     protected var i = start
 
@@ -63,7 +65,7 @@ internal abstract class XPathRegexLexer(
             'a' -> Escape.Single(0x07)
             'e' -> Escape.Single(0x1B)
             'x' -> Escape.Single(hexEscape(from))
-            'u' -> Escape.Single(fixedHex(from, 4))
+            'u' -> Escape.Single(unicodeEscape(from))
             '0' -> Escape.Single(octalEscape())
             in '1'..'9' -> refuse(
                 "the back-reference \\$n at index $from is not supported: patterns run on a linear-time engine (RE2), " +
@@ -117,6 +119,20 @@ internal abstract class XPathRegexLexer(
         val cp = if (digits.isNotEmpty() && digits.length <= 8 && digits.all(::isHex)) digits.toLong(16) else -1L
         if (cp !in 0..CodePointSet.MAX.toLong()) reject("the hexadecimal escape at index $from is not a code point")
         return cp.toInt()
+    }
+
+    /**
+     * `\uHHHH` after the `\u` (at [i]); [from] is the backslash. As in java.util.regex, a high surrogate escape
+     * directly followed by a low surrogate escape is the one supplementary character the pair encodes; a lone
+     * surrogate stays a lone surrogate (it matches only a lone surrogate of the text, never half of a pair).
+     */
+    private fun unicodeEscape(from: Int): Int {
+        val unit = fixedHex(from, 4)
+        if (!Character.isHighSurrogate(unit.toChar()) || !p.startsWith("\\u", i) || i + 6 > p.length) return unit
+        val low = p.substring(i + 2, i + 6)
+        if (!low.all(::isHex) || !Character.isLowSurrogate(low.toInt(16).toChar())) return unit
+        i += 6
+        return Character.toCodePoint(unit.toChar(), low.toInt(16).toChar())
     }
 
     private fun fixedHex(from: Int, count: Int): Int {
@@ -220,6 +236,7 @@ internal abstract class XPathRegexLexer(
         if (negated) i++
         val members = Members()
         while (i < p.length) {
+            if (members.count % CHECK_MEMBERS == CHECK_MEMBERS - 1) check.run()
             val c = p[i]
             val next = p.getOrNull(i + 1)
             when {
@@ -362,6 +379,9 @@ internal abstract class XPathRegexLexer(
     protected companion object {
         /** The deepest nesting of character class subtractions (`[a-[b-[c]]]`): [charClass] recurses per level. */
         const val MAX_CLASS_NESTING = 64
+
+        /** [check] runs every this many members of a character class. */
+        const val CHECK_MEMBERS = 64
 
         /** The letters of the escapes that stand for a set of characters (they cannot be the endpoint of a range). */
         const val SET_ESCAPE_LETTERS = "dDwWsSiIcCpPQ"

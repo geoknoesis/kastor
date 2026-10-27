@@ -696,7 +696,7 @@ class DynamicShaclTest {
     @Test
     fun `a pattern read from the data is bounded by the pattern budget`() {
         // Patterns run on a linear-time engine, so a budget is used up by a long value: 100,000 characters are more
-        // than the 50,000 steps of 1 ms.
+        // than the 200,000 steps of 1 ms (three reads per character, seven steps per read).
         val hostile = "a".repeat(100_000) + "!"
         val config = ValidationConfig(patternTimeout = java.time.Duration.ofMillis(1))
         val started = System.nanoTime()

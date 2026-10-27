@@ -5,7 +5,11 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.shacl.native.compileShaclPattern
+import com.geoknoesis.kastor.rdf.shacl.providers.NativePatternEvaluator
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.shacl.providers.PATTERN_DEGRADED_STEPS_PER_CHAR
+import com.geoknoesis.kastor.rdf.shacl.providers.PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import java.time.Duration
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -21,7 +25,8 @@ import org.junit.jupiter.api.Test
  * the other values and focus nodes: one slow or hostile literal does not abort the run. Only the run-wide
  * [ValidationConfig.timeout] (and `strictMode`) aborts.
  *
- * The tests are deterministic. The budget is counted in steps of the regular expression engine (character reads);
+ * The tests are deterministic. The budget is counted in steps of the regular expression engine (character reads,
+ * each weighted by the size of the compiled pattern);
  * the wall clock is only a backstop, and the tests inject it ([NativeShaclValidator.patternClock]).
  */
 class PatternBudgetTest {
@@ -31,8 +36,9 @@ class PatternBudgetTest {
     private fun ex(local: String) = Iri("http://example.org/$local")
 
     /**
-     * Patterns run on a linear-time engine, so what uses up a budget is a long value: three million characters read
-     * once each are more than the 2.5 million steps of a 50 ms budget. (`(.*a){30}` on sixty `a`s, which backtracked
+     * Patterns run on a linear-time engine, so what uses up a budget is a long value: three million characters, read
+     * about three times each at the weight of a seven-instruction program, are more than the ten million steps of a
+     * 50 ms budget. (`(.*a){30}` on sixty `a`s, which backtracked
      * catastrophically on java.util.regex, is decided at once now.)
      */
     private val catastrophic = "^a+b$"
@@ -43,7 +49,7 @@ class PatternBudgetTest {
 
     /**
      * A clock that advances one millisecond each time it is read. A budget of n milliseconds is therefore used up
-     * after n consultations (about n * 1024 character reads), on any machine and under any load.
+     * after n consultations (one every 1024 steps), on any machine and under any load.
      */
     private fun tickingClock(): () -> Long {
         var now = 0L
@@ -201,7 +207,7 @@ class PatternBudgetTest {
         assertFalse(validator().validate(graph("""ex:a a ex:T ; ex:p "b" ."""), shapes).isValid)
         assertFalse(validator().validate(graph("""ex:a a ex:T ; ex:p "aaa" ."""), shapes).isValid)
         // A linear pattern over a long value reads hundreds of thousands of characters: far below the step budget of
-        // the default patternTimeout (fifty million steps).
+        // the default patternTimeout (two hundred million steps).
         val linear = propertyShape("""sh:pattern "^[ab]+$"""")
         val long = "ab".repeat(100_000)
         val validator = validator(ValidationConfig(), frozenClock)
@@ -231,6 +237,44 @@ class PatternBudgetTest {
         // The same run again gives the same report.
         val second = validator(config, frozenClock).validate(graph("""ex:a a ex:T ; ex:p "$hostile" . ex:b a ex:T ; ex:p "aaa" ."""), shapes)
         assertEquals(report.violations.map { it.message }, second.violations.map { it.message })
+    }
+
+    /**
+     * RE2/J advances up to one thread per instruction of the compiled pattern for each character it reads, so a step
+     * is a read weighted by the program size: `.{0,1000}x` (about 2,000 instructions) on 300,000 characters is
+     * 900,000 reads (well under the 5 million reads of a 100 ms budget counted in reads) but almost two billion
+     * steps. It took 6.9 s when reads were counted; now it stops at the budget.
+     */
+    @Test
+    fun `a step is a character read weighted by the size of the compiled pattern`() {
+        val heavy = propertyShape("""sh:pattern ".{0,1000}x"""")
+        val config = ValidationConfig(patternTimeout = Duration.ofMillis(100))
+        val validator = validator(config, frozenClock)
+        val report = validator.validate(graph("""ex:a a ex:T ; ex:p "${"a".repeat(300_000)}" ."""), heavy)
+        assertEquals(listOf(true), report.violations.map { it.isPatternTimeout }, report.violations.map { it.message }.toString())
+        val budget = NativePatternEvaluator.stepBudget(config)
+        val weight = compileShaclPattern(".{0,1000}x", null).programSize.toLong()
+        assertTrue(validator.patternSteps in budget..budget + 1024 * weight, "steps: ${validator.patternSteps}, budget $budget")
+        // A small pattern on the same value reads it at a small weight, and is decided.
+        val light = validator(config, frozenClock).validate(graph("""ex:a a ex:T ; ex:p "${"a".repeat(300_000)}" ."""), propertyShape("""sh:pattern "^a+$""""))
+        assertTrue(light.isValid, light.violations.map { it.message }.toString())
+    }
+
+    /** After 16 exhausted budgets, a value of a pattern with a large program gets the reduced, linear budget. */
+    @Test
+    fun `the run-wide cap engages for a pattern with a large program`() {
+        val heavy = propertyShape("""sh:pattern ".{0,1000}x"""")
+        val config = ValidationConfig(patternTimeout = Duration.ofMillis(100))
+        val values = (0 until 24).joinToString(" , ") { "\"${"a".repeat(20_000 + it)}\"" }
+        val validator = validator(config, frozenClock)
+        val report = validator.validate(graph("ex:a a ex:T ; ex:p $values ."), heavy)
+        assertEquals(24, report.violations.count { it.isPatternTimeout }, report.violations.map { it.message }.toString())
+        val budget = NativePatternEvaluator.stepBudget(config)
+        val weight = compileShaclPattern(".{0,1000}x", null).programSize.toLong()
+        val reduced = 20_024L * PATTERN_DEGRADED_STEPS_PER_CHAR
+        val bound = PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS * budget + (24 - PATTERN_MAX_FULL_BUDGET_EXHAUSTIONS) * reduced + 24 * 1024 * weight
+        assertTrue(reduced < budget / 10, "the reduced budget must be well below the full one")
+        assertTrue(validator.patternSteps <= bound, "steps: ${validator.patternSteps}, bound $bound")
     }
 
     @Test

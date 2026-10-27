@@ -90,16 +90,87 @@ class XPathRegexTest {
     @Test
     fun `structural bounds refuse hostile patterns before RE2 builds them`() {
         assertRefused("(".repeat(65) + "a" + ")".repeat(65), null, "nested")
-        assertRefused("(".repeat(100_000) + "a" + ")".repeat(100_000), null, "nested")
+        assertRefused("(".repeat(30_000) + "a" + ")".repeat(30_000), null, "nested")
         assertRefused("((a{1000}){1000}){1000}", null, "too large")
         assertRefused("(a{100}){600}", null, "too large")
-        assertRefused("[a-".repeat(100_000) + "[b]" + "]".repeat(100_000), null, "nested")
+        assertRefused("[a-".repeat(15_000) + "[b]" + "]".repeat(15_000), null, "nested")
         // Many large classes: the translation is bounded too.
-        assertRefused("\\w".repeat(20_000), null, "too large")
+        assertRefused("\\w".repeat(20_000), null, "too complex")
         // Moderate structure is fine.
         assertTrue(matches("^" + "(".repeat(60) + "a" + ")".repeat(60) + "$", null, "a"))
         assertTrue(matches("^(a{10}){10}$", null, "a".repeat(100)))
         assertTrue(matches("^\\w{1000}$", null, "a".repeat(1000)))
+    }
+
+    /** RE2 reads a count with a leading zero as literal text: counts reach it in canonical form. */
+    @Test
+    fun `repetition counts with leading zeros mean their value`() {
+        assertTrue(matches("^a{01}$", null, "a"))
+        assertFalse(matches("^a{01}$", null, "a{01}"))
+        assertTrue(matches("^a{2,03}$", null, "aaa"))
+        assertTrue(matches("^a{00,1}$", null, ""))
+        assertTrue(matches("^a{002,}$", null, "aaaa"))
+        assertFalse(matches("^a{002,}$", null, "a"))
+        assertTrue(matches("^[0-9]{04}$", null, "2026"))
+        assertTrue(matches("^a{" + "0".repeat(10_000) + "2}$", null, "aa"))
+        // Counts are compared by their significant digits, never converted from an unbounded text.
+        assertRefused("a{" + "0".repeat(100) + "1001}", null, "1000")
+        assertRefused("a{" + "9".repeat(50_000) + "}", null, "1000")
+        assertRefused("a{1," + "9".repeat(50_000) + "}", null, "1000")
+    }
+
+    /** java.util.regex reads `\uHHHH\uHHHH` of a surrogate pair as the one character it encodes. */
+    @Test
+    fun `surrogate pair escapes are one character`() {
+        val emoji = "😀"
+        val grin = "😁"
+        assertTrue(matches("\\uD83D\\uDE00", null, emoji))
+        assertTrue(matches("^[\\uD83D\\uDE00]$", null, emoji))
+        assertTrue(matches("^[a\\uD83D\\uDE00b]$", null, emoji))
+        assertTrue(matches("^[\\uD83D\\uDE00-\\uD83D\\uDE4F]$", null, grin))
+        assertTrue(matches("^\\uD83D\\uDE00+$", null, emoji + emoji))
+        assertTrue(matches("^\\uD83D\\uDE00$", "i", emoji))
+        for (p in listOf("\\uD83D\\uDE00", "^[\\uD83D\\uDE00]$", "^[\\uD83D\\uDE00-\\uD83D\\uDE4F]$", "\\uD83D", "^[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]$")) {
+            for (text in listOf(emoji, grin, "\uD83Dx")) {
+                assertEquals(Pattern.compile(p).matcher(text).find(), matches(p, null, text), "$p on $text")
+            }
+        }
+        // A lone surrogate stays one (as in java.util.regex): it does not match half of a pair.
+        assertFalse(matches("\\uD83D", null, emoji))
+        assertFalse(matches("^[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]$", null, emoji))
+    }
+
+    /**
+     * RE2/J parses a pattern in time quadratic in its text, and no deadline reaches inside it: a pattern longer than
+     * [XPathRegex.MAX_PATTERN_LENGTH], or whose translation passes [XPathRegexTranslator.MAX_PARSE_COST], is refused
+     * before RE2 sees it.
+     */
+    @Test
+    fun `the compile cost is bounded before RE2 parses the pattern`() {
+        // The reviewers' probes (8 s, 114 s and 41 s to compile before).
+        assertRefused("\\p{L}".repeat(80), null, "too complex")
+        assertRefused("[\\p{L}-[\\p{Lu}]]".repeat(200), "i", "too complex")
+        assertRefused("ab".repeat(20_000), null, "too complex")
+        assertRefused("[ab]".repeat(10_000), null, "too complex")
+        for (huge in listOf("a{" + "9".repeat(400_000) + "}", "a{" + "0".repeat(400_000) + "1}", "\\Q" + "#".repeat(4_000_000))) {
+            assertRefused(huge, null, "longer than ${XPathRegex.MAX_PATTERN_LENGTH}")
+        }
+        assertRefused("a".repeat(XPathRegex.MAX_PATTERN_LENGTH + 1), "q", "longer than")
+        // Realistic patterns are well within the bound.
+        for ((pattern, flags) in REALISTIC) XPathRegex.compile(pattern, flags)
+        val words = (1..300).joinToString("|") { "word$it" }
+        assertTrue(matches("^($words)$", null, "word123"))
+        assertTrue(matches("^" + "\\p{L}".repeat(8) + "$", null, "abcdefgh"))
+        assertTrue(matches("^" + "\\w".repeat(6) + "$", "i", "abcdef"))
+    }
+
+    @Test
+    fun `compiling runs the check, which can stop it`() {
+        val checks = java.util.concurrent.atomic.AtomicInteger()
+        XPathRegex.compile("[\\p{L}\\p{N}]".repeat(6) + "a".repeat(2000), null, Runnable { checks.incrementAndGet() })
+        assertTrue(checks.get() > 0, "the check never ran")
+        class Stop : RuntimeException()
+        assertThrows(Stop::class.java) { XPathRegex.compile("a".repeat(2000), null, Runnable { throw Stop() }) }
     }
 
     @Test
@@ -133,7 +204,7 @@ class XPathRegexTest {
                 )
                 // Inside a group, nothing may match the empty string: java.util.regex and RE2 handle empty iterations
                 // of a repeated group differently (neither is what XPath specifies in detail).
-                val quantifiers = if (depth == 0) listOf("", "", "*", "+", "?", "{1,2}", "*?", "+?", "??", "{2}") else listOf("", "+", "{1,2}", "+?", "{2}")
+                val quantifiers = if (depth == 0) listOf("", "", "*", "+", "?", "{1,2}", "*?", "+?", "??", "{2}", "{01,02}", "{002}") else listOf("", "+", "{1,2}", "+?", "{2}", "{01}")
                 append(quantifiers[random.nextInt(quantifiers.size)])
             }
         }
@@ -148,5 +219,31 @@ class XPathRegexTest {
                 assertEquals(expected, ours.firstMatch(text), "$regex on \"$text\"")
             }
         }
+    }
+
+    private companion object {
+        /** Patterns of the kind shapes and queries use, which the compile cost bound must accept. */
+        val REALISTIC: List<Pair<String, String?>> = listOf(
+            "^[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}.-]+\\.\\p{L}{2,}$" to null,
+            "^[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}.-]+\\.\\p{L}{2,}$" to "i",
+            "^\\w+(\\s\\w+)*$" to null,
+            "^\\w+(\\s\\w+)*$" to "i",
+            "(?i)^[a-z0-9-]+$" to null,
+            "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})?)?$" to null,
+            "^\\p{Lu}\\p{Ll}+( \\p{Lu}\\p{Ll}+)*$" to "i",
+            "^[\\i-[:]][\\c-[:]]*$" to null,
+            "^\\S+$" to null,
+            "[^\\s\\p{P}]+" to "i",
+            "^\\p{IsBasicLatin}*$" to null,
+            "^[\\p{L}\\p{M}\\p{N}\\p{Pc}\\p{Pd}\\s]{1,200}$" to "i",
+            "^[\\p{L}-[\\p{Lu}]]+$" to "i",
+            "^https?://[^\\s/$.?#].[^\\s]*$" to "i",
+            "^\\+?[0-9 ()-]{7,20}$" to null,
+            "^[A-Z]{2}[0-9]{2}[A-Z0-9]{1,30}$" to null,
+            "^(\\p{L}|\\p{N}|[-_.~])*$" to null,
+            "^.{0,1000}$" to "s",
+            "^\\p{IsCJKUnifiedIdeographs}+$" to null,
+            "^\\p{IsGreek}+\\s\\p{IsCyrillic}+$" to "i",
+        )
     }
 }
