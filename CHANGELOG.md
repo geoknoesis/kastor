@@ -48,6 +48,21 @@ entries are regrouped under those kind headings.
   the previous behaviour for data graphs from a trusted source. Shapes passed to the constructors or to `fromTurtle`
   are trusted, as before. The ABI dumps of `kastor-gen-runtime`, `kastor-gen-validation-jena` and
   `kastor-gen-validation-rdf4j` gain these additions only.
+- **Security (`kastor-gen-processor`, `kastor-gen-runtime`), behaviour change:** generated `sh:pattern` checks (the
+  wrapper's `validate()`, the instance DSL's setters and `validate()`) now run on the Kastor SHACL validator's
+  linear-time engine (RE2/J) through the new `ShaclPattern` class of `kastor-gen-runtime`. Before, they ran on
+  `java.util.regex`, where a hostile value made an ordinary pattern such as `^(.*a){20}$` backtrack for seconds or
+  for ever. Generation now refuses what the validator refuses (back-references, lookarounds, atomic groups,
+  possessive quantifiers, word boundaries, repetition counts above 1000, ...), naming the shape, path and pattern,
+  so a shapes graph that generates also validates. The generator's own `java.util.regex` translation is removed.
+  The ABI dump of `kastor-gen-runtime` gains `ShaclPattern`.
+- **Fixed (`kastor-gen-runtime`, `rdf-core`), behaviour change:** generated `sh:datatype` checks
+  (`XsdLiterals.isWellFormed` and `hasDatatype`) reject ill-formed `xsd:hexBinary`, `xsd:base64Binary`,
+  `xsd:language`, `xsd:normalizedString`, `xsd:token`, XML name and token types (`xsd:NCName`, `xsd:NMTOKEN`,
+  `xsd:QName`, ...) and `xsd:anyURI` literals, as the native SHACL engine does. Before, `"zz"^^xsd:hexBinary`
+  passed. Both now use the scanners moved from the native engine into the shared XSD parser of `rdf-core`
+  (`com.geoknoesis.kastor.rdf.xsd.XsdStrings`, internal API). The decoders and `encode` apply the same check, so
+  `encode("zz", xsd:hexBinary)` now fails.
 
 ### Round fourteen
 
