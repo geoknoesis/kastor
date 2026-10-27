@@ -51,8 +51,9 @@ dependencies {
   runtimeOnly(libs.jena.arq)
   
   testImplementation(libs.kotlin.test)
-  // Generated EXTERNAL validators that name Rdf4jValidation are compiled and run against it.
-  testImplementation(project(":kastor-gen:validation-rdf4j"))
+  // Generated EXTERNAL validators that name Rdf4jValidation are compiled and run against it (through the test
+  // runtime class path, which KotlinSourceCompiler and KspRunner pass to the compiler).
+  testRuntimeOnly(project(":kastor-gen:validation-rdf4j"))
   // The real Bean Validation API, which compiled generated sources and KSP test runs see on the class path.
   testRuntimeOnly(libs.jakarta.validation.api)
   // Providers for the round trips of generated records through Jena and RDF4J repositories.

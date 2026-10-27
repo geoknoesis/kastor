@@ -75,6 +75,7 @@ kotlinxSerializationJsonResolved = "0.4.4"
 titanium-jsonld = { module = "com.apicatalog:titanium-json-ld", version.ref = "titaniumJsonld" }
 hasmac-jsonld = { module = "no.hasmac:hasmac-json-ld", version.ref = "hasmacJsonld" }
 jakarta-json = { module = "org.glassfish:jakarta.json", version.ref = "jakartaJson" }
+jakarta-json-api = { module = "jakarta.json:jakarta.json-api", version.ref = "jakartaJson" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 commons-codec = { module = "commons-codec:commons-codec", version.ref = "commonsCodec" }
 commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
