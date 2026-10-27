@@ -187,6 +187,9 @@ entries are regrouped under those kind headings.
 - **Fixed (`rdf-jena`):** the merge of the REGEX pattern caches left `JenaCostEvaluation` unclosed; the shared
   `JenaPatternCache` now compiles through the capped, deadline-checked `SandboxRegex.compile`, and a pattern beyond
   the compile-cost cap is refused on every call and never kept.
+- **Changed (`rdf-jena`):** when Jena's `NodeValue` cache cannot be reached (a Jena version without the private
+  field the large-literal clean-up reads), one WARN is logged instead of skipping the clean-up silently; a test fails
+  if the field cannot be read with the pinned Jena version.
 
 ### Round fourteen
 

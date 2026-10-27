@@ -25,13 +25,33 @@ internal object JenaNodeValueCache {
     /** Longest lexical form of a literal that a sandboxed query leaves in Jena's `NodeValue` cache. */
     const val MAX_CACHED_LENGTH: Int = 1024
 
+    /**
+     * Jena's cache, or null when this Jena version does not have it as expected: then the clean-up is skipped, which
+     * is logged once (this object is initialised once), so an upgrade of Jena that removes the field does not go
+     * unnoticed. JenaNodeValueCacheTest fails with the pinned version if the field cannot be read.
+     */
+    private val cache: Cache<Node, NodeValue>? = lookUp(NodeValue::class.java, "nodeValueCache") {
+        org.slf4j.LoggerFactory.getLogger(JenaNodeValueCache::class.java).warn(it)
+    }
+
+    /** The static [Cache] in [field] of [owner], or null after reporting why to [warn]. */
     @Suppress("UNCHECKED_CAST")
-    private val cache: Cache<Node, NodeValue>? = try {
-        NodeValue::class.java.getDeclaredField("nodeValueCache").apply { isAccessible = true }.get(null) as? Cache<Node, NodeValue>
-    } catch (e: ReflectiveOperationException) {
-        null
-    } catch (e: RuntimeException) {
-        null
+    internal fun lookUp(owner: Class<*>, field: String, warn: (String) -> Unit): Cache<Node, NodeValue>? {
+        val reason = try {
+            when (val value = owner.getDeclaredField(field).apply { isAccessible = true }.get(null)) {
+                is Cache<*, *> -> return value as Cache<Node, NodeValue>
+                else -> "it holds ${value?.javaClass?.name ?: "null"}, not an ${Cache::class.java.name}"
+            }
+        } catch (e: ReflectiveOperationException) {
+            e.toString()
+        } catch (e: RuntimeException) {
+            e.toString()
+        }
+        warn(
+            "Jena's NodeValue cache (${owner.name}.$field) cannot be read ($reason): large literals of sandboxed " +
+                "queries stay in that process-wide cache after the queries end",
+        )
+        return null
     }
 
     /** Whether the cache was found (a Jena version without it, or one that hides it, needs no clean-up or cannot have it). */
