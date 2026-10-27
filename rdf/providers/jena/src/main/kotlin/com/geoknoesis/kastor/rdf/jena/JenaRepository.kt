@@ -145,6 +145,13 @@ class JenaRepository private constructor(
 ) : RdfRepository, com.geoknoesis.kastor.rdf.DescribesQueryDataset {
     private val closed = AtomicBoolean(false)
 
+    /**
+     * How a SPARQL `LOAD` opens its source, as [Rdf.parseFromUrl] does. The default allows `http`/`https` to public
+     * addresses only (no `file:`, loopback or internal network); a repository that loads trusted local sources opts in,
+     * for example with `UrlLoadOptions.ALLOW_ALL_ADDRESSES.withAllowedSchemes(setOf("http", "https", "file"))`.
+     */
+    @Volatile var updateLoadOptions: com.geoknoesis.kastor.rdf.UrlLoadOptions = com.geoknoesis.kastor.rdf.UrlLoadOptions.DEFAULT
+
     /** Released when the `close()` call that won [closed] has closed the store (or failed to). */
     private val storeClosed = java.util.concurrent.CountDownLatch(1)
 
@@ -1116,32 +1123,20 @@ class JenaRepository private constructor(
      * used as a subject or object, stays a blank node. Blank-node graphs that were in the store before the request
      * (written to a TDB2 location by other software) are left alone. Requests that cannot create such a graph (no
      * `LOAD` without `INTO GRAPH`, no `INSERT` template with a graph variable) are not checked at all, and a request
-     * whose text rules it out is executed while it is parsed, as before (so a large `INSERT DATA` is never held in
-     * memory as a parsed request).
+     * whose text rules it out and has no `WHERE` clause is executed while it is parsed, as before (so a large
+     * `INSERT DATA` is never held in memory as a parsed request).
+     *
+     * **Bounds.** A request with a `WHERE` clause or a `LOAD` runs with the sandbox's expression bounds and Kastor's
+     * bounded parser ([JenaUpdateBounds]); every write is checked for long literals ([JenaLiteralBounds.boundedWrites]).
      */
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
-            if (!JenaBlankGraphs.textMayCreateBlankGraph(query.sparql)) {
-                org.apache.jena.update.UpdateAction.parseExecute(JenaLiteralBounds.requireBoundedQuery(query.sparql), dataset)
+            val text = JenaLiteralBounds.requireBoundedQuery(query.sparql)
+            if (!JenaBlankGraphs.textMayCreateBlankGraph(text) && !JenaUpdateBounds.mayCompute(text)) {
+                org.apache.jena.update.UpdateAction.parseExecute(text, JenaLiteralBounds.boundedWrites(dataset))
             } else {
-                val request = org.apache.jena.update.UpdateFactory.create(JenaLiteralBounds.requireBoundedQuery(query.sparql))
-                val foreign = if (JenaBlankGraphs.mayCreateBlankGraph(request)) JenaBlankGraphs.blankGraphNames(dataset) else null
-                var failure: Throwable? = null
-                try {
-                    org.apache.jena.update.UpdateAction.execute(request, dataset)
-                } catch (e: Throwable) {
-                    failure = e
-                    throw e
-                } finally {
-                    // An outer transaction may catch the error and retain earlier successful operations.
-                    if (foreign != null) {
-                        try {
-                            JenaBlankGraphs.skolemizeBlankGraphs(dataset, foreign)
-                        } catch (e: Exception) {
-                            failure?.addSuppressed(e) ?: throw e
-                        }
-                    }
-                }
+                val request = org.apache.jena.update.UpdateFactory.create(text)
+                JenaBlankGraphs.executeSkolemizing(request, dataset) { JenaUpdateBounds.execute(request, dataset, updateLoadOptions) }
             }
         }
     }

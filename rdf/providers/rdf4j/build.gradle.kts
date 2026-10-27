@@ -41,6 +41,8 @@ dependencies {
 
   implementation(libs.rdf4j.rio.jsonld)
   implementation(libs.hasmac.jsonld)
+  // Rdf4jJsonLd: Titanium's expansion reports the keys that expand to no IRI (the hasmac fork drops them silently).
+  implementation(libs.titanium.jsonld)
   runtimeOnly(libs.rdf4j.rio.turtle)
   runtimeOnly(libs.rdf4j.rio.rdfxml)
   runtimeOnly(libs.rdf4j.rio.n3)

@@ -4,6 +4,8 @@ plugins {
 
 dependencies {
   implementation(libs.slf4j.api)
+  // JsonLdExpandedCheck reads the expanded JSON-LD of the providers, which bring the jakarta.json API at runtime.
+  compileOnly(libs.jakarta.json)
 
   api(project(":rdf:sparql-contract"))
   api(libs.kotlinx.coroutines.core)

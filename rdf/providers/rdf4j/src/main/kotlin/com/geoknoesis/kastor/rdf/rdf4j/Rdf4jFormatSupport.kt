@@ -23,7 +23,9 @@ import java.util.concurrent.TimeUnit
  *
  * **Parsing contract** (shared with the Jena provider):
  * - Streams are handed to Rio directly; statements are converted as they are parsed.
- * - Without a base IRI, relative IRI references are a parse error, in JSON-LD too (see [Rdf4jJsonLdBase]).
+ * - Without a base IRI, relative IRI references are a parse error, in JSON-LD too. A JSON-LD document is refused
+ *   when its conversion to RDF would drop a statement (a relative reference left unresolved, also by an in-document
+ *   `"@base": null`; a malformed IRI; an ill-formed language tag), see [Rdf4jJsonLd].
  * - [parseGraph] rejects quad formats (TriG, N-Quads) instead of merging their named graphs, and the graph parses
  *   ([parseGraph], [openTripleStream]) fail with [RdfFormatException] on a document of a graph format that names a
  *   graph (JSON-LD `@graph` under an `@id`) instead of merging it into the one graph.
@@ -113,12 +115,14 @@ internal object Rdf4jFormatSupport {
         val parser = Rio.createParser(format)
         parser.parserConfig.set(org.eclipse.rdf4j.rio.helpers.BasicParserSettings.PRESERVE_BNODE_IDS, true)
         // JSON-LD: never load a context named by URL (RDF4J's default loads the ones on its whitelist, unbounded).
-        parser.parserConfig.set(org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.DOCUMENT_LOADER, REFUSING_DOCUMENT_LOADER)
+        parser.parserConfig.set(org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.DOCUMENT_LOADER, Rdf4jJsonLd.REFUSING_DOCUMENT_LOADER)
+        // A warning of the JSON-LD processor goes with a statement it skips: an error instead (after Rdf4jJsonLd.checked).
+        parser.parserConfig.set(org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.EXCEPTION_ON_WARNING, true)
         val nodes = DocumentBlankNodes()
         parser.setRDFHandler(object : AbstractRDFHandler() {
             override fun handleStatement(statement: Statement) {
                 try {
-                    handle(nodes.statement(Rdf4jJsonLdBase.checked(format, statement)))
+                    handle(nodes.statement(statement))
                 } catch (e: RDFParseException) {
                     throw e // a term Kastor rejects (checkedTriples): an error of the input
                 } catch (e: RuntimeException) {
@@ -127,15 +131,6 @@ internal object Rdf4jFormatSupport {
             }
         })
         return parser
-    }
-
-    /** Refuses every document the JSON-LD parser would load (see the class documentation). */
-    private val REFUSING_DOCUMENT_LOADER = no.hasmac.jsonld.loader.DocumentLoader { url, _ ->
-        throw no.hasmac.jsonld.JsonLdError(
-            no.hasmac.jsonld.JsonLdErrorCode.LOADING_REMOTE_CONTEXT_FAILED,
-            "JSON-LD context <$url> was not loaded: Kastor never loads remote or local JSON-LD documents; " +
-                "put the context inline",
-        )
     }
 
     /**
@@ -192,11 +187,14 @@ internal object Rdf4jFormatSupport {
     private fun rdf12Text(format: RDFFormat, text: String): String =
         if (format in TURTLE_FAMILY) Rdf4jTripleTermSyntax.toRdf12(text) else text
 
-    /** [input] for Rio, with RDF 1.2 triple terms in the form Rio reads (see [TURTLE_FAMILY]). */
-    private fun rdf12Input(format: RDFFormat, input: InputStream): InputStream = when (format) {
+    /**
+     * [input] for Rio, with RDF 1.2 triple terms in the form Rio reads (see [TURTLE_FAMILY]); a JSON-LD document is
+     * first checked to lose no statement in its conversion to RDF ([Rdf4jJsonLd.checked]).
+     */
+    private fun rdf12Input(format: RDFFormat, input: InputStream, baseIri: String): InputStream = when (format) {
         in TURTLE_FAMILY -> Rdf4jTripleTermSyntax.fromRdf12(input)
         in LINE_FORMATS -> Rdf4jLineSyntax.fromRdf12(input)
-        else -> input
+        else -> Rdf4jJsonLd.checked(format, input, baseIri)
     }
 
     /** Refuses a statement with a triple term in a format without triple-term syntax (RDF/XML, JSON-LD). */
@@ -277,7 +275,7 @@ internal object Rdf4jFormatSupport {
         val triples = mutableListOf<RdfTriple>()
         val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
-            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(rdf12Input(rdf4jFormat, inputStream), Rdf4jJsonLdBase.baseFor(rdf4jFormat, baseIri))
+            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(graphStatement(format, statement), seen)) }.parse(rdf12Input(rdf4jFormat, inputStream, baseIri), baseIri)
         }
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
@@ -449,7 +447,7 @@ internal object Rdf4jFormatSupport {
                 var terminal: Any = PRODUCER_DIED
                 try {
                     val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(rdf12Input(format, state.input), Rdf4jJsonLdBase.baseFor(format, baseIri))
+                    parser(format) { statement -> checkedTriples(graphStatement(format.name, statement), seen).forEach { offer(state, it, hooks) } }.parse(rdf12Input(format, state.input, baseIri), baseIri)
                     terminal = END
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
@@ -622,7 +620,7 @@ internal object Rdf4jFormatSupport {
                     } else {
                         connection.add(statement.subject, statement.predicate, statement.`object`)
                     }
-                }.parse(rdf12Input(rdf4jFormat, inputStream), Rdf4jJsonLdBase.baseFor(rdf4jFormat, baseIri))
+                }.parse(rdf12Input(rdf4jFormat, inputStream, baseIri), baseIri)
             }
         }
     }
