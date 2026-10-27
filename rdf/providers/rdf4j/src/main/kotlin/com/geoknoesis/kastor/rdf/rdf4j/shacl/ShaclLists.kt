@@ -58,7 +58,7 @@ internal object ShaclLists {
     val renamed = HashMap<RdfTerm, BlankNode>()
     listNodes.forEachIndexed { k, node -> renamed[node] = BlankNode("$prefix$k") }
     return triples.mapIndexed { k, t ->
-      if (k % CHECK_INTERVAL == 0) check()
+      if (k % CHECK_INTERVAL == CHECK_INTERVAL - 1) check()
       if (t.subject !in renamed && t.obj !in renamed) t else RdfTriple(renamed[t.subject] ?: t.subject, t.predicate, renamed[t.obj] ?: t.obj)
     }
   }
@@ -70,7 +70,7 @@ internal object ShaclLists {
   internal fun freshPrefix(triples: List<RdfTriple>, check: () -> Unit = {}): String {
     var longest = -1
     triples.forEachIndexed { k, t ->
-      if (k % CHECK_INTERVAL == 0) check()
+      if (k % CHECK_INTERVAL == CHECK_INTERVAL - 1) check()
       for (term in arrayOf<RdfTerm>(t.subject, t.obj)) {
         if (term is BlankNode && term.id.startsWith(PREFIX)) longest = maxOf(longest, term.id.length)
       }

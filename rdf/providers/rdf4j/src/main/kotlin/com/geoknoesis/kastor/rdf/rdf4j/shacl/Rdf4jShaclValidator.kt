@@ -133,13 +133,13 @@ internal class Rdf4jShaclValidator(
       )
     }
     val dataTriples = graph.getTriples()
-    // The preprocessing below is linear in the shapes graph, and checks the deadline as it goes.
+    // The preprocessing below is linear in the shapes graph, and checks the deadline as it goes through a large one
+    // (a small one goes on to the worker, which reports an expired deadline as usual).
     val check = {
       if (System.nanoTime() - deadline >= 0) {
         throw ShaclValidationException("SHACL validation timed out while reading the shapes graph (ValidationConfig.timeout = ${config.timeout})")
       }
     }
-    check()
     // ShaclSail cannot report a violated sh:or / sh:and whose list nodes are IRIs (see ShaclLists.withBlankListNodes).
     val shapeTriples = ShaclLists.withBlankListNodes(shapes.getTriples(), check)
 
@@ -152,9 +152,7 @@ internal class Rdf4jShaclValidator(
               "use the native engine (providerId = \"kastor\"), which runs every pattern on a linear-time engine",
       )
     }
-    check()
     val unsupported = ShaclSailFeatures.scan(shapeTriples)
-    check()
     if (unsupported.descriptions.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
       val cause =
           UnsupportedShaclFeatureException(

@@ -46,7 +46,6 @@ internal object ShaclSailPatterns {
    * `sh:property`, nested operators and any other link but [NOT_SHAPES]), whatever the kind of its nodes.
    */
   fun javaEvaluated(shapes: List<RdfTriple>, check: () -> Unit = {}): List<RdfTerm> {
-    check()
     val bySubject = shapes.groupBy { it.subject }
     val nested = ArrayDeque<RdfTerm>()
     for (t in shapes) if (t.predicate.value in NESTING) nested.add(t.obj)
