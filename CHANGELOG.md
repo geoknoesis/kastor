@@ -19,6 +19,36 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round seventeen
+
+#### JSON-LD parsing, malformed terms and Jena updates (round seventeen)
+
+- **Fixed (`rdf-jena`, `rdf-rdf4j`, `rdf-cli`), behaviour change:** a JSON-LD parse no longer loses statements
+  silently, whatever the document's own context does. Round sixteen's sentinel base was bypassed by
+  `"@context": {"@base": null}` (and by a relative `@vocab`, scoped contexts and the like), with or without `--base`.
+  Both providers now expand the document first, with the options of their own conversion, and refuse it with
+  `RdfFormatException` when the expanded form holds a term JSON-LD's toRdf would skip: a relative or malformed IRI
+  (subject, object, type, property, datatype or graph name), a blank-node property, or an ill-formed language tag.
+  A key that its context maps to no IRI (an undefined term with no usable `@vocab`) is refused too. The sentinel base
+  is gone. The RDF4J provider now also depends on Titanium (for the undefined-term check) and makes the JSON-LD
+  processor's warnings errors.
+- **Fixed (`rdf-jena`):** Jena's JSON-LD reader dropped triples with a malformed IRI (`http://ex/a b`, `a:`,
+  `http://`) or an ill-formed language tag; they are refused by the check above. A test matrix covers malformed IRIs
+  and language tags in Turtle, N-Triples, RDF/XML, JSON-LD, TriG and N-Quads on both providers.
+- **Security (`rdf-jena`):** every Kastor parse on Jena is bounded before Jena values a long numeric literal. In
+  strict mode Jena's term checker computed a typed literal's value before the node factory saw it (19.5 s for a
+  1,000,000-digit integer); the readers of a Kastor parse now refuse it first.
+- **Security (`rdf-jena`), behaviour change:** a SPARQL UPDATE's `WHERE` clause is checked and evaluated with the
+  bounds of a sandboxed query (no `SERVICE`, `CALL` or ARQ extension functions; property functions off; `STRDT`,
+  casts, `POWER`, products, `ROUND`, string growth bounded before they compute; the memory budget), also inside
+  `EXISTS`, sub-queries, `GROUP BY`, `HAVING` and `ORDER BY`. Every quad an update writes, from any operation, is
+  checked for over-long numeric and temporal literals, as on the RDF4J stores. A computed 1,300,000-digit integer
+  used to take more than 100 s to store.
+- **Security (`rdf-jena`), API addition, behaviour change:** `LOAD` opens its source as `Rdf.parseFromUrl` does,
+  under the new `JenaRepository.updateLoadOptions` (default: `http`/`https` to public addresses only; no `file:`,
+  `jar:`, loopback or internal network), and reads it through Kastor's bounded parser. Failures to load have one
+  generic message.
+
 ### Round sixteen
 
 #### Build and docs (round sixteen)
