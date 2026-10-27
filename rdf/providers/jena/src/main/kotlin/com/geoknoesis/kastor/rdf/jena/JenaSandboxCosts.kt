@@ -260,6 +260,7 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
         } catch (e: XPathRegexException) {
             throw ExprEvalException("$label: ${e.message}", e)
         }
+    }
 }
 
 /**

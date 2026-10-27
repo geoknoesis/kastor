@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.TrueLiteral
+import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
@@ -67,5 +68,33 @@ class JenaPatternCacheTest {
         repeat(2) { assertThrows(Exception::class.java) { JenaPatternCache.compile("(unclosed", null) } }
         // An invalid pattern is still a SPARQL error of the expression in every execution.
         repeat(2) { assertEquals(listOf(null), rows("SELECT ?m { BIND (REGEX(\"ab\", CONCAT(\"(unclosed\")) AS ?m) }").map { it.get("m") }) }
+    }
+
+    @Test
+    fun `a pattern beyond the compile-cost cap is refused every time and never kept`() {
+        // Short enough for the cache to consider it, too costly for the translator: refused by SandboxRegex.compile.
+        val costly = "\\p{L}".repeat(80)
+        assertTrue(costly.length <= JenaPatternCache.MAX_PATTERN_LENGTH)
+        JenaPatternCache.clear()
+        repeat(3) { assertThrows(SandboxLimitException::class.java) { JenaPatternCache.compile(costly, null) } }
+        assertEquals(0, JenaPatternCache.size)
+        // In a query it fails the query (fail closed), in every execution, and is not a cached SPARQL error.
+        repeat(2) {
+            assertThrows(Exception::class.java) { rows("SELECT ?m { BIND (REGEX(\"ab\", \"${costly.replace("\\", "\\\\")}\") AS ?m) }") }
+        }
+        assertEquals(0, JenaPatternCache.size)
+    }
+
+    @Test
+    fun `a compilation stopped by its check is not kept, and a kept pattern does not depend on the check`() {
+        JenaPatternCache.clear()
+        val pattern = "^[\\p{L}]+(check-test)?$"
+        val stop = Runnable { throw SandboxLimitException("deadline") }
+        assertThrows(SandboxLimitException::class.java) { JenaPatternCache.compile(pattern, null, stop) }
+        assertEquals(0, JenaPatternCache.size)
+        val compiled = JenaPatternCache.compile(pattern, null)
+        assertEquals(1, JenaPatternCache.size)
+        // Served under any check: the compiled program is a function of the text and flags alone.
+        assertSame(compiled, JenaPatternCache.compile(pattern, null, stop))
     }
 }
