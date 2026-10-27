@@ -45,6 +45,12 @@ entries are regrouped under those kind headings.
   `com.geoknoesis.kastor.rdf.*` star import, `@Rdf` resolved to the object `com.geoknoesis.kastor.rdf.Rdf`. It now
   imports the annotation by name and the entry point as `RdfApi`. `TutorialExamplesTest` (processor) runs every
   Kotlin block under a "complete example" heading of the tutorials through KSP, compiles it and runs its `main`.
+- **Fixed (`kastor-gen-processor`), behaviour change, API addition:** the instance DSL's `validate()` never checked
+  `sh:maxCount` and read `sh:minCount` as "at least one", and the setter of a single-valued property added a second
+  value, so instances that violate their shapes were written. `validate()` now checks both bounds (the model's
+  `PropertyConstraints` carries `minCount` and `maxCount`), and a single-valued setter replaces the value, also one
+  written by an earlier block for the same resource (a block now replaces the resource's description in the DSL's
+  graph instead of adding to it).
 
 ### Round sixteen
 
