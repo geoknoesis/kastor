@@ -87,6 +87,39 @@ class CliBaseIriAndParseErrorTest {
     }
 
     @Test
+    fun `JSON-LD that drops statements is an error with or without --base`() {
+        // "@base": null leaves relative references unresolved whatever --base says; an ill-formed language tag, a
+        // malformed IRI or an undefined term would also be skipped by JSON-LD's toRdf. Each used to parse to fewer
+        // statements (parse: OK - triples: 0; diff: ISOMORPHIC) instead of failing.
+        val baseNull = file("bn.jsonld", """{"@context": {"@base": null}, "@id": "s", "http://e/p": {"@id": "o"}}""")
+        val baseNull2 = file("bn2.jsonld", """{"@context": {"@base": null}, "@id": "x", "http://e/p": {"@id": "y"}}""")
+        val mixed = file("bnm.jsonld", """{"@context": {"@base": null}, "@id": "http://e/s", "http://e/p": {"@id": "o"}, "http://e/q": "v"}""")
+        val only = file("q.jsonld", """{"@id": "http://e/s", "http://e/q": "v"}""")
+        val graph = file("bng.jsonld", """{"@context": {"@base": null}, "@id": "g", "@graph": [{"@id": "http://e/s", "http://e/p": "v"}]}""")
+        val language = file("lang.jsonld", """{"@id": "http://e/s", "http://e/p": {"@value": "v", "@language": "not a tag!"}}""")
+        val badIri = file("iri.jsonld", """{"@id": "http://e/a b", "http://e/p": "v"}""")
+        val undefined = file("term.jsonld", """{"@id": "http://e/s", "name": "v", "http://e/q": "v"}""")
+        val runs = listOf(
+            arrayOf("parse", baseNull) to baseNull,
+            arrayOf("to-turtle", baseNull) to baseNull,
+            arrayOf("diff", baseNull, baseNull2) to baseNull,
+            arrayOf("diff", mixed, only) to mixed,
+            arrayOf("to-turtle", graph) to graph,
+            arrayOf("parse", language) to language,
+            arrayOf("parse", badIri) to badIri,
+            arrayOf("diff", undefined, only) to undefined,
+        )
+        for ((args, culprit) in runs) {
+            for (base in listOf(emptyList(), listOf("--base", "http://e/"))) {
+                val result = run(*(listOf(args[0]) + base + args.drop(1)).toTypedArray())
+                assertEquals(EXIT_USAGE, result.code, "${args.toList()} $base: ${result.out} ${result.err}")
+                assertTrue(result.err.startsWith("Parse error in $culprit: "), result.err)
+                assertEquals(1, result.err.trim().lines().size, result.err)
+            }
+        }
+    }
+
+    @Test
     fun `--base must be an absolute IRI and must have a value`() {
         val path = file("data.nt", "<http://e/s> <http://e/p> <http://e/o> .\n")
         for (base in listOf("relative/path", "", "http://e/ space")) {
