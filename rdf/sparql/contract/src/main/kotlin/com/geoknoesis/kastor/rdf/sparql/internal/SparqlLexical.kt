@@ -91,8 +91,30 @@ object SparqlLexical {
     }
 
     fun langTag(lang: String): String {
-        require(LANG_TAG.matches(lang)) { "Invalid language tag for SPARQL: '$lang'" }
+        require(isLangTag(lang)) { "Invalid language tag for SPARQL: '${lang.take(64)}${if (lang.length > 64) "..." else ""}'" }
         return lang
+    }
+
+    /**
+     * Whether [lang] is a SPARQL LANGTAG without its `@`: `[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`. A linear scan: a regular
+     * expression with a repeated group recurses once per subtag on java.util.regex, so a data literal with a very long
+     * tag would overflow the stack.
+     */
+    private fun isLangTag(lang: String): Boolean {
+        var subtag = 0
+        var first = true
+        for (c in lang) {
+            when {
+                c == '-' -> {
+                    if (subtag == 0) return false
+                    subtag = 0
+                    first = false
+                }
+                c in 'A'..'Z' || c in 'a'..'z' || (!first && c in '0'..'9') -> subtag++
+                else -> return false
+            }
+        }
+        return subtag > 0
     }
 
     /**
@@ -173,7 +195,6 @@ object SparqlLexical {
     private val BUILTIN_NAME = Regex("[A-Za-z][A-Za-z0-9_]*")
     private val PREFIXED_NAME = Regex("(?:[$PN_CHARS_BASE](?:[$PN_CHARS.]*[$PN_CHARS])?)?:[${PN_CHARS_U}0-9](?:[$PN_CHARS.]*[$PN_CHARS])?")
     private val ABSOLUTE_IRI = Regex("^(?:[A-Za-z][A-Za-z0-9+.-]*://|urn:)")
-    private val LANG_TAG = Regex("[A-Za-z]+(?:-[A-Za-z0-9]+)*")
     private val BNODE_LABEL = Regex("[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?")
     private val VERSION = Regex("\\d+\\.\\d+")
 }

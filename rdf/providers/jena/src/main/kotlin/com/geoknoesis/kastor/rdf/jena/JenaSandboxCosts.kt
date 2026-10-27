@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.jena
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimitException
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxLimits
 import com.geoknoesis.kastor.rdf.sparql.internal.SandboxRegex
+import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegex
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathPattern
 import com.geoknoesis.kastor.rdf.sparql.internal.XPathRegexException
 import org.apache.jena.graph.NodeFactory
@@ -158,9 +159,6 @@ internal enum class JenaCost {
  */
 internal class JenaCostEvaluation(private val cost: JenaCost, private val label: String) {
 
-    /** The patterns this call site compiled, by text and flags (patterns are usually constant); bounded. */
-    private val compiled = SandboxRegex.PatternCache()
-
     /** Fails with [SandboxLimitException] when computing on [args] would exceed a limit. */
     fun precheck(args: List<NodeValue>) {
         when (cost) {
@@ -235,14 +233,73 @@ internal class JenaCostEvaluation(private val cost: JenaCost, private val label:
 
     /**
      * [text] compiled with the XPath [flags] for the linear-time engine ([SandboxRegex.compile], running [check]),
-     * from the call site's cache. An invalid pattern or flag is a SPARQL error; one the engine cannot honour (a
-     * back-reference, a lookaround, a pattern too complex to compile, ...) fails the query.
+     * from [JenaPatternCache], which is shared by every execution. An invalid pattern or flag is a SPARQL error; one
+     * the engine cannot honour (a back-reference, a lookaround, a pattern too complex to compile, ...) fails the query.
      */
     private fun pattern(text: String, flags: String?, check: Runnable): XPathPattern {
         return try {
-            compiled.get(text, flags, check)
+            JenaPatternCache.compile(text, flags, check)
         } catch (e: XPathRegexException) {
             throw ExprEvalException("$label: ${e.message}", e)
         }
+}
+
+/**
+ * Compiled `REGEX` / `REPLACE` patterns, shared by every sandboxed execution and keyed by the pattern text and flags.
+ *
+ * A query is parsed again for each execution (a SHACL engine runs one per focus node, with the focus node written
+ * into the text), so its expressions are new objects every time and a cache held by the expression never hits: the
+ * pattern of a constant `REGEX` would be compiled once per focus node, which costs milliseconds for a pattern with
+ * Unicode classes. [SandboxRegex.compile] is a function of the text and flags alone and an [XPathPattern] is
+ * immutable and thread-safe, so a compiled pattern can serve any later execution.
+ *
+ * Bounded: at most [MAX_ENTRIES] patterns and [MAX_PROGRAM_SIZE] compiled instructions in all, least recently used
+ * evicted first; a pattern whose text is longer than [MAX_PATTERN_LENGTH] or whose program is larger than a quarter
+ * of the budget is compiled each time and never kept. A pattern that does not compile is never kept either.
+ */
+internal object JenaPatternCache {
+    const val MAX_ENTRIES = 256
+    const val MAX_PATTERN_LENGTH = 4_096
+    const val MAX_PROGRAM_SIZE = 250_000L
+
+    private data class Key(val pattern: String, val flags: String?)
+
+    private val entries = LinkedHashMap<Key, XPathPattern>(16, 0.75f, true)
+    private var programSize = 0L
+
+    /** How many patterns were compiled (not served from the cache): a test seam. */
+    @Volatile var compilations: Long = 0L
+        private set
+
+    @JvmOverloads
+    @Throws(XPathRegexException::class)
+    fun compile(pattern: String, flags: String?, check: Runnable = XPathRegex.NO_CHECK): XPathPattern {
+        val key = Key(pattern, flags)
+        if (pattern.length <= MAX_PATTERN_LENGTH) synchronized(this) { entries[key]?.let { return it } }
+        val compiled = SandboxRegex.compile(pattern, flags, check)
+        synchronized(this) {
+            compilations++
+            if (pattern.length <= MAX_PATTERN_LENGTH && compiled.programSize <= MAX_PROGRAM_SIZE / 4) keep(key, compiled)
+        }
+        return compiled
     }
+
+    private fun keep(key: Key, compiled: XPathPattern) {
+        entries.put(key, compiled)?.let { programSize -= it.programSize }
+        programSize += compiled.programSize
+        val eldest = entries.entries.iterator()
+        while ((entries.size > MAX_ENTRIES || programSize > MAX_PROGRAM_SIZE) && eldest.hasNext()) {
+            programSize -= eldest.next().value.programSize
+            eldest.remove()
+        }
+    }
+
+    /** Forgets every pattern: a test seam. */
+    fun clear() = synchronized(this) {
+        entries.clear()
+        programSize = 0L
+    }
+
+    /** The number of patterns kept: a test seam. */
+    val size: Int get() = synchronized(this) { entries.size }
 }

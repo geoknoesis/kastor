@@ -376,7 +376,7 @@ When you validate a SPARQL-capable dataset, such as a repository passed to `vali
 
 The engine pre-binds variables itself before the query reaches the provider, so the result is the same on every provider, including inside sub-queries:
 
-- IRIs and literals are substituted **textually** into the query text. In a `SELECT` projection a value becomes `(term AS ?fresh)`, and `BOUND(?var)` on a substituted variable becomes `true`.
+- IRIs and literals are substituted **textually** into the query text. In the outermost `SELECT` projection a value becomes `(term AS ?var)`, so `SELECT $this` still outputs the focus node, as SHACL 1.2 SPARQL Appendix A requires; in a sub-select's projection it becomes `(term AS ?fresh)`. `BOUND(?var)` on a substituted variable becomes `true`. A language tag is written into the text only up to 256 characters; a longer one is passed as an initial binding.
 - Values with no equivalent SPARQL syntax are passed to the provider as initial bindings: blank nodes, triple terms, directional language strings, and IRIs containing characters that are illegal in an `IRIREF`.
 
 A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:

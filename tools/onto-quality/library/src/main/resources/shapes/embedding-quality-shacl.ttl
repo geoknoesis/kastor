@@ -33,10 +33,10 @@ oqsh:SynonymousClassCandidatesShape
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Class pairs with near-identical labels may be unrecognized synonyms" ;
     rdfs:comment     "OOPS! P02. Detects pairs of owl:Class entities whose labels embed to cosine similarity above whichever threshold was used during enrichment (oqsh:semanticallyCloseTo), with no equivalentClass or subClassOf path between them." ;
-    sh:targetClass   owl:Class ;
+    sh:targetClass   owl:Class , rdfs:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
                        sh:message "Class {$this} has near-identical label to {?other} but no equivalentClass or subClassOf link — possible synonym." ;
-                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX oqsh: <http://example.org/owl-quality-shacl#> SELECT ?other WHERE { $this oqsh:semanticallyCloseTo ?other . FILTER ( isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentClass ?other } FILTER NOT EXISTS { ?other owl:equivalentClass $this } FILTER NOT EXISTS { $this rdfs:subClassOf+ ?other } FILTER NOT EXISTS { ?other rdfs:subClassOf+ $this } ?other a owl:Class . }""" ] ;
+                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX oqsh: <http://example.org/owl-quality-shacl#> SELECT ?other WHERE { $this oqsh:semanticallyCloseTo ?other . FILTER ( isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentClass ?other } FILTER NOT EXISTS { ?other owl:equivalentClass $this } FILTER NOT EXISTS { $this rdfs:subClassOf+ ?other } FILTER NOT EXISTS { ?other rdfs:subClassOf+ $this } FILTER EXISTS { ?other a ?otherType . FILTER ( ?otherType IN ( owl:Class, rdfs:Class ) ) } }""" ] ;
     sh:severity      sh:Info .
 
 ################################################################
@@ -70,10 +70,10 @@ oqsh:JunkDrawerClassShape
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Class label suggests it is a 'miscellaneous' catch-all" ;
     rdfs:comment     "OOPS! P21. Flags classes whose label or local name starts with an evasive word: Misc, Miscellaneous, Other, Various, Things, Unspecified, Unknown (OtherStuff, Other organisation, Misc. items). The word must end there (a space, punctuation, a digit or, in a camelCase local name, a capital letter follows): Miscarriage, Otter or Thingsboard are not reported." ;
-    sh:targetClass   owl:Class ;
+    sh:targetClass   owl:Class , rdfs:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
                        sh:message "Class {$this} has a label or local name suggesting a miscellaneous catch-all category." ;
-                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this a owl:Class . FILTER ( isIRI($this) ) { $this rdfs:label ?label . FILTER ( regex(str(?label), \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\", \"i\") ) } UNION { BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( regex(?local, \"^(Misc|Miscellaneous|Other|Various|Things|Unspecified|Unknown)([^a-z]|$)\") || regex(?local, \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\") ) } BIND(1 AS ?v) }""" ] ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) } FILTER ( isIRI($this) ) { $this rdfs:label ?label . FILTER ( regex(str(?label), \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\", \"i\") ) } UNION { BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( regex(?local, \"^(Misc|Miscellaneous|Other|Various|Things|Unspecified|Unknown)([^a-z]|$)\") || regex(?local, \"^(misc|miscellaneous|other|various|things|unspecified|unknown)([^a-z]|$)\") ) } BIND(1 AS ?v) }""" ] ;
     sh:severity      sh:Info .
 
 ################################################################
@@ -89,10 +89,10 @@ oqsh:SameLabelDifferentClassShape
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "Distinct classes share an identical label" ;
     rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling. Not reported: equivalent classes, and a deprecated class that keeps the label of its replacement. Each class is reported once per shared label, with the number of classes it shares it with: n classes with one label give n findings, not n(n-1)/2." ;
-    sh:targetClass   owl:Class ;
+    sh:targetClass   owl:Class , rdfs:Class ;
     sh:sparql        [ a sh:SPARQLConstraint ;
                        sh:message "Class {$this} shares its label '{?label}' with {?count} other class(es), for example {?other}." ;
-                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label (COUNT(DISTINCT ?o) AS ?count) (MIN(str(?o)) AS ?other) WHERE { $this a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this owl:deprecated ?d1 } FILTER NOT EXISTS { $this a owl:DeprecatedClass } ?o rdfs:label ?label ; a owl:Class . FILTER ( isIRI(?o) && ?o != $this ) FILTER NOT EXISTS { $this owl:equivalentClass|^owl:equivalentClass ?o } FILTER NOT EXISTS { { ?o owl:deprecated ?d2 } UNION { ?o a owl:DeprecatedClass } } } GROUP BY ?label""" ] ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label (COUNT(DISTINCT ?o) AS ?count) (MIN(str(?o)) AS ?other) WHERE { $this rdfs:label ?label . FILTER EXISTS { $this a ?classType . FILTER ( ?classType IN ( owl:Class, rdfs:Class ) ) } FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this owl:deprecated ?d1 } FILTER NOT EXISTS { $this a owl:DeprecatedClass } ?o rdfs:label ?label . FILTER ( isIRI(?o) && ?o != $this ) FILTER EXISTS { ?o a ?oType . FILTER ( ?oType IN ( owl:Class, rdfs:Class ) ) } FILTER NOT EXISTS { $this owl:equivalentClass|^owl:equivalentClass ?o } FILTER NOT EXISTS { { ?o owl:deprecated ?d2 } UNION { ?o a owl:DeprecatedClass } } } GROUP BY ?label""" ] ;
     sh:severity      sh:Warning .
 
 ################################################################
@@ -109,7 +109,7 @@ oqsh:LabelDefinitionDriftShape
     oqsh:tier        oqsh:tier_Semantic ;
     rdfs:label       "A class's label and its textual definition are semantically far apart" ;
     rdfs:comment     "Convention. When enrichment emits oqsh:labelDefinitionDriftScore as (1 - cosine(label, definition)), values above 0.5 indicate the label and definition diverge." ;
-    sh:targetClass   owl:Class ;
+    sh:targetClass   owl:Class , rdfs:Class ;
     sh:property      [ sh:path oqsh:labelDefinitionDriftScore ;
                        sh:severity sh:Info ;
                        sh:datatype xsd:decimal ;
