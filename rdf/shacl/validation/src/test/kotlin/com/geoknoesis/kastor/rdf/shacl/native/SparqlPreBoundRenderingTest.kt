@@ -66,7 +66,7 @@ class SparqlPreBoundRenderingTest {
     @Test
     fun `a language tag is checked in linear time and a long one is not written into the text`() {
         assertEquals("SELECT * WHERE { ?s ?p \"x\"@en-GB-1996  }", SparqlQueryTemplate.compile("SELECT * WHERE { ?s ?p ${d}this }", setOf("this"))
-            .bind(mapOf("this" to LangString("x", "en-GB-1996"))).first)
+            .bind(mapOf("this" to LangString("x", "en-GB-1996"))).text)
         assertNull(SparqlQueryTemplate.renderTerm(LangString("x", longTag)))
         assertTrue(SparqlQueryTemplate.isRenderableLanguageTag("a".repeat(SparqlQueryTemplate.MAX_RENDERED_LANGUAGE_TAG)))
         assertFalse(SparqlQueryTemplate.isRenderableLanguageTag("a".repeat(SparqlQueryTemplate.MAX_RENDERED_LANGUAGE_TAG + 1)))
@@ -106,11 +106,11 @@ class SparqlPreBoundRenderingTest {
             "SELECT ${d}this ?n WHERE { { SELECT ${d}this (COUNT(*) AS ?n) WHERE { ${d}this ?p ?o } GROUP BY ${d}this } }",
             setOf("this"),
         )
-        val text = template.bind(mapOf("this" to Iri("${ex}a"))).first
+        val text = template.bind(mapOf("this" to Iri("${ex}a"))).text
         assertTrue(text.startsWith("SELECT (<${ex}a> AS ?this) ?n WHERE"), text)
         assertTrue(text.contains("{ SELECT (<${ex}a> AS ?__kastor_prebound_"), text)
         // Projected twice: only the first keeps the name (a second `AS ?this` would be an error).
-        val twice = SparqlQueryTemplate.compile("SELECT ${d}this ${d}this WHERE {}", setOf("this")).bind(mapOf("this" to Iri("${ex}a"))).first
+        val twice = SparqlQueryTemplate.compile("SELECT ${d}this ${d}this WHERE {}", setOf("this")).bind(mapOf("this" to Iri("${ex}a"))).text
         assertEquals(1, Regex("AS \\?this\\b").findAll(twice).count(), twice)
     }
 

@@ -45,7 +45,7 @@ class SparqlPrologueScaleTest {
     fun `the prologue holds the prefixes the query uses, in every decoding view`() {
         val graph = ShapesCompiler.compile(shapes(3) { "SELECT \$this WHERE { \$this p1:q 1 }" }, ValidationConfig())
         val texts = graph.orderedNodeShapes.flatMap { it.nodeConstraints }.map { it.unwrapped() }.filterIsInstance<PropertyConstraint.Sparql>()
-            .map { it.template.bind(emptyMap()).first }
+            .map { it.template.bind(emptyMap()).text }
         assertEquals(3, texts.size)
         for (text in texts) {
             assertTrue("PREFIX p1: <http://example.org/p1/>" in text, text)
@@ -53,7 +53,7 @@ class SparqlPrologueScaleTest {
         }
         // A prefixed name spelled with a codepoint escape for its colon (RDF4J decodes it first) keeps its prefix.
         val escaped = ShapesCompiler.compile(shapes(3) { "SELECT \$this WHERE { \$this p2\\\\u003Aq 1 }" }, ValidationConfig())
-        val text = escaped.orderedNodeShapes.flatMap { it.nodeConstraints }.map { it.unwrapped() }.filterIsInstance<PropertyConstraint.Sparql>().first().template.bind(emptyMap()).first
+        val text = escaped.orderedNodeShapes.flatMap { it.nodeConstraints }.map { it.unwrapped() }.filterIsInstance<PropertyConstraint.Sparql>().first().template.bind(emptyMap()).text
         assertTrue("PREFIX p2: <http://example.org/p2/>" in text, text)
     }
 

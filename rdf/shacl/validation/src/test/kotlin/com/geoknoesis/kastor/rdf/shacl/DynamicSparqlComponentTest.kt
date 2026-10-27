@@ -429,7 +429,7 @@ class DynamicSparqlComponentTest {
             )) {
                 val (text, bindings) = bound(term)
                 assertTrue(bindings.isEmpty(), "$term is written into the text")
-                val expected = structure(bound(plainTerm).first)
+                val expected = structure(bound(plainTerm).text)
                 for (view in listOf(text, SparqlQueryTemplate.decodeCodepointEscapes(text, strict = true), SparqlQueryTemplate.decodeCodepointEscapes(text, strict = false))) {
                     assertEquals(expected, structure(view), "$term: $view")
                 }

@@ -172,6 +172,22 @@ entries are regrouped under those kind headings.
   literal in quadratic time (two 1,000,000-digit integers: 33 s). The digit scan of SPARQL text on both providers now
   counts every Unicode decimal digit, not only ASCII ones, as `BigInteger` reads them all.
 
+#### Integration (round sixteen)
+
+- **Fixed (`rdf-jena`, `rdf-shacl`, `rdf-core`), performance:** on Jena, a SHACL-SPARQL constraint query is parsed once
+  per validation, not once per focus node. When the engine writes only IRIs into a query (an IRI focus node as
+  `$this`, say), it also passes the template it wrote them into (the new `SparqlIriSubstitution`, carried by
+  `SandboxedSelectQuery.substitution`); the Jena provider parses the template once, in a bounded process-wide cache
+  (at most 512 templates and 4 Mi characters of text; a template over 64 Ki characters is not kept), and builds each
+  query by substituting the IRIs into the parsed template (Jena's syntactic substitution, which leaves the template
+  unchanged). Every built query goes through the same sandbox checks as a parsed text. The provider parses the text as
+  before when the IRI would not be read as written (one with dot segments, say), when a value is a literal, or for a
+  pre-bound variable in `GROUP BY` / `ORDER BY`; other providers ignore the template. The default `onto-qa check` of a
+  20,000-class ontology now takes 56 s instead of 169 s on the same machine, with identical findings.
+- **Fixed (`rdf-jena`):** the merge of the REGEX pattern caches left `JenaCostEvaluation` unclosed; the shared
+  `JenaPatternCache` now compiles through the capped, deadline-checked `SandboxRegex.compile`, and a pattern beyond
+  the compile-cost cap is refused on every call and never kept.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards

@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.SparqlIriSubstitution
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
 import java.util.concurrent.atomic.AtomicLong
@@ -28,6 +29,12 @@ internal class SparqlQueryTemplate private constructor(
      * string, IRI or comment). A variable the query never mentions is never bound, not even by `SELECT *`.
      */
     val mayBindFailure: Boolean,
+    /**
+     * For a query whose pre-binding restrictions were checked ([compileRestricted]), the variable that stands for
+     * each pre-bound variable in the template [bind] offers the provider ([SparqlIriSubstitution]); null otherwise.
+     * Names no variable of the query mentions.
+     */
+    private val placeholders: Map<String, String>?,
 ) {
 
     private enum class Context { PLAIN, PROJECTION, GROUP_OR_ORDER }
@@ -53,20 +60,34 @@ internal class SparqlQueryTemplate private constructor(
         }
     }
 
+    /**
+     * A bound query: its [text], the values it could not write as [providerBindings], and, when every value written
+     * into it is an IRI, the [substitution] it was written by, so that a provider can parse the template once for
+     * every focus node.
+     */
+    data class Bound(val text: String, val providerBindings: Map<String, RdfTerm>, val substitution: SparqlIriSubstitution?)
+
     /** Query text with renderable [values] substituted, plus the remaining values as provider initial bindings. */
-    fun bind(values: Map<String, RdfTerm>): Pair<String, Map<String, RdfTerm>> {
+    fun bind(values: Map<String, RdfTerm>): Bound {
         val text = StringBuilder()
+        // The same text with a placeholder variable where an IRI is written, while only IRIs are (see [placeholders]).
+        var template: StringBuilder? = if (placeholders != null) StringBuilder() else null
+        val iris = LinkedHashMap<String, Iri>()
         val providerBindings = LinkedHashMap<String, RdfTerm>()
+        fun append(s: CharSequence) {
+            text.append(s)
+            template?.append(s)
+        }
         for (part in parts) {
             when (part) {
-                is Text -> text.append(part.text)
+                is Text -> append(part.text)
                 is BoundCheck -> {
                     val value = values[part.name]
                     if (value != null && renderTerm(value) != null) {
                         // Bracketed so it stays valid where SPARQL requires a Constraint (e.g. `FILTER bound($this)`).
-                        text.append("(true)")
+                        append("(true)")
                     } else {
-                        text.append(part.text)
+                        append(part.text)
                         if (value != null) providerBindings[part.name] = value
                     }
                 }
@@ -74,20 +95,35 @@ internal class SparqlQueryTemplate private constructor(
                     val value = values[part.name]
                     val rendered = value?.let { renderTerm(it) }
                     if (rendered == null) {
-                        text.append(part.token)
+                        append(part.token)
                         if (value != null) providerBindings[part.name] = value
                     } else {
-                        when (part.context) {
-                            // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
-                            Context.PLAIN -> text.append(rendered).append(if (value is LangString) " " else "")
-                            Context.PROJECTION -> text.append('(').append(rendered).append(" AS ?").append(part.projectedAs).append(')')
-                            Context.GROUP_OR_ORDER -> text.append('(').append(rendered).append(')')
+                        writeSlot(text, part, rendered, value is LangString)
+                        // Not in GROUP BY / ORDER BY: Jena reads `GROUP BY (?v)` as grouping by the variable, and
+                        // substituting it there binds the variable to the IRI (`GROUP BY (<iri> AS ?v)`).
+                        val placeholder = placeholders?.get(part.name)?.takeIf { part.context != Context.GROUP_OR_ORDER }
+                        if (value is Iri && placeholder != null) {
+                            iris[placeholder] = value
+                            // The token's own sigil, so the text around it lexes as it does around the variable.
+                            template?.let { writeSlot(it, part, part.token.first() + placeholder, false) }
+                        } else {
+                            template = null
                         }
                     }
                 }
             }
         }
-        return text.toString() to providerBindings
+        val substitution = template?.takeIf { iris.isNotEmpty() }?.let { SparqlIriSubstitution(it.toString(), iris) }
+        return Bound(text.toString(), providerBindings, substitution)
+    }
+
+    private fun writeSlot(out: StringBuilder, slot: Slot, term: String, langString: Boolean) {
+        when (slot.context) {
+            // A space ends a language tag, so template text right after the slot (`$p-1`) cannot extend it.
+            Context.PLAIN -> out.append(term).append(if (langString) " " else "")
+            Context.PROJECTION -> out.append('(').append(term).append(" AS ?").append(slot.projectedAs).append(')')
+            Context.GROUP_OR_ORDER -> out.append('(').append(term).append(')')
+        }
     }
 
     companion object {
@@ -102,7 +138,14 @@ internal class SparqlQueryTemplate private constructor(
         internal val compilations = AtomicLong()
         internal val restrictedCompilations = AtomicLong()
 
-        fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate {
+        fun compile(query: String, preBound: Set<String>, budget: ValidationBudget = ValidationBudget.NONE): SparqlQueryTemplate =
+            compile(query, preBound, budget, restricted = false)
+
+        /**
+         * [restricted]: the pre-binding restrictions hold ([compileRestricted]), so no pre-bound variable is assigned
+         * (`AS`, `VALUES`) and a variable can stand wherever an IRI is written: [bind] then offers a template.
+         */
+        private fun compile(query: String, preBound: Set<String>, budget: ValidationBudget, restricted: Boolean): SparqlQueryTemplate {
             compilations.incrementAndGet()
             val parts = ArrayList<Part>()
             val text = StringBuilder()
@@ -161,7 +204,7 @@ internal class SparqlQueryTemplate private constructor(
             }
             if (text.isNotEmpty()) parts.add(Text(text.toString()))
             val mayBindFailure = tokens.any { it.kind == SparqlToken.Kind.VARIABLE && it.variableName == "failure" }
-            return SparqlQueryTemplate(parts, mayBindFailure)
+            return SparqlQueryTemplate(parts, mayBindFailure, if (restricted) placeholders(preBound, tokens) else null)
         }
 
         /** For `BOUND ( ?preBound )` starting at [start]: (index of the closing parenthesis, variable name), else null. */
@@ -420,7 +463,15 @@ internal class SparqlQueryTemplate private constructor(
                 }
             }
             budget.check(PHASE)
-            return compile(query, preBound, budget)
+            return compile(query, preBound, budget, restricted = true)
+        }
+
+        /** A placeholder variable name for each of [preBound], one that no variable token of the query uses. */
+        private fun placeholders(preBound: Set<String>, tokens: List<SparqlToken>): Map<String, String> {
+            val used = tokens.mapNotNullTo(HashSet()) { t -> t.variableName.takeIf { t.kind == SparqlToken.Kind.VARIABLE } }
+            return preBound.associateWith { name ->
+                generateSequence(0) { it + 1 }.map { "__kastor_iri${if (it == 0) "" else it.toString()}_$name" }.first { it !in used }
+            }
         }
 
         /** The pre-bound variables [query] mentions as variable tokens, in order. */

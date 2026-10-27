@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfConfig
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
@@ -54,5 +56,32 @@ class SparqlCompileOncePerRunTest {
         // One sh:sparql constraint and one ASK validator: two restricted compilations, independent of the focus nodes.
         assertEquals(2L, large.second, "restricted compilations for 60 focus nodes")
         assertEquals(small.first, large.first, "template compilations for 3 and for 60 focus nodes")
+    }
+
+    /** A counter of Jena's query template cache (internal to the provider, so read reflectively). */
+    private fun jenaTemplates(counter: String): Long {
+        val cache = Class.forName("com.geoknoesis.kastor.rdf.jena.JenaQueryTemplates")
+        return cache.getMethod(counter).invoke(cache.getField("INSTANCE").get(null)) as Long
+    }
+
+    @Test
+    fun `on Jena a constraint query is parsed once, not once per focus node`() {
+        // A constraint no other test uses, so the template is new to the process-wide cache.
+        val shapes = Rdf.parse(
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix ex: <http://example.org/> .
+            ex:S a sh:NodeShape ; sh:targetClass ex:T ;
+              sh:sparql [ sh:select '''SELECT ${d}this ?v WHERE { ${d}this <http://example.org/p> ?v . FILTER (STRSTARTS(?v, "lower") && ?v != "parse-once") }''' ] .
+            """.trimIndent(),
+            RdfFormat.TURTLE,
+        )
+        val validator = NativeShaclValidator(ValidationConfig.default()) { JenaProvider().createRepository("memory", RdfConfig()) }
+        val parses = jenaTemplates("getParses")
+        val built = jenaTemplates("getSubstitutions")
+        val report = validator.validate(data(60), shapes)
+        assertEquals(60, report.violations.size)
+        assertEquals(1L, jenaTemplates("getParses") - parses, "template parses for 60 focus nodes")
+        assertEquals(60L, jenaTemplates("getSubstitutions") - built, "queries built from the parsed template")
     }
 }

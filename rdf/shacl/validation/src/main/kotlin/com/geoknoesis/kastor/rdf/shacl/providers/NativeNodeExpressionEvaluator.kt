@@ -439,9 +439,9 @@ private class NodeExpressionEvaluator(
         // §6 of SHACL 1.2 SPARQL: a scope variable named by a number (an argument of a custom list parameter
         // function) is bound as "arg" + str(name).
         args.forEachIndexed { i, arg -> if (arg != null) scope["arg$i"] = arg }
-        val (query, bindings) = expr.template.bind(scope)
+        val (query, bindings, substitution) = expr.template.bind(scope)
         val nodes = try {
-            selectNodes(expr, query, bindings)
+            selectNodes(expr, query, bindings, substitution)
         } catch (e: ShaclValidationException) {
             sparqlError("the SPARQL node expression", e)
         }
@@ -449,8 +449,13 @@ private class NodeExpressionEvaluator(
     }
 
     /** The distinct values of the expression variable of [expr] over the solutions of [query], or null beyond the size cap. */
-    private fun selectNodes(expr: NodeExpression.Select, query: String, bindings: Map<String, RdfTerm>): List<RdfTerm>? =
-        ctx.select(query, bindings) { rows ->
+    private fun selectNodes(
+        expr: NodeExpression.Select,
+        query: String,
+        bindings: Map<String, RdfTerm>,
+        substitution: com.geoknoesis.kastor.rdf.SparqlIriSubstitution?,
+    ): List<RdfTerm>? =
+        ctx.select(query, bindings, substitution) { rows ->
             // Distinct under the same equality as distinctShaclTerms, capped while streaming.
             val out = LinkedHashMap<String, RdfTerm>()
             for (row in rows) {

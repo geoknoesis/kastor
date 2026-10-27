@@ -1219,9 +1219,11 @@ public final class com/geoknoesis/kastor/rdf/SandboxedSelectQuery : com/geoknoes
 	public fun <init> (Ljava/lang/String;)V
 	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;)V
 	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;Lcom/geoknoesis/kastor/rdf/SparqlIriSubstitution;)V
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFunctions ()Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
 	public fun getSparql ()Ljava/lang/String;
+	public final fun getSubstitution ()Lcom/geoknoesis/kastor/rdf/SparqlIriSubstitution;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1358,6 +1360,15 @@ public abstract interface class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary 
 
 public final class com/geoknoesis/kastor/rdf/SparqlFunctionLibrary$Companion {
 	public final fun of (Ljava/util/Collection;)Lcom/geoknoesis/kastor/rdf/SparqlFunctionLibrary;
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlIriSubstitution {
+	public fun <init> (Ljava/lang/String;Ljava/util/Map;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIris ()Ljava/util/Map;
+	public final fun getTemplate ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class com/geoknoesis/kastor/rdf/SparqlMutable : com/geoknoesis/kastor/rdf/SparqlQueryable {
