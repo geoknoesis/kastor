@@ -1042,6 +1042,7 @@ class Rdf4jRepository(
             val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
             queryOperation(query.sparql, "Failed to execute SPARQL UPDATE", "UPDATE") {
+                Rdf4jLiteralChecks.requireBoundedUpdate(query.sparql)
                 val prepared = conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql)
                 val existing = blankContextsToKeep(conn, prepared)
                 var failure: Throwable? = null

@@ -59,4 +59,39 @@ class Rdf4jNumericLiteralBoundTest {
         val accepted = "2020-01-01T00:00:00.${"1".repeat(100)}"
         assertEquals(TypedLiteral(accepted, Iri("${xsd}dateTime")), Rdf4jProvider().parseGraph(turtle("\"$accepted\"^^<${xsd}dateTime>").byteInputStream(), "TURTLE").getTriples().single().obj)
     }
+
+    /**
+     * Round sixteen, providers P2-7: the graph API and SPARQL UPDATE skipped the limit, and RDF4J's MemoryStore turns
+     * an integer or decimal into a `BigInteger` when it stores it, in quadratic time (two 1,000,000-digit integers
+     * inserted by an UPDATE took 33 s). Both are refused now, with the parse path's message, as on Jena.
+     */
+    @Test
+    fun `the graph API and SPARQL UPDATE refuse numeric and temporal literals longer than the limit`() {
+        Rdf4jRepository.MemoryRepository().use { repo ->
+            val graph = repo.editDefaultGraph()
+            for ((lexical, type) in listOf(tooLong to "integer", "$tooLong.5" to "decimal", "2020-01-01T00:00:00.$tooLong" to "dateTime")) {
+                val literal = TypedLiteral(lexical, Iri(xsd + type))
+                val error = assertThrows(IllegalArgumentException::class.java) {
+                    graph.addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), literal))
+                }
+                assertTrue(error.message!!.contains("$limit"), error.message)
+                assertThrows(IllegalArgumentException::class.java) {
+                    graph.addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), TripleTerm(RdfTriple(Iri("http://e/a"), Iri("http://e/b"), literal))))
+                }
+                for (update in listOf(
+                    "INSERT DATA { <http://example.org/s> <http://example.org/p> \"$lexical\"^^<$xsd$type> }",
+                    "INSERT { ?s <http://example.org/p> \"$lexical\"^^<$xsd$type> } WHERE { BIND(<http://example.org/s> AS ?s) }",
+                    "INSERT DATA { <http://example.org/s> <http://example.org/p> \"${"\\u0037".repeat(limit + 1)}\"^^<${xsd}integer> }",
+                )) {
+                    val refused = assertThrows(RdfQueryException::class.java, { repo.update(UpdateQuery(update)) }, update.take(80))
+                    assertTrue(refused.message!!.contains("$limit"), refused.message)
+                }
+            }
+            assertEquals(0, graph.size())
+            graph.addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), TypedLiteral(longest, Iri("${xsd}integer"))))
+            repo.update(UpdateQuery("INSERT DATA { <http://example.org/s> <http://example.org/q> $longest }"))
+            repo.update(UpdateQuery("INSERT DATA { <http://example.org/s> <http://example.org/r> \"$longest 7\" }"))
+            assertEquals(3, graph.size())
+        }
+    }
 }

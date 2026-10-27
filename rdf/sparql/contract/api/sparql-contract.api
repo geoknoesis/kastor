@@ -152,6 +152,11 @@ public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical {
 	public final fun xsdLexical (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlNumberText {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlNumberText;
+	public static final fun numberLongerThan (Ljava/lang/String;I)I
+}
+
 public final class com/geoknoesis/kastor/rdf/sparql/internal/XPathPattern {
 	public final fun containsMatchIn (Ljava/lang/CharSequence;)Z
 	public final fun firstMatch (Ljava/lang/CharSequence;)Lkotlin/ranges/IntRange;
