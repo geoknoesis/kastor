@@ -377,12 +377,23 @@ public final class com/geoknoesis/kastor/gen/runtime/ResourceViewsKt {
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/ShaclPattern {
+	public static final field Companion Lcom/geoknoesis/kastor/gen/runtime/ShaclPattern$Companion;
+	public static final field MAX_STEPS J
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun containsMatchIn (Ljava/lang/CharSequence;)Z
 	public final fun getFlags ()Ljava/lang/String;
 	public final fun getPattern ()Ljava/lang/String;
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/ShaclPattern$Companion {
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/ShaclPatternBudgetException : java/lang/IllegalArgumentException {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;)V
+	public final fun getPattern ()Ljava/lang/String;
+	public final fun getValueLength ()I
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/ShaclSeverity : java/lang/Enum {

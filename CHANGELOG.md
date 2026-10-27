@@ -35,6 +35,12 @@ entries are regrouped under those kind headings.
   events, data lookups and returned statements), which bounds the cost the data adds (`k^d` for `d` nested property
   shapes over nodes with `k` values). `Rdf4jValidation()` has no hook for such a budget; that residual, and the absence
   of any deadline when the shapes are trusted or passed to the constructor, are documented.
+- **Security (`kastor-gen-runtime`), behaviour change, API addition:** generated `sh:pattern` checks
+  (`ShaclPattern.containsMatchIn`) were linear but unbounded: `.{0,1000}x` took 36 s on a 1 MB value and the accepted
+  `(a{0,100}){0,100}x` 12 s on 30 KB. A match is now charged to a deterministic budget of `ShaclPattern.MAX_STEPS`
+  (200,000,000) steps with the weights of the Kastor SHACL validator (each character read costs the size of the
+  compiled program; the budget is the validator's default `patternTimeout`), and fails with the new
+  `ShaclPatternBudgetException` (an `IllegalArgumentException`) past it.
 
 ### Round sixteen
 
