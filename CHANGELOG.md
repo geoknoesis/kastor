@@ -19,6 +19,42 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round sixteen
+
+#### Onto-quality: speed of the default check, enrichment vocabulary, RDFS classes; SHACL pre-binding
+
+- **Fixed (`rdf-jena`), performance:** a constant `REGEX` / `REPLACE` pattern of a sandboxed query is compiled once,
+  not once per execution. A SHACL engine runs a constraint query once per focus node, each a new parse, so the
+  "last pattern" cache held by the expression never hit, and compiling a pattern with Unicode classes on RE2/J costs
+  milliseconds. Compiled patterns are now shared by every sandboxed execution in a bounded cache keyed by the pattern
+  text and flags (at most 256 patterns and 250,000 compiled instructions, least recently used evicted first; a pattern
+  longer than 4,096 characters or one that fails to compile is never kept).
+- **Fixed (`onto-quality`), performance:** `oqsh:RecursiveClassExpressionShape` (P24) binds `$this` in its triple
+  patterns instead of filtering on it after scanning every class expression. With the pattern cache, the default
+  `onto-qa check` takes 36 s instead of 113 s on 2,500 classes, 63 s instead of 161 s on 5,000, and 217 s instead of
+  934 s on 20,000 classes, which now finishes within the default 300 s validation timeout (the findings are
+  identical). Most of the remaining time is Jena parsing each constraint query again for each focus node.
+- **Fixed (`onto-quality`):** the terms that `onto-qa enrich` and `pipeline` add (`oqsh:Enrichment`,
+  `oqsh:semanticallyCloseTo` and the provenance properties, in `http://example.org/owl-quality-shacl#`) are exempt
+  from P34 and P35 and from the other standard-vocabulary exemptions (`oqsh:StandardVocabularyTerm`): a clean
+  ontology no longer gets 11 Warnings once enriched, and `pipeline --severity warning` exits 0 on it.
+- **Fixed (`onto-quality`):** the class-level detectors check `rdfs:Class` classes as they check `owl:Class` ones
+  (owl-quality, modern-engineering and embedding-quality catalogues, and the `oqsh:NamedClass` target membership), and
+  the subclass-cycle detector (P06) checks every subject of `rdfs:subClassOf`, declared or not. An RDFS vocabulary
+  with a subclass cycle, a duplicate label language, an empty label or a lower-case class name was reported clean.
+- **Fixed (`rdf-shacl`, `rdf-sparql-contract`):** a data literal with a very long language tag (about 10,000 subtags)
+  no longer aborts the whole validation with a stack overflow when it is pre-bound (`$this`, `$value`): the tag is
+  checked by a linear scan, not by a regular expression with a repeated group, both when the engine writes it into the
+  query (up to 256 characters; a longer one is passed as an initial binding) and when the RDF4J provider renders an
+  initial binding (`SparqlLexical.langTag`).
+- **Fixed (`rdf-shacl`), behaviour change:** a pre-bound variable of the outermost `SELECT` projection keeps its name
+  (`(term AS ?this)`, no longer `?__kastor_prebound_N`), so a SPARQL node expression such as `SELECT $this WHERE { ... }`
+  outputs the focus node for IRI and literal focus nodes, as it already did for blank nodes (SHACL 1.2 SPARQL
+  Appendix A). A sub-select's projection still uses a fresh name.
+- **Added (benchmarks):** `OntoQualityCheckBenchmark` runs the default `QualityChecker` (SHACL-SPARQL and `REGEX`
+  detectors) on a generated ontology of 500 and 2,000 classes; it is not part of the regression gate, which has no
+  baseline for it.
+
 ### Round fourteen
 
 #### Sandbox: linear-time regular expressions, metered Jena paths, nesting guards

@@ -40,6 +40,19 @@ class SemanticEnricherProvenanceTest {
         return triples.filter { it.subject == roots.single() && it.predicate == EnrichmentVocabulary.similaritySearchMode }.map { it.obj as Literal }
     }
 
+    /**
+     * The terms the enrichment adds (predicates and classes) are all in the tool's own namespace, which the bundled
+     * catalogues exempt from the undeclared-term detectors (P34, P35): an enriched ontology gets no finding for them.
+     * The CLI's pipeline test uses a fixed enrichment output with these terms.
+     */
+    @Test
+    fun `the enrichment adds only terms of its own vocabulary`() {
+        val added = SemanticEnricher(model, 0.9, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.Exact).enrichmentOnly(ontology).getTriples()
+        val terms = added.map { it.predicate }.toSet() - RDF.type + added.filter { it.predicate == RDF.type }.map { it.obj as Iri }
+        assertTrue(terms.isNotEmpty())
+        assertTrue(terms.all { it.value.startsWith(EnrichmentVocabulary.NS) }, terms.toString())
+    }
+
     @Test
     fun `enrichment provenance records the similarity search mode`() {
         assertEquals(listOf(Literal("exact", XSD.string)), modeOf(SimilaritySearchMode.Exact))
