@@ -6,7 +6,6 @@ import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfTerm
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 
 /**
@@ -79,7 +78,7 @@ class EmbeddedShapesBoundsTest {
             val error = assertThrows<EmbeddedShapesRefusedException>(name) { check(chain(20, level)) }
             assertTrue(error.message!!.contains("unfolded into a tree") || error.message!!.contains("levels deep"), error.message)
             refused(chain(12, level), "unfolded into a tree")
-            assertDoesNotThrow(name) { check(chain(3, level)) }
+            admitted(name) { check(chain(3, level)) }
         }
     }
 
@@ -87,14 +86,14 @@ class EmbeddedShapesBoundsTest {
     fun `the reviewer's probe is refused at every depth past the cap`() {
         val level = families.getValue("or")
         for (n in 11..26) refused(chain(n, level), "unfolded into a tree")
-        assertDoesNotThrow { check(chain(9, level)) }
+        admitted { check(chain(9, level)) }
     }
 
     @Test
     fun `untyped untargeted shapes count only when a targeted shape reaches them`() {
         // Unreachable: the engines evaluate no shape without a target, so this graph is not refused.
         val unreachable = (0 until 20).joinToString("\n") { families.getValue("or")(it) } + "\n" + data
-        assertDoesNotThrow { check(unreachable) }
+        admitted { check(unreachable) }
         // A shape type alone makes a root.
         refused("ex:S0 a sh:NodeShape .\n" + unreachable, "unfolded into a tree")
         // So does any target.
@@ -107,14 +106,14 @@ class EmbeddedShapesBoundsTest {
     fun `many roots add up`() {
         val roots = (0 until 2_000).joinToString("\n") { "ex:R$it sh:targetNode ex:a ; sh:class ex:Nope ." }
         refused(roots + "\n" + data, "unfolded into a tree")
-        assertDoesNotThrow { check((0 until 100).joinToString("\n") { "ex:R$it sh:targetNode ex:a ; sh:class ex:Nope ." } + "\n" + data) }
+        admitted { check((0 until 100).joinToString("\n") { "ex:R$it sh:targetNode ex:a ; sh:class ex:Nope ." } + "\n" + data) }
     }
 
     @Test
     fun `nesting deeper than the cap is refused, without branching`() {
         val node: (Int) -> String = { i -> "ex:S$i sh:node ex:S${i + 1} ." }
         refused(chain(EmbeddedShapesBounds.MAX_DEPTH + 1, node), "levels deep")
-        assertDoesNotThrow { check(chain(EmbeddedShapesBounds.MAX_DEPTH - 1, node)) }
+        admitted { check(chain(EmbeddedShapesBounds.MAX_DEPTH - 1, node)) }
         val property: (Int) -> String = { i -> "ex:S$i sh:property [ sh:path ex:p ; sh:node ex:S${i + 1} ] ." }
         refused(chain(EmbeddedShapesBounds.MAX_DEPTH, property), "levels deep")
     }
@@ -132,13 +131,13 @@ class EmbeddedShapesBoundsTest {
         )) {
             refused("ex:S sh:targetNode ex:a ; sh:property [ sh:path _:x ; sh:minCount 1 ] .\n$cycle\n$data", "levels deep")
         }
-        assertDoesNotThrow { check("ex:S sh:targetNode ex:a ; sh:property [ sh:path ( ex:p [ sh:inversePath ex:q ] [ sh:alternativePath ( ex:r [ sh:zeroOrMorePath ex:s ] ) ] ) ; sh:minCount 1 ] .\n$data") }
+        admitted { check("ex:S sh:targetNode ex:a ; sh:property [ sh:path ( ex:p [ sh:inversePath ex:q ] [ sh:alternativePath ( ex:r [ sh:zeroOrMorePath ex:s ] ) ] ) ; sh:minCount 1 ] .\n$data") }
     }
 
     @Test
     fun `recursive shapes close the cycle and are admitted`() {
-        assertDoesNotThrow { check("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:node ex:S ] .\n$data") }
-        assertDoesNotThrow { check("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:or ( ex:S ex:T ) . ex:T sh:not ex:S .\n$data") }
+        admitted { check("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:node ex:S ] .\n$data") }
+        admitted { check("ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:or ( ex:S ex:T ) . ex:T sh:not ex:S .\n$data") }
     }
 
     private fun values(n: Int) = (0 until n).joinToString(" ") { "\"v$it\"" }
@@ -148,11 +147,11 @@ class EmbeddedShapesBoundsTest {
         for (parameter in listOf("sh:in", "sh:languageIn", "sh:ignoredProperties")) {
             refused("ex:S sh:targetNode ex:a ; $parameter ( ${values(EmbeddedShapesBounds.MAX_LIST_LENGTH + 1)} ) .\n$data", "more than ${EmbeddedShapesBounds.MAX_LIST_LENGTH} members")
         }
-        assertDoesNotThrow { check("ex:S sh:targetNode ex:a ; sh:in ( ${values(EmbeddedShapesBounds.MAX_LIST_LENGTH)} ) .\n$data") }
+        admitted { check("ex:S sh:targetNode ex:a ; sh:in ( ${values(EmbeddedShapesBounds.MAX_LIST_LENGTH)} ) .\n$data") }
         val operands = { n: Int -> (0 until n).joinToString(" ") { "[ sh:class ex:C$it ]" } }
         for (logical in listOf("sh:or", "sh:and", "sh:xone")) {
             refused("ex:S sh:targetNode ex:a ; $logical ( ${operands(EmbeddedShapesBounds.MAX_OPERANDS + 1)} ) .\n$data", "more than ${EmbeddedShapesBounds.MAX_OPERANDS} members")
-            assertDoesNotThrow { check("ex:S sh:targetNode ex:a ; $logical ( ${operands(EmbeddedShapesBounds.MAX_OPERANDS)} ) .\n$data") }
+            admitted { check("ex:S sh:targetNode ex:a ; $logical ( ${operands(EmbeddedShapesBounds.MAX_OPERANDS)} ) .\n$data") }
         }
         val malformed = mapOf(
             "_:l rdf:first ex:T ; rdf:rest _:l ." to "cyclic",
@@ -176,7 +175,7 @@ class EmbeddedShapesBoundsTest {
         val list = (0 until n).joinToString("\n") { "_:n$it rdf:first \"v$it\" ; rdf:rest ${if (it == n - 1) "rdf:nil" else "_:n${it + 1}"} ." }
         val users = { count: Int -> (0 until count).joinToString("\n") { "ex:S$it sh:targetNode ex:a ; sh:in _:n0 ." } }
         refused(users(6) + "\n" + list + "\n" + data, "unfolded into a tree")
-        assertDoesNotThrow { check(users(4) + "\n" + list + "\n" + data) }
+        admitted { check(users(4) + "\n" + list + "\n" + data) }
     }
 
     @Test
@@ -184,7 +183,7 @@ class EmbeddedShapesBoundsTest {
         val many = (0 until EmbeddedShapesBounds.MAX_SHAPE_TRIPLES + 1).joinToString("\n") { "ex:X$it sh:name \"n\" ." }
         refused(many + "\n" + data, "statements in the SHACL namespace")
         val dataOnly = (0 until EmbeddedShapesBounds.MAX_SHAPE_TRIPLES + 1).joinToString("\n") { "ex:X$it ex:p \"n\" ." }
-        assertDoesNotThrow { check("ex:S sh:targetNode ex:a ; sh:class ex:C .\n$dataOnly") }
+        admitted { check("ex:S sh:targetNode ex:a ; sh:class ex:C .\n$dataOnly") }
     }
 
     @Test
@@ -206,6 +205,11 @@ class EmbeddedShapesBoundsTest {
               sh:property [ sh:path ex:member ; sh:qualifiedValueShape [ sh:class ex:Bot ] ; sh:qualifiedMaxCount 2 ] ;
               sh:property [ sh:path ex:address ; sh:node ex:AddressShape ] .
         """.trimIndent()
-        assertDoesNotThrow { check(shapes + "\n" + data) }
+        admitted { check(shapes + "\n" + data) }
     }
+}
+
+/** Runs [block], failing with [message] and the cause when it throws (kotlin.test; JUnit's inline helper pulls opentest4j in). */
+private inline fun admitted(message: String = "expected no exception", block: () -> Unit) {
+    try { block() } catch (e: Exception) { kotlin.test.fail(message, e) }
 }
