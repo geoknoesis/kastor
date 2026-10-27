@@ -138,6 +138,24 @@ internal enum class JenaCost {
         /** Whether converting a lexical form to [datatype] parses it into a number, a date or a duration. */
         fun parsesLexicalForm(datatype: String): Boolean = datatype.startsWith(XSD) && datatype !in TEXT_TYPES
 
+        /** [COPYING] expressions that return an argument (or a part of it Jena does not copy) as it is. */
+        private val RETURNING: Set<Class<out ExprFunction>> = setOf(
+            E_Str::class.java, E_If::class.java, E_Coalesce::class.java, E_Lang::class.java, E_LangDir::class.java,
+            E_Datatype::class.java, E_TripleSubject::class.java, E_TriplePredicate::class.java, E_TripleObject::class.java,
+            E_UnaryPlus::class.java,
+        )
+
+        private val RETURNING_FUNCTIONS: Set<String> = listOf("str", "lang", "langdir", "datatype", "subject", "predicate", "object", "unary-plus")
+            .map { SPARQL + it }.toSet() + "${XSD}string"
+
+        /**
+         * Whether [function] returns an existing value unchanged (`STR`, `IF`, `COALESCE`, `LANG`, `DATATYPE`): the
+         * only expressions whose results are not charged to the memory budget. Other copying ones (`SUBSTR`,
+         * `STRBEFORE`, `STRLANG`, `ABS`, ...) allocate their result.
+         */
+        fun returnsArgument(function: ExprFunction): Boolean =
+            if (function is E_Function) function.functionIRI in RETURNING_FUNCTIONS else function.javaClass in RETURNING
+
         /** The cost of [function], or null when a sandboxed query may not contain it. */
         fun of(function: ExprFunction): JenaCost? =
             if (function is E_Function) ofFunction(function.functionIRI) ?: GENERIC else CLASSES[function.javaClass]

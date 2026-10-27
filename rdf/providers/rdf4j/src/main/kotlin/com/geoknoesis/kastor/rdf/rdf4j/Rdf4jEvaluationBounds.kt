@@ -80,10 +80,12 @@ internal enum class Rdf4jCost {
  * [clock] ([Long.MAX_VALUE] for none) and the thread's interrupt flag (kept); each fails with
  * [QueryInterruptedException], as RDF4J's own time limit does. [memory] is the query's budget of computed characters.
  */
-internal class Rdf4jSandboxBudget(private val deadline: Long, private val clock: () -> Long) {
-    /** The characters the expressions of this query computed ([SandboxLimits.MAX_COMPUTED_CHARACTERS]). */
-    val memory = SandboxMemoryBudget()
-
+internal class Rdf4jSandboxBudget(
+    private val deadline: Long,
+    private val clock: () -> Long,
+    /** The characters the expressions of this query and its nested queries computed ([SandboxMemoryBudget]). */
+    val memory: SandboxMemoryBudget = SandboxMemoryBudget(),
+) {
     fun check() {
         if (Thread.currentThread().isInterrupted) throw QueryInterruptedException("The sandboxed query was interrupted")
         if (deadline != Long.MAX_VALUE && clock() - deadline >= 0) throw QueryInterruptedException("The sandboxed query ran out of time")
@@ -117,15 +119,15 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
         val leaf = expr is Var || expr is ValueConstant
         if (leaf && !operand && !counted) return step
         val checked = !leaf && !copying(expr)
+        // A copying expression (SUBSTR of a large literal of the data) is not held to the per-value limits, but what
+        // it allocates still counts; only one that returns an existing value unchanged is not charged.
+        val charged = !leaf && !returnsArgument(expr)
         return QueryValueEvaluationStep { bindings ->
             failing {
                 budget.check()
                 val value = step.evaluate(bindings)
-                if (checked) {
-                    val what = describe(expr)
-                    checkResult(value, what)
-                    budget.memory.charge(size(value), what)
-                }
+                if (checked) checkResult(value, describe(expr))
+                if (charged) budget.memory.charge(size(value), describe(expr))
                 if (operand) checkOperand(value)
                 if (counted) count(value)
                 value
@@ -285,6 +287,18 @@ internal class Rdf4jEvaluationBounds(val budget: Rdf4jSandboxBudget, private val
             // IRI() resolves against a base, so it is checked like any computation.
             is Str, is Label, is Lang, is Datatype, is Namespace, is LocalName, is If, is Coalesce -> true
             is FunctionCall -> Rdf4jCost.ofFunction(expr.uri) == Rdf4jCost.COPYING
+            else -> false
+        }
+
+        /** RDF4J built-ins (of [copying]) that return an existing value as it is: STR, LANG, DATATYPE, IF, COALESCE. */
+        private val RETURNING_FUNCTIONS = setOf(
+            "http://www.w3.org/2001/XMLSchema#string", "http://www.w3.org/1999/02/22-rdf-syntax-ns#subject",
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate", "http://www.w3.org/1999/02/22-rdf-syntax-ns#object",
+        )
+
+        fun returnsArgument(expr: ValueExpr): Boolean = when (expr) {
+            is Str, is Label, is Lang, is Datatype, is If, is Coalesce -> true
+            is FunctionCall -> expr.uri in RETURNING_FUNCTIONS
             else -> false
         }
 

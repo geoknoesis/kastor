@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.string
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
+import com.geoknoesis.kastor.rdf.SparqlFunction
 import com.geoknoesis.kastor.rdf.SparqlFunctionLibrary
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository
@@ -23,6 +24,10 @@ import kotlin.test.assertTrue
  * The reviewer's query and its variants run here in a child JVM with a 256 MiB heap and a 1 s timeout: each must stop
  * with the sandbox's own [SandboxLimitException] (the query-wide budget of computed characters), never with an
  * `OutOfMemoryError` and not by running into the timeout.
+ *
+ * Round sixteen, security review: functions that copy a part of an argument (`SUBSTR`, `STRBEFORE`, `STRAFTER`)
+ * allocate it all the same, so they are charged too (over a large literal of the data); and the nested queries of a
+ * custom function share the budget of the query that calls it instead of each starting a fresh one.
  */
 @Timeout(value = 300, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SandboxedMemoryContractTest {
@@ -38,10 +43,19 @@ class SandboxedMemoryContractTest {
         assertEquals(0, process.exitValue(), output)
         val lines = output.lines().filter { it.startsWith("PROBE ") }
         println(lines.joinToString("\n"))
-        assertEquals(SandboxedMemoryProbe.PROVIDERS.size * SandboxedMemoryProbe.QUERIES.size, lines.size, output)
+        val probes = SandboxedMemoryProbe.QUERIES.size + SandboxedMemoryProbe.COPYING_QUERIES.size + 1
+        assertEquals(SandboxedMemoryProbe.PROVIDERS.size * probes, lines.size, output)
         for (line in lines) {
             val (_, provider, query, outcome) = line.split('\t')
             assertEquals("limit", outcome, "$provider $query\n$output")
+        }
+        // Jena's process-wide NodeValue cache (10,000 entries) kept the large computed strings of every query.
+        val retained = output.lines().filter { it.startsWith("RETAINED") }
+        assertEquals(SandboxedMemoryProbe.PROVIDERS.size, retained.size, output)
+        println(retained.joinToString("\n"))
+        for (line in retained) {
+            val (_, provider, megabytes) = line.split('\t')
+            assertTrue(megabytes.toLong() < 64, "$provider: $megabytes MB of heap still in use after its queries\n$output")
         }
     }
 
@@ -96,26 +110,59 @@ object SandboxedMemoryProbe {
         repo.editDefaultGraph().addTriples((0 until 50).map { RdfTriple(Iri("urn:s$it"), Iri("urn:p"), string("ab")) })
     }
 
+    /** Each binds ten 1 Mi-character copies of the large literal `?b` per row, over 200 rows, and keeps them. */
+    val COPYING_QUERIES: List<String> = listOf(
+        { i: Int -> "SUBSTR(?b, ${i + 1})" }, { _: Int -> "STRAFTER(?b, \"a\")" }, { _: Int -> "STRBEFORE(?b, \"z\")" },
+    ).map { f -> "SELECT * { ?s <urn:p> ?o . <urn:big> <urn:q> ?b ${(1..10).joinToString(" ") { "BIND(${f(it)} AS ?y$it)" }} } ORDER BY ?s" }
+
+    /** A custom function whose nested query computes a chain of 16 Mi characters from its argument, called per row. */
+    private val grow = SparqlFunction("urn:kastor:grow", listOf(false)) { call ->
+        val sparql = "SELECT (STRLEN(?x20) AS ?n) { BIND(CONCAT(STR(?x), \"urn:s00\") AS ?x0) " +
+            (1..20).joinToString(" ") { "BIND(CONCAT(?x${it - 1}, ?x${it - 1}) AS ?x$it)" } + " }"
+        call.select(SandboxedSelectQuery(sparql), mapOf("x" to call.arguments[0]!!)) { rows -> rows.single().get("n") }
+    }
+
+    /** Calls [grow] once per row: its nested queries share the budget of this query. */
+    const val NESTED_QUERY = "SELECT ?s (<urn:kastor:grow>(?o) AS ?n) { ?s <urn:p> ?o }"
+
+    /** 200 triples on `<urn:p>`, and `<urn:big> <urn:q> "ab..bz"` of 1 Mi characters. */
+    private fun loadLarge(repo: RdfRepository) {
+        repo.editDefaultGraph().addTriples(
+            (0 until 200).map { RdfTriple(Iri("urn:s$it"), Iri("urn:p"), string("ab")) } +
+                RdfTriple(Iri("urn:big"), Iri("urn:q"), string("a" + "b".repeat(1024 * 1024) + "z")),
+        )
+    }
+
+    private fun probe(name: String, repo: RdfRepository, sparql: String, library: SparqlFunctionLibrary = SparqlFunctionLibrary.of(emptyList())) {
+        val started = System.nanoTime()
+        val outcome = try {
+            repo.withSelectRows(SandboxedSelectQuery(sparql, library), emptyMap(), Duration.ofSeconds(1)) { it.count() }
+            "rows"
+        } catch (e: Exception) {
+            val chain = generateSequence<Throwable>(e) { it.cause }.toList()
+            if (chain.any { it is SandboxLimitException }) "limit"
+            else "error:${chain.joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message?.take(120)}" }}"
+        } catch (e: Throwable) {
+            "error:${e.javaClass.name}"
+        }
+        println("PROBE \t$name\t${sparql.take(60)}\t$outcome\t${(System.nanoTime() - started) / 1_000_000}")
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         for ((name, factory) in PROVIDERS) {
             factory().use { repo ->
                 load(repo)
-                for (sparql in QUERIES) {
-                    val started = System.nanoTime()
-                    val outcome = try {
-                        repo.withSelectRows(SandboxedSelectQuery(sparql, SparqlFunctionLibrary.of(emptyList())), emptyMap(), Duration.ofSeconds(1)) { it.count() }
-                        "rows"
-                    } catch (e: Exception) {
-                        val chain = generateSequence<Throwable>(e) { it.cause }.toList()
-                        if (chain.any { it is SandboxLimitException }) "limit"
-                        else "error:${chain.joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message?.take(120)}" }}"
-                    } catch (e: Throwable) {
-                        "error:${e.javaClass.name}"
-                    }
-                    println("PROBE \t$name\t${sparql.take(60)}\t$outcome\t${(System.nanoTime() - started) / 1_000_000}")
-                }
+                QUERIES.forEach { probe(name, repo, it) }
+                probe(name, repo, NESTED_QUERY, SparqlFunctionLibrary.of(listOf(grow)))
             }
+            factory().use { repo ->
+                loadLarge(repo)
+                COPYING_QUERIES.forEach { probe(name, repo, it) }
+            }
+            // Nothing a query computed may outlive it: the repositories are closed, so what is left is a cache.
+            System.gc()
+            Runtime.getRuntime().let { println("RETAINED\t$name\t${(it.totalMemory() - it.freeMemory()) shr 20}") }
         }
     }
 }

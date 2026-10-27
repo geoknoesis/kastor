@@ -56,10 +56,12 @@ import java.util.concurrent.atomic.AtomicLong
  * own timeout and `abort`), and the thread's interrupt flag (kept). Each failure is a [QueryCancelledException], as for
  * a timeout. [memory] is the execution's budget of computed characters.
  */
-internal class JenaSandboxBudget(private val deadline: Long, private val clock: () -> Long) {
-    /** The characters the expressions of this execution computed ([SandboxLimits.MAX_COMPUTED_CHARACTERS]). */
-    val memory = SandboxMemoryBudget()
-
+internal class JenaSandboxBudget(
+    private val deadline: Long,
+    private val clock: () -> Long,
+    /** The characters the expressions of this execution and its nested queries computed ([SandboxMemoryBudget]). */
+    val memory: SandboxMemoryBudget = SandboxMemoryBudget(),
+) {
     fun check(env: FunctionEnv?) {
         if (Thread.currentThread().isInterrupted) throw QueryCancelledException()
         if ((env as? ExecutionContext)?.cancelSignal?.get() == true) throw QueryCancelledException()
@@ -103,6 +105,7 @@ internal class JenaSandboxRewrite(val budget: JenaSandboxBudget) : RewriteFactor
     }
 
     private inner class Exprs : ExprTransformCopy() {
+        override fun transform(nv: ExprVar): Expr = if (nv is UncachedVar) nv else UncachedVar(nv.asVar())
         override fun transform(func: ExprFunction0): Expr = wrap(func)
         override fun transform(func: ExprFunction1, expr1: Expr): Expr =
             if (func is CountedExpr) func.copy(expr1) else wrap(super.transform(func, expr1))
@@ -161,6 +164,9 @@ internal class BoundedExpr(val inner: ExprFunction, private val cost: JenaCost, 
     private val label: String = (inner as? E_Function)?.functionIRI ?: inner.functionSymbol.symbol
     private val evaluation = JenaCostEvaluation(cost, label)
 
+    /** Whether the result is charged to the memory budget: unless the expression returns an existing value unchanged. */
+    private val charged = cost != JenaCost.COPYING || !JenaCost.returnsArgument(inner)
+
     /** The function an `E_Function` with an argument check calls, built once from the execution's registry. */
     @Volatile private var function: Function? = null
 
@@ -181,10 +187,11 @@ internal class BoundedExpr(val inner: ExprFunction, private val cost: JenaCost, 
         } else {
             inner.eval(binding, env)
         }
-        if (cost != JenaCost.COPYING) {
-            JenaSandboxBounds.checkResult(value, label)
-            budget.memory.charge(JenaSandboxBounds.size(value), label)
-        }
+        // A copying expression (SUBSTR of a large literal of the data) is not held to the per-value limits, but what
+        // it allocates still counts.
+        if (cost != JenaCost.COPYING) JenaSandboxBounds.checkResult(value, label)
+        if (charged) budget.memory.charge(JenaSandboxBounds.size(value), label)
+        JenaNodeValueCache.forget(value)
         value
     }
 
