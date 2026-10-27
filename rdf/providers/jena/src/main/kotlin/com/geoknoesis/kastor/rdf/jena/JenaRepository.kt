@@ -1020,19 +1020,9 @@ class JenaRepository private constructor(
         exec.use { consumeRows(it, query.sparql, consume) }
     }
 
-    /**
-     * [JenaQuerySandbox.parseSelect], with the engine's parse errors wrapped as query errors. A sandboxed query written
-     * from a template ([com.geoknoesis.kastor.rdf.SparqlIriSubstitution]) is built from the template's shared parse
-     * ([JenaQueryTemplates]) when that gives the query of the text; it is checked all the same.
-     */
+    /** [JenaQuerySandbox.parseSelect] of [JenaQueryTemplates.parse], with the engine's parse errors wrapped as query errors. */
     private fun parseSelect(query: SparqlSelect): org.apache.jena.query.Query =
-        JenaQuerySandbox.parseSelect(query) {
-            queryOperation(query.sparql) {
-                val bounded = JenaLiteralBounds.requireBoundedQuery(query.sparql)
-                (query as? SandboxedSelectQuery)?.substitution?.let { JenaQueryTemplates.substituted(it, JenaLiteralBounds::requireBoundedQuery) }
-                    ?: QueryFactory.create(bounded)
-            }
-        }
+        JenaQuerySandbox.parseSelect(query) { queryOperation(query.sparql) { JenaQueryTemplates.parse(query) } }
 
     /** [JenaQuerySandbox.execution] over the query dataset, with the nested-query deadline [deadline] on the [hooks] clock. */
     private fun execution(query: SparqlSelect, parsed: org.apache.jena.query.Query, deadline: Long): org.apache.jena.query.QueryExecutionDatasetBuilder =

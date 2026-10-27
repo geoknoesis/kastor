@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.rdf.jena
 
+import com.geoknoesis.kastor.rdf.SandboxedSelectQuery
 import com.geoknoesis.kastor.rdf.SparqlIriSubstitution
+import com.geoknoesis.kastor.rdf.SparqlSelect
 import org.apache.jena.graph.Node
 import org.apache.jena.graph.NodeFactory
 import org.apache.jena.irix.IRIException
@@ -45,6 +47,17 @@ internal object JenaQueryTemplates {
     /** How many queries were built from a parsed template instead of parsed from their text: a test seam. */
     private val built = AtomicLong()
     val substitutions: Long get() = built.get()
+
+    /**
+     * [query] parsed: a sandboxed query written from a template ([SandboxedSelectQuery.substitution]) is built from
+     * the template's shared parse when that gives the query of its text ([substituted]), any other is parsed from its
+     * text. Either way the text is held to [JenaLiteralBounds.requireBoundedQuery] first.
+     */
+    fun parse(query: SparqlSelect): Query {
+        val bounded = JenaLiteralBounds.requireBoundedQuery(query.sparql)
+        return (query as? SandboxedSelectQuery)?.substitution?.let { substituted(it, JenaLiteralBounds::requireBoundedQuery) }
+            ?: QueryFactory.create(bounded)
+    }
 
     /**
      * The query that [substitution] wrote, built from its parsed template, or null when the text is to be parsed
