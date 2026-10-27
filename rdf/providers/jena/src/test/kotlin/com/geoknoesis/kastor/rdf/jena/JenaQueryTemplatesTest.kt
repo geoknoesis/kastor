@@ -95,6 +95,25 @@ class JenaQueryTemplatesTest {
         assertTrue(JenaQueryTemplates.substitutions - built >= 40, "queries built from the template")
     }
 
+    @Test
+    fun `a text without IRIs, the same for every blank-node focus bound by the provider, is parsed once`() {
+        val text = "SELECT ?o WHERE { ?this <urn:p> ?o FILTER (?o != <urn:parse-once-blank>) }"
+        repository.editDefaultGraph().addTriples(
+            Rdf.parse((0 until 20).joinToString("\n") { "_:b$it <urn:kind> \"blank\" ; <urn:p> <urn:n$it> ." }, RdfFormat.TURTLE).getTriples(),
+        )
+        val blanks = repository.select(SandboxedSelectQuery("SELECT ?s WHERE { ?s <urn:kind> \"blank\" }")).map { it.get("s")!! }
+        assertEquals(20, blanks.size)
+        JenaQueryTemplates.substituted(SparqlIriSubstitution(text, emptyMap())) { it }
+        val before = JenaQueryTemplates.parses
+        for (focus in blanks) {
+            val query = SandboxedSelectQuery(text, SparqlFunctionLibrary.EMPTY, SparqlIriSubstitution(text, emptyMap()))
+            val viaTemplate = repository.withSelectRows(query, mapOf("this" to focus), Duration.ofSeconds(30)) { it.toList().size }
+            val viaText = repository.withSelectRows(SandboxedSelectQuery(text), mapOf("this" to focus), Duration.ofSeconds(30)) { it.toList().size }
+            assertEquals(viaText, viaTemplate)
+        }
+        assertEquals(before, JenaQueryTemplates.parses, "template parses for ${blanks.size} focus nodes")
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["urn:a/../b", "http://example.org/a/./b", "http://example.org/a/../b", "http://example.org/."])
     fun `an IRI the parser would not keep as written falls back to the text`(iri: String) {
@@ -103,11 +122,12 @@ class JenaQueryTemplatesTest {
     }
 
     @Test
-    fun `GROUP BY a substituted variable binds it, so the SHACL engine writes no template there`() {
-        // The reason SparqlQueryTemplate keeps GROUP BY / ORDER BY slots out of its templates.
+    fun `GROUP BY a substituted variable is not the query of the text, so the template is not used`() {
+        // Jena reads `GROUP BY (?v)` as grouping by the variable, and substituting it there would bind the variable
+        // to the IRI (`GROUP BY (<iri> AS ?v)`); the reason SparqlQueryTemplate keeps GROUP BY / ORDER BY slots out
+        // of its templates, and one the cache's own check catches.
         val template = "SELECT (COUNT(?o) AS ?c) WHERE { ?__t <urn:p> ?o } GROUP BY (?__t)"
-        val built = JenaQueryTemplates.substituted(substitution(template, "urn:n3")) { it }
-        assertTrue(built.toString().contains("AS ?__t"), built.toString())
+        assertNull(JenaQueryTemplates.substituted(substitution(template, "urn:n3")) { it })
     }
 
     @Test

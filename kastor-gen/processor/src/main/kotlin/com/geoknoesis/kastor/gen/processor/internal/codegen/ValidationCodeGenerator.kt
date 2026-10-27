@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.processor.api.model.ClassBuilderModel
+import com.geoknoesis.kastor.gen.processor.api.model.PropertyBuilderModel
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
 import com.geoknoesis.kastor.gen.processor.internal.utils.ShaclPatterns
 import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
@@ -29,20 +30,10 @@ internal class ValidationCodeGenerator(
             .addKdoc("%L", kdocText("Validate the ${classBuilder.className.lowercase()} against SHACL constraints."))
             .addStatement("val violations = mutableListOf<%T>()", String::class)
 
-        // Check required properties - sort by propertyIri for deterministic output
+        // Check sh:minCount and sh:maxCount - sort by propertyIri for deterministic output
         classBuilder.properties
             .sortedBy { it.propertyIri }
-            .forEach { property ->
-                if (property.isRequired) {
-                    val iri = CodegenConstants.iriConstant(property.propertyIri)
-                    functionBuilder.addComment("Check required %L", property.propertyName)
-                    val count = "${property.propertyName}Count"
-                    functionBuilder.addStatement("val %N = graph.find(resource, %L).size", count, iri)
-                    functionBuilder.beginControlFlow("if (%N < 1)", count)
-                    functionBuilder.addStatement("violations.add(%S)", "${property.propertyName} is required (minCount=1)")
-                    functionBuilder.endControlFlow()
-                }
-            }
+            .forEach { property -> addCountChecks(functionBuilder, property) }
 
         // Check value constraints on existing values - sort by propertyIri for deterministic output
         classBuilder.properties
@@ -148,5 +139,29 @@ internal class ValidationCodeGenerator(
         functionBuilder.endControlFlow()
 
         return functionBuilder.build()
+    }
+
+    /** `sh:minCount` (or "required" when the model has no count) and `sh:maxCount` of [property]. */
+    private fun addCountChecks(functionBuilder: FunSpec.Builder, property: PropertyBuilderModel) {
+        val c = property.constraints
+        val min = c.minCount?.takeIf { it > 0 } ?: if (property.isRequired) 1 else null
+        val max = c.maxCount
+        if (min == null && max == null) return
+        val name = property.propertyName
+        val count = "${name}Count"
+        functionBuilder.addComment("Check %L cardinality", name)
+        functionBuilder.addStatement("val %N = graph.find(resource, %L).size", count, CodegenConstants.iriConstant(property.propertyIri))
+        if (min != null) {
+            functionBuilder.beginControlFlow("if (%N < %L)", count, min)
+            val message = if (min == 1) "$name is required (minCount=1)" else "$name requires at least $min values (minCount=$min)"
+            functionBuilder.addStatement("violations.add(%S)", message)
+            functionBuilder.endControlFlow()
+        }
+        if (max != null) {
+            functionBuilder.beginControlFlow("if (%N > %L)", count, max)
+            val plural = if (max == 1) "value" else "values"
+            functionBuilder.addStatement("violations.add(%S)", "$name allows at most $max $plural (maxCount=$max)")
+            functionBuilder.endControlFlow()
+        }
     }
 }

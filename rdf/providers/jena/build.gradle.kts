@@ -7,6 +7,8 @@ plugins {
 dependencies {
   implementation(libs.slf4j.api)
   implementation(libs.titanium.jsonld)
+  // JenaJsonLd hands the expanded document (jakarta.json values) to the shared JsonLdExpandedCheck of :rdf:core.
+  implementation(libs.jakarta.json)
   testImplementation(libs.junit.params)
 
   implementation(libs.jena.base)

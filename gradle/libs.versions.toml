@@ -49,6 +49,8 @@ libthrift = "0.24.0"
 lz4Java = "1.12.0"
 hasmacJsonld = "0.10.2"
 titaniumJsonld = "1.7.0"
+# The jakarta.json API (Glassfish implementation jar) that both JSON-LD processors build on.
+jakartaJson = "2.0.1"
 # Gradle Plugin Portal publication plugin, applied by kastor-gen/gradle-plugin (marker + portal metadata).
 pluginPublish = "2.2.1"
 # CycloneDX SBOM generator, applied to every published module (attached as the `cyclonedx` classifier).
@@ -72,6 +74,8 @@ kotlinxSerializationJsonResolved = "0.4.4"
 [libraries]
 titanium-jsonld = { module = "com.apicatalog:titanium-json-ld", version.ref = "titaniumJsonld" }
 hasmac-jsonld = { module = "no.hasmac:hasmac-json-ld", version.ref = "hasmacJsonld" }
+jakarta-json = { module = "org.glassfish:jakarta.json", version.ref = "jakartaJson" }
+jakarta-json-api = { module = "jakarta.json:jakarta.json-api", version.ref = "jakartaJson" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 commons-codec = { module = "commons-codec:commons-codec", version.ref = "commonsCodec" }
 commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }

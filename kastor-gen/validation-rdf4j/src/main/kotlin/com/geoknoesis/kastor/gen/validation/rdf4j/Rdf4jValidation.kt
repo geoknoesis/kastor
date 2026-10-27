@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.EmbeddedShapes
 import com.geoknoesis.kastor.gen.runtime.EmbeddedShapesRefusedException
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
@@ -53,15 +52,22 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  *   the data graph (once per graph version). If the data graph declares no shapes the result is
  *   [ValidationResult.Ok].
  *
- * **Embedded shapes are untrusted**: they come with the data. `ShaclSail` runs SHACL-SPARQL without a sandbox (a
- * `SERVICE` clause sends a request to any host, and a query has no deadline) and `sh:pattern` with
- * `java.util.regex` (which a hostile pattern makes backtrack without bound). So the no-arg validator admits only
- * SHACL Core shapes without `sh:pattern`: when the embedded shapes use any other term of the SHACL namespace
- * (`sh:sparql`, `sh:select`, `sh:target`, `sh:pattern`, ...; the list is `EmbeddedShapes.ALLOWED` of
- * `kastor-gen-runtime`), [validate] fails with [EmbeddedShapesRefusedException] before anything is run. Only when the
- * data is trusted, [trustingEmbeddedShapes] creates a validator that runs every embedded shape. Shapes passed to the
- * constructor or to [fromTurtle] are the application's own and are trusted: never pass shapes from an untrusted
- * source there; the RDF4J SHACL validator of `rdf-rdf4j` and the Kastor SHACL validator sandbox them.
+ * **Embedded shapes are untrusted**: they come with the data. So the no-arg validator does not run them on
+ * `ShaclSail` (which has no deadline, runs SHACL-SPARQL without a sandbox and costs, for nested property shapes over
+ * nodes with many values, about the number of value paths: 51 s for 4 levels of 100 values) but on the **Kastor SHACL
+ * validator** (`rdf-shacl-validation`, provider `kastor`), with a deadline of 5 s per focus node and its own work
+ * limits; a validation that reaches them fails with [EmbeddedShapesRefusedException]. Before that, the shapes
+ * (extracted from the data graph as below) must use only SHACL Core terms without `sh:pattern`
+ * (`EmbeddedShapes.ALLOWED` of `kastor-gen-runtime`) and stay within the structural caps of `EmbeddedShapesBounds`
+ * (5,000 constraints once shared shapes are unfolded, 32 levels of nesting, 64 operands per logical constraint,
+ * lists of 1,000 well-formed members, 20,000 SHACL statements), or [validate] fails with
+ * [EmbeddedShapesRefusedException]. The two engines agree on SHACL Core, except that ShaclSail skips `sh:xone` and
+ * the `*OrMore` / `zeroOrOne` paths, which the Kastor validator evaluates. The cost model, cache and locking below
+ * describe the ShaclSail stores; the Kastor path keeps one prepared copy per data graph with the same change rules.
+ * Only when the data is trusted, [trustingEmbeddedShapes] runs every embedded shape on ShaclSail, unchecked. Shapes
+ * passed to the constructor or to [fromTurtle] are the application's own, trusted, and also run on ShaclSail: never
+ * pass shapes from an untrusted source there. Neither of these two modes has a deadline, a budget or the caps
+ * (ShaclSail has no cancellation API).
  *
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
@@ -191,14 +197,17 @@ class Rdf4jValidation private constructor(
     load = ::load,
     release = { it.repository.shutDown() },
     owner = "Rdf4jValidation",
-    settings = GraphStateCache.Settings(
-      assumeImmutable = assumeImmutable,
-      probe = { event ->
-        events.incrementAndGet(event.ordinal)
-        onCacheEvent?.invoke(event)
-      },
-    ),
+    settings = GraphStateCache.Settings(assumeImmutable = assumeImmutable, probe = ::probe),
   )
+
+  private fun probe(event: GraphStateCache.Event) {
+    events.incrementAndGet(event.ordinal)
+    onCacheEvent?.invoke(event)
+  }
+
+  /** Untrusted embedded shapes run on the Kastor SHACL validator, under a deadline ([Rdf4jNativeEmbedded]). */
+  private val native: Rdf4jNativeEmbedded? = if (fixedShapes != null || trustEmbeddedShapes) null else
+    Rdf4jNativeEmbedded(maxCachedGraphs, assumeImmutable, ::probe, ::toStatements, ::extractEmbeddedShapes, ::toResult)
 
   /** Test hook: number of content digests computed. */
   internal val digestCount: Int get() = events.get(GraphStateCache.Event.DIGEST.ordinal)
@@ -253,7 +262,7 @@ class Rdf4jValidation private constructor(
     fun trustingEmbeddedShapes(maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean = false): Rdf4jValidation =
       Rdf4jValidation(null, maxCachedGraphs, assumeImmutable, trustEmbeddedShapes = true)
 
-    private fun toStatements(triples: List<RdfTriple>): List<Statement> =
+    internal fun toStatements(triples: List<RdfTriple>): List<Statement> =
       triples.map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
 
     private fun admitShapes(statements: List<Statement>): List<Statement> {
@@ -308,7 +317,7 @@ class Rdf4jValidation private constructor(
     }
 
     /** Shape statements embedded in a data graph: everything reachable from node/property shapes and targets. */
-    private fun extractEmbeddedShapes(statements: List<Statement>): List<Statement> {
+    internal fun extractEmbeddedShapes(statements: List<Statement>): List<Statement> {
       val bySubject = statements.groupBy { it.subject }
       val roots = statements.filter { st ->
         st.predicate in TARGET_PREDICATES ||
@@ -360,6 +369,7 @@ class Rdf4jValidation private constructor(
 
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
     val focusValue = toFocusValue(focus)
+    native?.let { return it.validateAll(data, mapOf(focus to focusValue)).getValue(focus) }
     // The cache reads the data graph before it takes the graph's entry lock; the block only uses the store.
     return cache.use(data) { store -> validateLoaded(store, focusValue) }
   }
@@ -372,6 +382,7 @@ class Rdf4jValidation private constructor(
     val values = LinkedHashMap<RdfTerm, Resource>()
     focuses.forEach { focus -> if (focus !in values) values[focus] = toFocusValue(focus) }
     if (values.isEmpty()) return emptyMap()
+    native?.let { return it.validateAll(data, values) }
     return cache.use(data) { store -> values.mapValuesTo(LinkedHashMap()) { (_, value) -> validateLoaded(store, value) } }
   }
 
@@ -418,9 +429,9 @@ class Rdf4jValidation private constructor(
     return previous?.also { it.embeddedShapes = newShapes } ?: Store(repo, newShapes)
   }
 
-  /** [shapes] embedded in a data graph, refused when they use a term this validator does not run for untrusted data. */
+  /** [shapes] embedded in a data graph, refused unless this validator trusts the data ([Rdf4jEmbeddedShapes]). */
   private fun admitEmbedded(shapes: List<Statement>): List<Statement> {
-    if (!trustEmbeddedShapes) EmbeddedShapes.requireNone(EmbeddedShapes.refused(shapes.asSequence().map { it.predicate.stringValue() }.iterator()), "Rdf4jValidation")
+    if (!trustEmbeddedShapes) Rdf4jEmbeddedShapes.requireAdmissible(shapes)
     return shapes
   }
 
@@ -460,6 +471,7 @@ class Rdf4jValidation private constructor(
    * fails to shut down; the first failure is then thrown with the others suppressed.
    */
   override fun close() {
+    native?.close()
     cache.close()
   }
 
@@ -518,7 +530,7 @@ class Rdf4jValidation private constructor(
     }
   }
 
-  private fun toResult(report: Model, focus: Resource, shapes: Model): ValidationResult {
+  internal fun toResult(report: Model, focus: Resource, shapes: Model): ValidationResult {
     val items = report.filter(null, SHACL.RESULT, null).objects()
       .filterIsInstance<Resource>()
       .filter { first(report, it, SHACL.FOCUS_NODE) == focus }

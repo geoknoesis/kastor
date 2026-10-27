@@ -203,6 +203,12 @@ object JenaBridge {
      */
     fun fromUrl(url: String, format: String = "TURTLE"): MutableRdfGraph {
         val lang = JenaParsing.graphLang(format)
+        if (lang == Lang.JSONLD) {
+            // JSON-LD is checked before it is converted (JenaJsonLd.checked), which needs the document itself.
+            val input = org.apache.jena.riot.system.streammgr.StreamManager.get().open(url)
+                ?: throw RdfFormatException.Generic("Failed to read $format data: cannot open <$url>", RdfErrorCode.FORMAT_PARSE_ERROR)
+            return input.use { JenaProvider().parseGraph(it, format, url) }
+        }
         val model = ModelFactory.createDefaultModel()
         try {
             JenaParsing.parseWithFormatErrors(format) {

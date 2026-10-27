@@ -32,6 +32,30 @@ internal object JenaBlankGraphs {
         }
     }
 
+    /**
+     * Runs [execute], the execution of [request] on [dataset]; when the request may create blank-node graphs, moves
+     * those it created to their skolem graphs afterwards, also when it fails (an outer transaction may catch the
+     * error and retain earlier successful operations).
+     */
+    inline fun executeSkolemizing(request: org.apache.jena.update.UpdateRequest, dataset: Dataset, execute: () -> Unit) {
+        val foreign = if (mayCreateBlankGraph(request)) blankGraphNames(dataset) else null
+        var failure: Throwable? = null
+        try {
+            execute()
+        } catch (e: Throwable) {
+            failure = e
+            throw e
+        } finally {
+            if (foreign != null) {
+                try {
+                    skolemizeBlankGraphs(dataset, foreign)
+                } catch (e: Exception) {
+                    failure?.addSuppressed(e) ?: throw e
+                }
+            }
+        }
+    }
+
     fun blankGraphNames(dataset: Dataset): Set<Node> {
         val names = dataset.asDatasetGraph().listGraphNodes()
         try {

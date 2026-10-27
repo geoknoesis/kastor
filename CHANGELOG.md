@@ -19,6 +19,122 @@ entry of rounds eleven and twelve starts with its Keep a Changelog kind (**Added
 **Removed**, **Fixed** or **Security**, with a qualifier such as "breaking" or "API" in parentheses). At release the
 entries are regrouped under those kind headings.
 
+### Round seventeen
+
+#### SHACL-SPARQL query templates (Jena)
+
+- **Fixed (`rdf-jena`), correctness regression of round sixteen:** the parsed-template cache gave wrong SHACL results
+  when `$this` stood inside a triple term (`<<( $this :p ?o )>>`) or a reifier pattern (`<< $this :p ?o >>`): Jena's
+  syntactic substitution does not rewrite variables there, so the focus node stayed a free variable. A `FILTER NOT
+  EXISTS` constraint conformed where it had violations, positive patterns matched every focus node, and a triple-term
+  expression aborted the run. Each execution now gets a deep copy of the parsed template (`JenaQueryCopy`) that
+  rewrites variables inside triple terms too and shares no pattern element or expression with the template or with any
+  other execution. A template is used only after a one-time check: substituting fresh canary IRIs into it must give
+  the parse of its text with those IRIs written in (equal as a query and as serialized), and the copy must share
+  nothing with the template; otherwise, and for any IRI that the parser would not read as written (checked by the
+  parser itself, and remembered for up to 65,536 IRIs), the text is parsed as before. A template that substitutes a
+  `GROUP BY` term is now refused rather than built.
+- **Fixed (`rdf-shacl`), performance:** a query whose focus node is a blank node (bound by the provider, so its text is
+  the same for every focus node) now offers its text as a template without IRIs, so Jena parses it once per
+  validation instead of once per focus node. With the default `onto-qa check`, the 2,000-class restriction-heavy
+  ontology of the round-17 report takes 30 s instead of 60 s, and the 20,000-class one, which timed out at the default
+  300 s limit, finishes in 241 s, both with the findings of an unbounded run of the round-sixteen code. The copy costs
+  the 5,000-class IRI-only ontology 26 s to 31 s (one run each, same machine).
+- **Fixed (`rdf-shacl`):** an IRI focus node (or a literal's datatype IRI) that is relative, or whose path has a `.` or
+  `..` segment, is no longer written into the query text, where Jena resolved it to another IRI
+  (`<http://ex/a/../b>` read as `http://ex/b`); it is passed as a provider binding, as RDF4J already read it.
+
+#### Kastor Gen (round seventeen)
+
+- **Security (`kastor-gen-validation-jena`, `kastor-gen-validation-rdf4j`), behaviour change:** round sixteen limited
+  the shapes embedded in the data graph to SHACL Core, but SHACL Core alone could still cost exponential time: a chain
+  of `n` shapes that each reference the next twice through `sh:or` took 12.7 s on Jena for a 789-byte data graph and
+  ran ShaclSail out of a 256 MiB heap at 591 bytes; a cyclic `sh:or` list hung ShaclSail and a `sh:in` list of 10,000
+  members overflowed its stack. `JenaValidation()` and `Rdf4jValidation()` now also measure embedded shapes as the
+  engines unfold them (`EmbeddedShapesBounds` of `kastor-gen-runtime`, checked before the engine runs) and throw
+  `EmbeddedShapesRefusedException` past 5,000 unfolded constraints, 32 levels of nesting, 64 operands per logical
+  constraint, lists of 1,000 members, malformed or cyclic lists, or 20,000 SHACL statements. `JenaValidation()` also
+  charges each validation of a focus node against embedded shapes to a deterministic budget of 500,000 steps (engine
+  events, data lookups and returned statements), which bounds the cost the data adds (`k^d` for `d` nested property
+  shapes over nodes with `k` values). Neither mode has a deadline when the shapes are trusted or passed to the
+  constructor (documented).
+- **Security (`kastor-gen-validation-rdf4j`), behaviour change:** ShaclSail's cost from the data has no bound (4
+  nested property shapes over nodes with 100 values each: 51 s) and offers no hook for a budget, so
+  `Rdf4jValidation()` now validates untrusted embedded shapes on the Kastor SHACL validator (`rdf-shacl-validation`,
+  now a dependency), with a deadline of 5 s per focus node and its work limits; reaching them throws
+  `EmbeddedShapesRefusedException` (which gains a `(message, cause)` constructor). The shapes are extracted and
+  admitted as before and the report is mapped as ShaclSail's was. A differential test over a corpus of SHACL Core
+  shapes gives the same results on both engines except `sh:xone` and `sh:zeroOrMorePath`, which ShaclSail skips and the
+  Kastor validator evaluates: data graphs whose `sh:xone` or `sh:zeroOrMorePath` violations used to pass the no-argument
+  `Rdf4jValidation()` now fail it. A blank-node `sh:hasValue`, which ShaclSail cannot compile, is now evaluated.
+  `trustingEmbeddedShapes()` and constructor shapes still run on ShaclSail.
+- **Security (`kastor-gen-runtime`), behaviour change, API addition:** generated `sh:pattern` checks
+  (`ShaclPattern.containsMatchIn`) were linear but unbounded: `.{0,1000}x` took 36 s on a 1 MB value and the accepted
+  `(a{0,100}){0,100}x` 12 s on 30 KB. A match is now charged to a deterministic budget of `ShaclPattern.MAX_STEPS`
+  (200,000,000) steps with the weights of the Kastor SHACL validator (each character read costs the size of the
+  compiled program; the budget is the validator's default `patternTimeout`), and fails with the new
+  `ShaclPatternBudgetException` (an `IllegalArgumentException`) past it.
+- **Fixed (docs):** the complete example of the Kastor Gen getting-started tutorial did not compile: with the
+  `com.geoknoesis.kastor.rdf.*` star import, `@Rdf` resolved to the object `com.geoknoesis.kastor.rdf.Rdf`. It now
+  imports the annotation by name and the entry point as `RdfApi`. `TutorialExamplesTest` (processor) runs every
+  Kotlin block under a "complete example" heading of the tutorials through KSP, compiles it and runs its `main`.
+- **Fixed (`kastor-gen-processor`), behaviour change, API addition:** the instance DSL's `validate()` never checked
+  `sh:maxCount` and read `sh:minCount` as "at least one", and the setter of a single-valued property added a second
+  value, so instances that violate their shapes were written. `validate()` now checks both bounds (the model's
+  `PropertyConstraints` carries `minCount` and `maxCount`), and a single-valued setter replaces the value, also one
+  written by an earlier block for the same resource (a block now replaces the resource's description in the DSL's
+  graph instead of adding to it).
+- **Fixed (`kastor-gen-runtime`), API addition:** eager (`NestedMode.DATA_CLASS`) materialization recursed once per
+  link of the data with no depth bound, so a long acyclic chain (`ex:n1 ex:next ex:n2 ...`, 100,000 links) ended in
+  `StackOverflowError`. More than `OntoMapper.MAX_EAGER_DEPTH` (128) nested objects now fail with a
+  `MaterializationException` that points to `NestedMode.INTERFACE` / `IRI_ONLY`, also on a thread with a 512 KiB stack.
+
+#### JSON-LD parsing, malformed terms and Jena updates (round seventeen)
+
+- **Fixed (`rdf-jena`, `rdf-rdf4j`, `rdf-cli`), behaviour change:** a JSON-LD parse no longer loses statements
+  silently, whatever the document's own context does. Round sixteen's sentinel base was bypassed by
+  `"@context": {"@base": null}` (and by a relative `@vocab`, scoped contexts and the like), with or without `--base`.
+  Both providers now expand the document first, with the options of their own conversion, and refuse it with
+  `RdfFormatException` when the expanded form holds a term JSON-LD's toRdf would skip: a relative or malformed IRI
+  (subject, object, type, property, datatype or graph name), a blank-node property, or an ill-formed language tag.
+  A key that its context maps to no IRI (an undefined term with no usable `@vocab`) is refused too. This is a
+  deliberate deviation from JSON-LD 1.1, whose expansion ignores such keys: a document with unmapped keys used to
+  parse with that data silently dropped, which is worse than an error. The sentinel base
+  is gone. The RDF4J provider now also depends on Titanium (for the undefined-term check) and makes the JSON-LD
+  processor's warnings errors. Both providers now declare the jakarta.json jars that the shared check reads
+  (`org.glassfish:jakarta.json`, and `jakarta.json:jakarta.json-api` on RDF4J), which they already brought
+  transitively.
+- **Fixed (`rdf-jena`):** Jena's JSON-LD reader dropped triples with a malformed IRI (`http://ex/a b`, `a:`,
+  `http://`) or an ill-formed language tag; they are refused by the check above. A test matrix covers malformed IRIs
+  and language tags in Turtle, N-Triples, RDF/XML, JSON-LD, TriG and N-Quads on both providers.
+- **Security (`rdf-jena`):** every Kastor parse on Jena is bounded before Jena values a long numeric literal. In
+  strict mode Jena's term checker computed a typed literal's value before the node factory saw it (19.5 s for a
+  1,000,000-digit integer); the readers of a Kastor parse now refuse it first.
+- **Security (`rdf-jena`), behaviour change:** a SPARQL UPDATE's `WHERE` clause is checked and evaluated with the
+  bounds of a sandboxed query (no `SERVICE`, `CALL` or ARQ extension functions; property functions off; `STRDT`,
+  casts, `POWER`, products, `ROUND`, string growth bounded before they compute; the memory budget), also inside
+  `EXISTS`, sub-queries, `GROUP BY`, `HAVING` and `ORDER BY`. Every quad an update writes, from any operation, is
+  checked for over-long numeric and temporal literals, as on the RDF4J stores. A computed 1,300,000-digit integer
+  used to take more than 100 s to store.
+- **Security (`rdf-jena`), API addition, behaviour change:** `LOAD` opens its source as `Rdf.parseFromUrl` does,
+  under the new `JenaRepository.updateLoadOptions` (default: `http`/`https` to public addresses only; no `file:`,
+  `jar:`, loopback or internal network), and reads it through Kastor's bounded parser. `LOAD` of a `file:` or `jar:`
+  IRI or of a loopback or private host now needs the opt-in through `updateLoadOptions`. Failures to load have one
+  generic message.
+
+#### Known limitations (round seventeen)
+
+- RDF4J's SPARQL `LOAD` and `SERVICE` in updates are not under Kastor's URL-loading policy; only the Jena provider's
+  `LOAD` is.
+- RDF4J reads `<< s p o >>` in SPARQL as an RDF-star quoted triple, not an RDF 1.2 reifier, and does not parse
+  `<<( … )>>`, so reifier and triple-term SHACL-SPARQL constraints differ between the providers.
+- `STR()` of a blank node or a triple term differs between the providers: Jena returns a string, RDF4J raises an
+  error.
+- RDF4J ignores a triple-term `$this` bound as a provider binding inside a `UNION` branch
+  (`{ $this :q ?x } UNION { ?x :p $this }` returns every `?x :p ?y` row); Jena returns none.
+- Embedded shapes of Kastor Gen in trusted mode (`trustingEmbeddedShapes()`) and shapes passed to the constructor have
+  no deadline, no work budget and no size caps on either engine.
+
 ### Round sixteen
 
 #### Build and docs (round sixteen)

@@ -93,8 +93,18 @@ inline fun <reified T : Any> RdfRepository.materializeValidated(
  * snapshots (data classes generated with `NestedMode.DATA_CLASS`) over cyclic data such as
  * `a foaf:knows b . b foaf:knows a`: an immutable value cannot contain itself. Live wrappers load nested
  * objects lazily and are unaffected; use `NestedMode.INTERFACE` or `NestedMode.IRI_ONLY` for cyclic data.
+ *
+ * Acyclic data is bounded too: an eager snapshot recurses once per nesting level, so a scope holds at most
+ * [MAX_EAGER_DEPTH] objects being built at once, and one more nested object fails with a [MaterializationException]
+ * instead of overflowing the stack on a long chain (`ex:n1 ex:next ex:n2 . ex:n2 ex:next ex:n3 ...`).
  */
 object OntoMapper {
+  /**
+   * The most objects one eager materialization builds inside each other (a data class nested in a data class...):
+   * deeper data fails with a [MaterializationException]. Lazily loaded wrappers have no such limit.
+   */
+  const val MAX_EAGER_DEPTH: Int = 128
+
 
   /**
    * The factory of each domain interface class, stored with the class itself ([ClassValue]): the registry holds no
@@ -253,6 +263,14 @@ object OntoMapper {
         throw MaterializationException(
           "Cyclic reference while materializing immutable snapshot: $path. " +
             "Eager snapshots cannot represent cycles; use NestedMode.INTERFACE or NestedMode.IRI_ONLY."
+        )
+      }
+      if (scope.inProgress.size > MAX_EAGER_DEPTH) {
+        scope.inProgress.remove(key)
+        throw MaterializationException(
+          "Nested objects more than $MAX_EAGER_DEPTH levels deep while materializing immutable snapshot, from " +
+            "${scope.inProgress.first()} to $key: eager snapshots build every level at once. " +
+            "Use NestedMode.INTERFACE or NestedMode.IRI_ONLY for deep data."
         )
       }
       try {

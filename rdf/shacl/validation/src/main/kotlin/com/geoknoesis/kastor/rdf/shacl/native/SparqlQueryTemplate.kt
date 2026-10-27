@@ -62,8 +62,8 @@ internal class SparqlQueryTemplate private constructor(
 
     /**
      * A bound query: its [text], the values it could not write as [providerBindings], and, when every value written
-     * into it is an IRI, the [substitution] it was written by, so that a provider can parse the template once for
-     * every focus node.
+     * into it is an IRI (or none is), the [substitution] it was written by, so that a provider can parse the template
+     * once for every focus node.
      */
     data class Bound(val text: String, val providerBindings: Map<String, RdfTerm>, val substitution: SparqlIriSubstitution?)
 
@@ -113,7 +113,9 @@ internal class SparqlQueryTemplate private constructor(
                 }
             }
         }
-        val substitution = template?.takeIf { iris.isNotEmpty() }?.let { SparqlIriSubstitution(it.toString(), iris) }
+        // Without IRIs the template is the text itself, the same for every focus node bound as a provider binding
+        // (a blank node): offered too, so that a provider parses that text once.
+        val substitution = template?.let { SparqlIriSubstitution(it.toString(), iris) }
         return Bound(text.toString(), providerBindings, substitution)
     }
 
@@ -489,6 +491,23 @@ internal class SparqlQueryTemplate private constructor(
             if (iri.any { it in "<>\"{}|^`\\" || it.code <= 0x20 }) null else "<$iri>"
 
         /**
+         * [renderIri] for a pre-bound value, or null (the value stays a provider binding) unless every parser reads
+         * `<iri>` as [iri] itself: an absolute IRI (a parser resolves a relative one against its base) whose path has
+         * no `.` or `..` segment (Jena removes them, `<http://ex/a/../b>` reads as `http://ex/b`; RDF4J keeps them).
+         * A `_:` IRI, which Jena reads as a blank node, has no scheme.
+         */
+        internal fun renderValueIri(iri: String): String? {
+            val scheme = SCHEME.find(iri) ?: return null
+            var path = iri.substring(scheme.range.last + 1)
+            if (path.startsWith("//")) path = path.substring(2).let { rest -> rest.indexOf('/').let { if (it < 0) "" else rest.substring(it) } }
+            path = path.substringBefore('?').substringBefore('#')
+            if (path.split('/').any { it == "." || it == ".." }) return null
+            return renderIri(iri)
+        }
+
+        private val SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
+
+        /**
          * The longest language tag written into a query; a longer one stays a provider binding. Tags in use are a few
          * dozen characters (BCP 47 recommends implementations support 35 at least).
          */
@@ -519,10 +538,10 @@ internal class SparqlQueryTemplate private constructor(
 
         fun renderTerm(term: RdfTerm): String? =
             when (term) {
-                is Iri -> renderIri(term.value)
+                is Iri -> renderValueIri(term.value)
                 is LangString ->
                     if (term.direction != null || !isRenderableLanguageTag(term.lang)) null else "\"${escape(term.lexical)}\"@${term.lang}"
-                is Literal -> renderIri(term.datatype.value)?.let { "\"${escape(term.lexical)}\"^^$it" }
+                is Literal -> renderValueIri(term.datatype.value)?.let { "\"${escape(term.lexical)}\"^^$it" }
                 else -> null
             }
 
