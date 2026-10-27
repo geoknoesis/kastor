@@ -51,6 +51,10 @@ entries are regrouped under those kind headings.
   `PropertyConstraints` carries `minCount` and `maxCount`), and a single-valued setter replaces the value, also one
   written by an earlier block for the same resource (a block now replaces the resource's description in the DSL's
   graph instead of adding to it).
+- **Fixed (`kastor-gen-runtime`), API addition:** eager (`NestedMode.DATA_CLASS`) materialization recursed once per
+  link of the data with no depth bound, so a long acyclic chain (`ex:n1 ex:next ex:n2 ...`, 100,000 links) ended in
+  `StackOverflowError`. More than `OntoMapper.MAX_EAGER_DEPTH` (128) nested objects now fail with a
+  `MaterializationException` that points to `NestedMode.INTERFACE` / `IRI_ONLY`, also on a thread with a 512 KiB stack.
 
 ### Round sixteen
 

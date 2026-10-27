@@ -190,6 +190,7 @@ public final class com/geoknoesis/kastor/gen/runtime/OntoMapper {
 	public static final field ERROR_NOT_RDF_BACKED Ljava/lang/String;
 	public static final field ERROR_NO_FACTORY Ljava/lang/String;
 	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/OntoMapper;
+	public static final field MAX_EAGER_DEPTH I
 	public static final fun initialize ([Ljava/lang/Class;)V
 	public static final fun isRegistered (Ljava/lang/Class;)Z
 	public static final fun materialize (Lcom/geoknoesis/kastor/gen/runtime/RdfRef;Ljava/lang/Class;)Ljava/lang/Object;
