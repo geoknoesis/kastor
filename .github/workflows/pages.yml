@@ -1,9 +1,8 @@
 # Build and deploy the Jekyll site under docs/ to GitHub Pages.
 #
 # Required repository setting: Settings > Pages > Build and deployment > Source: GitHub Actions
-# (API: build_type "workflow"). As of 2026-09-14 geoknoesis/kastor is still on the legacy
-# "Deploy from a branch" source (main /docs), so every push to main is deployed twice: once by the
-# legacy "pages build and deployment" run and once by this workflow. Switch the source with
+# (API: build_type "workflow"). geoknoesis/kastor is on that source, so this workflow is the only deployment.
+# If the legacy "pages build and deployment" run ever appears again, the source was reset: restore it with
 # `scripts/configure-github-release.sh --reviewer <login> --apply` (step 4) or in the settings page;
 # verify with `gh api repos/geoknoesis/kastor/pages --jq .build_type` (must print `workflow`).
 name: Deploy documentation to GitHub Pages
