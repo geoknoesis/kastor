@@ -2,13 +2,6 @@
   "defaultLines": 600,
   "defaultBranches": 40,
   "files": {
-    "kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/utils/ShaclPatterns.kt": {
-      "lines": 626,
-      "functions": {
-        "charClass:0287547f58c1": 47
-      },
-      "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
-    },
     "kastor-gen/runtime/src/main/kotlin/com/geoknoesis/kastor/gen/runtime/GraphStateCache.kt": {
       "lines": 942,
       "reason": "Cache lifecycle and admission orchestration; handle matching extracted and all function branch counts now within the default limit. Remaining file length is frozen for further design review."
@@ -57,7 +50,7 @@
     },
     "rdf/providers/rdf4j/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/shacl/ShaclSailFeatures.kt": {
       "functions": {
-        "scan:ed1a1b1f2418": 49
+        "scan:ed1a1b1f2418": 47
       },
       "reason": "Existing implementation or DSL; growth requires explicit review. Prefer extraction over raising the ceiling."
     },
