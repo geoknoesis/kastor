@@ -23,6 +23,16 @@ class KastorRdfLensExecutor(
         data class Network(val graph: KastorLensProviderBridge.Graph) : Result
     }
 
+    /** Validate the entire definition graph with trusted SHACL shapes before execution. */
+    fun executeValidated(
+        lensIri: RdfResource,
+        shapes: RdfGraph,
+        limits: KastorLensProviderBridge.Limits = KastorLensProviderBridge.Limits()
+    ): Result {
+        LensDefinitionShaclValidation.validateOrThrow(definitions, shapes)
+        return execute(lensIri, limits)
+    }
+
     fun execute(
         lensIri: RdfResource,
         limits: KastorLensProviderBridge.Limits = KastorLensProviderBridge.Limits()

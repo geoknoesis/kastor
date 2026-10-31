@@ -11,10 +11,12 @@ sealed interface Lens {
     data class Intersect(val parts: List<Lens>) : Lens
     data class Union(val parts: List<Lens>) : Lens
     data class Difference(val left: Lens, val right: Lens) : Lens
+    data class Filter(val input: Lens, val condition: BooleanPredicate) : Lens
 }
 sealed interface Value {
     data class Iri(val value: String): Value
     data class Literal(val lexical: String): Value
+    data class TypedLiteral(val lexical: String, val datatype: String): Value
 }
 object LensDsl {
     fun type(iri: String): Lens = Lens.Type(iri)
@@ -23,6 +25,7 @@ object LensDsl {
     fun and(vararg parts: Lens): Lens = Lens.Intersect(parts.toList())
     fun or(vararg parts: Lens): Lens = Lens.Union(parts.toList())
     fun minus(left: Lens, right: Lens): Lens = Lens.Difference(left, right)
+    fun filter(input: Lens, condition: BooleanPredicate): Lens = Lens.Filter(input, condition)
 }
 object LensNormalizer {
     fun normalized(lens: Lens): Lens = when(lens) {
@@ -30,6 +33,7 @@ object LensNormalizer {
         is Lens.Equals -> lens.copy(input = normalized(lens.input))
         is Lens.Exists -> lens.copy(input = normalized(lens.input), target = normalized(lens.target))
         is Lens.Difference -> lens.copy(left = normalized(lens.left), right = normalized(lens.right))
+        is Lens.Filter -> lens.copy(input = normalized(lens.input))
         is Lens.Intersect -> {
             val items = lens.parts.flatMap { p ->
                 val n = normalized(p)
@@ -51,6 +55,7 @@ object LensNormalizer {
 class SparqlCompiler {
     private class State {
         private var serial = 0
+        private val conditionCompiler = BooleanPredicateCompiler()
         private fun next() = "?lens" + serial++
         private fun iri(raw: String): String {
             require(raw.startsWith("urn:") || raw.startsWith("http://") || raw.startsWith("https://")) {
@@ -62,6 +67,11 @@ class SparqlCompiler {
         }
         private fun term(v: Value): String = when(v) {
             is Value.Iri -> iri(v.value)
+            is Value.TypedLiteral -> {
+                val safe = v.lexical.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\n", "\\n").replace("\r", "\\r")
+                "\"" + safe + "\"^^" + iri(v.datatype)
+            }
             is Value.Literal -> {
                 val safe = v.lexical.replace("\\", "\\\\").replace("\"", "\\\"")
                     .replace("\n", "\\n").replace("\r", "\\r")
@@ -83,6 +93,8 @@ class SparqlCompiler {
                 "{ " + q.parts.joinToString(" UNION ") { "{ " + pattern(it,node) + " }" } + " }"
             is Lens.Difference ->
                 pattern(q.left,node) + "\nFILTER NOT EXISTS { " + pattern(q.right,node) + " }"
+            is Lens.Filter ->
+                pattern(q.input,node) + "\nFILTER(" + conditionCompiler.expression(q.condition, node) + ")"
         }
     }
     /** Reuse the typed node selector in guarded network traversal expressions. */

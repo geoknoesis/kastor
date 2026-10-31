@@ -36,7 +36,7 @@ class LensRdfLoader(
         val types = graph.find(definition, rdf("type"), null)
             .mapNotNull { it.obj as? Iri }.toSet()
         val concrete = listOf("ClassLens", "IntersectionLens", "UnionLens",
-            "DifferenceLens", "NetworkLens", "EgoNetworkLens")
+            "DifferenceLens", "FilterLens", "NetworkLens", "EgoNetworkLens")
             .count { lens(it) in types }
         require(concrete == 1) { "Exactly one supported concrete lens type required" }
         return if (lens("NetworkLens") in types || lens("EgoNetworkLens") in types)
@@ -93,13 +93,17 @@ class LensRdfLoader(
         require(active.add(ref)) { "Cycle among lens definitions at $ref" }
         try {
             val types = objects(ref, rdf("type")).filterIsInstance<Iri>().toSet()
-            val relevant = listOf("ClassLens", "IntersectionLens", "UnionLens", "DifferenceLens")
+            val relevant = listOf("ClassLens", "IntersectionLens", "UnionLens", "DifferenceLens", "FilterLens")
                 .filter { lens(it) in types }
             require(relevant.size == 1) {
                 "Expected one supported node lens type at $ref; found $relevant"
             }
             return when (relevant.single()) {
                 "ClassLens" -> Lens.Type(iri(ref, lens("selectClass"))!!.value)
+                "FilterLens" -> LensDsl.filter(
+                    node(resource(ref, lens("inputLens"))!!, active, depth + 1),
+                    boolean(resource(ref, lens("condition"))!!, LinkedHashSet(), depth + 1)
+                )
                 "IntersectionLens", "UnionLens" -> {
                     val root = resource(ref, lens("operands"))!!
                     val operands = list(root).map { node(it, active, depth + 1) }
@@ -115,6 +119,76 @@ class LensRdfLoader(
             }
         } finally {
             active.remove(ref)
+        }
+    }
+
+
+    /**
+     * Portable expression profile: ComparisonExpression and BooleanExpression
+     * with explicit operator IRIs. Unknown operators fail, never become strings
+     * handed to SPARQL.
+     */
+    private fun boolean(ref: RdfResource, active: MutableSet<RdfResource>, depth: Int): BooleanPredicate {
+        require(depth < maxDepth) { "Boolean expression nesting exceeds limit" }
+        require(active.add(ref)) { "Cycle in Boolean expression" }
+        try {
+            val types = objects(ref, rdf("type")).filterIsInstance<Iri>().toSet()
+            val op = iri(ref, lens("operator"))!!.value
+            if (lens("ComparisonExpression") in types) {
+                val operation = when(op) {
+                    lens("Equal").value -> CompareOperator.EQ
+                    lens("NotEqual").value -> CompareOperator.NE
+                    lens("LessThan").value -> CompareOperator.LT
+                    lens("LessOrEqual").value -> CompareOperator.LE
+                    lens("GreaterThan").value -> CompareOperator.GT
+                    lens("GreaterOrEqual").value -> CompareOperator.GE
+                    else -> error("Unknown comparison operator: " + op)
+                }
+                require(objects(ref, lens("operands")).isEmpty()) { "Comparison cannot have extra operands" }
+                return BooleanPredicate.Compare(
+                    expression(resource(ref, lens("leftExpression"))!!),
+                    operation,
+                    expression(resource(ref, lens("rightExpression"))!!)
+                )
+            }
+            require(lens("BooleanExpression") in types) { "Unknown Boolean expression type" }
+            require(objects(ref, lens("leftExpression")).isEmpty() &&
+                objects(ref, lens("rightExpression")).isEmpty()) { "Boolean group uses operands only" }
+            val listHead = resource(ref, lens("operands"))!!
+            val children = list(listHead).map { boolean(it, active, depth + 1) }
+            return when(op) {
+                lens("And").value -> BooleanPredicate.All(children)
+                lens("Or").value -> BooleanPredicate.Any(children)
+                lens("Not").value -> {
+                    require(children.size == 1) { "Not requires exactly one operand" }
+                    BooleanPredicate.Not(children[0])
+                }
+                else -> error("Unknown Boolean operator: " + op)
+            }
+        } finally { active.remove(ref) }
+    }
+
+    private fun expression(ref: RdfResource): ValueExpression {
+        val types = objects(ref, rdf("type")).filterIsInstance<Iri>().toSet()
+        val relevant = listOf("BoundPathExpression", "ConstantExpression").filter { lens(it) in types }
+        require(relevant.size == 1) { "Expected a path or constant expression" }
+        return when(relevant.single()) {
+            "BoundPathExpression" -> {
+                require(objects(ref, lens("literalValue")).isEmpty() &&
+                    objects(ref, lens("constantIri")).isEmpty()) { "Path expression has unexpected value" }
+                ValueExpression.Path(iri(ref, lens("pathPredicate"))!!.value)
+            }
+            "ConstantExpression" -> {
+                val literal = only(ref, lens("literalValue"), false)
+                val iri = iri(ref, lens("constantIri"), false)
+                require((literal == null) != (iri == null)) { "Exactly one constant value is required" }
+                val v = if (iri != null) Value.Iri(iri.value) else {
+                    val typed = literal as? Literal ?: error("literalValue must be RDF literal")
+                    Value.TypedLiteral(typed.lexical, typed.datatype.value)
+                }
+                ValueExpression.Constant(v)
+            }
+            else -> error("Unreachable expression class")
         }
     }
 
