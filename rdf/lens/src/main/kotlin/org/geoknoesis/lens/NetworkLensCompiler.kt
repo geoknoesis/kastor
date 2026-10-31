@@ -44,6 +44,11 @@ class NetworkLensCompiler(
     }
     private fun term(v: Value): String = when(v) {
         is Value.Iri -> iri(v.value)
+        is Value.TypedLiteral -> {
+            val text = v.lexical.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            "\"" + text + "\"^^" + iri(v.datatype)
+        }
         is Value.Literal -> {
             val text = v.lexical.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
