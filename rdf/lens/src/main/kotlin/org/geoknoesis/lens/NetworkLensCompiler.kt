@@ -125,8 +125,8 @@ class NetworkLensCompiler(
         for (depth in 1..n.maxDepth) for (selectedHop in 0 until depth) {
             val tag = "trace" + depth + "_" + selectedHop + "_"
             branches.add("{ " + walk(n,depth,tag,emittedHop=selectedHop) + "\n" +
-                visible(n, "?subject", "sub" + tag) + "\n" +
-                visible(n, "?object", "obj" + tag) + "\n" +
+                nodeFilter(n.outputNode, "?subject") + "\n" +
+                nodeFilter(n.outputNode, "?object") + "\n" +
                 "BIND(" + iri(n.predicate) + " AS ?predicate) }")
         }
         return "SELECT DISTINCT ?subject ?predicate ?object" + graph(n) + " WHERE {\n" +
