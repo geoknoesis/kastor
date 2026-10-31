@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [jenaProviderIntegration, rdf4jProviderIntegration]
+        test: [jenaProviderIntegration, rdf4jProviderIntegration, jenaCompiledLens, rdf4jCompiledLens]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -29,4 +29,4 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Compile and test ${{ matrix.test }}
-        run: ./gradlew :rdf:lens:test --tests "com.geoknoesis.kastor.rdf.lens.KastorLensProviderBridgeTest.${{ matrix.test }}" --no-daemon --stacktrace
+        run: ./gradlew :rdf:lens:test --tests "*${{ matrix.test }}" --no-daemon --stacktrace
