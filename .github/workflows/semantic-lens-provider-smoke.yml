@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [jenaProviderIntegration, rdf4jProviderIntegration, jenaCompiledLens, rdf4jCompiledLens, jenaNetworkLens, rdf4jNetworkLens]
+        test: [jenaProviderIntegration, rdf4jProviderIntegration, jenaCompiledLens, rdf4jCompiledLens, jenaNetworkLens, rdf4jNetworkLens, jenaRdfLensDefinitions, rdf4jRdfLensDefinitions]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
