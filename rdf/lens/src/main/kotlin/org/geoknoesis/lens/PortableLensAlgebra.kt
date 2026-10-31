@@ -85,6 +85,13 @@ class SparqlCompiler {
                 pattern(q.left,node) + "\nFILTER NOT EXISTS { " + pattern(q.right,node) + " }"
         }
     }
+    /** Reuse the typed node selector in guarded network traversal expressions. */
+    fun graphPattern(lens: Lens, nodeVariable: String): String {
+        require(Regex("\\?[A-Za-z_][A-Za-z0-9_]*").matches(nodeVariable)) {
+            "Invalid SPARQL variable"
+        }
+        return State().pattern(LensNormalizer.normalized(lens), nodeVariable)
+    }
     /** One SELECT: all joins, anti-joins and unions stay with the RDF provider. */
     fun select(q: Lens): String =
         "SELECT DISTINCT ?node WHERE {\n" + State().pattern(LensNormalizer.normalized(q), "?node") +
