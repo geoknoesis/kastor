@@ -18,6 +18,7 @@ include(
   ":rdf:core", ":rdf:sparql-contract", ":rdf:sparql-lang", ":rdf:shacl-dsl", ":rdf:jena", ":rdf:jena-reasoning", ":rdf:rdf4j", ":rdf:rdf4j-reasoning", ":rdf:sparql", ":rdf:reasoning", ":rdf:reasoning-hermit", ":rdf:shacl-validation", ":rdf:testkit", ":rdf:cli", ":rdf:examples",
   ":rdf:conformance",
   ":rdf:holon",
+  ":rdf:lens",
   ":kastor-gen:runtime", ":kastor-gen:processor", ":kastor-gen:gradle-plugin", ":kastor-gen:validation-jena", ":kastor-gen:validation-rdf4j",
   ":examples:dcat-us",
   ":examples:dcat-catalog-workshop",
