@@ -1,0 +1,32 @@
+name: Semantic Lens provider smoke
+
+on:
+  pull_request:
+    paths:
+      - 'rdf/lens/**'
+      - 'settings.gradle.kts'
+      - '.github/workflows/semantic-lens-provider-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provider:
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [jenaProviderIntegration, rdf4jProviderIntegration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: JDK 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Compile and test ${{ matrix.test }}
+        run: ./gradlew :rdf:lens:test --tests "com.geoknoesis.kastor.rdf.lens.KastorLensProviderBridgeTest.${{ matrix.test }}" --no-daemon --stacktrace
