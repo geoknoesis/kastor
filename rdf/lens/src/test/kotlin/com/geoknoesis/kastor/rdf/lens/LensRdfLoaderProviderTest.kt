@@ -71,6 +71,13 @@ class LensRdfLoaderProviderTest {
             }
             val port = KastorLensProviderBridge(repo)
             val compiler = SparqlCompiler()
+            val facade = KastorRdfLensExecutor(repo, definitions)
+            assertEquals(KastorRdfLensExecutor.Result.Nodes(setOf(a)),
+                facade.execute(Iri("urn:lens:difference")))
+            assertEquals(
+                setOf(a,b,c,d),
+                (facade.execute(Iri("urn:lens:network")) as KastorRdfLensExecutor.Result.Network).graph.nodes
+            )
 
             fun parsed(name: String): Lens =
                 (loader.read(Iri("urn:lens:" + name)) as LensRdfLoader.Loaded.Node).expression
