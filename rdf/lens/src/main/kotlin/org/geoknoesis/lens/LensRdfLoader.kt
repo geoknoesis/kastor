@@ -35,6 +35,10 @@ class LensRdfLoader(
     fun read(definition: RdfResource): Loaded {
         val types = graph.find(definition, rdf("type"), null)
             .mapNotNull { it.obj as? Iri }.toSet()
+        val concrete = listOf("ClassLens", "IntersectionLens", "UnionLens",
+            "DifferenceLens", "NetworkLens", "EgoNetworkLens")
+            .count { lens(it) in types }
+        require(concrete == 1) { "Exactly one supported concrete lens type required" }
         return if (lens("NetworkLens") in types || lens("EgoNetworkLens") in types)
             Loaded.Network(network(definition, types))
         else Loaded.Node(node(definition, LinkedHashSet(), 0))
