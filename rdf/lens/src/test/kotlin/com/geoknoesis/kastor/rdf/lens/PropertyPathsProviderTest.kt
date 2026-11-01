@@ -107,7 +107,7 @@ class PropertyPathsProviderTest {
             }
         }
 
-        val invalid = Rdf.parse(definitions + """
+        val invalid = Rdf.parse(definitions + "\n" + """
             @prefix lens: <https://example.org/semantic-lens/1.0#> .
             @prefix ex: <urn:path:> .
             ex:badPath a lens:SequencePathExpression ; lens:pathPredicates () .
