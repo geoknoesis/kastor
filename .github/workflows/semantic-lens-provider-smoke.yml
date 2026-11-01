@@ -1,4 +1,4 @@
-name: Semantic Lens provider smoke
+name: Semantic Lens provider conformance
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [jenaProviderIntegration, rdf4jProviderIntegration, jenaCompiledLens, rdf4jCompiledLens, jenaNetworkLens, rdf4jNetworkLens, jenaRdfLensDefinitions, rdf4jRdfLensDefinitions, jenaTypedAndShacl, rdf4jTypedAndShacl, jenaShaclProfile, rdf4jShaclProfile]
+        provider: [jena, rdf4j]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -28,5 +28,31 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Compile and test ${{ matrix.test }}
-        run: ./gradlew :rdf:lens:test --tests "*${{ matrix.test }}" --no-daemon --stacktrace
+      - name: Compile and test ${{ matrix.provider }} suites
+        run: ./gradlew :rdf:lens:test --tests "*${{ matrix.provider }}*" --no-daemon --stacktrace
+      - name: Require all provider test suites to execute
+        shell: bash
+        env:
+          LENS_PROVIDER: ${{ matrix.provider }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+          provider = os.environ["LENS_PROVIDER"]
+          roots = [Path("build/modules/rdf/lens/test-results/test"),
+                   Path("rdf/lens/build/test-results/test")]
+          executed = set()
+          for root in roots:
+              for path in root.rglob("TEST-*.xml"):
+                  suite = ET.parse(path).getroot()
+                  for case in suite.iter("testcase"):
+                      if case.find("skipped") is None and case.find("failure") is None and case.find("error") is None:
+                          executed.add(case.get("name","").split("(")[0])
+          expected = {provider + x for x in (
+              "ProviderIntegration", "CompiledLens", "NetworkLens",
+              "RdfLensDefinitions", "TypedAndShacl", "ShaclProfile")}
+          missing = {m for m in expected if not any(name.endswith(m) for name in executed)}
+          assert not missing, f"Provider {provider} did not execute: {sorted(missing)}; found: {sorted(executed)}"
+          print(f"Validated {len(expected)} executed {provider} test methods")
+          PY
