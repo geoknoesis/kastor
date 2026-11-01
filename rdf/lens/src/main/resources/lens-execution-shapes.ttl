@@ -1,0 +1,79 @@
+@prefix lens: <https://example.org/semantic-lens/1.0#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+# Portable, intentionally incomplete execution profile. Structural checks
+# in LensRdfLoader still reject unsupported expressions and invalid RDF lists.
+lens:ClassLensExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:ClassLens ;
+  sh:property [ sh:path lens:selectClass ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+lens:FilterLensExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:FilterLens ;
+  sh:property [ sh:path lens:inputLens ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+              [ sh:path lens:condition ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:ConstantExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:ConstantExpression ;
+  sh:xone (
+    [ sh:property [ sh:path lens:literalValue ; sh:minCount 1 ; sh:maxCount 1 ],
+                  [ sh:path lens:constantIri ; sh:maxCount 0 ] ]
+    [ sh:property [ sh:path lens:constantIri ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ],
+                  [ sh:path lens:literalValue ; sh:maxCount 0 ] ]
+  ) .
+lens:PathExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:BoundPathExpression ;
+  sh:property [ sh:path lens:pathPredicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+lens:ComparisonExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:ComparisonExpression ;
+  sh:property [ sh:path lens:operator ; sh:minCount 1 ; sh:maxCount 1 ;
+    sh:in ( lens:Equal lens:NotEqual lens:GreaterThan lens:GreaterOrEqual lens:LessThan lens:LessOrEqual ) ],
+  [ sh:path lens:leftExpression ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+  [ sh:path lens:rightExpression ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:BooleanGroupExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:BooleanExpression ;
+  sh:property [ sh:path lens:operator ; sh:minCount 1 ; sh:maxCount 1 ;
+    sh:in ( lens:And lens:Or lens:Not ) ],
+  [ sh:path lens:operands ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+
+# Additional executable RDF lens definitions — SHACL Core profile.
+lens:IntersectionExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:IntersectionLens ;
+ sh:property [ sh:path lens:operands ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:UnionExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:UnionLens ;
+ sh:property [ sh:path lens:operands ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:DifferenceExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:DifferenceLens ;
+ sh:property [ sh:path lens:leftOperand ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+             [ sh:path lens:rightOperand ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:EdgeExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:EdgeLens ;
+ sh:property [ sh:path lens:predicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+# Exactly one physical edge selector, never both or neither.
+lens:NetworkExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:NetworkLens ;
+ sh:property [ sh:path lens:focusLens ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+             [ sh:path lens:maxDepth ; sh:minCount 1 ; sh:maxCount 1 ;
+               sh:datatype xsd:integer ; sh:minInclusive 0 ; sh:maxInclusive 3 ],
+             [ sh:path lens:closureMode ; sh:minCount 1 ; sh:maxCount 1 ;
+               sh:in (lens:Traversed lens:Induced) ],
+             [ sh:path lens:direction ; sh:maxCount 1 ; sh:in (lens:Outgoing lens:Incoming lens:Both) ],
+             [ sh:path lens:nodeLens ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ] ;
+ sh:xone (
+   [ sh:property [ sh:path lens:edgeLens ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+                 [ sh:path lens:predicate ; sh:maxCount 0 ] ]
+   [ sh:property [ sh:path lens:predicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ],
+                 [ sh:path lens:edgeLens ; sh:maxCount 0 ] ]
+ ) .
+lens:EgoNetworkExecutionShape a sh:NodeShape ;
+ sh:targetClass lens:EgoNetworkLens ;
+ sh:property [ sh:path lens:seedLens ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+             [ sh:path lens:maxDepth ; sh:minCount 1 ; sh:maxCount 1 ;
+               sh:datatype xsd:integer ; sh:minInclusive 0 ; sh:maxInclusive 3 ],
+             [ sh:path lens:direction ; sh:maxCount 1 ; sh:in (lens:Outgoing lens:Incoming lens:Both) ],
+             [ sh:path lens:closureMode ; sh:maxCount 1 ; sh:in (lens:Traversed lens:Induced) ] ;
+ sh:xone (
+   [ sh:property [ sh:path lens:edgeLens ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:BlankNodeOrIRI ],
+                 [ sh:path lens:predicate ; sh:maxCount 0 ] ]
+   [ sh:property [ sh:path lens:predicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ],
+                 [ sh:path lens:edgeLens ; sh:maxCount 0 ] ]
+ ) .
