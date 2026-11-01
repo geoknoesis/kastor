@@ -6,6 +6,7 @@ Status: **experimental, strict subset** of the draft [Semantic Lens Ontology v0.
 
 | RDF class | Required properties | Runtime result |
 | --- | --- | --- |
+| `lens:FilterLens` | `lens:inputLens`, `lens:condition` | node set with typed Boolean comparison |
 | `lens:ClassLens` | one `lens:selectClass` IRI | node set |
 | `lens:IntersectionLens` | one `lens:operands` RDF list | node set (AND) |
 | `lens:UnionLens` | one `lens:operands` RDF list | node set (OR) |
@@ -54,9 +55,17 @@ Each operation runs through Kastor's `withSelectRows` with bounded result consum
 
 The RDF reader enforces structural cardinality, absolute IRI requirements through Kastor terms, supported concrete type uniqueness, acyclic RDF lists, finite operands, recursion bounds, and strict integer depth. It **does not execute OWL imports**, dynamically load remote resources, or interpret arbitrary SPARQL snippets.
 
-The reader does not yet provide full SHACL 1.2 validation; these are explicit, fail-closed structural checks for its supported vocabulary profile. The separate ontology-v0.2 SHACL shapes remain the normative structural baseline. `lens:FilterLens`, full typed comparisons, complex node/edge Boolean expressions, mapping/lifting, graph materialization and unrelated RDF lens types are **not** supported, and must not be silently ignored.
+The bundled `lens-execution-shapes.ttl` is a **Kastor SHACL Core profile** for supported lens types, not a full SHACL 1.2 ontology profile. Call `executeValidated(lensIri)` to apply it to the **entire supplied definitions graph** before executing any query. `execute(lensIri)` is a deliberately non-SHACL-validated path for trusted/previously validated inputs. In either path, the structural loader rejects invalid lists, ambiguous edge definitions and unsupported operations. This profile supports `FilterLens` with typed comparisons and Boolean expressions; it does not yet support mapping/lifting, arbitrary property paths, graph materialization, or full ontology coverage. If a definitions graph contains an unrelated invalid lens, whole-graph SHACL validation will fail: curate or validate the desired definitions separately.
 
 The library is not an authorization layer: the caller must supply an authorized dataset/repository (and scoped named graph where appropriate). When converting third-party RDF definitions to executable queries, validate source provenance and trust policy before calling the engine.
 
 ### Conformance tests
 `LensRdfLoaderProviderTest` executes ontology-derived expressions on both real Kastor Jena and RDF4J repositories; it also checks duplicate property values, unsupported classes, recursive definitions, malformed/cyclic RDF lists, invalid depth and unsupported conditions. 
+
+
+### SHACL-validated execution (recommended for saved definitions)
+
+```kotlin
+val executor = KastorRdfLensExecutor(repository, Rdf.parse(definitionsTurtle, "TURTLE"))
+val result = executor.executeValidated(Iri("urn:lens:result")) // native Kastor SHACL Core
+```

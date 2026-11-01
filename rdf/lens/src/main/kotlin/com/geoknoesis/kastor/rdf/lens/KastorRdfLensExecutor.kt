@@ -26,7 +26,7 @@ class KastorRdfLensExecutor(
     /** Validate the entire definition graph with trusted SHACL shapes before execution. */
     fun executeValidated(
         lensIri: RdfResource,
-        shapes: RdfGraph,
+        shapes: RdfGraph = LensDefinitionShaclValidation.packagedShapes(),
         limits: KastorLensProviderBridge.Limits = KastorLensProviderBridge.Limits()
     ): Result {
         LensDefinitionShaclValidation.validateOrThrow(definitions, shapes)

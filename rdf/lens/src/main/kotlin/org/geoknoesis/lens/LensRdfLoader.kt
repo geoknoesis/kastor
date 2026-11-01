@@ -212,13 +212,20 @@ class LensRdfLoader(
         val seed = resource(ref, lens(if (ego) "seedLens" else "focusLens"))
             ?: error("Network must have a seed lens")
         val edgeRef = resource(ref, lens("edgeLens"), false)
+        val directPredicate = iri(ref, lens("predicate"), false)
+        require((edgeRef == null) != (directPredicate == null)) {
+            "Exactly one of edgeLens and predicate is required"
+        }
+        if (edgeRef != null) require(lens("EdgeLens") in objects(edgeRef, rdf("type"))) {
+            "edgeLens must reference an EdgeLens"
+        }
         val predicate = if (edgeRef != null) {
             require(listOf("condition", "traversalEdgeCondition", "outputEdgeCondition")
                 .all { objects(edgeRef, lens(it)).isEmpty() }) {
                 "EdgeLens conditions need a supported typed expression compiler"
             }
             iri(edgeRef, lens("predicate")) ?: error("EdgeLens requires a predicate")
-        } else iri(ref, lens("predicate"))
+        } else directPredicate
         val traversableNode = if (ego) null else
             resource(ref, lens("nodeLens"), false)?.let { node(it, LinkedHashSet(), 0) }
         val direction = when (iri(ref, lens("direction"), false)?.value) {
