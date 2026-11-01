@@ -89,6 +89,12 @@ class PropertyPathsProviderTest {
                 Filters.compare(path,CompareOperator.EQ,literal))
             assertEquals(setOf(a,c),
                 KastorLensProviderBridge(repo).nodes(SparqlCompiler().select(query)))
+
+            // Negation has set-complement semantics: missing paths also match NOT.
+            val nonUs = LensDsl.filter(LensDsl.type("urn:path:Company"),
+                Filters.not(Filters.compare(path,CompareOperator.EQ,literal)))
+            assertEquals(setOf(b,d),
+                KastorLensProviderBridge(repo).nodes(SparqlCompiler().select(nonUs)))
             val inverse = LensDsl.filter(LensDsl.type("urn:path:Company"),
                 Filters.compare(Filters.inverse("urn:path:ownerOf"),CompareOperator.EQ,
                     Filters.constant(Value.Iri("urn:path:permitAInstance"))))
