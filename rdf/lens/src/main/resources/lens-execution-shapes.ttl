@@ -77,3 +77,18 @@ lens:EgoNetworkExecutionShape a sh:NodeShape ;
    [ sh:property [ sh:path lens:predicate ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ],
                  [ sh:path lens:edgeLens ; sh:maxCount 0 ] ]
  ) .
+
+
+# Bounded typed SPARQL property-path expression extensions (experimental).
+lens:SequencePathExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:SequencePathExpression ;
+  sh:property [ sh:path lens:pathPredicates ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:nodeKind sh:BlankNodeOrIRI ] .
+lens:InversePathExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:InversePathExpression ;
+  sh:property [ sh:path lens:pathPredicate ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:nodeKind sh:IRI ] .
+lens:AlternativePathExecutionShape a sh:NodeShape ;
+  sh:targetClass lens:AlternativePathExpression ;
+  sh:property [ sh:path lens:pathPredicates ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:nodeKind sh:BlankNodeOrIRI ] .

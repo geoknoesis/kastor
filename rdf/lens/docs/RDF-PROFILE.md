@@ -73,3 +73,21 @@ val result = executor.executeValidated(Iri("urn:lens:result")) // native Kastor 
 ### Fail-closed operator handling
 
 The loader rejects unknown `lens:` namespace properties on all supported executable nodes and expressions. RDFS, PROV and other external-namespace descriptive metadata remain permitted. This ensures an executable filter cannot be silently ignored even when the SHACL Core shape is open to metadata properties.
+
+### Typed property path expressions (experimental profile extension)
+
+`Filters.sequence("urn:ex:locatedIn", "urn:ex:regionName")`,
+`Filters.inverse("urn:ex:ownerOf")` and
+`Filters.alternative("urn:ex:age", "urn:ex:alternateAge")`
+compile to SPARQL 1.1 property paths inside a correlated `EXISTS` clause.
+
+RDF classes `lens:SequencePathExpression` and `lens:AlternativePathExpression`
+use an RDF list through `lens:pathPredicates`; `lens:InversePathExpression`
+uses `lens:pathPredicate`. Each path has at most eight IRI segments.
+No user-provided raw SPARQL is accepted. Arbitrary repeated paths
+(`*`, `+`), graph federation, and unbounded path composition are not supported.
+The vocabulary additions are **experimental and not part of the normative ontology v0.2**.
+
+A property/constant comparison uses existential semantics: a node with multiple
+values matches when at least one reachable value satisfies the condition.
+Negation of that comparison is true for nodes with no matching values.

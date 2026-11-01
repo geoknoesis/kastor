@@ -10,6 +10,9 @@ package org.geoknoesis.lens
  */
 sealed interface ValueExpression {
     data class Path(val predicate: String) : ValueExpression
+    data class SequencePath(val predicates: List<String>) : ValueExpression
+    data class InversePath(val predicate: String) : ValueExpression
+    data class AlternativePath(val predicates: List<String>) : ValueExpression
     data class Constant(val value: Value) : ValueExpression
 }
 enum class CompareOperator(val sparql: String) {
@@ -27,6 +30,9 @@ sealed interface BooleanPredicate {
 }
 object Filters {
     fun path(iri: String): ValueExpression = ValueExpression.Path(iri)
+    fun sequence(vararg predicates: String): ValueExpression = ValueExpression.SequencePath(predicates.toList())
+    fun inverse(predicate: String): ValueExpression = ValueExpression.InversePath(predicate)
+    fun alternative(vararg predicates: String): ValueExpression = ValueExpression.AlternativePath(predicates.toList())
     fun constant(value: Value): ValueExpression = ValueExpression.Constant(value)
     fun compare(a: ValueExpression, op: CompareOperator, b: ValueExpression): BooleanPredicate =
         BooleanPredicate.Compare(a, op, b)
@@ -57,15 +63,24 @@ class BooleanPredicateCompiler {
         is Value.TypedLiteral -> literal(v.lexical) + "^^" + iri(v.datatype)
     }
 
-    private fun bind(expr: ValueExpression, node: String, triples: MutableList<String>): String =
-        when(expr) {
-            is ValueExpression.Constant -> value(expr.value)
-            is ValueExpression.Path -> {
-                val v = "?lensfilter" + variable++
-                triples.add(node + " " + iri(expr.predicate) + " " + v + " .")
-                v
-            }
+    private fun path(predicates: List<String>, separator: String): String {
+        require(predicates.size in 1..8) { "Property paths must contain 1..8 predicates" }
+        return "(" + predicates.joinToString(separator) { iri(it) } + ")"
+    }
+
+    private fun bind(expr: ValueExpression, node: String, triples: MutableList<String>): String {
+        if (expr is ValueExpression.Constant) return value(expr.value)
+        val propertyPath = when(expr) {
+            is ValueExpression.Path -> iri(expr.predicate)
+            is ValueExpression.SequencePath -> path(expr.predicates, "/")
+            is ValueExpression.InversePath -> "^" + iri(expr.predicate)
+            is ValueExpression.AlternativePath -> path(expr.predicates, "|")
+            is ValueExpression.Constant -> error("Already handled")
         }
+        val target = "?lensfilter" + variable++
+        triples.add(node + " " + propertyPath + " " + target + " .")
+        return target
+    }
 
     fun expression(p: BooleanPredicate, node: String): String = when(p) {
         is BooleanPredicate.Compare -> {
