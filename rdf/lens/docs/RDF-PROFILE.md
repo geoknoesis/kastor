@@ -69,3 +69,7 @@ The library is not an authorization layer: the caller must supply an authorized 
 val executor = KastorRdfLensExecutor(repository, Rdf.parse(definitionsTurtle, "TURTLE"))
 val result = executor.executeValidated(Iri("urn:lens:result")) // native Kastor SHACL Core
 ```
+
+### Fail-closed operator handling
+
+The loader rejects unknown `lens:` namespace properties on all supported executable nodes and expressions. RDFS, PROV and other external-namespace descriptive metadata remain permitted. This ensures an executable filter cannot be silently ignored even when the SHACL Core shape is open to metadata properties.

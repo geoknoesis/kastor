@@ -27,6 +27,17 @@ class LensRdfLoader(
     private fun lens(local: String) = term(ns, local)
     private fun rdf(local: String) = term(rdf, local)
 
+
+    /** Unknown executable lens properties must never be silently ignored. */
+    private fun rejectUnknown(ref: RdfResource, allowed: Set<String>) {
+        val unsupported = graph.find(ref).map { it.predicate.value }
+            .filter { it.startsWith(ns) && it.removePrefix(ns) !in allowed }
+            .distinct()
+        require(unsupported.isEmpty()) {
+            "Unsupported lens execution properties at $ref: $unsupported"
+        }
+    }
+
     sealed interface Loaded {
         data class Node(val expression: Lens) : Loaded
         data class Network(val expression: NetworkLens) : Loaded
@@ -98,6 +109,13 @@ class LensRdfLoader(
             require(relevant.size == 1) {
                 "Expected one supported node lens type at $ref; found $relevant"
             }
+            rejectUnknown(ref, when (relevant.single()) {
+                "ClassLens" -> setOf("selectClass")
+                "FilterLens" -> setOf("inputLens", "condition")
+                "IntersectionLens", "UnionLens" -> setOf("operands")
+                "DifferenceLens" -> setOf("leftOperand", "rightOperand")
+                else -> emptySet()
+            })
             return when (relevant.single()) {
                 "ClassLens" -> Lens.Type(iri(ref, lens("selectClass"))!!.value)
                 "FilterLens" -> LensDsl.filter(
@@ -135,6 +153,7 @@ class LensRdfLoader(
             val types = objects(ref, rdf("type")).filterIsInstance<Iri>().toSet()
             val op = iri(ref, lens("operator"))!!.value
             if (lens("ComparisonExpression") in types) {
+                rejectUnknown(ref, setOf("operator", "leftExpression", "rightExpression"))
                 val operation = when(op) {
                     lens("Equal").value -> CompareOperator.EQ
                     lens("NotEqual").value -> CompareOperator.NE
@@ -152,6 +171,7 @@ class LensRdfLoader(
                 )
             }
             require(lens("BooleanExpression") in types) { "Unknown Boolean expression type" }
+            rejectUnknown(ref, setOf("operator", "operands"))
             require(objects(ref, lens("leftExpression")).isEmpty() &&
                 objects(ref, lens("rightExpression")).isEmpty()) { "Boolean group uses operands only" }
             val listHead = resource(ref, lens("operands"))!!
@@ -174,11 +194,13 @@ class LensRdfLoader(
         require(relevant.size == 1) { "Expected a path or constant expression" }
         return when(relevant.single()) {
             "BoundPathExpression" -> {
+                rejectUnknown(ref, setOf("pathPredicate"))
                 require(objects(ref, lens("literalValue")).isEmpty() &&
                     objects(ref, lens("constantIri")).isEmpty()) { "Path expression has unexpected value" }
                 ValueExpression.Path(iri(ref, lens("pathPredicate"))!!.value)
             }
             "ConstantExpression" -> {
+                rejectUnknown(ref, setOf("literalValue", "constantIri"))
                 val literal = only(ref, lens("literalValue"), false)
                 val iri = iri(ref, lens("constantIri"), false)
                 require((literal == null) != (iri == null)) { "Exactly one constant value is required" }
@@ -209,6 +231,9 @@ class LensRdfLoader(
         }
 
         val ego = lens("EgoNetworkLens") in types
+        rejectUnknown(ref, if (ego)
+            setOf("seedLens", "edgeLens", "predicate", "maxDepth", "direction", "closureMode")
+        else setOf("focusLens", "nodeLens", "edgeLens", "predicate", "maxDepth", "direction", "closureMode"))
         val seed = resource(ref, lens(if (ego) "seedLens" else "focusLens"))
             ?: error("Network must have a seed lens")
         val edgeRef = resource(ref, lens("edgeLens"), false)
@@ -216,6 +241,7 @@ class LensRdfLoader(
         require((edgeRef == null) != (directPredicate == null)) {
             "Exactly one of edgeLens and predicate is required"
         }
+        if (edgeRef != null) rejectUnknown(edgeRef, setOf("predicate"))
         if (edgeRef != null) require(lens("EdgeLens") in objects(edgeRef, rdf("type"))) {
             "edgeLens must reference an EdgeLens"
         }

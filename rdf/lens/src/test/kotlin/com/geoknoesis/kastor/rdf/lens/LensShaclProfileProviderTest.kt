@@ -93,6 +93,12 @@ class LensShaclProfileProviderTest {
             lens:rightExpression ex:limit .""")
         reject("ex:badFilter a lens:FilterLens ; lens:inputLens ex:all .")
 
+        val silent = Rdf.parse(text + "\n" +
+            "ex:all lens:undocumentedRestriction ex:other .", "TURTLE")
+        assertThrows(IllegalArgumentException::class.java) {
+            LensRdfLoader(silent).read(Iri("urn:profile:all"))
+        }
+
         val both = Rdf.parse(text + "\n" + """
             ex:ambiguous a lens:NetworkLens ; lens:focusLens ex:all ;
                 lens:edgeLens ex:edge ; lens:predicate ex:link ;
