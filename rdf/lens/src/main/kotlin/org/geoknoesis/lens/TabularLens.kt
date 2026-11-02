@@ -82,13 +82,13 @@ class TabularLensCompiler(
             "Absolute IRI required"
         }
         require(raw.none {
-            it.isWhitespace() || it in "<>\\\"{}|^" || it == '\\\\' || it.code == 96
+            it.isWhitespace() || it.code in setOf(60, 62, 34, 123, 125, 124, 94, 92, 96)
         }) { "Unsafe IRI" }
         return "<$raw>"
     }
 
     private fun selection(source: Lens): String =
-        "{ SELECT DISTINCT ?node WHERE {\\n" + selector.graphPattern(source, "?node") + "\\n} }"
+        "{ SELECT DISTINCT ?node WHERE {\n" + selector.graphPattern(source, "?node") + "\n} }"
 
     private fun pattern(column: TabularLens.Column): String {
         val triple = "?node " + iri(column.predicate) + " ?" + column.alias + " ."
@@ -99,26 +99,26 @@ class TabularLensCompiler(
         val names = dimensions.map { "?" + it.alias }
         val projection = names.joinToString(" ")
         val groupBy = projection
-        val body = dimensions.joinToString("\\n") { pattern(it) }
-        val query = "SELECT $projection (COUNT(DISTINCT ?node) AS ?count) WHERE {\\n" +
-            selection(source) + "\\n" + body +
-            "\\n} GROUP BY $groupBy ORDER BY DESC(?count) $groupBy"
+        val body = dimensions.joinToString("\n") { pattern(it) }
+        val query = "SELECT $projection (COUNT(DISTINCT ?node) AS ?count) WHERE {\n" +
+            selection(source) + "\n" + body +
+            "\n} GROUP BY $groupBy ORDER BY DESC(?count) $groupBy"
         return Compiled(query, dimensions.map { it.alias } + "count")
     }
 
     fun compile(lens: TabularLens): Compiled {
         val compiled = when (lens) {
             is TabularLens.Count -> Compiled(
-                "SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {\\n" +
-                    selection(lens.source) + "\\n}", listOf("count")
+                "SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {\n" +
+                    selection(lens.source) + "\n}", listOf("count")
             )
             is TabularLens.Projection -> {
                 val columns = lens.columns
                 val vars = listOf("node") + columns.map { it.alias }
                 val names = vars.joinToString(" ") { "?$it" }
-                val query = "SELECT DISTINCT $names WHERE {\\n" + selection(lens.source) +
-                    "\\n" + columns.joinToString("\\n") { pattern(it) } +
-                    "\\n} ORDER BY $names"
+                val query = "SELECT DISTINCT $names WHERE {\n" + selection(lens.source) +
+                    "\n" + columns.joinToString("\n") { pattern(it) } +
+                    "\n} ORDER BY $names"
                 Compiled(query, vars)
             }
             is TabularLens.Facet -> group(
