@@ -80,7 +80,7 @@ class LensOptimizer {
                 val rewritten = input.clauses.map { predicate(it, rules) }
                 val flattened = rewritten.flatMap { if (it is BooleanPredicate.All) it.clauses else listOf(it) }
                 val distinct = flattened.distinct()
-                if (distinct.size != input.clauses.size || rewritten != input.clauses) {
+                if (distinct != rewritten || rewritten != input.clauses) {
                     rules.add("flatten-and-deduplicate-boolean-conditions")
                 }
                 if (distinct.size == 1) distinct.single() else BooleanPredicate.All(distinct)
@@ -90,7 +90,7 @@ class LensOptimizer {
                 val rewritten = input.clauses.map { predicate(it, rules) }
                 val flattened = rewritten.flatMap { if (it is BooleanPredicate.Any) it.clauses else listOf(it) }
                 val distinct = flattened.distinct()
-                if (distinct.size != input.clauses.size || rewritten != input.clauses) {
+                if (distinct != rewritten || rewritten != input.clauses) {
                     rules.add("flatten-and-deduplicate-boolean-conditions")
                 }
                 if (distinct.size == 1) distinct.single() else BooleanPredicate.Any(distinct)
