@@ -82,7 +82,9 @@ class TabularLensCompiler(
             "Absolute IRI required"
         }
         require(raw.none {
-            it.isWhitespace() || it.code == 60 || it.code == 62 || it.code == 34 ||\n                it.code == 123 || it.code == 125 || it.code == 124 || it.code == 94 ||\n                it.code == 92 || it.code == 96
+            it.isWhitespace() || it.code == 60 || it.code == 62 || it.code == 34 || 
+                it.code == 123 || it.code == 125 || it.code == 124 || it.code == 94 || 
+                it.code == 92 || it.code == 96
         }) { "Unsafe IRI" }
         return "<$raw>"
     }
