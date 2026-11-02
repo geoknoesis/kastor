@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.lens
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.lit
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository
 import org.geoknoesis.lens.BooleanPredicate
@@ -36,11 +37,11 @@ class LensOptimizerProviderTest {
         listOf(a, b, c, d).forEach {
             graph.addTriple(RdfTriple(it, typeIri, Iri(company)))
         }
-        graph.addTriple(RdfTriple(a, Iri(age), com.geoknoesis.kastor.rdf.Literal("22", integer)))
-        graph.addTriple(RdfTriple(b, Iri(age), com.geoknoesis.kastor.rdf.Literal("16", integer)))
-        graph.addTriple(RdfTriple(d, Iri(age), com.geoknoesis.kastor.rdf.Literal("30", integer)))
+        graph.addTriple(RdfTriple(a, Iri(age), lit("22", integer)))
+        graph.addTriple(RdfTriple(b, Iri(age), lit("16", integer)))
+        graph.addTriple(RdfTriple(d, Iri(age), lit("30", integer)))
         for (node in listOf(a, c, d)) {
-            graph.addTriple(RdfTriple(node, Iri(active), com.geoknoesis.kastor.rdf.Literal("true", boolean)))
+            graph.addTriple(RdfTriple(node, Iri(active), lit("true", boolean)))
         }
     }
 
