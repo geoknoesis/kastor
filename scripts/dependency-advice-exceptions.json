@@ -1,3 +1,11 @@
 {
-  "entries": []
+  "entries": [
+    {
+      "project": ":rdf:lens",
+      "dependency": "org.junit.jupiter:junit-jupiter",
+      "from": "testImplementation",
+      "to": "",
+      "reason": "Keep a direct JUnit dependency for lens provider tests; do not depend on transitive dependencies of Jena or RDF4J adapter projects."
+    }
+  ]
 }

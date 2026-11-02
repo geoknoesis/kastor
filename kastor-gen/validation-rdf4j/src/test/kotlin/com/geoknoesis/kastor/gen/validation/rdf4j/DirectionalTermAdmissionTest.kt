@@ -70,7 +70,8 @@ class DirectionalTermAdmissionTest {
             TripleTerm(RdfTriple(focus, predicate, string("constant"))))
         val validShapes = shapes(string("valid")).getTriples()
         val data = MemoryGraph(validShapes + RdfTriple(focus, predicate, string("valid")))
-        Rdf4jValidation().use { validator ->
+        // ShaclSail's limitation: the trusting validator (and constructor shapes) refuse these parameters.
+        Rdf4jValidation.trustingEmbeddedShapes().use { validator ->
             assertEquals(ValidationResult.Ok, validator.validate(data, focus))
             val loads = validator.loadCount
             for (value in unsupported) {
@@ -87,6 +88,12 @@ class DirectionalTermAdmissionTest {
                 assertEquals(ValidationResult.Ok, validator.validate(data, focus))
                 assertEquals(loads, validator.loadCount)
             }
+        }
+        // Untrusted embedded shapes run on the Kastor SHACL validator, which evaluates a blank-node sh:hasValue
+        // (the focus does not have it) and refuses a triple-term parameter (allowTripleTermsInShapeParameters).
+        Rdf4jValidation().use { validator ->
+            assertIs<ValidationResult.Violations>(validator.validate(MemoryGraph(shapes(unsupported[0]).getTriples()), focus))
+            assertFailsWith<IllegalArgumentException> { validator.validate(MemoryGraph(shapes(unsupported[1]).getTriples()), focus) }
         }
     }
 }

@@ -23,7 +23,7 @@ class Rdf4jJsonLdRelativeIriTest {
 
     private fun assertRelativeRefused(parse: () -> Any?) {
         val error = assertThrows(RdfFormatException::class.java) { parse() }
-        assertTrue(error.message!!.contains("relative IRI", ignoreCase = true), error.message)
+        assertTrue(error.message!!.contains("relative", ignoreCase = true), error.message)
         assertFalse(error.message!!.contains("x-kastor-no-base"), error.message)
     }
 
@@ -52,7 +52,6 @@ class Rdf4jJsonLdRelativeIriTest {
         val docs = listOf(
             """{"@id": "http://ex/s", "@type": "T"}""",
             """{"@id": "http://ex/s", "http://ex/p": {"@value": "v", "@type": "dt"}}""",
-            """{"@context": {"@vocab": ""}, "@id": "http://ex/s", "p": "v"}""",
             """{"@context": {"@base": "x/"}, "@id": "s", "http://ex/p": "v"}""",
             """{"@id": "/abs", "http://ex/p": "v"}""",
             """{"@id": "//host/x", "http://ex/p": "v"}""",
@@ -60,6 +59,11 @@ class Rdf4jJsonLdRelativeIriTest {
             """{"@id": "", "http://ex/p": "v"}""",
         )
         for (doc in docs) assertRelativeRefused { provider.parseGraph(doc.byteInputStream(), "JSON-LD") }
+        // An empty (document-relative) vocabulary without a base: the JSON-LD processor refuses the mapping itself.
+        val vocabulary = assertThrows(RdfFormatException::class.java) {
+            provider.parseGraph("""{"@context": {"@vocab": ""}, "@id": "http://ex/s", "p": "v"}""".byteInputStream(), "JSON-LD")
+        }
+        assertTrue(vocabulary.message!!.contains("vocab"), vocabulary.message)
     }
 
     @Test

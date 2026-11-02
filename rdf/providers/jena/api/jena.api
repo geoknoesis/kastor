@@ -96,6 +96,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaRepository : com/geoknoesi
 	public fun getGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public fun getNamedGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public fun getNamedGraphs ()Ljava/util/Map;
+	public final fun getUpdateLoadOptions ()Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
 	public fun graph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
 	public fun hasGraph-J_zqV-w (Ljava/lang/String;)Z
 	public fun hasNamedGraph-J_zqV-w (Ljava/lang/String;)Z
@@ -105,6 +106,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaRepository : com/geoknoesi
 	public fun readTransaction (Lkotlin/jvm/functions/Function1;)V
 	public fun removeGraph-J_zqV-w (Ljava/lang/String;)Z
 	public fun select (Lcom/geoknoesis/kastor/rdf/SparqlSelect;)Lcom/geoknoesis/kastor/rdf/SparqlQueryResult;
+	public final fun setUpdateLoadOptions (Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)V
 	public fun transaction (Lkotlin/jvm/functions/Function1;)V
 	public fun update-asdzE4I (Ljava/lang/String;)V
 	public fun withConstructTriples (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;

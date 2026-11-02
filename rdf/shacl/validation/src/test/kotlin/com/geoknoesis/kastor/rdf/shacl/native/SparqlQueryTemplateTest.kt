@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.SparqlIriSubstitution
 import com.geoknoesis.kastor.rdf.string
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -112,16 +114,27 @@ class SparqlQueryTemplateTest {
     }
 
     @Test
-    fun `no template for a literal, an unrestricted query, a GROUP BY slot or a query without an IRI written in`() {
+    fun `no template for a literal, an unrestricted query or a GROUP BY slot`() {
         val template = restricted("SELECT ?o WHERE { ${d}this ex:p ?o }")
         assertNull(template.bind(mapOf("this" to string("a"))).substitution)
-        assertNull(template.bind(emptyMap()).substitution)
         assertNull(SparqlQueryTemplate.compile("SELECT ?o WHERE { ${d}this <urn:p> ?o }", setOf("this")).bind(mapOf("this" to Iri("urn:a"))).substitution)
         assertNull(restricted("SELECT (COUNT(?o) AS ?c) WHERE { ?o ex:p ?x } GROUP BY ${d}this").bind(mapOf("this" to Iri("urn:a"))).substitution)
         // An IRI and a literal: the literal would make every template distinct.
         val two = restricted("SELECT ?o WHERE { ${d}this ex:p ${d}value }", setOf("this", "value"))
         assertNull(two.bind(mapOf("this" to Iri("urn:a"), "value" to string("v"))).substitution)
         assertNotNull(two.bind(mapOf("this" to Iri("urn:a"), "value" to Iri("urn:v"))).substitution)
+    }
+
+    @Test
+    fun `a blank node focus, bound by the provider, is offered as a template without IRIs, the text itself`() {
+        val template = restricted("SELECT ${d}this ?o WHERE { ${d}this ex:p ?o FILTER NOT EXISTS { ?r ex:says <<( ${d}this ex:p ?o )>> } }")
+        for (focus in listOf(BlankNode("b1"), BlankNode("b2"))) {
+            val bound = template.bind(mapOf("this" to focus))
+            assertEquals(mapOf("this" to focus), bound.providerBindings)
+            assertEquals(SparqlIriSubstitution(bound.text, emptyMap()), bound.substitution)
+        }
+        assertEquals(template.bind(mapOf("this" to BlankNode("b1"))).text, template.bind(mapOf("this" to BlankNode("b2"))).text)
+        assertEquals(SparqlIriSubstitution(template.bind(emptyMap()).text, emptyMap()), template.bind(emptyMap()).substitution)
     }
 
     @Test

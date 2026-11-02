@@ -1,0 +1,14 @@
+@prefix lens: <https://example.org/semantic-lens/1.0#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+# Provisional operator registry for the typed RDF expression profile.
+lens:Equal a owl:NamedIndividual ; rdfs:label "Equal" .
+lens:NotEqual a owl:NamedIndividual ; rdfs:label "Not equal" .
+lens:GreaterThan a owl:NamedIndividual ; rdfs:label "Greater than" .
+lens:GreaterOrEqual a owl:NamedIndividual ; rdfs:label "Greater or equal" .
+lens:LessThan a owl:NamedIndividual ; rdfs:label "Less than" .
+lens:LessOrEqual a owl:NamedIndividual ; rdfs:label "Less or equal" .
+lens:And a owl:NamedIndividual ; rdfs:label "AND" .
+lens:Or a owl:NamedIndividual ; rdfs:label "OR" .
+lens:Not a owl:NamedIndividual ; rdfs:label "NOT" .

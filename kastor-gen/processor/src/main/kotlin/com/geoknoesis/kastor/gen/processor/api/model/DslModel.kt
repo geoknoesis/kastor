@@ -97,6 +97,10 @@ public data class PropertyConstraints(
     val nodeKindUnsatisfiable: Boolean = false,
     /** Typed bounds override the decimal-only fields for each supplied kind. */
     val numericBoundsTyped: List<ShaclNumericBound> = emptyList(),
+    /** `sh:minCount` (null when absent or the property shape is `sh:deactivated`): `validate()` checks it. */
+    val minCount: Int? = null,
+    /** `sh:maxCount` (null when absent or the property shape is `sh:deactivated`): `validate()` checks it. */
+    val maxCount: Int? = null,
 ) {
     /** All applicable bounds, including inherited constraints. */
     val numericBounds: List<ShaclNumericBound>
@@ -135,6 +139,8 @@ public data class PropertyConstraints(
                 additionalHasValues = property.additionalHasValues,
                 nodeKindUnsatisfiable = property.nodeKindUnsatisfiable,
                 numericBoundsTyped = property.numericBoundsTyped,
+                minCount = property.minCount.takeUnless { property.deactivated },
+                maxCount = property.maxCount.takeUnless { property.deactivated },
             )
         }
     }

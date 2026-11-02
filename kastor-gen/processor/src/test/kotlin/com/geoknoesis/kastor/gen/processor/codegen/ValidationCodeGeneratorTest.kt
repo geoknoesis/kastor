@@ -249,7 +249,7 @@ class ValidationCodeGeneratorTest {
         val code = method.toString()
         assertTrue(code.contains("prefLabel"))
         assertTrue(code.contains("altLabel"))
-        assertTrue(code.contains("Check required prefLabel"))
+        assertTrue(code.contains("Check prefLabel cardinality"))
         assertTrue(code.contains("Validate altLabel constraints"))
     }
 

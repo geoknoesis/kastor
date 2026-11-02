@@ -14,6 +14,7 @@ class JenaPartialUpdateRegressionTest {
         val input = tmp.resolve("input.nq")
         Files.writeString(input, "<urn:example:s> <urn:example:p> <urn:example:o> _:g .\n")
         JenaRepository.MemoryRepository().use { repo ->
+            repo.updateLoadOptions = com.geoknoesis.kastor.rdf.UrlLoadOptions.ALLOW_ALL_ADDRESSES.withAllowedSchemes(setOf("http", "https", "file")) // trusted local files
             repo.transaction {
                 assertThrows(RdfQueryException::class.java) {
                     update(UpdateQuery("LOAD <${input.toUri()}> ; LOAD <${tmp.resolve("missing.nq").toUri()}>"))

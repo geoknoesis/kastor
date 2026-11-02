@@ -35,8 +35,7 @@ internal object JenaGraphParsing {
 
     /** The parse error for a statement in the named graph [graph] met while parsing a single graph. */
     fun refuseNamedGraph(format: String, graph: org.apache.jena.graph.Node): RiotException = RiotException(
-        // A graph name that is a relative reference is reported as such (it would also fail the graph's statements).
-        graph.takeIf { it.isURI }?.let { JenaParsing.relativeIriProblem(it.uri) } ?: "the $format document holds statements in the named graph " +
+        "the $format document holds statements in the named graph " +
             "${if (graph.isURI) "<${graph.uri}>" else graph.toString()}; parsing it as a single graph would drop " +
             "them. Use parseDataset(...) to keep the named graphs.",
     )

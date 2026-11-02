@@ -42,7 +42,8 @@ class JenaJsonLdRemoteContextTest {
 
     private fun assertRefused(parse: () -> Unit) {
         val error = assertThrows(RdfFormatException::class.java) { parse() }
-        assertTrue(error.message!!.contains("context", ignoreCase = true), error.message)
+        // Without a base IRI, Titanium refuses an @import before it would load it (it cannot resolve the reference).
+        assertTrue(error.message!!.contains("context", ignoreCase = true) || error.message!!.contains("@import"), error.message)
     }
 
     @Test

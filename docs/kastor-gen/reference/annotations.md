@@ -436,9 +436,11 @@ Generation is configured through the `@Rdf` fields above; the processor needs no
 - An instance block (`person("urn:p") { ... }`) builds the instance in a scratch graph and writes it to the
   DSL's graph only after the block ran and `validate()` passed: a rejected value or a failed validation leaves
   no triple of that instance behind. A second block for the same resource is validated together with what
-  the first one wrote.
+  the first one wrote, and replaces it.
 - Setters check the constraints that concern a single value (`sh:pattern`, lengths, bounds, `sh:in`);
-  `sh:hasValue` and `sh:minCount` are checked by `validate()` over all the values.
+  `sh:hasValue`, `sh:minCount` and `sh:maxCount` are checked by `validate()` over all the values.
+- The setter of a single-valued property (`sh:maxCount` 0 or 1) **replaces** its value, also one written by an
+  earlier block for the same resource; the setters of a multi-valued property add values.
 
 ### Which annotation is `@Rdf`
 

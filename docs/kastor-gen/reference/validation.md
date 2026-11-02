@@ -141,9 +141,33 @@ use any other term of the SHACL namespace, `validate` throws `EmbeddedShapesRefu
 `IllegalArgumentException`) before the engine runs. Such terms include `sh:sparql`, `sh:select`, `sh:ask`,
 `sh:target`, `sh:validator`, `sh:pattern`, `sh:flags`, `sh:expression`, `sh:rule` and terms of later SHACL versions.
 The terms that are admitted are the targets, paths and constraints of SHACL Core, their non-validating properties,
-prefix declarations and the terms of a validation report. Only for a data graph from a trusted source, use
-`trustingEmbeddedShapes()`, which runs every embedded shape with no sandbox and no deadline. Shapes passed to the
-constructor or to `fromTurtle` are your own and are trusted. Never pass shapes from an untrusted source there. To
+prefix declarations and the terms of a validation report.
+
+SHACL Core alone can still cost exponential time: the engines evaluate a shape again for every reference to it, so
+a chain of shapes that each reference the next twice (through `sh:or`, `sh:node`, `sh:property`, ...) costs `2^n`.
+So admitted shapes must also stay within structural caps, which are checked before the engine runs: at most 5,000
+constraints once shared shapes are unfolded into a tree, 32 levels of nested shape references or paths, 64
+operands per `sh:or`, `sh:and` or `sh:xone`, lists of at most 1,000 members that end in `rdf:nil` without a cycle,
+and 20,000 statements in the SHACL namespace. Beyond them `validate` throws `EmbeddedShapesRefusedException`.
+The cost that the *data* adds (a nested shape is evaluated once per value node, so `d` nested property shapes over
+nodes with `k` values each cost `k^d`) is bounded only by `JenaValidation()`, which charges each validation of a
+focus node to a deterministic budget of 500,000 steps (engine validation events, data lookups and the statements
+they return) and throws `EmbeddedShapesRefusedException` when it runs out. `Rdf4jValidation()` does not run
+embedded shapes on ShaclSail at all, whose cost from the data has no bound (4 nested property shapes over a
+20,000-statement graph whose nodes each have 100 values took 51 s): it validates them on the Kastor SHACL validator,
+with a deadline of 5 s per focus node and its work limits, and throws `EmbeddedShapesRefusedException` when a
+validation reaches them (that probe is decided in under a second). On SHACL Core the results are ShaclSail's, except
+that ShaclSail skips `sh:xone` and the `*OrMore` / `zeroOrOne` paths, which the Kastor validator evaluates.
+
+The term allow-list, the structural caps and the budgets apply only to the no-arg validators (untrusted embedded
+shapes). `trustingEmbeddedShapes()` and shapes passed to the constructor or to `fromTurtle` run on `jena-shacl` or
+ShaclSail without them.
+
+Only for a data graph from a trusted source, use
+`trustingEmbeddedShapes()`, which runs every embedded shape with no sandbox, no cap and no deadline. Shapes passed
+to the constructor or to `fromTurtle` are your own and are trusted. Never pass shapes from an untrusted source
+there. These two modes have no deadline and no budget at all, also when only the data is untrusted: neither engine
+has a cancellation API, and a deadline on another thread could only abandon a validation, not stop it. To
 validate against untrusted shapes, use the Kastor SHACL validator (`rdf-shacl-validation`): it runs SHACL-SPARQL
 in a sandbox with a deadline and patterns on a linear-time engine.
 

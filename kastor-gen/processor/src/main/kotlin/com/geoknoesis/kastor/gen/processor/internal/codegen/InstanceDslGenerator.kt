@@ -314,6 +314,9 @@ public class InstanceDslGenerator(
             functionBuilder.addStatement("builder.validate()")
         }
 
+        // The scratch graph holds the whole new description of the resource (it started from the old one), so it
+        // replaces the old one: a single-valued setter in a later block replaces the value written by an earlier one.
+        functionBuilder.addStatement("graph.removeTriples(graph.find(resource))")
         functionBuilder.addStatement("graph.addTriples(scratch.getTriples())")
         functionBuilder.addStatement("instances.add(resource)")
         functionBuilder.addStatement("return resource")
