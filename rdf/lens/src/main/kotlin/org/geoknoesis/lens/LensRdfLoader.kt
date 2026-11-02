@@ -190,7 +190,9 @@ class LensRdfLoader(
 
     private fun expression(ref: RdfResource): ValueExpression {
         val types = objects(ref, rdf("type")).filterIsInstance<Iri>().toSet()
-        val relevant = listOf("BoundPathExpression", "ConstantExpression").filter { lens(it) in types }
+        val relevant = listOf("BoundPathExpression", "SequencePathExpression",
+            "InversePathExpression", "AlternativePathExpression", "ConstantExpression")
+            .filter { lens(it) in types }
         require(relevant.size == 1) { "Expected a path or constant expression" }
         return when(relevant.single()) {
             "BoundPathExpression" -> {
@@ -198,6 +200,20 @@ class LensRdfLoader(
                 require(objects(ref, lens("literalValue")).isEmpty() &&
                     objects(ref, lens("constantIri")).isEmpty()) { "Path expression has unexpected value" }
                 ValueExpression.Path(iri(ref, lens("pathPredicate"))!!.value)
+            }
+            "SequencePathExpression", "AlternativePathExpression" -> {
+                rejectUnknown(ref, setOf("pathPredicates"))
+                val head = resource(ref, lens("pathPredicates"))!!
+                val iriList = list(head).map {
+                    it as? Iri ?: error("Property path member must be an IRI")
+                }.map { it.value }
+                require(iriList.size in 1..8) { "Property path requires 1..8 IRI members" }
+                if ("SequencePathExpression" in relevant) ValueExpression.SequencePath(iriList)
+                else ValueExpression.AlternativePath(iriList)
+            }
+            "InversePathExpression" -> {
+                rejectUnknown(ref, setOf("pathPredicate"))
+                ValueExpression.InversePath(iri(ref, lens("pathPredicate"))!!.value)
             }
             "ConstantExpression" -> {
                 rejectUnknown(ref, setOf("literalValue", "constantIri"))
