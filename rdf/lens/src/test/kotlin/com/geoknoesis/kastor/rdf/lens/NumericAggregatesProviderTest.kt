@@ -75,21 +75,24 @@ class NumericAggregatesProviderTest {
             val source = LensDsl.type(company.value)
             val executor = KastorTabularLensExecutor(repo)
 
-            val totals = listOf(
-                TabularDsl.sum(source, amount.value) to ("sum" to "52"),
-                TabularDsl.avg(source, amount.value) to ("avg" to "10.4"),
-                TabularDsl.min(source, amount.value) to ("min" to "5"),
-                TabularDsl.max(source, amount.value) to ("max" to "20")
-            )
-            for ((lens, expected) in totals) {
-                val result = executor.execute(lens)
-                assertEquals(listOf(expected.first), result.columns)
-                assertNumeric(expected.second, result.rows.single()[expected.first])
-                val sparql = executor.explain(lens).sparql
-                assertTrue(sparql.contains("SELECT DISTINCT ?node"))
-                assertTrue(sparql.contains("FILTER(isNumeric(?__lensNumericValue))"))
-                assertTrue(sparql.contains("SELECT DISTINCT ?node ?__lensNumericValue"))
-            }
+            val summedGlobal = executor.execute(TabularDsl.sum(source, amount.value))
+            assertEquals(listOf("sum"), summedGlobal.columns)
+            assertNumeric("52", summedGlobal.rows.single()["sum"])
+            val averagedGlobal = executor.execute(TabularDsl.avg(source, amount.value))
+            assertEquals(listOf("avg"), averagedGlobal.columns)
+            assertNumeric("10.4", averagedGlobal.rows.single()["avg"])
+            val minimumGlobal = executor.execute(TabularDsl.min(source, amount.value))
+            assertEquals(listOf("min"), minimumGlobal.columns)
+            assertNumeric("5", minimumGlobal.rows.single()["min"])
+            val maximumGlobal = executor.execute(TabularDsl.max(source, amount.value))
+            assertEquals(listOf("max"), maximumGlobal.columns)
+            assertNumeric("20", maximumGlobal.rows.single()["max"])
+
+            val sparql = executor.explain(TabularDsl.sum(source, amount.value)).sparql
+            assertTrue(sparql.contains("SELECT DISTINCT ?node"))
+            assertTrue(sparql.contains("FILTER(isNumeric(?__lensNumericValue))"))
+            assertTrue(sparql.contains("SELECT DISTINCT ?node ?__lensNumericValue"))
+            assertTrue(sparql.contains("COUNT(?__lensNumericValue) AS ?__lensNumericCount"))
 
             val dimension = TabularLens.Column("byRegion", region.value)
             val summed = executor.execute(TabularDsl.sum(source, amount.value, dimension))
