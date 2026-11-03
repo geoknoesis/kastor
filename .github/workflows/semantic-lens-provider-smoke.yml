@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: JDK 21
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -51,7 +51,8 @@ jobs:
                           executed.add(case.get("name","").split("(")[0])
           expected = {provider + x for x in (
               "ProviderIntegration", "CompiledLens", "NetworkLens",
-              "RdfLensDefinitions", "TypedAndShacl", "ShaclProfile", "PropertyPaths")}
+              "RdfLensDefinitions", "TypedAndShacl", "ShaclProfile",
+              "PropertyPaths", "OptimizedAlgebra", "TabularLens")}
           missing = {m for m in expected if not any(name.endswith(m) for name in executed)}
           assert not missing, f"Provider {provider} did not execute: {sorted(missing)}; found: {sorted(executed)}"
           print(f"Validated {len(expected)} executed {provider} test methods")

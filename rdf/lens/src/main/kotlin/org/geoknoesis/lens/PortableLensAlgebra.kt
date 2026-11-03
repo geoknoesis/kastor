@@ -102,10 +102,18 @@ class SparqlCompiler {
         require(Regex("\\?[A-Za-z_][A-Za-z0-9_]*").matches(nodeVariable)) {
             "Invalid SPARQL variable"
         }
-        return State().pattern(LensNormalizer.normalized(lens), nodeVariable)
+        return State().pattern(LensOptimizer().optimize(lens).lens, nodeVariable)
     }
+    /** Exposes applied algebra rules and the exact query without inventing cost estimates. */
+    data class ExplainedSelect(val plan: LensOptimizer.Plan, val sparql: String)
+
+    fun explain(q: Lens): ExplainedSelect {
+        val plan = LensOptimizer().optimize(q)
+        val sparql = "SELECT DISTINCT ?node WHERE {\n" +
+            State().pattern(plan.lens, "?node") + "\n} ORDER BY ?node"
+        return ExplainedSelect(plan, sparql)
+    }
+
     /** One SELECT: all joins, anti-joins and unions stay with the RDF provider. */
-    fun select(q: Lens): String =
-        "SELECT DISTINCT ?node WHERE {\n" + State().pattern(LensNormalizer.normalized(q), "?node") +
-            "\n} ORDER BY ?node"
+    fun select(q: Lens): String = explain(q).sparql
 }
