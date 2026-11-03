@@ -64,6 +64,11 @@ class NumericAggregatesProviderTest {
         assertEquals(0, numeric(term).compareTo(BigDecimal(expected)))
     }
 
+    private fun assertApprox(expected: String, term: RdfTerm?) {
+        val difference = numeric(term).subtract(BigDecimal(expected)).abs()
+        assertTrue(difference < BigDecimal("0.0000001"), "Numeric difference $difference")
+    }
+
     private fun verify(factory: () -> RdfRepository) {
         factory().use { repo ->
             fixture(repo)
@@ -98,8 +103,8 @@ class NumericAggregatesProviderTest {
 
             val averages = executor.execute(TabularDsl.avg(source, amount.value, dimension))
             val avgByRegion = averages.rows.associate { it["byRegion"] to it["avg"] }
-            assertNumeric("13.33333333333333333333333333333333", avgByRegion[us]) // 40/3, scale may vary
-            assertNumeric("11.66666666666666666666666666666667", avgByRegion[eu]) // 35/3
+            assertApprox("13.33333333333333333333333333333333", avgByRegion[us]) // 40/3
+            assertApprox("11.66666666666666666666666666666667", avgByRegion[eu]) // 35/3
             assertNull(avgByRegion[apac])
 
             val minimum = executor.execute(TabularDsl.min(source, amount.value, dimension))
