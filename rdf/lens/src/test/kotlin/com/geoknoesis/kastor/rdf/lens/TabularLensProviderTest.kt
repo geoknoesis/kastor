@@ -48,6 +48,12 @@ class TabularLensProviderTest {
             assertEquals(listOf("count"), all.columns)
             assertEquals(4, count(all.rows.single()))
 
+            // Empty selections must return one zero-count row, but no facet buckets.
+            val emptySource = LensDsl.type("urn:tabular:NoMatchingClass")
+            val emptyCount = executor.execute(TabularDsl.count(emptySource))
+            assertEquals(0, count(emptyCount.rows.single()))
+            assertTrue(executor.execute(TabularDsl.facet(emptySource, sector.value, includeMissing = true)).rows.isEmpty())
+
             val projected = executor.execute(TabularDsl.project(
                 source,
                 TabularLens.Column("sector", sector.value),
