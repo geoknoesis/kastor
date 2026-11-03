@@ -48,9 +48,14 @@ class KastorTabularLensExecutor(
                 val emptyNumericGroup = if (numeric == null) {
                     false
                 } else {
-                    val count = row.get(TabularLensCompiler.NUMERIC_COUNT_VARIABLE) as? Literal
-                        ?: error("Provider omitted the numeric aggregate count")
-                    val cardinality = BigInteger(count.lexical)
+                    val count = row.get(TabularLensCompiler.NUMERIC_COUNT_VARIABLE)
+                    // A group with no numeric matches is preserved by an outer
+                    // SPARQL join and has no aggregate/count bindings.
+                    val cardinality = when (count) {
+                        null -> BigInteger.ZERO
+                        is Literal -> BigInteger(count.lexical)
+                        else -> error("Invalid numeric aggregate count term")
+                    }
                     check(cardinality.signum() >= 0) { "Invalid negative numeric count" }
                     cardinality == BigInteger.ZERO
                 }
