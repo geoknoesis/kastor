@@ -66,9 +66,13 @@ projection aliases are strictly validated; no free-form SPARQL is accepted.
   Missing dimensions are represented as unbound buckets unless required.
   On an empty input, `SUM` returns zero; `AVG`, `MIN`, and `MAX` have an
   unbound result. Groups with no numeric measure follow the same rule.
+  Only bound numeric terms enter the aggregate subquery. For grouped results,
+  a separate **provider-side** group-universe subquery is left-joined to the
+  numeric aggregate; explicit bound flags prevent missing dimensions from
+  spuriously matching populated dimensions. No application-side join is used.
   The compiled SPARQL includes a private numeric COUNT column; the Kastor
-  tabular executor uses it to normalize provider-specific empty-aggregate
-  results. Callers executing the raw SPARQL independently must apply the same
+  tabular executor uses it to normalize missing-group values consistently.
+  Callers executing the raw SPARQL independently must apply the same
   empty-group normalization if they need this portable contract.
   Each operation is a separate single-measure lens to avoid Cartesian
   multiplication of independent measure paths.
