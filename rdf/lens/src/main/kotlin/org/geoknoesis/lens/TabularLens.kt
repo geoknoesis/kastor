@@ -168,32 +168,55 @@ class TabularLensCompiler(
     }
 
     /**
-     * Pre-deduplicate whole (node, dimensions, value) tuples, not metric values:
-     * SUM(DISTINCT ?metric) would incorrectly collapse equal amounts from
-     * different nodes. Grouping and aggregation run entirely at the provider.
+     * Keep unbound OPTIONAL metric rows out of the aggregate itself: Jena and
+     * RDF4J differ on whether SUM/AVG over those rows become unbound.
+     *
+     * For grouped views, join a distinct group universe to a numeric-only
+     * aggregate subquery inside SPARQL. Bound flags prevent unbound dimension
+     * values from spuriously matching arbitrary bound groups during OPTIONAL.
+     * The executor normalizes a missing count as an empty numeric group.
      */
     private fun numericAggregate(lens: TabularLens.NumericAggregate): Compiled {
         val dimensions = lens.dimensions
         val dimensionNames = dimensions.map { "?" + it.alias }
+        val boundFlags = dimensions.indices.map { "?__lensDimensionBound" + it }
+        val groupKeys = dimensionNames + boundFlags
         val measure = "?__lensNumericValue"
-        val selected = (listOf("?node") + dimensionNames + measure).joinToString(" ")
         val sourcePatterns = dimensions.joinToString("\n") { pattern(it) }
-        val numeric = "OPTIONAL { ?node " + iri(lens.predicate) + " " + measure +
-            " . FILTER(isNumeric(" + measure + ")) }"
-        val deduplicated = "{ SELECT DISTINCT " + selected + " WHERE {\n" +
-            selection(lens.source) + "\n" + sourcePatterns + "\n" + numeric + "\n} }"
+        val boundPatterns = dimensions.indices.joinToString("\n") {
+            "BIND(BOUND(" + dimensionNames[it] + ") AS " + boundFlags[it] + ")"
+        }
+
+        // Aggregate only real numeric RDF terms, never OPTIONAL/unbound rows.
+        val numericPattern = "?node " + iri(lens.predicate) + " " + measure +
+            " . FILTER(isNumeric(" + measure + "))"
+        val numericVariables = (listOf("?node") + groupKeys + measure).joinToString(" ")
+        val numericRows = "{ SELECT DISTINCT " + numericVariables + " WHERE {\n" +
+            selection(lens.source) + "\n" + sourcePatterns + "\n" +
+            numericPattern + "\n" + boundPatterns + "\n} }"
+
         val aggregateExpression = "(" + lens.operation.sparql + "(" + measure + ") AS ?" +
             lens.alias + ")"
-        // Some providers return an unbound SUM for zero numeric values; others
-        // produce zero/NaN for AVG. Return a private COUNT alongside the
-        // aggregate so the public executor can normalize those cases uniformly.
         val numericCount = "(COUNT(" + measure + ") AS ?" + NUMERIC_COUNT_VARIABLE + ")"
-        val prefix = if (dimensionNames.isEmpty()) "" else dimensionNames.joinToString(" ") + " "
-        val suffix = if (dimensionNames.isEmpty()) "" else
-            " GROUP BY " + dimensionNames.joinToString(" ") +
-                " ORDER BY " + dimensionNames.joinToString(" ")
-        val query = "SELECT " + prefix + aggregateExpression + " " + numericCount + " WHERE {\n" +
-            deduplicated + "\n}" + suffix
+        val query = if (dimensionNames.isEmpty()) {
+            "SELECT " + aggregateExpression + " " + numericCount +
+                " WHERE {\n" + numericRows + "\n}"
+        } else {
+            val groupVariables = groupKeys.joinToString(" ")
+            val universe = "{ SELECT DISTINCT " + groupVariables + " WHERE {\n" +
+                selection(lens.source) + "\n" + sourcePatterns + "\n" +
+                boundPatterns + "\n} }"
+            val groupedNumeric = "{ SELECT " + groupVariables + " " +
+                aggregateExpression + " " + numericCount +
+                " WHERE {\n" + numericRows + "\n} GROUP BY " + groupVariables + " }"
+            // Every group exists in the outer universe; the grouped numeric
+            // aggregate is optional so missing-measure categories survive.
+            val columns = (dimensionNames + "?" + lens.alias +
+                "?" + NUMERIC_COUNT_VARIABLE).joinToString(" ")
+            "SELECT " + columns + " WHERE {\n" + universe +
+                "\nOPTIONAL { " + groupedNumeric + " }\n} ORDER BY " +
+                dimensionNames.joinToString(" ")
+        }
         return Compiled(query, dimensions.map { it.alias } + lens.alias, lens.operation)
     }
 
