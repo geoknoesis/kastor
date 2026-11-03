@@ -91,3 +91,32 @@ The vocabulary additions are **experimental and not part of the normative ontolo
 A property/constant comparison uses existential semantics: a node with multiple
 values matches when at least one reachable value satisfies the condition.
 Negation of that comparison is true for nodes with no matching values.
+
+## Kotlin builder DSL
+
+`lens { }`, `network { }` and `lensDefinitions { }` (in `LensBuilders.kt`) build the same model the loader reads, and write it back as v0.2 RDF that passes the bundled SHACL profile:
+
+```kotlin
+val usCompanies = lens {
+    type("urn:ex:Company")                        // several selectors = intersection
+    where {                                       // several clauses = AND
+        sequence("urn:ex:locatedIn", "urn:ex:regionName") eq "US"
+        not { path("urn:ex:age") lt 18 }
+    }
+    exclude { type("urn:ex:Restricted") }
+}
+val chain = network {
+    seeds { type("urn:ex:Start") }
+    traversalNode { type("urn:ex:Company") }
+    predicate = "urn:ex:suppliesTo"
+    maxDepth = 2
+    closure = NetworkClosure.INDUCED
+}
+val definitions = lensDefinitions {
+    define("urn:lens:us", usCompanies)
+    define("urn:lens:chain", chain)
+}
+KastorRdfLensExecutor(repository, definitions).executeValidated(Iri("urn:lens:us"))
+```
+
+`anyOf { }` is a union (or an OR inside `where`), and `allOf { }` groups an intersection inside it. Kotlin constants become typed literals: `String` becomes `xsd:string`, `Int`/`Long` become `xsd:integer`, and so on. Pass `Iri(...)` or a Kastor `Literal` for anything else. `has(p, value)` and `has(p) { target }` compile directly but have no v0.2 RDF form. The same goes for network `outputNode`, edge guards and `datasetGraph`. `lensDefinitions` rejects all of these instead of dropping them.
