@@ -1,9 +1,26 @@
-# Semantic Lens — Real Kastor Provider Gate
+# Semantic Lens — Kastor portable execution profile
 
-This is a **minimal provider integration gate** on a feature branch, not a replacement for the full v0.23 Semantic Lens engine. It uses the real Kastor `RdfRepository`, `withSelectRows()`, and `readTransaction()` interfaces.
+This experimental implementation compiles a bounded, typed subset of the
+Semantic Lens algebra to SPARQL on real Kastor Jena and RDF4J providers.
+It is **not** the complete Semantic Lens v0.23 engine or an endorsed W3C standard.
 
-The two JUnit tests open actual Jena and RDF4J memory repositories. They verify streaming SELECT, IRI result decoding, node/edge graph closure, bounded consumption, timed execution and named-graph scope. Other v0.23 lens-algebra tests must be integrated after this gate is green.
+Supported operations include class/node selection, equality and EXISTS,
+set intersection/union/difference, typed Boolean property filters, guarded
+ego/network traversals (depth 0–3), and bounded property paths (sequence,
+inverse, alternative). SHACL Core validates RDF-authored definitions; callers
+should use `KastorRdfLensExecutor.executeValidated` with trusted shapes.
 
-Run: `./gradlew :rdf:lens:compileKotlin :rdf:lens:test --no-daemon --stacktrace`.
+The node algebra now has a typed, provider-neutral logical optimizer and
+`SparqlCompiler.explain()`, documenting applied rewrites and the exact SPARQL.
+See [Optimization](docs/OPTIMIZATION.md) and the
+[RDF execution profile](docs/RDF-PROFILE.md).
 
-Caveat: SPARQL is expected to have been compiled and authorized by the lens compiler. This provider seam does not sanitize arbitrary query text, enforce source authorization, or replace provider work/memory timeouts.
+```bash
+./gradlew :rdf:lens:compileKotlin :rdf:lens:test --no-daemon --stacktrace
+```
+
+Execution uses streaming SELECT within read transactions and bounded results.
+The caller must authorize dataset/graph access and enforce provider work,
+memory and query-time limits. The optimizer is **not** yet cardinality-aware,
+cost-based, or federated. The bridge returns bounded materialized sets; a
+public streaming-results API is future work.
