@@ -3,6 +3,8 @@ package com.geoknoesis.kastor.rdf.lens
 import com.geoknoesis.kastor.rdf.*
 import org.geoknoesis.lens.TabularLens
 import org.geoknoesis.lens.TabularLensCompiler
+import org.geoknoesis.lens.NumericOperation
+import java.math.BigInteger
 import java.time.Duration
 
 /**
@@ -42,7 +44,26 @@ class KastorTabularLensExecutor(
         val query = SparqlSelectQuery(compiled.sparql)
         fun consume(rows: Sequence<BindingSet>): Table {
             val bounded = rows.take(limits.maxRows + 1).map { row ->
-                compiled.variables.associateWith { row.get(it) }
+                val numeric = compiled.numericOperation
+                val emptyNumericGroup = if (numeric == null) {
+                    false
+                } else {
+                    val count = row.get(TabularLensCompiler.NUMERIC_COUNT_VARIABLE) as? Literal
+                        ?: error("Provider omitted the numeric aggregate count")
+                    val cardinality = BigInteger(count.lexical)
+                    check(cardinality.signum() >= 0) { "Invalid negative numeric count" }
+                    cardinality == BigInteger.ZERO
+                }
+                compiled.variables.associateWith { alias ->
+                    if (numeric != null && alias == compiled.variables.last()) {
+                        when {
+                            emptyNumericGroup && numeric == NumericOperation.SUM -> Literal(0)
+                            emptyNumericGroup -> null
+                            else -> row.get(alias)
+                                ?: error("Provider omitted a non-empty numeric aggregate value")
+                        }
+                    } else row.get(alias)
+                }
             }.toList()
             check(bounded.size <= limits.maxRows) {
                 "Tabular lens result exceeds maxRows=${limits.maxRows}"
