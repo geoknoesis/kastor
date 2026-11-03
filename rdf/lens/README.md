@@ -15,6 +15,11 @@ The node algebra now has a typed, provider-neutral logical optimizer and
 See [Optimization](docs/OPTIMIZATION.md) and the
 [RDF execution profile](docs/RDF-PROFILE.md).
 
+Typed Kotlin-only tabular views now provide projection, COUNT DISTINCT, facets
+and multi-dimensional counts, executed in SPARQL on both providers. See
+[Tabular lenses](docs/TABULAR-LENSES.md) for semantics and limitations.
+
+
 ```bash
 ./gradlew :rdf:lens:compileKotlin :rdf:lens:test --no-daemon --stacktrace
 ```
