@@ -20,6 +20,9 @@ class NumericAggregatesProviderTest {
     private val integer = Iri("http://www.w3.org/2001/XMLSchema#integer")
     private val company = Iri("urn:agg:Company")
     private val region = Iri("urn:agg:region")
+    private val segment = Iri("urn:agg:segment")
+    private val healthcare = Iri("urn:agg:Healthcare")
+    private val ai = Iri("urn:agg:AI")
     private val amount = Iri("urn:agg:amount")
     private val us = Iri("urn:agg:US")
     private val eu = Iri("urn:agg:EU")
@@ -44,6 +47,8 @@ class NumericAggregatesProviderTest {
             graph.addTriple(RdfTriple(it, region, eu))
         }
         graph.addTriple(RdfTriple(g, region, apac))
+        listOf(a, b, g).forEach { graph.addTriple(RdfTriple(it, segment, healthcare)) }
+        listOf(a, c).forEach { graph.addTriple(RdfTriple(it, segment, ai)) }
 
         // a has multiple numeric values, and a/b both have "10": both must count.
         graph.addTriple(RdfTriple(a, amount, lit("10", integer)))
@@ -121,6 +126,24 @@ class NumericAggregatesProviderTest {
             assertNumeric("20", maximumByRegion[us])
             assertNumeric("20", maximumByRegion[eu])
             assertNull(maximumByRegion[apac])
+
+            // Two-dimensional GROUP BY, including unbound values and
+            // multiple values in both the dimension and measure paths.
+            val bySegment = TabularLens.Column("bySegment", segment.value)
+            val twoDimensional = executor.execute(TabularDsl.sum(
+                source, amount.value, dimension, bySegment
+            ))
+            val groupedSums = twoDimensional.rows.associate {
+                (it["byRegion"] to it["bySegment"]) to it["sum"]
+            }
+            assertEquals(7, groupedSums.size)
+            assertNumeric("40", groupedSums[us to healthcare])
+            assertNumeric("30", groupedSums[us to ai])
+            assertNumeric("30", groupedSums[eu to healthcare])
+            assertNumeric("35", groupedSums[eu to ai])
+            assertNumeric("0", groupedSums[us to null])
+            assertNumeric("0", groupedSums[apac to healthcare])
+            assertNumeric("7", groupedSums[null to null])
 
             val empty = LensDsl.type("urn:agg:MissingClass")
             assertNumeric("0", executor.execute(TabularDsl.sum(empty, amount.value)).rows.single()["sum"])
