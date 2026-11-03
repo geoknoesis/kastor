@@ -55,16 +55,16 @@ projection aliases are strictly validated; no free-form SPARQL is accepted.
   dimension can be unbound, and multivalued dimensions produce multiple
   combinations; counts therefore should not be added to obtain a universe
   count without deduplication.
-- \`NumericAggregate\`: \`SUM\`, \`AVG\`, \`MIN\`, \`MAX\` over a numeric
+- `NumericAggregate`: `SUM`, `AVG`, `MIN`, `MAX` over a numeric
   predicate, optionally grouped by 1–3 dimensions. It first selects distinct
   **(node, dimension tuple, RDF numeric term)** combinations, so different
   nodes with the same amount still contribute independently. Multiple distinct
   numeric values on one node each contribute once per dimension tuple.
   Numeric values of type xsd:integer, xsd:decimal, xsd:float, and xsd:double
-  are accepted using SPARQL \`isNumeric\`. Non-numeric and missing values are
+  are accepted using SPARQL `isNumeric`. Non-numeric and missing values are
   excluded from the measure but keep their nodes in dimension groups.
   Missing dimensions are represented as unbound buckets unless required.
-  On an empty input, \`SUM\` returns zero; \`AVG\`, \`MIN\`, and \`MAX\` have an
+  On an empty input, `SUM` returns zero; `AVG`, `MIN`, and `MAX` have an
   unbound result. Groups with no numeric measure follow the same rule.
   Each operation is a separate single-measure lens to avoid Cartesian
   multiplication of independent measure paths.
