@@ -211,8 +211,9 @@ class TabularLensCompiler(
                 " WHERE {\n" + numericRows + "\n} GROUP BY " + groupVariables + " }"
             // Every group exists in the outer universe; the grouped numeric
             // aggregate is optional so missing-measure categories survive.
-            val columns = (dimensionNames + "?" + lens.alias +
-                "?" + NUMERIC_COUNT_VARIABLE).joinToString(" ")
+            val columns = (dimensionNames + listOf(
+                "?" + lens.alias, "?" + NUMERIC_COUNT_VARIABLE
+            )).joinToString(" ")
             "SELECT " + columns + " WHERE {\n" + universe +
                 "\nOPTIONAL { " + groupedNumeric + " }\n} ORDER BY " +
                 dimensionNames.joinToString(" ")
