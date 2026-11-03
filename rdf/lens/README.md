@@ -16,7 +16,8 @@ See [Optimization](docs/OPTIMIZATION.md) and the
 [RDF execution profile](docs/RDF-PROFILE.md).
 
 Typed Kotlin-only tabular views now provide projection, COUNT DISTINCT, facets
-and multi-dimensional counts, executed in SPARQL on both providers. See
+and multi-dimensional counts, including typed SUM/AVG/MIN/MAX numeric aggregates,
+executed in SPARQL on both providers. See
 [Tabular lenses](docs/TABULAR-LENSES.md) for semantics and limitations.
 
 
