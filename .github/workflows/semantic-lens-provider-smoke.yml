@@ -52,7 +52,8 @@ jobs:
           expected = {provider + x for x in (
               "ProviderIntegration", "CompiledLens", "NetworkLens",
               "RdfLensDefinitions", "TypedAndShacl", "ShaclProfile",
-              "PropertyPaths", "OptimizedAlgebra", "TabularLens")}
+              "PropertyPaths", "OptimizedAlgebra", "TabularLens",
+              "NumericAggregates")}
           missing = {m for m in expected if not any(name.endswith(m) for name in executed)}
           assert not missing, f"Provider {provider} did not execute: {sorted(missing)}; found: {sorted(executed)}"
           print(f"Validated {len(expected)} executed {provider} test methods")
