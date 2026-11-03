@@ -22,12 +22,22 @@ val counts = TabularDsl.groupCount(
 )
 val total = TabularDsl.count(companies)
 
+val totalRevenue = TabularDsl.sum(companies, "urn:ex:revenue")
+val averageByIndustry = TabularDsl.avg(
+    companies, "urn:ex:revenue",
+    TabularLens.Column("industry", "urn:ex:industry")
+)
+val minimum = TabularDsl.min(companies, "urn:ex:revenue")
+val maximum = TabularDsl.max(companies, "urn:ex:revenue")
+// Custom result alias and operation are also available:
+// TabularDsl.aggregate(companies, "urn:ex:revenue", NumericOperation.SUM, "revenue")
+
 val executor = KastorTabularLensExecutor(repository)
 val plan = executor.explain(distribution)
 val result = executor.execute(distribution, KastorTabularLensExecutor.Limits(maxRows = 1000))
 ```
 
-All four tabular forms are **compiled into native SPARQL SELECT**, with
+All tabular forms are **compiled into native SPARQL SELECT**, with
 `SELECT DISTINCT ?node` as the inner selected universe. Predicate IRIs and
 projection aliases are strictly validated; no free-form SPARQL is accepted.
 
@@ -45,12 +55,27 @@ projection aliases are strictly validated; no free-form SPARQL is accepted.
   dimension can be unbound, and multivalued dimensions produce multiple
   combinations; counts therefore should not be added to obtain a universe
   count without deduplication.
+- \`NumericAggregate\`: \`SUM\`, \`AVG\`, \`MIN\`, \`MAX\` over a numeric
+  predicate, optionally grouped by 1–3 dimensions. It first selects distinct
+  **(node, dimension tuple, RDF numeric term)** combinations, so different
+  nodes with the same amount still contribute independently. Multiple distinct
+  numeric values on one node each contribute once per dimension tuple.
+  Numeric values of type xsd:integer, xsd:decimal, xsd:float, and xsd:double
+  are accepted using SPARQL \`isNumeric\`. Non-numeric and missing values are
+  excluded from the measure but keep their nodes in dimension groups.
+  Missing dimensions are represented as unbound buckets unless required.
+  On an empty input, \`SUM\` returns zero; \`AVG\`, \`MIN\`, and \`MAX\` have an
+  unbound result. Groups with no numeric measure follow the same rule.
+  Each operation is a separate single-measure lens to avoid Cartesian
+  multiplication of independent measure paths.
 - No application-side joins or aggregate computations. SPARQL provider
   semantics (collation, numeric errors, entailment, dataset scope) apply.
 
 ## Safety and limits
 
 - 1–8 projection columns, 1–3 grouping dimensions, unique safe aliases.
+- Numeric aggregates use only fixed functions and validated property IRIs;
+  arbitrary SPARQL is never accepted.
 - Generated SPARQL limited to 100,000 characters by default.
 - Bounded streaming via `withSelectRows` in one read transaction.
   The public `Table` API materializes at most `maxRows` after streaming.
@@ -64,8 +89,8 @@ projection aliases are strictly validated; no free-form SPARQL is accepted.
 
 ## Follow-up increments
 
-- Aggregate measures: explicit COUNT/SUM/AVG/MIN/MAX per measure with
-  numeric type checking and clear duplicate semantics.
+- Multiple independent measures in one tabular result with safe join strategies,
+  plus configurable treatment of non-numeric values and data-quality diagnostics.
 - Typed ontology/RDF representation and SHACL profile for tabular definitions.
 - Dedicated streaming table cursor, pagination and continuation tokens.
 - Provider statistics, physical plan alternatives, join-order benchmarks,
