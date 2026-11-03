@@ -123,7 +123,16 @@ class TabularLensCompiler(
     private val selector: SparqlCompiler = SparqlCompiler(),
     private val maxQueryChars: Int = 100_000
 ) {
-    data class Compiled(val sparql: String, val variables: List<String>)
+    data class Compiled(
+        val sparql: String,
+        val variables: List<String>,
+        val numericOperation: NumericOperation? = null
+    )
+
+    companion object {
+        /** Internal aggregate count exposed only for zero-measure result normalization. */
+        const val NUMERIC_COUNT_VARIABLE = "__lensNumericCount"
+    }
 
     init { require(maxQueryChars >= 256) }
 
@@ -175,13 +184,17 @@ class TabularLensCompiler(
             selection(lens.source) + "\n" + sourcePatterns + "\n" + numeric + "\n} }"
         val aggregateExpression = "(" + lens.operation.sparql + "(" + measure + ") AS ?" +
             lens.alias + ")"
+        // Some providers return an unbound SUM for zero numeric values; others
+        // produce zero/NaN for AVG. Return a private COUNT alongside the
+        // aggregate so the public executor can normalize those cases uniformly.
+        val numericCount = "(COUNT(" + measure + ") AS ?" + NUMERIC_COUNT_VARIABLE + ")"
         val prefix = if (dimensionNames.isEmpty()) "" else dimensionNames.joinToString(" ") + " "
         val suffix = if (dimensionNames.isEmpty()) "" else
             " GROUP BY " + dimensionNames.joinToString(" ") +
                 " ORDER BY " + dimensionNames.joinToString(" ")
-        val query = "SELECT " + prefix + aggregateExpression + " WHERE {\n" +
+        val query = "SELECT " + prefix + aggregateExpression + " " + numericCount + " WHERE {\n" +
             deduplicated + "\n}" + suffix
-        return Compiled(query, dimensions.map { it.alias } + lens.alias)
+        return Compiled(query, dimensions.map { it.alias } + lens.alias, lens.operation)
     }
 
     fun compile(lens: TabularLens): Compiled {
