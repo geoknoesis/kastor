@@ -3,6 +3,6 @@
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :build-platform:dependencies --write-locks
 com.fasterxml.jackson:jackson-bom:2.22.4=classpath
-io.netty:netty-bom:4.2.19.Final=classpath
-io.opentelemetry:opentelemetry-bom:1.67.0=classpath
+io.netty:netty-bom:4.2.20.Final=classpath
+io.opentelemetry:opentelemetry-bom:1.68.0=classpath
 empty=

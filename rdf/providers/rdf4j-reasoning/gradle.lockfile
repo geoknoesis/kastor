@@ -2,7 +2,7 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :rdf:rdf4j-reasoning:dependencies --write-locks
-at.yawk.lz4:lz4-java:1.12.1=runtimeClasspath,testRuntimeClasspath
+at.yawk.lz4:lz4-java:1.13.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:titanium-jcs:1.1.1=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:titanium-json-ld:1.7.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:titanium-rdf-api:1.0.0=runtimeClasspath,testRuntimeClasspath
@@ -15,17 +15,17 @@ com.fasterxml.jackson.module:jackson-module-kotlin:2.22.4=dokkaHtmlGeneratorRunt
 com.fasterxml.jackson:jackson-bom:2.22.4=compileClasspath,cyclonedxBom,dokkaHtmlGeneratorRuntimeResolver~internal,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.fasterxml.woodstox:woodstox-core:7.2.0=dokkaHtmlGeneratorRuntimeResolver~internal
 com.github.jsonld-java:jsonld-java:0.13.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.google.errorprone:error_prone_annotations:2.50.0=runtimeClasspath,testRuntimeClasspath
+com.google.errorprone:error_prone_annotations:2.52.0=runtimeClasspath,testRuntimeClasspath
 com.google.guava:failureaccess:1.0.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.google.guava:guava:33.7.2-jre=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.guava:guava:33.8.0-jre=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.j2objc:j2objc-annotations:3.1=runtimeClasspath,testRuntimeClasspath
 com.google.re2j:re2j:1.8=runtimeClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.23.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 commons-io:commons-io:2.22.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation
-io.netty:netty-bom:4.2.19.Final=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-io.opentelemetry:opentelemetry-bom:1.67.0=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.netty:netty-bom:4.2.20.Final=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.opentelemetry:opentelemetry-bom:1.68.0=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 jakarta.json:jakarta.json-api:2.0.1=runtimeClasspath,testRuntimeClasspath
 no.hasmac:hasmac-json-ld:0.10.2=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.apache.commons:commons-lang3:3.21.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
@@ -134,7 +134,7 @@ org.jetbrains:annotations:13.0=kotlinAbiValidationCompatClasspath,kotlinBuildToo
 org.jetbrains:annotations:23.0.0=compileClasspath,dokkaHtmlGeneratorRuntimeResolver~internal,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.jetbrains:markdown-jvm:0.7.3=dokkaHtmlGeneratorRuntimeResolver~internal
 org.jetbrains:markdown:0.7.3=dokkaHtmlGeneratorRuntimeResolver~internal
-org.jsoup:jsoup:1.23.2=dokkaHtmlGeneratorRuntimeResolver~internal
+org.jsoup:jsoup:1.24.1=dokkaHtmlGeneratorRuntimeResolver~internal
 org.jspecify:jspecify:1.0.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-api:6.1.3=testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-engine:6.1.3=testRuntimeClasspath
