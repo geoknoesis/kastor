@@ -2,7 +2,7 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :benchmarks:shacl:dependencies --write-locks
-at.yawk.lz4:lz4-java:1.12.1=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+at.yawk.lz4:lz4-java:1.13.0=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 com.apicatalog:titanium-jcs:1.1.1=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.apicatalog:titanium-json-ld:1.7.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.apicatalog:titanium-rdf-api:1.0.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
@@ -16,17 +16,17 @@ com.github.ben-manes.caffeine:caffeine:3.3.1=compileClasspath,jmhCompileClasspat
 com.github.jsonld-java:jsonld-java:0.13.4=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.code.gson:gson:2.14.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.errorprone:error_prone_annotations:2.48.0=compileClasspath,jmhCompileClasspath,testCompileClasspath
-com.google.errorprone:error_prone_annotations:2.50.0=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+com.google.errorprone:error_prone_annotations:2.52.0=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 com.google.guava:failureaccess:1.0.3=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.google.guava:guava:33.7.2-jre=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.guava:guava:33.8.0-jre=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.j2objc:j2objc-annotations:3.1=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 com.google.protobuf:protobuf-java:4.35.1=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.google.re2j:re2j:1.8=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.23.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 commons-io:commons-io:2.22.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-io.netty:netty-bom:4.2.19.Final=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-io.opentelemetry:opentelemetry-bom:1.67.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.netty:netty-bom:4.2.20.Final=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.opentelemetry:opentelemetry-bom:1.68.0=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 jakarta.json:jakarta.json-api:2.0.1=jmhRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
 net.sf.jopt-simple:jopt-simple:5.0.4=jmh,jmhCompileClasspath,jmhRuntimeClasspath
 no.hasmac:hasmac-json-ld:0.10.2=compileClasspath,jmhCompileClasspath,jmhRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
