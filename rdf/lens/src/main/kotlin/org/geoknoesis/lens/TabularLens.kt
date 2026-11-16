@@ -16,8 +16,8 @@ sealed interface TabularLens {
         val required: Boolean = false
     ) {
         init {
-            require(alias.matches(Regex("[A-Za-z][A-Za-z0-9_]*"))) { "Invalid column alias" }
-            require(alias !in setOf("node", "count", "value")) { "Reserved column alias: $alias" }
+            require(ALIAS.matches(alias)) { "Invalid column alias" }
+            require(alias !in RESERVED_ALIASES) { "Reserved column alias: $alias" }
         }
     }
 
@@ -53,8 +53,8 @@ sealed interface TabularLens {
         val dimensions: List<Column> = emptyList()
     ) : TabularLens {
         init {
-            require(alias.matches(Regex("[A-Za-z][A-Za-z0-9_]*"))) { "Invalid aggregate alias" }
-            require(alias !in setOf("node", "count", "value")) { "Reserved aggregate alias" }
+            require(ALIAS.matches(alias)) { "Invalid aggregate alias" }
+            require(alias !in RESERVED_ALIASES) { "Reserved aggregate alias" }
             require(dimensions.size <= 3) { "NumericAggregate supports at most 3 dimensions" }
             require(dimensions.map { it.alias }.distinct().size == dimensions.size) {
                 "Duplicate dimension aliases"
@@ -74,6 +74,9 @@ sealed interface TabularLens {
         }
     }
 }
+
+private val ALIAS = Regex("[A-Za-z][A-Za-z0-9_]*")
+private val RESERVED_ALIASES = setOf("node", "count", "value")
 
 /** Fixed, typed SPARQL aggregate operators; never accept arbitrary function text. */
 enum class NumericOperation(val sparql: String) {

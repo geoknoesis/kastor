@@ -78,39 +78,80 @@ class SparqlCompiler {
                 "\"" + safe + "\""
             }
         }
-        fun pattern(q: Lens, node: String): String = when(q) {
-            is Lens.Type -> node + " a " + iri(q.classIri) + " ."
-            is Lens.Equals -> pattern(q.input, node) + "\n" +
-                node + " " + iri(q.property) + " " + term(q.value) + " ."
-            is Lens.Exists -> {
-                val target = next()
-                pattern(q.input, node) + "\nFILTER EXISTS { " + node + " " +
-                    iri(q.property) + " " + target + " . " + pattern(q.target, target) + " }"
+        fun pattern(q: Lens, node: String, out: StringBuilder) {
+            when(q) {
+                is Lens.Type -> out.append(node).append(" a ").append(iri(q.classIri)).append(" .")
+                is Lens.Equals -> {
+                    pattern(q.input, node, out)
+                    out.append('\n').append(node).append(' ').append(iri(q.property))
+                        .append(' ').append(term(q.value)).append(" .")
+                }
+                is Lens.Exists -> {
+                    val target = next()
+                    pattern(q.input, node, out)
+                    // The target test is nested so that the only pattern beside the
+                    // link is evaluated with the target bound: a provider that plans
+                    // an EXISTS body without the outer bindings cannot start from
+                    // the whole target class.
+                    out.append("\nFILTER EXISTS { ").append(node).append(' ').append(iri(q.property))
+                        .append(' ').append(target).append(" . FILTER EXISTS { ")
+                    pattern(q.target, target, out)
+                    out.append(" } }")
+                }
+                // One flat group: every restriction only references the node and
+                // variables confined to its own EXISTS, so the provider can plan
+                // all triple patterns of the intersection as a single BGP.
+                is Lens.Intersect -> q.parts.forEachIndexed { i, part ->
+                    if (i > 0) out.append('\n')
+                    pattern(part, node, out)
+                }
+                is Lens.Union -> {
+                    out.append("{ ")
+                    q.parts.forEachIndexed { i, part ->
+                        if (i > 0) out.append(" UNION ")
+                        out.append("{ ")
+                        pattern(part, node, out)
+                        out.append(" }")
+                    }
+                    out.append(" }")
+                }
+                is Lens.Difference -> {
+                    pattern(q.left, node, out)
+                    out.append("\nFILTER NOT EXISTS { ")
+                    pattern(q.right, node, out)
+                    out.append(" }")
+                }
+                is Lens.Filter -> {
+                    pattern(q.input, node, out)
+                    out.append("\nFILTER(").append(conditionCompiler.expression(q.condition, node)).append(')')
+                }
             }
-            is Lens.Intersect ->
-                q.parts.joinToString("\n") { "{ " + pattern(it,node) + " }" }
-            is Lens.Union ->
-                "{ " + q.parts.joinToString(" UNION ") { "{ " + pattern(it,node) + " }" } + " }"
-            is Lens.Difference ->
-                pattern(q.left,node) + "\nFILTER NOT EXISTS { " + pattern(q.right,node) + " }"
-            is Lens.Filter ->
-                pattern(q.input,node) + "\nFILTER(" + conditionCompiler.expression(q.condition, node) + ")"
         }
     }
+    private companion object {
+        val VARIABLE = Regex("\\?[A-Za-z_][A-Za-z0-9_]*")
+    }
+
+    /** Apply the logical optimizer once; pair with [patternOfOptimized] to reuse the result. */
+    internal fun optimized(lens: Lens): Lens = LensOptimizer().optimize(lens).lens
+
+    /** Serialize a lens already returned by [optimized], without optimizing it again. */
+    internal fun patternOfOptimized(lens: Lens, nodeVariable: String): String {
+        require(VARIABLE.matches(nodeVariable)) { "Invalid SPARQL variable" }
+        return StringBuilder().also { State().pattern(lens, nodeVariable, it) }.toString()
+    }
+
     /** Reuse the typed node selector in guarded network traversal expressions. */
-    fun graphPattern(lens: Lens, nodeVariable: String): String {
-        require(Regex("\\?[A-Za-z_][A-Za-z0-9_]*").matches(nodeVariable)) {
-            "Invalid SPARQL variable"
-        }
-        return State().pattern(LensOptimizer().optimize(lens).lens, nodeVariable)
-    }
+    fun graphPattern(lens: Lens, nodeVariable: String): String =
+        patternOfOptimized(optimized(lens), nodeVariable)
+
     /** Exposes applied algebra rules and the exact query without inventing cost estimates. */
     data class ExplainedSelect(val plan: LensOptimizer.Plan, val sparql: String)
 
     fun explain(q: Lens): ExplainedSelect {
         val plan = LensOptimizer().optimize(q)
         val sparql = "SELECT DISTINCT ?node WHERE {\n" +
-            State().pattern(plan.lens, "?node") + "\n} ORDER BY ?node"
+            patternOfOptimized(plan.lens, "?node") + "\n} ORDER BY ?node"
         return ExplainedSelect(plan, sparql)
     }
 

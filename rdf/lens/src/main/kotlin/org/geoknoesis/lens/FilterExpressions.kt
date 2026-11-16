@@ -43,6 +43,9 @@ object Filters {
 
 /** Generates correlated SPARQL EXISTS expressions without evaluating joins in Kotlin. */
 class BooleanPredicateCompiler {
+    private companion object {
+        val BINDING = Regex("\\?[A-Za-z_][A-Za-z0-9_]*")
+    }
     private var variable = 0
     private fun iri(raw: String): String {
         require(raw.startsWith("urn:") || raw.startsWith("http://") || raw.startsWith("https://")) {
@@ -68,24 +71,33 @@ class BooleanPredicateCompiler {
         return "(" + predicates.joinToString(separator) { iri(it) } + ")"
     }
 
+    /**
+     * Appends the patterns that reach the expression's value and returns its term.
+     * A sequence path becomes one pattern per step, each starting from the
+     * variable the previous pattern bound.
+     */
     private fun bind(expr: ValueExpression, node: String, triples: MutableList<String>): String {
-        if (expr is ValueExpression.Constant) return value(expr.value)
-        val propertyPath = when(expr) {
-            is ValueExpression.Path -> iri(expr.predicate)
-            is ValueExpression.SequencePath -> path(expr.predicates, "/")
-            is ValueExpression.InversePath -> "^" + iri(expr.predicate)
-            is ValueExpression.AlternativePath -> path(expr.predicates, "|")
-            is ValueExpression.Constant -> error("Already handled")
+        fun step(from: String, propertyPath: String): String {
+            val target = "?lensfilter" + variable++
+            triples.add(from + " " + propertyPath + " " + target + " .")
+            return target
         }
-        val target = "?lensfilter" + variable++
-        triples.add(node + " " + propertyPath + " " + target + " .")
-        return target
+        return when(expr) {
+            is ValueExpression.Constant -> value(expr.value)
+            is ValueExpression.Path -> step(node, iri(expr.predicate))
+            is ValueExpression.InversePath -> step(node, "^" + iri(expr.predicate))
+            is ValueExpression.AlternativePath -> step(node, path(expr.predicates, "|"))
+            is ValueExpression.SequencePath -> {
+                require(expr.predicates.size in 1..8) { "Property paths must contain 1..8 predicates" }
+                expr.predicates.fold(node) { from, predicate -> step(from, iri(predicate)) }
+            }
+        }
     }
 
     fun expression(p: BooleanPredicate, node: String): String = when(p) {
         is BooleanPredicate.Compare -> {
-            require(node.matches(Regex("\\?[A-Za-z_][A-Za-z0-9_]*"))) { "Invalid binding" }
-            if (p.operator !in setOf(CompareOperator.EQ, CompareOperator.NE)) {
+            require(BINDING.matches(node)) { "Invalid binding" }
+            if (p.operator != CompareOperator.EQ && p.operator != CompareOperator.NE) {
                 for (e in listOf(p.left, p.right)) {
                     if (e is ValueExpression.Constant) require(e.value !is Value.Iri) {
                         "Ordered comparisons cannot use IRI constants"
@@ -96,8 +108,16 @@ class BooleanPredicateCompiler {
             val left = bind(p.left, node, triples)
             val right = bind(p.right, node, triples)
             val comparison = "(" + left + " " + p.operator.sparql + " " + right + ")"
-            if (triples.isEmpty()) comparison else
-                "EXISTS { " + triples.joinToString(" ") + " FILTER" + comparison + " }"
+            if (triples.isEmpty()) comparison else {
+                // One pattern per EXISTS level: each is evaluated with its start
+                // already bound, so a provider that plans an EXISTS body without
+                // the outer bindings cannot begin a path from its far end.
+                var body = triples.last() + " FILTER" + comparison
+                for (i in triples.size - 2 downTo 0) {
+                    body = triples[i] + " FILTER EXISTS { " + body + " }"
+                }
+                "EXISTS { $body }"
+            }
         }
         is BooleanPredicate.All -> {
             require(p.clauses.isNotEmpty()) { "Empty conjunction requires an explicit true expression" }
