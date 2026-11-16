@@ -10,6 +10,9 @@ ego/network traversals (depth 0–3), and bounded property paths (sequence,
 inverse, alternative). SHACL Core validates RDF-authored definitions; callers
 should use `KastorRdfLensExecutor.executeValidated` with trusted shapes.
 
+**Start with the [user guide](docs/USER-GUIDE.md)**: building and composing
+lenses, running them, limits, and performance guidance.
+
 The node algebra now has a typed, provider-neutral logical optimizer and
 `SparqlCompiler.explain()`, documenting applied rewrites and the exact SPARQL.
 See [Optimization](docs/OPTIMIZATION.md) and the

@@ -41,7 +41,8 @@ class KastorTabularLensExecutor(
     /** Fail closed on overflow: never silently return a partial facet distribution. */
     fun execute(lens: TabularLens, limits: Limits = Limits()): Table {
         val compiled = compiler.compile(lens)
-        val query = SparqlSelectQuery(compiled.sparql)
+        // Let the provider stop at the bound; one extra row keeps overflow fail-closed.
+        val query = SparqlSelectQuery(compiled.sparql + "\nLIMIT " + (limits.maxRows + 1))
         fun consume(rows: Sequence<BindingSet>): Table {
             val bounded = rows.take(limits.maxRows + 1).map { row ->
                 val numeric = compiled.numericOperation
