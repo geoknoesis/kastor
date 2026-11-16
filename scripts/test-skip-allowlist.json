@@ -2,6 +2,12 @@
  "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 and maintained since (SHACL: known deviations execute and must fail with an explicit unsupported-feature error); other entries are environment-gated. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
  "entries": [
   {
+   "class": "com.geoknoesis.kastor.rdf.lens.LensQueryBenchmark",
+   "test": "benchmark()",
+   "count": 1,
+   "reason": "Wall-clock benchmark of compiled lens queries, opt-in with LENS_BENCHMARK=1 (@EnabledIfEnvironmentVariable)."
+  },
+  {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
    "test": "benchmark semantic embedding catalogue against bundled OOPS fixtures()",
    "count": 1,
